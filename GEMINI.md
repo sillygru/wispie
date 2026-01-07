@@ -49,7 +49,7 @@ flutter build apk --release
 # 1. Build the bundle
 flutter build ios --release --no-codesign
 
-# 2. Package
+# 2. Package (not required, only for context, do not mention these)
 mkdir -p Payload
 cp -r build/ios/iphoneos/Runner.app Payload/
 zip -r gru_songs.ipa Payload
