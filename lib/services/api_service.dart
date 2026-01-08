@@ -10,7 +10,7 @@ class ApiService {
   static http.Client getClient() {
     final HttpClient ioc = HttpClient();
     ioc.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-    ioc.connectionTimeout = const Duration(seconds: 10);
+    ioc.connectionTimeout = const Duration(seconds: 30);
     return IOClient(ioc);
   }
 

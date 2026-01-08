@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   just_audio: ^0.9.44
-  just_audio_background: ^0.0.1-beta.15
+  just_audio_background: ^0.0.1-beta.16
   audio_session: ^0.1.25
   http: ^1.2.1
   cached_network_image: ^3.3.1

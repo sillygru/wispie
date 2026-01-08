@@ -18,18 +18,9 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
-void main() async {
+void main() {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
-  
-  final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration.music());
-
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.sillygru.gru_songs.channel.audio',
-    androidNotificationChannelName: 'Audio playback',
-    androidNotificationOngoing: true,
-  );
   runApp(const GruSongsApp());
 }
 
@@ -61,16 +52,37 @@ class _MainScreenState extends State<MainScreen> {
   final ApiService _apiService = ApiService();
   final AudioPlayerManager _audioManager = AudioPlayerManager();
   late Future<List<Song>> _songsFuture;
+  bool _isAudioInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    _initAudio();
     _songsFuture = _apiService.fetchSongs();
     _songsFuture.then((songs) {
-      _audioManager.init(songs);
+      if (_isAudioInitialized) {
+        _audioManager.init(songs);
+      }
     }).catchError((error) {
       debugPrint('Error fetching songs: $error');
     });
+  }
+
+  Future<void> _initAudio() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.sillygru.gru_songs.channel.audio',
+      androidNotificationChannelName: 'Audio playback',
+      androidNotificationOngoing: true,
+    );
+    setState(() {
+      _isAudioInitialized = true;
+    });
+    // If songs loaded before audio init, initialize player now
+    final songs = await _songsFuture;
+    _audioManager.init(songs);
   }
 
   @override
@@ -106,10 +118,25 @@ class _MainScreenState extends State<MainScreen> {
                               return Center(
                                 child: Padding(
                                   padding: const EdgeInsets.all(24.0),
-                                  child: SelectableText(
-                                    'Error: ${snapshot.error}',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(color: Colors.redAccent),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SelectableText(
+                                        'Error: ${snapshot.error}',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(color: Colors.redAccent),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _songsFuture = _apiService.fetchSongs();
+                                          });
+                                        },
+                                        icon: const Icon(Icons.refresh),
+                                        label: const Text('Retry'),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -214,7 +241,7 @@ class NowPlayingBar extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        metadata.artist ?? 'SillyGru',
+                        metadata.artist ?? 'Unknown Artist',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: Colors.grey[400], fontSize: 12),
@@ -350,6 +377,14 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
       }
     }
   }
+
+  Stream<PositionData> get _positionDataStream =>
+      Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
+          widget.player.positionStream,
+          widget.player.bufferedPositionStream,
+          widget.player.durationStream,
+          (position, bufferedPosition, duration) => PositionData(
+              position, bufferedPosition, duration ?? Duration.zero));
 
   @override
   Widget build(BuildContext context) {
@@ -506,11 +541,11 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                     },
                   ),
                   // Lyrics toggle button if lyrics available
-                  if (metadata.extras?['lyricsUrl'] != null)
+                  if (metadata?.extras?['lyricsUrl'] != null)
                     IconButton(
                       icon: const Icon(Icons.lyrics),
                       color: _showLyrics ? Colors.deepPurple : Colors.white,
-                      onPressed: () => _toggleLyrics(metadata.extras!['lyricsUrl'] as String),
+                      onPressed: () => _toggleLyrics(metadata!.extras!['lyricsUrl'] as String),
                     ),
                 ],
               ),
