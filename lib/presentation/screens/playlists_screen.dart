@@ -63,12 +63,12 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                 return ListTile(
                   leading: const Icon(Icons.queue_music),
                   title: Text(playlist.name),
-                  subtitle: Text("${playlist.songFilenames.length} songs"),
+                  subtitle: Text("${playlist.songs.length} songs"),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => PlaylistDetailScreen(playlist: playlist),
+                        builder: (_) => PlaylistDetailScreen(playlistId: playlist.id),
                       ),
                     );
                   },
