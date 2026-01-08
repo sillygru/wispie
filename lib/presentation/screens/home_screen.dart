@@ -85,12 +85,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       builder: (context, ref, child) {
                          final userData = ref.watch(userDataProvider);
                          final isFavorite = userData.favorites.contains(song.filename);
-                         return IconButton(
-                            icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border),
-                            color: isFavorite ? Colors.red : null,
-                            onPressed: () {
-                               ref.read(userDataProvider.notifier).toggleFavorite(song.filename);
+                         return PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) {
+                                if (value == 'favorite') {
+                                    ref.read(userDataProvider.notifier).toggleFavorite(song.filename);
+                                } else if (value.startsWith('add_to_')) {
+                                    final playlistId = value.replaceFirst('add_to_', '');
+                                    ref.read(userDataProvider.notifier).addSongToPlaylist(playlistId, song.filename);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text("Added to playlist"))
+                                    );
+                                }
                             },
+                            itemBuilder: (context) => [
+                                PopupMenuItem(
+                                    value: 'favorite',
+                                    child: Row(
+                                        children: [
+                                            Icon(isFavorite ? Icons.favorite : Icons.favorite_border, color: isFavorite ? Colors.red : null),
+                                            const SizedBox(width: 8),
+                                            Text(isFavorite ? "Remove from Favorites" : "Add to Favorites"),
+                                        ],
+                                    ),
+                                ),
+                                const PopupMenuDivider(),
+                                if (userData.playlists.isEmpty)
+                                    const PopupMenuItem(
+                                        enabled: false,
+                                        child: Text("No playlists created"),
+                                    )
+                                else
+                                    ...userData.playlists.map((p) => PopupMenuItem(
+                                        value: 'add_to_${p.id}',
+                                        child: Row(
+                                            children: [
+                                                const Icon(Icons.playlist_add),
+                                                const SizedBox(width: 8),
+                                                Text("Add to ${p.name}"),
+                                            ],
+                                        ),
+                                    )),
+                            ],
                          );
                       },
                     ),
