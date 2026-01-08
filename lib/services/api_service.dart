@@ -36,6 +36,21 @@ class ApiService {
     }
   }
 
+  Future<String?> fetchLyrics(String url) async {
+    final client = getClient();
+    try {
+      final response = await client.get(Uri.parse(getFullUrl(url)));
+      if (response.statusCode == 200) {
+        return response.body;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   static String getFullUrl(String relativeUrl) {
     if (relativeUrl.startsWith('http')) return relativeUrl;
     final cleanRelative = relativeUrl.startsWith('/') ? relativeUrl : '/$relativeUrl';

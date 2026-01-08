@@ -16,12 +16,15 @@ class AudioPlayerManager {
             Uri.parse(ApiService.getFullUrl(song.url)),
                       tag: MediaItem(
                         id: song.filename,
-                        album: "SillyGru",
+                        album: song.album,
                         title: song.title,
                         artist: song.artist,
                         artUri: song.coverUrl != null 
                             ? Uri.parse(ApiService.getFullUrl(song.coverUrl!)) 
                             : Uri.parse(ApiService.getFullUrl('/stream/cover.jpg')),
+                        extras: {
+                          'lyricsUrl': song.lyricsUrl,
+                        },
                       ),
             
           );

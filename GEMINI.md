@@ -61,3 +61,4 @@ rm -rf Payload
 - `lib/services/api_service.dart`: API logic and custom HTTP client.
 - `lib/services/audio_player_manager.dart`: Audio lifecycle and `MediaItem` metadata mapping.
 - `lib/main.dart`: UI, `AudioSession` init, and `HttpOverrides`.
+- `server/main.py`: Main server backend server logic, ran on separate computer
