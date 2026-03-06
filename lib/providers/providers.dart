@@ -14,6 +14,7 @@ import '../services/waveform_service.dart';
 import '../services/cache_service.dart';
 import '../data/repositories/song_repository.dart';
 import '../models/song.dart';
+import '../models/recommendation_config.dart';
 import 'user_data_provider.dart';
 import 'settings_provider.dart';
 
@@ -909,8 +910,13 @@ final songsProvider =
 final recommendationsProvider = Provider<List<Song>>((ref) {
   final userData = ref.watch(userDataProvider);
   final songsAsync = ref.watch(songsProvider);
+  final recConfig = ref.watch(settingsProvider).recommendationConfig;
 
   if (songsAsync is! AsyncData || songsAsync.value == null) {
+    return [];
+  }
+
+  if (!recConfig.isEnabled(RecommendationType.quickPicks)) {
     return [];
   }
 
