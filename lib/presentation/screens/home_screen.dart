@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/album_art_image.dart';
@@ -7,6 +8,7 @@ import '../widgets/song_list_item.dart';
 import '../widgets/scanning_progress_bar.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/selection_provider.dart';
 import '../../services/android_storage_service.dart';
 import '../../services/telemetry_service.dart';
 import '../../services/library_logic.dart';
@@ -21,6 +23,7 @@ import 'session_detail_screen.dart';
 import '../widgets/folder_grid_image.dart';
 import '../widgets/sort_menu.dart';
 import 'search_screen.dart';
+import 'home_settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -57,60 +60,109 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildQuickPickTile(
       Song song, ThemeData theme, AudioPlayerManager audioManager) {
-    return GestureDetector(
-      onTap: () {
-        audioManager.playSong(song, playlistId: 'quick_picks');
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+    final selectionState = ref.watch(selectionProvider);
+    final isSelected =
+        selectionState.selectedFilenames.contains(song.filename);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: isSelected
+            ? theme.colorScheme.primary.withValues(alpha: 0.2)
+            : Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: isSelected
+            ? Border.all(
+                color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                width: 1.5)
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
           borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.horizontal(left: Radius.circular(12)),
-                child: AlbumArtImage(
-                  url: song.coverUrl ?? '',
-                  filename: song.filename,
-                  fit: BoxFit.cover,
-                  memCacheWidth: 120,
-                  memCacheHeight: 120,
+          onTap: () {
+            if (selectionState.isSelectionMode) {
+              ref
+                  .read(selectionProvider.notifier)
+                  .toggleSelection(song.filename);
+            } else {
+              audioManager.playSong(song, playlistId: 'quick_picks');
+            }
+          },
+          onLongPress: () {
+            if (!selectionState.isSelectionMode) {
+              ref
+                  .read(selectionProvider.notifier)
+                  .enterSelectionMode(song.filename);
+              HapticFeedback.heavyImpact();
+            }
+          },
+          child: Row(
+            children: [
+              AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(12)),
+                      child: AlbumArtImage(
+                        url: song.coverUrl ?? '',
+                        filename: song.filename,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 120,
+                        memCacheHeight: 120,
+                      ),
+                    ),
+                    if (isSelected)
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.horizontal(
+                              left: Radius.circular(12)),
+                          child: Container(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.4),
+                            child: const Icon(Icons.check_circle_rounded,
+                                color: Colors.white, size: 28),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
-                  ),
-                  Text(
-                    song.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white60,
-                      fontSize: 11,
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-          ],
+              const SizedBox(width: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -602,11 +654,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (topRecommendations.isNotEmpty) ...[
-                          Text(
-                            'Quick Picks',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Quick Picks',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.tune_rounded, size: 20),
+                                tooltip: 'Recommendation settings',
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const HomeSettingsScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           GridView.builder(

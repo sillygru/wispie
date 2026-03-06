@@ -9,6 +9,7 @@ import 'appearance_settings_screen.dart';
 import 'data_management_settings_screen.dart';
 import 'misc_settings_screen.dart';
 import 'indexer_screen.dart';
+import 'home_settings_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -27,6 +28,18 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildCategoryTile(
+            context: context,
+            icon: const Icon(Icons.home_outlined),
+            title: 'Home',
+            subtitle: 'Recommendations, quick picks',
+            color: Colors.deepOrange,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HomeSettingsScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
           _buildCategoryTile(
             context: context,
             icon: const Icon(Icons.library_music_outlined),

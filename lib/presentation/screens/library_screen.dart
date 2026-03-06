@@ -67,8 +67,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverAppBar(
-                floating: true,
-                snap: true,
                 pinned: true,
                 backgroundColor: Colors.transparent,
                 title: const Text('Library'),
@@ -94,6 +92,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     error: (_, __) => const SizedBox.shrink(),
                   ),
                 ],
+              ),
+              SliverAppBar(
+                floating: true,
+                snap: true,
+                pinned: false,
+                automaticallyImplyLeading: false,
+                backgroundColor: Colors.transparent,
+                toolbarHeight: 0,
                 bottom: TabBar(
                   dividerColor: Colors.transparent,
                   indicatorSize: TabBarIndicatorSize.label,
@@ -196,6 +202,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .toList();
 
               return ListTile(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -232,6 +240,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               final mergedCount = userData.mergedGroups.length;
 
               return ListTile(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -310,6 +320,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .toList();
 
               return ListTile(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -388,6 +400,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             final folderSongs = content.subFolderSongs[folderName] ?? [];
 
             return ListTile(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               leading: SizedBox(
                 width: 48,
                 height: 48,

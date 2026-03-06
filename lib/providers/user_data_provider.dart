@@ -1072,19 +1072,22 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
     switch (id) {
       case 'quick_picks':
-        final recommendations = List<Song>.from(allSongs);
-        recommendations.sort((a, b) {
+        // Hard-filter suggest-less songs, then score with consistent-personality
+        // style: no play-count penalty, strong favorite boost, low randomness.
+        final eligible =
+            allSongs.where((s) => !state.isSuggestLess(s.filename)).toList();
+        final pool = eligible.isNotEmpty ? eligible : List<Song>.from(allSongs);
+        pool.sort((a, b) {
           double score(Song s) {
-            double val = log((playCounts[s.filename] ?? 0) + 1.5) * 2.0;
-            if (state.isFavorite(s.filename)) val += 5.0;
-            if (state.isSuggestLess(s.filename)) val -= 10.0;
-            val += random.nextDouble() * 4.0;
+            double val = 1.0;
+            if (state.isFavorite(s.filename)) val += 3.0;
+            val += random.nextDouble() * 1.5;
             return val;
           }
 
           return score(b).compareTo(score(a));
         });
-        return recommendations.take(10).toList();
+        return pool.take(10).toList();
 
       case 'top_hits':
         final list = List<Song>.from(allSongs);
