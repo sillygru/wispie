@@ -5,10 +5,12 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import 'providers.dart';
+import 'settings_provider.dart';
 import 'session_history_provider.dart';
 import '../services/database_service.dart';
 import '../models/mood_tag.dart';
 import '../models/playlist.dart';
+import '../models/recommendation_config.dart';
 import '../models/song.dart';
 import '../domain/models/play_session.dart';
 
@@ -1070,15 +1072,35 @@ class UserDataNotifier extends Notifier<UserDataState> {
     if (allSongs.isEmpty) return [];
     final random = Random();
 
+    final eligible =
+        allSongs.where((s) => !state.isSuggestLess(s.filename)).toList();
+    if (eligible.isEmpty) return [];
+
+    final maxPlayCount = playCounts.isEmpty
+        ? 0
+        : playCounts.values.fold<int>(0, max);
+
     switch (id) {
       case 'quick_picks':
-        final recommendations = List<Song>.from(allSongs);
+        final recommendations = List<Song>.from(eligible);
         recommendations.sort((a, b) {
           double score(Song s) {
-            double val = log((playCounts[s.filename] ?? 0) + 1.5) * 2.0;
-            if (state.isFavorite(s.filename)) val += 5.0;
-            if (state.isSuggestLess(s.filename)) val -= 10.0;
-            val += random.nextDouble() * 4.0;
+            final count = playCounts[s.filename] ?? 0;
+            double val = log((count) + 1.5) * 2.0;
+
+            if (state.isFavorite(s.filename)) val += 5.0 * 1.4;
+
+            int threshold = 10;
+            if (maxPlayCount < 10) {
+              threshold = max(1, (maxPlayCount * 0.7).floor());
+            } else if (maxPlayCount < 20) {
+              threshold = 5;
+            }
+            if (count >= threshold && count > 0) {
+              val *= 1.3;
+            }
+
+            val += random.nextDouble() * 2.0;
             return val;
           }
 
@@ -1087,13 +1109,13 @@ class UserDataNotifier extends Notifier<UserDataState> {
         return recommendations.take(10).toList();
 
       case 'top_hits':
-        final list = List<Song>.from(allSongs);
+        final list = List<Song>.from(eligible);
         list.sort((a, b) => (playCounts[b.filename] ?? 0)
             .compareTo(playCounts[a.filename] ?? 0));
         return list.take(20).toList();
 
       case 'fresh_finds':
-        final list = List<Song>.from(allSongs);
+        final list = List<Song>.from(eligible);
         list.sort((a, b) => (b.mtime ?? 0).compareTo(a.mtime ?? 0));
         return list.take(20).toList();
 
@@ -1103,7 +1125,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
             .expand((s) => s.events ?? [])
             .map((e) => e.songFilename)
             .toSet();
-        final forgotten = allSongs.where((s) {
+        final forgotten = eligible.where((s) {
           final isFav = state.isFavorite(s.filename);
           final count = playCounts[s.filename] ?? 0;
           return (isFav || count > 10) && !recentFilenames.contains(s.filename);
@@ -1113,7 +1135,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
       case 'quick_refresh':
         final unplayed =
-            allSongs.where((s) => (playCounts[s.filename] ?? 0) < 3).toList();
+            eligible.where((s) => (playCounts[s.filename] ?? 0) < 3).toList();
         if (unplayed.isEmpty) return [];
         return (unplayed..shuffle()).take(20).toList();
 
@@ -1133,7 +1155,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
             .reduce((a, b) => a.value > b.value ? a : b)
             .key;
         final artistSongs =
-            allSongs.where((s) => s.artist == topArtist).toList();
+            eligible.where((s) => s.artist == topArtist).toList();
         if (artistSongs.length < 3) return [];
         return (artistSongs..shuffle()).take(20).toList();
 
@@ -1149,10 +1171,9 @@ class UserDataNotifier extends Notifier<UserDataState> {
     final allSongs = songsAsync.value!;
     _latestSongs = allSongs;
 
-    // Read directly to avoid a provider self-dependency loop when this notifier
-    // updates recommendations during initialization in debug mode.
     final playCounts = await DatabaseService.instance.getPlayCounts();
     final sessions = await ref.read(sessionHistoryProvider.future);
+    final recConfig = ref.read(settingsProvider).recommendationConfig;
 
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
     final audioManager = ref.read(audioPlayerManagerProvider);
@@ -1193,17 +1214,18 @@ class UserDataNotifier extends Notifier<UserDataState> {
     for (final type in recommendationTypes) {
       if (state.removedRecommendations.contains(type.id)) continue;
 
+      final recType = RecommendationConfig.idToType(type.id);
+      if (recType != null && !recConfig.isEnabled(recType)) continue;
+
       final existing =
           updatedPlaylists.where((p) => p.id == type.id).firstOrNull;
       final pref = state.recommendationPreferences[type.id];
       final isPinned = pref?.isPinned ?? false;
 
-      // DO NOT update if it's currently playing OR if it's pinned (pinned ones are kept)
       if (type.id == currentPlaylistId || isPinned) continue;
 
       bool shouldUpdate = force || existing == null;
       if (!shouldUpdate) {
-        // Update if older than 24 hours
         if (now - existing.updatedAt > 86400) {
           shouldUpdate = true;
         }

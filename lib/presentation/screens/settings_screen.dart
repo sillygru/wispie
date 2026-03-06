@@ -9,6 +9,7 @@ import 'appearance_settings_screen.dart';
 import 'data_management_settings_screen.dart';
 import 'misc_settings_screen.dart';
 import 'indexer_screen.dart';
+import 'recommendation_settings_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -48,6 +49,19 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const PlaybackSettingsScreen()),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildCategoryTile(
+            context: context,
+            icon: const Icon(Icons.auto_awesome_outlined),
+            title: 'Recommendations',
+            subtitle: 'Customize home screen suggestions',
+            color: Colors.amber,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const RecommendationSettingsScreen()),
             ),
           ),
           const SizedBox(height: 12),

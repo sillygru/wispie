@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
+import '../models/recommendation_config.dart';
 import 'providers.dart';
+import 'settings_provider.dart';
 
 final mixedPlaylistsProvider = Provider<List<Playlist>>((ref) {
   final userData = ref.watch(userDataProvider);
   final songsAsync = ref.watch(songsProvider);
+  final recConfig = ref.watch(settingsProvider).recommendationConfig;
 
   if (songsAsync is! AsyncData ||
       songsAsync.value == null ||
@@ -15,7 +18,6 @@ final mixedPlaylistsProvider = Provider<List<Playlist>>((ref) {
 
   final allSongs = songsAsync.value!;
 
-  // Get all recommendation playlists except quick_picks
   final recommendationPlaylists = userData.playlists
       .where((p) => p.isRecommendation && p.id != 'quick_picks')
       .toList();
@@ -25,6 +27,9 @@ final mixedPlaylistsProvider = Provider<List<Playlist>>((ref) {
   for (final pl in recommendationPlaylists) {
     if (userData.removedRecommendations.contains(pl.id)) continue;
 
+    final recType = RecommendationConfig.idToType(pl.id);
+    if (recType != null && !recConfig.isEnabled(recType)) continue;
+
     final playlistSongs = <Song>[];
     for (final ps in pl.songs) {
       final song =
@@ -33,22 +38,21 @@ final mixedPlaylistsProvider = Provider<List<Playlist>>((ref) {
     }
 
     if (playlistSongs.isNotEmpty) {
-      // We need to return the playlist with resolved songs if we want to use it in UI easily,
-      // but Playlist model stores PlaylistSong (filenames).
-      // For the UI to work as before, we might need a wrapper or just use Playlist and resolve songs in UI.
-      // However, AutoPlaylist was already a wrapper.
-      // Let's just return the Playlist objects and handle song resolution in the UI or here.
       result.add(pl);
     }
   }
 
-  // Final sorting: Pinned ones first
   result.sort((a, b) {
     final aPinned = userData.recommendationPreferences[a.id]?.isPinned ?? false;
     final bPinned = userData.recommendationPreferences[b.id]?.isPinned ?? false;
     if (aPinned && !bPinned) return -1;
     if (!aPinned && bPinned) return 1;
-    return 0;
+
+    final aType = RecommendationConfig.idToType(a.id);
+    final bType = RecommendationConfig.idToType(b.id);
+    final aPriority = aType != null ? recConfig.priority(aType) : 1;
+    final bPriority = bType != null ? recConfig.priority(bType) : 1;
+    return bPriority.compareTo(aPriority);
   });
 
   return result;

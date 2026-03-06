@@ -1,12 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/album_art_image.dart';
 import '../widgets/song_list_item.dart';
+import '../widgets/song_options_menu.dart';
 import '../widgets/scanning_progress_bar.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/selection_provider.dart';
 import '../../services/android_storage_service.dart';
 import '../../services/telemetry_service.dart';
 import '../../services/library_logic.dart';
@@ -57,13 +60,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildQuickPickTile(
       Song song, ThemeData theme, AudioPlayerManager audioManager) {
+    final selectionState = ref.watch(selectionProvider);
+    final isSelected = selectionState.selectedFilenames.contains(song.filename);
+
     return GestureDetector(
-      onTap: () {
-        audioManager.playSong(song, playlistId: 'quick_picks');
+      onTap: selectionState.isSelectionMode
+          ? () => ref
+              .read(selectionProvider.notifier)
+              .toggleSelection(song.filename)
+          : () {
+              audioManager.playSong(song, playlistId: 'quick_picks');
+            },
+      onLongPress: () {
+        if (!selectionState.isSelectionMode) {
+          ref
+              .read(selectionProvider.notifier)
+              .enterSelectionMode(song.filename);
+          HapticFeedback.heavyImpact();
+        } else {
+          showSongOptionsMenu(context, ref, song.filename, song.title,
+              song: song);
+        }
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: isSelected
+              ? theme.colorScheme.primary.withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -73,12 +97,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.horizontal(left: Radius.circular(12)),
-                child: AlbumArtImage(
-                  url: song.coverUrl ?? '',
-                  filename: song.filename,
-                  fit: BoxFit.cover,
-                  memCacheWidth: 120,
-                  memCacheHeight: 120,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    AlbumArtImage(
+                      url: song.coverUrl ?? '',
+                      filename: song.filename,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 120,
+                      memCacheHeight: 120,
+                    ),
+                    if (isSelected)
+                      Container(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.7),
+                        child: const Icon(Icons.check_rounded,
+                            color: Colors.black, size: 24),
+                      ),
+                  ],
                 ),
               ),
             ),

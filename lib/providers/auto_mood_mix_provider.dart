@@ -174,6 +174,7 @@ List<Song> _generateMoodMix(
 
   final candidates = allSongs.where((song) {
     if (userData.isHidden(song.filename)) return false;
+    if (userData.isSuggestLess(song.filename)) return false;
     final songMoodIds = userData.moodsForSong(song.filename);
     return songMoodIds.any((id) => id == moodId);
   }).toList();
@@ -188,7 +189,6 @@ List<Song> _generateMoodMix(
         1.0 / (1.0 + (plays > 0 ? (plays).toDouble().log() : 0));
     var score = overlapScore * 5.5 + noveltyScore * 1.5;
     if (userData.isFavorite(song.filename)) score += 1.1;
-    if (userData.isSuggestLess(song.filename)) score -= 1.4;
     score += random.nextDouble() * 0.45;
     return (song: song, score: score);
   }).toList()

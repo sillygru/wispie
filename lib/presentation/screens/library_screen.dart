@@ -69,7 +69,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               SliverAppBar(
                 floating: true,
                 snap: true,
-                pinned: true,
+                pinned: false,
                 backgroundColor: Colors.transparent,
                 title: const Text('Library'),
                 actions: [
@@ -98,6 +98,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   dividerColor: Colors.transparent,
                   indicatorSize: TabBarIndicatorSize.label,
                   indicatorWeight: 4,
+                  splashFactory: NoSplash.splashFactory,
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
                   indicator: UnderlineTabIndicator(
                     borderSide: BorderSide(
                       width: 4,
@@ -196,6 +198,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .toList();
 
               return ListTile(
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -232,6 +236,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               final mergedCount = userData.mergedGroups.length;
 
               return ListTile(
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -310,6 +316,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .toList();
 
               return ListTile(
+                splashColor: Colors.transparent,
+                hoverColor: Colors.transparent,
                 leading: Container(
                   width: 48,
                   height: 48,
@@ -388,6 +396,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             final folderSongs = content.subFolderSongs[folderName] ?? [];
 
             return ListTile(
+              splashColor: Colors.transparent,
+              hoverColor: Colors.transparent,
               leading: SizedBox(
                 width: 48,
                 height: 48,

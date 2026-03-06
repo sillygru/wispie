@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../models/quick_action_config.dart';
+import '../models/recommendation_config.dart';
 import '../services/telemetry_service.dart';
 
 class SettingsState {
@@ -26,6 +27,7 @@ class SettingsState {
   final bool includeVideos;
   final double playFadeDuration;
   final double pauseFadeDuration;
+  final RecommendationConfig recommendationConfig;
 
   SettingsState({
     this.visualizerEnabled = true,
@@ -49,7 +51,10 @@ class SettingsState {
     this.includeVideos = true,
     this.playFadeDuration = 0.3,
     this.pauseFadeDuration = 0.3,
-  }) : quickActionConfig = quickActionConfig ?? QuickActionConfig.defaults;
+    RecommendationConfig? recommendationConfig,
+  })  : quickActionConfig = quickActionConfig ?? QuickActionConfig.defaults,
+        recommendationConfig =
+            recommendationConfig ?? RecommendationConfig.defaults;
 
   SettingsState copyWith({
     bool? visualizerEnabled,
@@ -73,6 +78,7 @@ class SettingsState {
     bool? includeVideos,
     double? playFadeDuration,
     double? pauseFadeDuration,
+    RecommendationConfig? recommendationConfig,
   }) {
     return SettingsState(
       visualizerEnabled: visualizerEnabled ?? this.visualizerEnabled,
@@ -103,6 +109,7 @@ class SettingsState {
       includeVideos: includeVideos ?? this.includeVideos,
       playFadeDuration: playFadeDuration ?? this.playFadeDuration,
       pauseFadeDuration: pauseFadeDuration ?? this.pauseFadeDuration,
+      recommendationConfig: recommendationConfig ?? this.recommendationConfig,
     );
   }
 }
@@ -129,6 +136,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyIncludeVideos = 'include_videos';
   static const _keyPlayFadeDuration = 'play_fade_duration';
   static const _keyPauseFadeDuration = 'pause_fade_duration';
+  static const _keyRecommendationConfig = 'recommendation_config';
   static const double maxDelayDuration = 12.0;
 
   @override
@@ -168,6 +176,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
       includeVideos: prefs.getBool(_keyIncludeVideos) ?? true,
       playFadeDuration: prefs.getDouble(_keyPlayFadeDuration) ?? 0.3,
       pauseFadeDuration: prefs.getDouble(_keyPauseFadeDuration) ?? 0.3,
+      recommendationConfig: RecommendationConfig.fromJsonString(
+          prefs.getString(_keyRecommendationConfig) ?? ''),
     );
   }
 
@@ -381,6 +391,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(pauseFadeDuration: value.clamp(0.0, 1.0));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyPauseFadeDuration, value.clamp(0.0, 1.0));
+  }
+
+  Future<void> setRecommendationConfig(RecommendationConfig config) async {
+    state = state.copyWith(recommendationConfig: config);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyRecommendationConfig, config.toJsonString());
   }
 }
 

@@ -925,7 +925,9 @@ final recommendationsProvider = Provider<List<Song>>((ref) {
   for (final ps in quickPicks.songs) {
     final song =
         allSongs.where((s) => s.filename == ps.songFilename).firstOrNull;
-    if (song != null) result.add(song);
+    if (song != null && !userData.isSuggestLess(song.filename)) {
+      result.add(song);
+    }
   }
 
   return result;
