@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/user_data_provider.dart';
+import '../../providers/providers.dart';
 
 // All known recommendation type IDs and their metadata.
 const _kRecommendationTypes = [
@@ -119,8 +119,8 @@ class _RecommendationTypeTile extends ConsumerWidget {
       child: Column(
         children: [
           SwitchListTile(
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             secondary: Container(
@@ -173,9 +173,7 @@ class _RecommendationTypeTile extends ConsumerWidget {
                   const SizedBox(width: 38),
                   const SizedBox(width: 16),
                   Icon(
-                    isPinned
-                        ? Icons.push_pin_rounded
-                        : Icons.push_pin_outlined,
+                    isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
                     size: 16,
                     color: isPinned
                         ? theme.colorScheme.primary
