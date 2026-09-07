@@ -26,6 +26,7 @@ import 'scanner_service.dart';
 import '../domain/services/cover_optimizer.dart';
 import '../providers/theme_provider.dart';
 import '../providers/queue_history_provider.dart';
+import 'permission_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/settings_provider.dart';
@@ -1699,14 +1700,24 @@ class AudioPlayerManager extends WidgetsBindingObserver {
             FileManagerService.peekNotificationCover(song, coverSizingMode) ??
                 song.coverUrl;
       }
-      if (coverPath != null) {
-        artUri = _mediaUri(coverPath);
+      if (coverPath != null && coverPath.isNotEmpty) {
+        // Never emit an invalid artUri: audio_service drops the entire
+        // notification when ContentResolver cannot open it. Some OEMs are
+        // strict and drop on large or missing covers.
+        // content:// URIs are resolved by the provider, file paths must exist.
+        final isContentUri = coverPath.startsWith('content://');
+        final fileExists = isContentUri || !_isMissingLocalFile(coverPath);
+        if (fileExists) {
+          try {
+            artUri = _mediaUri(coverPath);
+          } catch (_) {
+            artUri = null;
+          }
+        } else {
+          artUri = null;
+        }
       }
     }
-
-    // Keep notification during gap to prevent service death
-    final bool keepNotification =
-        _ref != null && _ref!.read(settingsProvider).delayDuration > 0;
 
     return AudioSource.uri(
       audioUri,
@@ -1722,7 +1733,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           'hasVideo': song.hasVideo,
           'remoteUrl': song.url,
           'queueId': item.queueId,
-          'androidStopForegroundOnPause': !keepNotification,
+          'androidStopForegroundOnPause': false,
           'audioPath': song.url,
           'playbackAudioPath': mediaPaths.audioPath,
           if (mediaPaths.videoPath != null) 'videoPath': mediaPaths.videoPath,
@@ -2660,6 +2671,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     Duration? initialPosition,
   }) async {
     if (_effectiveQueue.isEmpty) return;
+    // Best-effort: ensures POST_NOTIFICATIONS is granted on Android 13+
+    // so the MediaStyle notification actually appears. No-op on older
+    // Android and does not block playback if denied.
+    unawaited(PermissionService.instance.ensureNotificationPermission());
 
     // Drop entries whose files vanished (renamed outside the app, unmounted
     // SD card, revoked permission). Feeding them to ExoPlayer stalls the

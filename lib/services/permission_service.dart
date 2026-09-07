@@ -96,4 +96,39 @@ class PermissionService {
 
     return await Permission.manageExternalStorage.isPermanentlyDenied;
   }
+
+  /// Notification permission is required for the media playback foreground
+  /// notification (android `POST_NOTIFICATIONS`, API 33+). Without it the
+  /// service runs but no controls appear in the shade or lock screen.
+  Future<bool> hasNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    // POST_NOTIFICATIONS was introduced in API 33. Below that, notifications
+    // are granted at install time.
+    if (sdk == null || sdk < 33) return true;
+    final status = await Permission.notification.status;
+    return status.isGranted;
+  }
+
+  Future<bool> requestNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 33) return true;
+    final status = await Permission.notification.request();
+    return status.isGranted;
+  }
+
+  /// Ensures notification permission is granted where required. Returns true
+  /// if notifications can be shown. Never throws. No-op on non-Android or
+  /// API < 33, and on `permanentlyDenied` returns false without looping.
+  Future<bool> ensureNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 33) return true;
+    final status = await Permission.notification.status;
+    if (status.isGranted) return true;
+    if (status.isPermanentlyDenied) return false;
+    final requested = await Permission.notification.request();
+    return requested.isGranted;
+  }
 }

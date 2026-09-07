@@ -23,6 +23,7 @@ import 'providers/providers.dart';
 import 'services/cache_service.dart';
 import 'services/storage_service.dart';
 import 'services/database_service.dart';
+import 'services/permission_service.dart';
 import 'services/power_state_service.dart';
 import 'services/color_extraction_service.dart';
 import 'services/update_service.dart';
@@ -106,7 +107,9 @@ Future<void> _setupJustAudioBackground() async {
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.sillygru.wispie.channel.audio',
     androidNotificationChannelName: 'Audio playback',
-    androidNotificationOngoing: false,
+    androidNotificationChannelDescription: 'Playback controls',
+    androidNotificationOngoing: true,
+    androidShowNotificationBadge: true,
   );
 }
 
@@ -138,6 +141,10 @@ class _WispieAppState extends ConsumerState<WispieApp>
       unawaited(ColorExtractionService.init());
       unawaited(CacheService.instance.scheduleStartupMaintenance());
       PassiveArtFetcherService.instance.init(ref);
+      // POST_NOTIFICATIONS is required on Android 13+ for the media
+      // notification to appear. Fire-and-forget so startup is not blocked;
+      // on older Android it is a no-op (auto-granted).
+      unawaited(PermissionService.instance.ensureNotificationPermission());
       unawaited(
         ref.read(updateCheckProvider.notifier).prime().then((_) {
           if (mounted) _checkAndShowUpdateDialog();
