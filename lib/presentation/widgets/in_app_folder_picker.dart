@@ -24,7 +24,7 @@ class InAppFolderPicker extends StatefulWidget {
 }
 
 class _InAppFolderPickerState extends State<InAppFolderPicker> {
-  late String _currentPath;
+  String _currentPath = '';
   List<FileSystemEntity> _subfolders = [];
   bool _isLoading = true;
   String? _accessError;
@@ -33,12 +33,12 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
   @override
   void initState() {
     super.initState();
+    _currentPath =
+        widget.initialPath ?? (Platform.isAndroid ? '/storage/emulated/0' : '');
     _initStartingDirectory();
   }
 
   Future<void> _initStartingDirectory() async {
-    await _loadShortcuts();
-
     String pathCandidate = widget.initialPath ?? '';
     if (pathCandidate.isNotEmpty && Directory(pathCandidate).existsSync()) {
       _currentPath = pathCandidate;
@@ -60,6 +60,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
       }
     }
 
+    await _loadShortcuts();
     await _loadSubfolders();
   }
 

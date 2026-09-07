@@ -223,59 +223,11 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// Runs off the widget tree entirely: nothing here rebuilds unless one of the
   /// values changed.
   void _onPosition(Duration position) {
-    // Word wipe follows the playhead exactly. Plain lines switch late by
-    // dLyricsScrollTimingOffset; word-timed lines switch exactly so the
-    // first word starts its wipe from zero instead of mid-progress.
-    final lyricsPosition = position;
-    _playbackPosition.value = lyricsPosition;
+    _playbackPosition.value = position;
     final lyrics = _lyrics;
     if (lyrics == null || lyrics.isEmpty || !_hasSynced) return;
 
-    final hasWordTiming = _richSyncAvailable && _wordLines.isNotEmpty;
-    final scrollPosition = hasWordTiming
-        ? lyricsPosition
-        : lyricsPosition - PlayerTokens.dLyricsScrollTimingOffset;
-    // For rich sync we want the word animation to finish before switching lines.
-    // With the exact clock the hold below guards the vocalSpan gaps: hold
-    // previous line until its last word ends and next line's first word has
-    // actually started (by lyricsPosition).
-    // For simulated richsync the estimator leaves a silence gap (vocalSpan < line interval)
-    // so the last word completes early; add a short artificial hold so the current line
-    // fully finishes while still leaving time for the next line's first word.
-    var active = _activeIndexFor(lyrics, scrollPosition);
-    if (_richSyncAvailable &&
-        _wordLines.isNotEmpty &&
-        active != _activeLine.value) {
-      final prev = _activeLine.value;
-      if (prev >= 0 && active >= 0 && active != prev) {
-        // Only allow switch if current word has finished (hold to finish word)
-        // and next line's first word has started by lyricsPosition.
-        final prevEnd = _effectiveEndFor(prev, lyrics);
-        final nextStart = _effectiveStartFor(active, lyrics);
-        final isSimulated =
-            prev < _wordLines.length && _wordLines[prev]?.isSimulated == true;
-        var holdEnd = prevEnd;
-        if (isSimulated) {
-          holdEnd = prevEnd + PlayerTokens.dLyricsSimulatedRichSyncLineHold;
-          // Cap overlap so we still switch in time for the next line to start.
-          final cap =
-              nextStart + PlayerTokens.dLyricsSimulatedRichSyncMaxOverlap;
-          if (holdEnd > cap) holdEnd = cap;
-        }
-        if (lyricsPosition < holdEnd || lyricsPosition < nextStart) {
-          active = prev;
-        }
-      } else if (prev >= 0 && active < 0) {
-        final prevEnd = _effectiveEndFor(prev, lyrics);
-        final isSimulated =
-            prev < _wordLines.length && _wordLines[prev]?.isSimulated == true;
-        var holdEnd = prevEnd;
-        if (isSimulated) {
-          holdEnd = prevEnd + PlayerTokens.dLyricsSimulatedRichSyncLineHold;
-        }
-        if (lyricsPosition < holdEnd) active = prev;
-      }
-    }
+    final active = _activeIndexFor(lyrics, position);
     if (active != _activeLine.value) {
       _activeLine.value = active;
       if (active >= 0) _maybeAutoScroll(active);
@@ -705,52 +657,17 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     }
   }
 
-  Duration _effectiveStartFor(int index, List<LyricLine> lyrics) {
-    final wl =
-        (index >= 0 && index < _wordLines.length) ? _wordLines[index] : null;
-    if (wl != null && wl.words.isNotEmpty) return wl.words.first.start;
-    return lyrics[index].time;
-  }
-
-  Duration _effectiveEndFor(int index, List<LyricLine> lyrics) {
-    final wl =
-        (index >= 0 && index < _wordLines.length) ? _wordLines[index] : null;
-    if (wl != null && wl.words.isNotEmpty) return wl.words.last.end;
-    // Fallback to next line start or line time + 3s
-    for (var j = index + 1; j < lyrics.length; j++) {
-      if (lyrics[j].isSynced) return lyrics[j].time;
-    }
-    return lyrics[index].time + const Duration(seconds: 3);
-  }
-
   int _activeIndexFor(List<LyricLine> lyrics, Duration position) {
-    if (!_richSyncAvailable || _wordLines.isEmpty) {
-      var active = -1;
-      for (var i = 0; i < lyrics.length; i++) {
-        if (!lyrics[i].isSynced) continue;
-        if (lyrics[i].time <= position) {
-          active = i;
-        } else {
-          break;
-        }
-      }
-      return active;
-    }
-
-    // Word-level active: last line whose first word has started, but hold
-    // current line until its last word finishes and next line's first word starts.
-    // This covers: mid-word animation finishing + gap between vocalSpan and next line.
-    var candidate = -1;
+    var active = -1;
     for (var i = 0; i < lyrics.length; i++) {
       if (!lyrics[i].isSynced) continue;
-      final start = _effectiveStartFor(i, lyrics);
-      if (start <= position) {
-        candidate = i;
+      if (lyrics[i].time <= position) {
+        active = i;
       } else {
         break;
       }
     }
-    return candidate;
+    return active;
   }
 
   void _maybeAutoScroll(int index) {

@@ -45,6 +45,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   static const double _cardSize = 168;
   static const double _queueCardSize = 120;
 
+  double _computeMediaCarouselHeight(
+    BuildContext context,
+    double cardSize, {
+    int subtitleMaxLines = 2,
+  }) {
+    final textScaler =
+        MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.25);
+    final titleHeight = textScaler.scale(22);
+    final subtitleHeight = textScaler.scale(18.0 * subtitleMaxLines);
+    return cardSize + AppTokens.s3 + titleHeight + 2 + subtitleHeight;
+  }
+
   Future<void> _selectMusicFolder() async {
     final storage = ref.read(storageServiceProvider);
     final selection = await storage.pickMusicFolder(context);
@@ -554,7 +566,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     SliverToBoxAdapter(
                       child: SizedBox(
-                        height: _queueCardSize + 58,
+                        height: _computeMediaCarouselHeight(
+                          context,
+                          _queueCardSize,
+                        ),
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(
@@ -579,7 +594,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ),
                     SliverToBoxAdapter(
                       child: SizedBox(
-                        height: _cardSize + 66,
+                        height: _computeMediaCarouselHeight(
+                          context,
+                          _cardSize,
+                        ),
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(

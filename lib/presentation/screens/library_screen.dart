@@ -129,8 +129,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     return DefaultTabController(
       length: 3,
       initialIndex: initialTabIndex,
-      child: Builder(
-        builder: (context) {
+      child: Consumer(
+        builder: (context, ref, _) {
           ref.listen(libraryNavigationProvider, (previous, next) {
             if (next == null) return;
             final controller = DefaultTabController.of(context);

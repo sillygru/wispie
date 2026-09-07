@@ -527,52 +527,74 @@ class DatabaseService {
     bool preserveCoverUrl = true,
   }) async {
     await _ensureInitialized();
-    if (_userDataDatabase == null) return;
+    if (_userDataDatabase == null || songs.isEmpty) return;
 
     await _userDataDatabase!.transaction((txn) async {
+      final existingMap = <String, Map<String, Object?>>{};
+      if (preserveCoverUrl) {
+        const chunkSize = 500;
+        final filenames = songs.map((s) => s.filename).toList();
+        for (var i = 0; i < filenames.length; i += chunkSize) {
+          final end = (i + chunkSize).clamp(0, filenames.length);
+          final chunk = filenames.sublist(i, end);
+          final placeholders = List.filled(chunk.length, '?').join(', ');
+          final rows = await txn.query(
+            'song',
+            columns: ['filename', 'cover_url', 'created_epoch_sec'],
+            where: 'filename IN ($placeholders)',
+            whereArgs: chunk,
+          );
+          for (final row in rows) {
+            final fn = row['filename'] as String?;
+            if (fn != null) {
+              existingMap[fn] = row;
+            }
+          }
+        }
+      }
+
       final batch = txn.batch();
       for (final song in songs) {
+        final existing = existingMap[song.filename];
+        final existingCoverUrl = existing?['cover_url'] as String?;
+        final existingCreatedEpochSec =
+            (existing?['created_epoch_sec'] as num?)?.toDouble();
+
+        // A new cover wins over the old one, but null preserves existing art.
+        final effectiveCoverUrl = (preserveCoverUrl && song.coverUrl == null)
+            ? existingCoverUrl
+            : song.coverUrl;
+
+        // Earliest known date added wins over a later scan.
+        final effectiveCreatedEpochSec =
+            existingCreatedEpochSec ?? song.createdEpochSec;
+
+        if (preserveCoverUrl) {
+          existingMap[song.filename] = {
+            'cover_url': effectiveCoverUrl,
+            'created_epoch_sec': effectiveCreatedEpochSec,
+          };
+        }
+
         final values = <String, Object?>{
           'filename': song.filename,
           'title': song.title,
           'artist': song.artist,
           'album': song.album,
           'url': song.url,
-          'cover_url': song.coverUrl,
+          'cover_url': effectiveCoverUrl,
           'has_lyrics': song.hasLyrics ? 1 : 0,
           'play_count': song.playCount,
           'duration_ms': song.duration?.inMilliseconds,
           'mtime': song.mtime,
-          'created_epoch_sec': song.createdEpochSec,
+          'created_epoch_sec': effectiveCreatedEpochSec,
           'song_date_epoch_sec': song.songDateEpochSec,
         };
 
-        if (!preserveCoverUrl) {
-          batch.insert('song', values,
-              conflictAlgorithm: ConflictAlgorithm.replace);
-          continue;
-        }
-
-        final columns = values.keys.toList();
-        final placeholders = List.filled(columns.length, '?').join(', ');
-        final assignments = <String>[];
-        for (final column in columns) {
-          if (column == 'filename') continue;
-          if (column == 'cover_url' || column == 'created_epoch_sec') {
-            // COALESCE order differs on purpose: a new cover wins over the old
-            // one, but the earliest known "date added" wins over a later scan.
-            assignments.add(column == 'cover_url'
-                ? 'cover_url = COALESCE(excluded.cover_url, song.cover_url)'
-                : 'created_epoch_sec = COALESCE(song.created_epoch_sec, excluded.created_epoch_sec)');
-            continue;
-          }
-          assignments.add('$column = excluded.$column');
-        }
-
-        batch.rawInsert(
-          'INSERT INTO song (${columns.join(', ')}) VALUES ($placeholders) '
-          'ON CONFLICT(filename) DO UPDATE SET ${assignments.join(', ')}',
-          columns.map((c) => values[c]).toList(),
+        batch.insert(
+          'song',
+          values,
+          conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
       await batch.commit(noResult: true);

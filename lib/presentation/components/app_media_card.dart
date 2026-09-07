@@ -15,6 +15,8 @@ class AppMediaCard extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+  final int titleMaxLines;
+  final int subtitleMaxLines;
 
   /// Square edge of the artwork. Also the card's width in a carousel.
   final double size;
@@ -34,6 +36,8 @@ class AppMediaCard extends StatelessWidget {
     required this.artwork,
     required this.title,
     this.subtitle,
+    this.titleMaxLines = 1,
+    this.subtitleMaxLines = 2,
     this.size = 160,
     this.expand = false,
     this.badge,
@@ -91,7 +95,7 @@ class AppMediaCard extends StatelessWidget {
         const SizedBox(height: AppTokens.s3),
         Text(
           title,
-          maxLines: 1,
+          maxLines: titleMaxLines,
           overflow: TextOverflow.ellipsis,
           textAlign: textAlign,
           style: AppTokens.cardTitle(context),
@@ -100,7 +104,7 @@ class AppMediaCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             subtitle!,
-            maxLines: 2,
+            maxLines: subtitleMaxLines,
             overflow: TextOverflow.ellipsis,
             textAlign: textAlign,
             style: AppTokens.meta(context),
@@ -109,7 +113,15 @@ class AppMediaCard extends StatelessWidget {
       ],
     );
 
-    final body = expand ? column : SizedBox(width: size, child: column);
+    final textScaler =
+        MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.25);
+    final cardContent = MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: column,
+    );
+
+    final body =
+        expand ? cardContent : SizedBox(width: size, child: cardContent);
 
     if (onTap == null && onLongPress == null) return body;
 

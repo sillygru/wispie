@@ -62,6 +62,7 @@ flutter:
     - assets/app_icon.png
 
 dependency_overrides:
+  flutter_rust_bridge: 2.11.1
   # Vendored without linux/: upstream Linux support is x86_64-only and
   # fatal-errors on aarch64. Features degrade gracefully (see FFmpegService).
   ffmpeg_kit_flutter_new_min:

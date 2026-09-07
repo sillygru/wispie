@@ -118,11 +118,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _onTabSelected(int index) {
     if (index == _selectedIndex) {
-      _scrollControllers[index].animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      if (_scrollControllers[index].hasClients) {
+        _scrollControllers[index].animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     } else {
       setState(() {
         _selectedIndex = index;
