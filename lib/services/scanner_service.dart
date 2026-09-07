@@ -18,6 +18,8 @@ import 'ffmpeg_service.dart';
 import 'cover_refresh_service.dart';
 import 'media_decode_gate.dart';
 import 'permission_service.dart';
+import 'storage_probe_service.dart';
+import 'media_store_service.dart';
 
 /// Why a scan produced the songs it did.
 ///
@@ -335,6 +337,27 @@ class ScannerService {
       return const ScanResult.failed(ScanStatus.folderUnavailable);
     }
 
+    // Pre-scan probe: listing may succeed while every read is denied (wrong
+    // mount, SD-card volume, legacy permission missing). Importing hundreds
+    // of filename-only rows in that state clobbers good metadata and yields
+    // unplayable tracks, so refuse to replace the library instead.
+    final probe = await StorageProbeService().probeFolder(path);
+    if (!probe.listed) {
+      debugPrint(
+          'Music folder not listable: $path (${probe.listError ?? 'unknown'})');
+      return const ScanResult.failed(ScanStatus.folderUnavailable);
+    }
+    List<String> effectivePaths = [path];
+    if (probe.nothingReadable) {
+      debugPrint(
+          'Music folder lists but reads fail: $path (${probe.readError ?? 'unknown'}). Trying MediaStore fallback.');
+      final fallback = await _mediaStoreFallbackPaths(path);
+      if (fallback.isEmpty) {
+        return const ScanResult.failed(ScanStatus.folderUnavailable);
+      }
+      effectivePaths = fallback;
+    }
+
     final storage = StorageService();
     final excludedFolders = await storage.getExcludedFolders();
     final effectivePlayCounts =
@@ -352,7 +375,7 @@ class ScannerService {
 
     final receivePort = ReceivePort();
     final params = _ScanParams(
-      paths: [path],
+      paths: effectivePaths,
       excludedFolders: excludedFolders,
       existingSongs: existingSongs,
       coversDirPath: coversDir.path,
@@ -372,6 +395,7 @@ class ScannerService {
     // unreachable folder taints the whole scan so its empty result can never
     // clobber an existing library.
     bool folderUnavailable = false;
+    int unreadableFiles = 0;
 
     receivePort.listen((message) async {
       if (message is double) {
@@ -383,9 +407,21 @@ class ScannerService {
         onSongsDiscovered?.call(message);
       } else if (message is String && message.startsWith('unreachable:')) {
         folderUnavailable = true;
+      } else if (message is String && message.startsWith('unreadable:')) {
+        unreadableFiles += int.tryParse(message.split(':').last) ?? 0;
       } else if (message == 'done') {
-        final status =
-            folderUnavailable ? ScanStatus.folderUnavailable : ScanStatus.ok;
+        // Every file listed but none parsed means reads are denied, not that
+        // the tags are empty. Report unavailable so the caller never swaps a
+        // good library for filename-only rows.
+        final allUnreadable = allScannedSongs.isNotEmpty &&
+            unreadableFiles >= allScannedSongs.length;
+        final status = (folderUnavailable || allUnreadable)
+            ? ScanStatus.folderUnavailable
+            : ScanStatus.ok;
+        if (unreadableFiles > 0) {
+          debugPrint(
+              'Scanner: $unreadableFiles/${allScannedSongs.length} files fell back to filename (unreadable or untagged)');
+        }
         if (!fastMode) {
           try {
             final searchService = SearchService();
@@ -435,6 +471,48 @@ class ScannerService {
     });
 
     return completer.future;
+  }
+
+  /// MediaStore fallback: distinct readable parent folders under [requestedPath].
+  ///
+  /// On some devices (Huawei mounts, SD-card volumes) dart:io lists a folder
+  /// but every byte read is denied, while MediaStore still knows the real
+  /// paths. Returns an empty list when the fallback has nothing usable.
+  static Future<List<String>> _mediaStoreFallbackPaths(
+      String requestedPath) async {
+    if (!Platform.isAndroid) return const [];
+    final entries = await MediaStoreService().queryAudioEntries();
+    if (entries.isEmpty) return const [];
+    final Set<String> parents = {};
+    for (final entry in entries) {
+      final filePath = entry.filePath;
+      if (filePath == null || filePath.isEmpty) continue;
+      if (!(p.isWithin(requestedPath, filePath) ||
+          p.equals(requestedPath, filePath))) {
+        continue;
+      }
+      final file = File(filePath);
+      bool readable = false;
+      try {
+        readable = await file.exists();
+        if (readable) {
+          final raf = await file.open(mode: FileMode.read);
+          try {
+            await raf.readByte();
+          } finally {
+            await raf.close();
+          }
+        }
+      } on FileSystemException catch (e) {
+        debugPrint('MediaStore fallback unreadable $filePath: $e');
+        continue;
+      } on OSError catch (e) {
+        debugPrint('MediaStore fallback unreadable $filePath: $e');
+        continue;
+      }
+      if (readable) parents.add(p.dirname(filePath));
+    }
+    return parents.toList();
   }
 
   /// Scans the entire device for audio files, respecting excluded folders.
@@ -1277,10 +1355,18 @@ class ScannerService {
       final Map<String, String?> folderCoverCache = {};
       final List<Song> songs = [];
       int processedCount = 0;
+      int unreadableCount = 0;
 
       for (int i = 0; i < audioFiles.length; i++) {
         final file = audioFiles[i];
-        final fileStat = file.statSync();
+        FileStat fileStat;
+        try {
+          fileStat = file.statSync();
+        } on FileSystemException catch (e) {
+          debugPrint('Scanner: cannot stat ${file.path}: $e');
+          unreadableCount++;
+          continue;
+        }
         final currentMtime = fileStat.modified.millisecondsSinceEpoch / 1000.0;
 
         // Skip files below minimum size
@@ -1353,6 +1439,15 @@ class ScannerService {
           } finally {
             await _releaseLock(lockHandle);
           }
+          final lastSong = songs.isNotEmpty ? songs.last : null;
+          if (lastSong != null &&
+              lastSong.title == p.basenameWithoutExtension(file.path) &&
+              lastSong.artist == 'Unknown Artist' &&
+              lastSong.album == 'Unknown Album' &&
+              lastSong.coverUrl == null &&
+              lastSong.duration == null) {
+            unreadableCount++;
+          }
         }
 
         // Yield CPU every 20 files to avoid starving the system
@@ -1377,6 +1472,9 @@ class ScannerService {
         params.sendPort.send(songs);
       }
 
+      if (unreadableCount > 0) {
+        params.sendPort.send('unreadable:$unreadableCount');
+      }
       // Signal completion
       params.sendPort.send('done');
     } catch (e) {
@@ -1445,8 +1543,10 @@ class ScannerService {
             );
           }
         }
+      } on FileSystemException catch (e) {
+        debugPrint('Scanner: unreadable file $filename: $e');
       } catch (e) {
-        // Silently fail primary and move to manual
+        debugPrint('Scanner: metadata parse failed for $filename: $e');
       }
     }
 

@@ -14,16 +14,25 @@ class AndroidStorageService {
   static int? _cachedSdkInt;
 
   /// Returns the Android SDK version (Build.VERSION.SDK_INT), or 0 on non-Android platforms.
+  /// A return of 0 also covers channel failures, so callers that branch on
+  /// SDK version must treat 0 as unknown (see [getSdkIntOrNull]).
   static Future<int> getSdkInt() async {
-    if (_cachedSdkInt != null) return _cachedSdkInt!;
-    if (!Platform.isAndroid) return 0;
+    return await getSdkIntOrNull() ?? 0;
+  }
+
+  /// Same as [getSdkInt] but preserves unknown as null instead of 0.
+  /// Null means non-Android or the platform channel failed.
+  static Future<int?> getSdkIntOrNull() async {
+    if (_cachedSdkInt != null) return _cachedSdkInt == 0 ? null : _cachedSdkInt;
+    if (!Platform.isAndroid) return null;
     try {
       final sdk = await _channel.invokeMethod<int>('getSdkInt');
-      _cachedSdkInt = sdk ?? 0;
-      return _cachedSdkInt!;
+      if (sdk == null || sdk <= 0) return null;
+      _cachedSdkInt = sdk;
+      return sdk;
     } catch (e) {
       debugPrint('Failed to get Android SDK version: $e');
-      return 0;
+      return null;
     }
   }
 

@@ -1,12 +1,15 @@
 package com.sillygru.wispie
 
 import android.app.Activity
+import android.content.ContentUris
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
@@ -99,6 +102,9 @@ class MainActivity : AudioServiceActivity() {
                     "writeFileFromPath" ->
                         onIoThread(result) { handleWriteFileFromPath(call.arguments as Map<*, *>, it) }
                     "readFile" -> onIoThread(result) { handleReadFile(call.arguments as Map<*, *>, it) }
+                    // MediaStore fallback for devices where direct file listing
+                    // finds entries but reads are denied (SD cards, odd mounts).
+                    "queryAudioMedia" -> onIoThread(result) { handleQueryAudioMedia(it) }
                     else -> result.notImplemented()
                 }
             }
@@ -435,8 +441,52 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private fun treeUriToPath(uri: Uri): String? {
-        val docId = DocumentsContract.getTreeDocumentId(uri)
+    private fun handleQueryAudioMedia(result: MethodChannel.Result) {
+        try {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.SIZE
+            )
+            // Skip ringtones/alarms/notifications; only real music files.
+            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+            val out = mutableListOf<Map<String, Any?>>()
+            contentResolver.query(collection, projection, selection, null, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val nameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val contentUri = ContentUris.withAppendedId(collection, id).toString()
+                    val filePath = if (dataCol >= 0) cursor.getString(dataCol) else null
+                    val displayName = if (nameCol >= 0) cursor.getString(nameCol) else ""
+                    val size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L
+                    out.add(
+                        mapOf(
+                            "filePath" to filePath,
+                            "contentUri" to contentUri,
+                            "displayName" to (displayName ?: ""),
+                            "sizeBytes" to size
+                        )
+                    )
+                }
+            }
+            result.success(out)
+        } catch (e: SecurityException) {
+            result.error("no_permission", "MediaStore query denied: ${e.message}", null)
+        } catch (e: Exception) {
+            result.error("query_failed", "MediaStore query failed: ${e.message}", null)
+        }
+    }
+
+    private fun treeUriToPath(uri: Uri): String? {        val docId = DocumentsContract.getTreeDocumentId(uri)
         val parts = docId.split(":")
         if (parts.isEmpty()) return null
 

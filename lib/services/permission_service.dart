@@ -21,6 +21,8 @@ class PermissionService {
   /// so standard storage permission (READ/WRITE_EXTERNAL_STORAGE) is checked.
   /// On Android 11 and higher (SDK >= 30), MANAGE_EXTERNAL_STORAGE is checked first,
   /// with a fallback to media/storage permissions.
+  /// An unknown SDK (channel failure) falls back to the legacy storage check,
+  /// since requesting MANAGE_EXTERNAL_STORAGE can never grant on API <= 29.
   Future<bool> hasStoragePermission() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return true;
@@ -31,8 +33,8 @@ class PermissionService {
       return status.isGranted || status.isLimited;
     }
 
-    final sdk = await AndroidStorageService.getSdkInt();
-    if (sdk > 0 && sdk < 30) {
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 30) {
       return await Permission.storage.isGranted;
     }
 
@@ -50,6 +52,7 @@ class PermissionService {
   ///
   /// On Android 10 and lower (SDK < 30), requests standard storage permission.
   /// On Android 11 and higher (SDK >= 30), requests MANAGE_EXTERNAL_STORAGE.
+  /// Unknown SDK falls back to the legacy request for the same reason as above.
   Future<bool> requestStoragePermission() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return true;
@@ -60,8 +63,8 @@ class PermissionService {
       return status.isGranted || status.isLimited;
     }
 
-    final sdk = await AndroidStorageService.getSdkInt();
-    if (sdk > 0 && sdk < 30) {
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 30) {
       final status = await Permission.storage.request();
       return status.isGranted;
     }
@@ -86,8 +89,8 @@ class PermissionService {
       return false;
     }
 
-    final sdk = await AndroidStorageService.getSdkInt();
-    if (sdk > 0 && sdk < 30) {
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 30) {
       return await Permission.storage.isPermanentlyDenied;
     }
 

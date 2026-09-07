@@ -1679,7 +1679,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }) async {
     final song = item.song;
     final mediaPaths = await _resolvePlayableMediaPaths(song);
-    final Uri audioUri = Uri.file(mediaPaths.audioPath);
+    final Uri audioUri = _mediaUri(mediaPaths.audioPath);
 
     Uri? artUri;
     if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
@@ -1700,7 +1700,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
                 song.coverUrl;
       }
       if (coverPath != null) {
-        artUri = Uri.file(coverPath);
+        artUri = _mediaUri(coverPath);
       }
     }
 
@@ -1750,6 +1750,25 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
 
     return (audioPath: audioPath, videoPath: videoPath);
+  }
+
+  /// MediaStore rows arrive as content:// URIs while scanned files are plain
+  /// paths. ExoPlayer handles both, but Uri.file() must never wrap the
+  /// former — it would produce an unplayable file://content://... URI.
+  static Uri _mediaUri(String path) {
+    if (path.startsWith('content://')) return Uri.parse(path);
+    return Uri.file(path);
+  }
+
+  /// Plain paths that no longer exist on disk cannot play. Content URIs skip
+  /// the check since their availability is up to the content provider.
+  static bool _isMissingLocalFile(String path) {
+    if (path.startsWith('content://')) return false;
+    try {
+      return !File(path).existsSync();
+    } on FileSystemException {
+      return true;
+    }
   }
 
   bool _isIosNativeAudioPath(String path) {
@@ -2641,6 +2660,24 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     Duration? initialPosition,
   }) async {
     if (_effectiveQueue.isEmpty) return;
+
+    // Drop entries whose files vanished (renamed outside the app, unmounted
+    // SD card, revoked permission). Feeding them to ExoPlayer stalls the
+    // whole queue with no audible error.
+    final missing = _effectiveQueue
+        .where((item) => _isMissingLocalFile(item.song.url))
+        .toList();
+    if (missing.isNotEmpty) {
+      _effectiveQueue.removeWhere((item) => missing.contains(item));
+      _originalQueue.removeWhere(
+          (item) => missing.any((m) => m.song.filename == item.song.filename));
+      debugPrint(
+          'AudioPlayerManager: ${missing.length} track${missing.length == 1 ? '' : 's'} unreadable — check storage permission (${missing.first.song.filename}${missing.length > 1 ? ', …' : ''})');
+      if (_effectiveQueue.isEmpty) {
+        _updateQueueNotifier();
+        return;
+      }
+    }
 
     final sequenceState = _player.sequenceState;
     final currentMediaItem = sequenceState.currentSource?.tag as MediaItem?;
