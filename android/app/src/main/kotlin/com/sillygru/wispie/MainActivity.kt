@@ -3,13 +3,16 @@ package com.sillygru.wispie
 import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
@@ -22,8 +25,16 @@ import com.ryanheise.audioservice.AudioServiceActivity
 class MainActivity : AudioServiceActivity() {
     private val channelName = "wispie/storage"
     private val appChannelName = "wispie/app"
+    private val openFileChannelName = "wispie/open-file"
+    private var openFileChannel: MethodChannel? = null
     private val requestPickTree = 9001
     private var pendingResult: MethodChannel.Result? = null
+    /**
+     * Files staged from ACTION_VIEW / ACTION_SEND intents, waiting for Flutter
+     * to pull (cold start) or push-acknowledge (warm start) them. Only ever
+     * touched on the main thread, except from [ioExecutor] via [mainHandler].
+     */
+    private val pendingOpenFiles = mutableListOf<Map<String, Any?>>()
     private lateinit var volumeMonitorPlugin: VolumeMonitorPlugin
     private lateinit var powerStatePlugin: PowerStatePlugin
     private lateinit var displayRefreshPlugin: DisplayRefreshPlugin
@@ -72,8 +83,39 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Cold start via Open-with / Share: the read grant is only valid while
+        // this intent is alive, so staging starts now; delivery to Flutter
+        // happens when the engine (and channel) is ready.
+        handleOpenIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTop: taps while running arrive here instead of a new activity.
+        setIntent(intent)
+        handleOpenIntent(intent)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            openFileChannelName
+        )
+        openFileChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                // Cold-start pull: returns staged files and clears the queue.
+                "getInitialOpenFiles" -> {
+                    val files = pendingOpenFiles.toList()
+                    pendingOpenFiles.clear()
+                    result.success(files)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         // Initialize volume monitor plugin
         volumeMonitorPlugin = VolumeMonitorPlugin()
@@ -117,6 +159,183 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Collects audio URIs from Open-with (VIEW) and Share (SEND / SEND_MULTIPLE)
+     * intents. Remote http(s) links are forwarded as-is for streaming; local
+     * content is copied into the app cache on [ioExecutor] because the
+     * transient read grant may not survive past this intent.
+     */
+    private fun handleOpenIntent(intent: Intent?) {
+        if (intent == null) return
+        val uris: List<Uri> = when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                val data = intent.data ?: return
+                listOf(data)
+            }
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val shared: Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                if (shared == null) return
+                listOf(shared)
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val shared: ArrayList<Uri>? =
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                if (shared.isNullOrEmpty()) return
+                shared.toList()
+            }
+            else -> return
+        }
+        if (uris.isEmpty()) return
+        ioExecutor.execute {
+            val staged = uris.mapNotNull { stageOneOpenUri(it) }
+            if (staged.isEmpty()) return@execute
+            mainHandler.post {
+                pendingOpenFiles.addAll(staged)
+                pushStagedOpenFiles(staged)
+            }
+        }
+    }
+
+    /**
+     * Warm-start push: if Flutter is already listening, deliver just-staged
+     * files now and drop them from the pending queue on success. If the channel
+     * is absent (cold start still initializing) or delivery fails, the files
+     * stay pending for the [getInitialOpenFiles] pull.
+     */
+    private fun pushStagedOpenFiles(staged: List<Map<String, Any?>>) {
+        val channel = openFileChannel ?: return
+        channel.invokeMethod(
+            "onOpenFiles",
+            staged,
+            object : MethodChannel.Result {
+                override fun success(value: Any?) {
+                    pendingOpenFiles.removeAll(staged.toSet())
+                }
+
+                override fun error(code: String, message: String?, details: Any?) {
+                    // Kept pending for the pull; a later push retries delivery.
+                }
+
+                override fun notImplemented() {
+                    // Kept pending for the pull.
+                }
+            }
+        )
+    }
+
+    private fun stageOneOpenUri(uri: Uri): Map<String, Any?>? {
+        // Streamed links are never downloaded up front; the player streams them.
+        if (uri.scheme == "http" || uri.scheme == "https") {
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "stream"
+            if (!isSupportedOpenFileName(name)) return null
+            return mapOf(
+                "remoteUrl" to uri.toString(),
+                "displayName" to name,
+                "mimeType" to null
+            )
+        }
+        val rawName = resolveOpenFileName(uri) ?: return null
+        if (!isSupportedOpenFileName(rawName)) return null
+        val mimeType = try {
+            if (uri.scheme == "content") contentResolver.getType(uri) else null
+        } catch (_: SecurityException) {
+            return null
+        } catch (_: Exception) {
+            null
+        }
+        val stagedPath = copyOpenUriToCache(uri, rawName) ?: return null
+        return mapOf(
+            "path" to stagedPath,
+            "displayName" to rawName,
+            "mimeType" to mimeType
+        )
+    }
+
+    private fun resolveOpenFileName(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.path?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
+        }
+        if (uri.scheme != "content") return null
+        var cursor: Cursor? = null
+        return try {
+            cursor = contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) cursor.getString(index) else null
+            } else {
+                uri.lastPathSegment?.substringAfterLast('/')
+            }
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                cursor?.close()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Copies [uri] into cacheDir/open-with so playback outlives the grant. */
+    private fun copyOpenUriToCache(uri: Uri, displayName: String): String? {
+        return try {
+            val dir = java.io.File(cacheDir, "open-with")
+            if (!dir.exists() && !dir.mkdirs()) return null
+            val target = uniqueOpenFile(dir, sanitizeOpenFileName(displayName))
+            if (uri.scheme == "file") {
+                val sourcePath = uri.path ?: return null
+                java.io.File(sourcePath).inputStream().use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+            } else {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: return null
+            }
+            target.absolutePath
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun uniqueOpenFile(dir: java.io.File, name: String): java.io.File {
+        var candidate = java.io.File(dir, name)
+        if (!candidate.exists()) return candidate
+        val base = name.substringBeforeLast('.', name)
+        val ext = name.substringAfterLast('.', "")
+        var counter = 1
+        while (candidate.exists()) {
+            val suffixed = if (ext.isEmpty()) "$base-$counter" else "$base-$counter.$ext"
+            candidate = java.io.File(dir, suffixed)
+            counter++
+        }
+        return candidate
+    }
+
+    private fun sanitizeOpenFileName(name: String): String {
+        val clean = name.replace(Regex("[^A-Za-z0-9._\\- ]"), "_").trim()
+        if (clean.isEmpty() || clean == "." || clean == "..") {
+            return "shared_audio"
+        }
+        return clean.takeLast(120)
+    }
+
+    private fun isSupportedOpenFileName(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext in openFileAudioExtensions
     }
 
     private fun handleRestartApp(result: MethodChannel.Result) {
@@ -561,8 +780,17 @@ class MainActivity : AudioServiceActivity() {
         return mimeType ?: "application/octet-stream"
     }
 
+    companion object {
+        /** Audio-only, mirroring the scanner's supported list minus video. */
+        private val openFileAudioExtensions = setOf(
+            "mp3", "m4a", "wav", "flac", "ogg", "wma", "aac", "m4b", "opus"
+        )
+    }
+
     override fun onDestroy() {
         ioExecutor.shutdown()
+        openFileChannel?.setMethodCallHandler(null)
+        openFileChannel = null
         super.onDestroy()
         if (::volumeMonitorPlugin.isInitialized) {
             volumeMonitorPlugin.cleanup()

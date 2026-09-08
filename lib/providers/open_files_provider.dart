@@ -1,0 +1,184 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+
+import '../services/open_file_service.dart';
+import 'providers.dart';
+
+/// Files opened via Android Open-with / Share that are playing transiently.
+///
+/// The staged copies live in the app cache, outside the library. They play
+/// immediately; [pendingImport] offers them for a permanent import until the
+/// user dismisses the banner.
+class OpenFilesState {
+  final List<OpenedAudioFile> pendingImport;
+  final bool isImporting;
+  final String? error;
+
+  const OpenFilesState({
+    this.pendingImport = const [],
+    this.isImporting = false,
+    this.error,
+  });
+
+  bool get hasPending => pendingImport.isNotEmpty;
+
+  String get bannerLabel {
+    if (pendingImport.isEmpty) return '';
+    if (pendingImport.length == 1) {
+      return 'Playing ${pendingImport.first.displayName}';
+    }
+    return 'Playing ${pendingImport.length} shared tracks';
+  }
+
+  OpenFilesState copyWith({
+    List<OpenedAudioFile>? pendingImport,
+    bool? isImporting,
+    String? error,
+  }) {
+    return OpenFilesState(
+      pendingImport: pendingImport ?? this.pendingImport,
+      isImporting: isImporting ?? this.isImporting,
+      error: error,
+    );
+  }
+}
+
+class OpenFilesNotifier extends Notifier<OpenFilesState> {
+  final OpenFileService _service = OpenFileService();
+  bool _initialized = false;
+
+  @override
+  OpenFilesState build() => const OpenFilesState();
+
+  /// Starts listening for opened files. Safe to call more than once; only
+  /// wired from [MainScreen], so intents wait in the native queue until setup
+  /// is complete and the library UI exists to play into.
+  Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+    _service.registerPushHandler(_handleIncoming);
+    final initial = await _service.drainInitialFiles();
+    if (initial.isNotEmpty) await _handleIncoming(initial);
+  }
+
+  Future<void> _handleIncoming(List<OpenedAudioFile> files) async {
+    final playable = files.where((f) => f.isPlayable).toList();
+    if (playable.isEmpty) return;
+
+    final known = state.pendingImport.map((f) => f.playableUrl).toSet();
+    final fresh =
+        playable.where((f) => !known.contains(f.playableUrl)).toList();
+    if (fresh.isEmpty) return;
+    state = state.copyWith(
+      pendingImport: [...state.pendingImport, ...fresh],
+      error: null,
+    );
+
+    final songs = fresh.map(transientSongForOpenedFile).toList();
+    try {
+      await ref
+          .read(audioPlayerManagerProvider)
+          .playSong(songs.first, contextQueue: songs);
+    } on FileSystemException catch (e) {
+      debugPrint('OpenFiles: playback failed, file unreadable: $e');
+      state =
+          state.copyWith(error: 'Could not play ${fresh.first.displayName}');
+    } catch (e) {
+      debugPrint('OpenFiles: playback failed: $e');
+      state =
+          state.copyWith(error: 'Could not play ${fresh.first.displayName}');
+    }
+  }
+
+  /// Copies staged files into the first library folder and rescans, so they
+  /// become permanent library entries with stats, covers and lyrics.
+  /// Streamed links have no file to import and are left pending-free.
+  Future<void> importToLibrary() async {
+    final local = state.pendingImport
+        .where((f) => !f.isRemote && f.path != null)
+        .toList();
+    if (local.isEmpty || state.isImporting) return;
+    state = state.copyWith(isImporting: true, error: null);
+    try {
+      final folders = await ref.read(storageServiceProvider).getMusicFolders();
+      final target = _writableFolder(folders);
+      if (target == null) {
+        state = state.copyWith(
+          isImporting: false,
+          error: 'No library folder available for import',
+        );
+        return;
+      }
+      var imported = 0;
+      for (final file in local) {
+        try {
+          final dest = _uniqueDest(target, p.basename(file.path!));
+          await File(file.path!).copy(dest.path);
+          imported++;
+        } on FileSystemException catch (e) {
+          debugPrint('OpenFiles: import copy failed for ${file.path}: $e');
+        } on IOException catch (e) {
+          debugPrint('OpenFiles: import copy failed for ${file.path}: $e');
+        }
+      }
+      if (imported == 0) {
+        state = state.copyWith(
+          isImporting: false,
+          error: 'Import failed — the files could not be copied',
+        );
+        return;
+      }
+      await ref.read(songsProvider.notifier).refresh();
+      final remaining = state.pendingImport
+          .where((f) => f.isRemote || f.path == null || !local.contains(f))
+          .toList();
+      state = state.copyWith(pendingImport: remaining, isImporting: false);
+    } catch (e) {
+      debugPrint('OpenFiles: import failed: $e');
+      state = state.copyWith(isImporting: false, error: 'Import failed');
+    }
+  }
+
+  void dismiss() {
+    state = const OpenFilesState();
+  }
+
+  void clearError() {
+    state = state.copyWith(error: null);
+  }
+
+  /// First configured folder that exists on disk as a plain directory.
+  /// SAF-only (treeUri) folders are skipped: copying into them needs the
+  /// document provider, not a raw file copy.
+  String? _writableFolder(List<Map<String, String>> folders) {
+    for (final folder in folders) {
+      final path = folder['path'];
+      if (path == null || path.isEmpty) continue;
+      try {
+        if (Directory(path).existsSync()) return path;
+      } on FileSystemException {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  File _uniqueDest(String dir, String name) {
+    var candidate = File(p.join(dir, name));
+    if (!candidate.existsSync()) return candidate;
+    final base = p.basenameWithoutExtension(name);
+    final ext = p.extension(name);
+    var counter = 1;
+    while (candidate.existsSync()) {
+      candidate = File(p.join(dir, '$base-$counter$ext'));
+      counter++;
+    }
+    return candidate;
+  }
+}
+
+final openFilesProvider =
+    NotifierProvider<OpenFilesNotifier, OpenFilesState>(OpenFilesNotifier.new);

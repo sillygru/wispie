@@ -8,10 +8,12 @@ import 'profile_screen.dart';
 import '../widgets/now_playing_bar.dart';
 import '../widgets/app_drawer.dart';
 import '../../providers/providers.dart';
+import '../../providers/open_files_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/telemetry_service.dart';
 import '../widgets/bulk_selection_bar.dart';
+import '../widgets/external_open_banner.dart';
 import '../widgets/immersive_background.dart';
 import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
@@ -205,6 +207,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     // Check and run auto-backup on initial app launch
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
+      // Picks up files opened via Android Open-with / Share, cold or warm.
+      unawaited(ref.read(openFilesProvider.notifier).initialize());
     });
   }
 
@@ -383,6 +387,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
                       left: 0,
                       right: 0,
                       child: const AutoBackupIndicator(),
+                    ),
+                    Positioned(
+                      top: topPadding + 80,
+                      left: 0,
+                      right: 0,
+                      child: const ExternalOpenBanner(),
                     ),
                     Positioned(
                       left: 0,

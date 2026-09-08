@@ -41,6 +41,37 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Open-with: single audio file tapped in Files / Downloads. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="content" android:mimeType="audio/*"/>
+                <data android:scheme="file" android:mimeType="audio/*"/>
+                <data android:scheme="content" android:mimeType="application/ogg"/>
+                <data android:scheme="file" android:mimeType="application/ogg"/>
+                <data android:scheme="content" android:mimeType="application/x-flac"/>
+                <data android:scheme="file" android:mimeType="application/x-flac"/>
+            </intent-filter>
+            <!-- Open-with: streamed audio links. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="http" android:mimeType="audio/*"/>
+                <data android:scheme="https" android:mimeType="audio/*"/>
+            </intent-filter>
+            <!-- Share: one or more audio files sent from another app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+            </intent-filter>
         </activity>
 
         <service android:name="com.ryanheise.audioservice.AudioService"

@@ -1766,8 +1766,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   /// MediaStore rows arrive as content:// URIs while scanned files are plain
   /// paths. ExoPlayer handles both, but Uri.file() must never wrap the
   /// former — it would produce an unplayable file://content://... URI.
+  /// Streamed open-with links (http/https) pass through for the same reason.
   static Uri _mediaUri(String path) {
     if (path.startsWith('content://')) return Uri.parse(path);
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return Uri.parse(path);
+    }
     return Uri.file(path);
   }
 
