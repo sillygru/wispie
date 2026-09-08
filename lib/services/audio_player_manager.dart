@@ -23,6 +23,7 @@ import 'notification_cover_warmer.dart';
 import 'volume_monitor_service.dart';
 import 'color_extraction_service.dart';
 import 'scanner_service.dart';
+import 'open_file_service.dart';
 import '../domain/services/cover_optimizer.dart';
 import '../providers/theme_provider.dart';
 import '../providers/queue_history_provider.dart';
@@ -56,6 +57,25 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   List<String> _sessionTopOrder = [];
   List<Song> _allSongs = [];
   Map<String, Song> _songMap = {};
+
+  /// Open-with songs that are not part of the library. Kept apart from
+  /// [_songMap]/[_allSongs] on purpose: library scans rebuild those maps from
+  /// the database, and transient cache copies must never leak into the
+  /// library, shuffle candidate generation, or user-data keys.
+  final Map<String, Song> _transientSongs = {};
+
+  /// Registers open-with songs so every filename-keyed lookup (now-playing,
+  /// queue reconcile, covers, stats guard) resolves them. Safe to call with
+  /// library songs too — those are already in [_songMap] and are skipped.
+  void ensureKnownSongs(List<Song> songs) {
+    for (final song in songs) {
+      if (!isExternalSongFilename(song.filename)) continue;
+      _transientSongs[song.filename] = song;
+    }
+  }
+
+  Song? _lookupSong(String filename) =>
+      _songMap[filename] ?? _transientSongs[filename];
 
   // Flag to restrict auto-generation to original queue (e.g. for folder shuffle)
   bool _isRestrictedToOriginal = false;
@@ -578,7 +598,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           _foregroundDuration = 0.0;
           _backgroundDuration = 0.0;
           _playStartTime = _player.playing ? DateTime.now() : null;
-          final song = _songMap[newFilename];
+          final song = _lookupSong(newFilename);
           currentSongNotifier.value = song;
           _updateEffectivePlaybackMode(song);
           _warmBeatAnalysis(song);
@@ -1421,7 +1441,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (_currentSongFilename == null) return;
     if (_playStartTime != null) _updateDurations();
 
-    final song = _songMap[_currentSongFilename!];
+    final song = _lookupSong(_currentSongFilename!);
     final totalLength =
         (song?.duration?.inMilliseconds.toDouble() ?? 0.0) / 1000.0;
     double effectiveTotalLength = totalLength;
@@ -1439,7 +1459,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     double finalDuration = _foregroundDuration + _backgroundDuration;
 
-    if (finalDuration > 0.5) {
+    if (finalDuration > 0.5 && !isExternalSongFilename(_currentSongFilename!)) {
+      // Transient open-with plays leave no stats rows: their cache-path keys
+      // could never rejoin the library entry they may later be imported as.
       unawaited(_statsService.trackStats({
         'song_filename': _currentSongFilename!,
         'duration_played': finalDuration,
@@ -1528,6 +1550,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
         _effectiveQueue = effItems.where(exists).toList();
         _originalQueue = origItems.where(exists).toList();
+        // Surviving staged open-with copies restore as embedded Song JSON;
+        // re-register them so now-playing and queue lookups keep resolving
+        // after the library maps are rebuilt without them.
+        ensureKnownSongs([
+          for (final item in _effectiveQueue) item.song,
+          for (final item in _originalQueue) item.song,
+        ]);
         _logSlow('init: restored saved queue', restoreWatch);
 
         if (_effectiveQueue.isNotEmpty || _originalQueue.isNotEmpty) {
@@ -1627,7 +1656,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
               renamedSong != null)
           ? renamedSong.filename
           : item.song.filename;
-      final updatedSong = _songMap[lookupFilename];
+      final updatedSong = _lookupSong(lookupFilename);
       return updatedSong != null ? item.copyWith(song: updatedSong) : item;
     }).toList();
 
@@ -1637,7 +1666,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
               renamedSong != null)
           ? renamedSong.filename
           : item.song.filename;
-      final updatedSong = _songMap[lookupFilename];
+      final updatedSong = _lookupSong(lookupFilename);
       return updatedSong != null ? item.copyWith(song: updatedSong) : item;
     }).toList();
 
@@ -1653,7 +1682,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final currentFilename = _currentSongFilename;
     if (currentFilename != null) {
-      final updated = _songMap[currentFilename];
+      final updated = _lookupSong(currentFilename);
       if (updated != null && updated != currentSongNotifier.value) {
         currentSongNotifier.value = updated;
       }
@@ -1733,7 +1762,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           'hasVideo': song.hasVideo,
           'remoteUrl': song.url,
           'queueId': item.queueId,
-          'androidStopForegroundOnPause': false,
           'audioPath': song.url,
           'playbackAudioPath': mediaPaths.audioPath,
           if (mediaPaths.videoPath != null) 'videoPath': mediaPaths.videoPath,
@@ -1895,7 +1923,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _effectiveQueue,
       entries,
       (filename) {
-        final song = _songMap[filename];
+        final song = _lookupSong(filename);
         return song == null ? null : QueueItem(song: song);
       },
     );

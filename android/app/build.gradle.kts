@@ -13,6 +13,10 @@ val wispieAbiFilter = providers.environmentVariable("WISPIE_ABI_FILTER").orNull
 
 dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Resolves AudioService's supertypes for the task-removal watchdog's
+    // stopService(AudioService) reference. Pinned to 1.7.0 to match
+    // audio_service exactly.
+    implementation("androidx.media:media:1.7.0")
 }
 
 android {

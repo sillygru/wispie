@@ -99,18 +99,33 @@ Future<void> _initializeMetadataGod() async {
 }
 
 Future<void> _setupAudioSession() async {
-  await AudioSession.instance.then(
-      (session) => session.configure(const AudioSessionConfiguration.music()));
+  try {
+    await AudioSession.instance.then((session) =>
+        session.configure(const AudioSessionConfiguration.music()));
+  } catch (e) {
+    debugPrint('Failed to initialize AudioSession: $e');
+  }
 }
 
 Future<void> _setupJustAudioBackground() async {
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.sillygru.wispie.channel.audio',
-    androidNotificationChannelName: 'Audio playback',
-    androidNotificationChannelDescription: 'Playback controls',
-    androidNotificationOngoing: true,
-    androidShowNotificationBadge: true,
-  );
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.sillygru.wispie.channel.audio',
+      androidNotificationChannelName: 'Audio playback',
+      androidNotificationChannelDescription: 'Playback controls',
+      androidNotificationIcon: 'drawable/ic_stat_music_note',
+      androidNotificationOngoing: true,
+      // Explicitly the default: pause drops foreground, play re-enters it.
+      // Works under stock battery management; no exemption is required.
+      androidStopForegroundOnPause: true,
+      androidShowNotificationBadge: true,
+    );
+  } catch (e) {
+    // Never block startup on background-audio binding failures (e.g. missing
+    // <service> declaration on a misbuilt APK). UI still opens; playback
+    // degrades to foreground-only until the manifest is fixed.
+    debugPrint('Failed to initialize JustAudioBackground: $e');
+  }
 }
 
 class InitializedSetupNotifier extends SetupNotifier {

@@ -4,14 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../models/song.dart';
 import '../services/open_file_service.dart';
+import '../services/scanner_service.dart';
 import 'providers.dart';
 
-/// Files opened via Android Open-with / Share that are playing transiently.
+/// Files opened via Android Open-with / Share.
 ///
-/// The staged copies live in the app cache, outside the library. They play
-/// immediately; [pendingImport] offers them for a permanent import until the
-/// user dismisses the banner.
+/// Each file first plays immediately: as its real library entry when the file
+/// is already in the library (covers, stats, lyrics and favorites intact), or
+/// as a registered transient staged copy otherwise. [pendingImport] offers
+/// only the genuinely-new local files for a permanent import.
 class OpenFilesState {
   final List<OpenedAudioFile> pendingImport;
   final bool isImporting;
@@ -72,16 +75,58 @@ class OpenFilesNotifier extends Notifier<OpenFilesState> {
     final fresh =
         playable.where((f) => !known.contains(f.playableUrl)).toList();
     if (fresh.isEmpty) return;
+
+    final manager = ref.read(audioPlayerManagerProvider);
+    final library = ref.read(songsProvider).value ?? const <Song>[];
+
+    // An already-imported file plays as its library entry, so the player
+    // screen, cover, stats and favorites all behave exactly as if the user
+    // had tapped the song inside the app.
+    final songs = <Song>[];
+    final filesByUrl = <String, OpenedAudioFile>{};
+    final matchedUrls = <String>{};
+    for (final file in fresh) {
+      final librarySong = matchLibrarySong(file, library);
+      final song = librarySong ?? transientSongForOpenedFile(file);
+      songs.add(song);
+      filesByUrl[song.url] = file;
+      if (librarySong != null) matchedUrls.add(file.playableUrl);
+    }
+
+    // Genuinely-new files play as registered transients, so now-playing,
+    // queue reconcile and cover lookups resolve them like library songs.
+    // Their covers are extracted up front: the transient starts without one.
+    for (var i = 0; i < songs.length; i++) {
+      final song = songs[i];
+      if (!isExternalSongFilename(song.filename) || song.coverUrl != null) {
+        continue;
+      }
+      final file = filesByUrl[song.url];
+      if (file == null || file.isRemote) continue;
+      try {
+        final cover = await ScannerService.extractCoverOnDemand(song);
+        if (cover != null) songs[i] = song.copyWith(coverUrl: cover);
+      } catch (e) {
+        debugPrint('OpenFiles: cover extraction failed for ${song.url}: $e');
+      }
+    }
+    manager.ensureKnownSongs(songs);
+
+    // Only genuinely-new local files join the import offer. Earlier offers
+    // stay until imported or dismissed; already-library files never do.
+    final importable = fresh
+        .where((f) =>
+            !f.isRemote &&
+            f.path != null &&
+            !matchedUrls.contains(f.playableUrl))
+        .toList();
     state = state.copyWith(
-      pendingImport: [...state.pendingImport, ...fresh],
+      pendingImport: [...state.pendingImport, ...importable],
       error: null,
     );
 
-    final songs = fresh.map(transientSongForOpenedFile).toList();
     try {
-      await ref
-          .read(audioPlayerManagerProvider)
-          .playSong(songs.first, contextQueue: songs);
+      await manager.playSong(songs.first, contextQueue: songs);
     } on FileSystemException catch (e) {
       debugPrint('OpenFiles: playback failed, file unreadable: $e');
       state =

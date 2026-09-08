@@ -32,6 +32,12 @@
     native <methods>;
 }
 
+# audio_service (via just_audio_background): notification actions and the
+# MediaButtonReceiver are wired by name from the manifest / Dart side, so keep
+# them from being stripped or renamed in release builds.
+-keep class com.ryanheise.audioservice.** { *; }
+-keep class com.sillygru.wispie.WispieTaskCleanupService { *; }
+
 # General Android rules
 -keepattributes *Annotation*
 -keepattributes SourceFile,LineNumberTable

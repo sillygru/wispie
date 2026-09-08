@@ -85,6 +85,13 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Watchdog for EMUI swipe-to-kill cleanup; best-effort so a denied
+        // background start never blocks cold start.
+        try {
+            startService(Intent(this, WispieTaskCleanupService::class.java))
+        } catch (_: SecurityException) {
+        } catch (_: Exception) {
+        }
         // Cold start via Open-with / Share: the read grant is only valid while
         // this intent is alive, so staging starts now; delivery to Flutter
         // happens when the engine (and channel) is ready.
@@ -248,11 +255,62 @@ class MainActivity : AudioServiceActivity() {
             null
         }
         val stagedPath = copyOpenUriToCache(uri, rawName) ?: return null
+        // Byte size lets Dart match the opened file against identical library
+        // entries (same name, same size) instead of playing a duplicate.
+        val sizeBytes = resolveOpenFileSize(uri, stagedPath)
         return mapOf(
             "path" to stagedPath,
             "displayName" to rawName,
-            "mimeType" to mimeType
+            "mimeType" to mimeType,
+            "sizeBytes" to sizeBytes
         )
+    }
+
+    /** Best-effort byte size of [uri]; falls back to the staged copy. Null when unknown. */
+    private fun resolveOpenFileSize(uri: Uri, stagedPath: String): Long? {
+        if (uri.scheme == "content") {
+            var cursor: Cursor? = null
+            try {
+                cursor = contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.SIZE),
+                    null,
+                    null,
+                    null
+                )
+                if (cursor != null && cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (index >= 0) {
+                        val size = cursor.getLong(index)
+                        if (size > 0) return size
+                    }
+                }
+            } catch (_: SecurityException) {
+                return null
+            } catch (_: Exception) {
+            } finally {
+                try {
+                    cursor?.close()
+                } catch (_: Exception) {
+                }
+            }
+        } else if (uri.scheme == "file") {
+            try {
+                val length = java.io.File(uri.path ?: return null).length()
+                if (length > 0) return length
+            } catch (_: SecurityException) {
+                return null
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            val length = java.io.File(stagedPath).length()
+            if (length > 0) length else null
+        } catch (_: SecurityException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun resolveOpenFileName(uri: Uri): String? {

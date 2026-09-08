@@ -9,6 +9,16 @@ import 'package:path/path.dart' as p;
 import '../models/song.dart';
 import 'scanner_service.dart';
 
+/// Prefix namespacing transient open-with songs away from library filenames.
+///
+/// `filename` is the primary key for all user data; a staged cache copy must
+/// never collide with (or inherit favorites/stats from) a real library entry.
+/// The player also uses this to skip play-session writes for transient plays.
+const String kExternalSongPrefix = 'external::';
+
+bool isExternalSongFilename(String filename) =>
+    filename.startsWith(kExternalSongPrefix);
+
 /// One audio file handed to the app through Android Open-with (VIEW) or
 /// Share (SEND). Local content arrives as a staged cache copy — the OS read
 /// grant does not survive the intent — while http(s) links stream directly.
@@ -17,12 +27,14 @@ class OpenedAudioFile {
   final String? remoteUrl;
   final String displayName;
   final String? mimeType;
+  final int? sizeBytes;
 
   const OpenedAudioFile({
     this.path,
     this.remoteUrl,
     required this.displayName,
     this.mimeType,
+    this.sizeBytes,
   });
 
   /// The URL the player can open: staged file path or remote link.
@@ -53,26 +65,67 @@ List<OpenedAudioFile> parseOpenedAudioFiles(dynamic payload) {
         (remoteUrl == null || remoteUrl.isEmpty)) {
       continue;
     }
+    final sizeRaw = entry['sizeBytes'];
+    final sizeBytes = sizeRaw is int && sizeRaw > 0 ? sizeRaw : null;
     files.add(OpenedAudioFile(
       path: path,
       remoteUrl: remoteUrl,
       displayName: displayName,
       mimeType: entry['mimeType'] as String?,
+      sizeBytes: sizeBytes,
     ));
   }
   return files;
 }
 
+/// Matches an opened file against the library, so a song the user already has
+/// plays as its real library entry — with cover, stats, lyrics and favorites —
+/// instead of as a transient cache duplicate.
+///
+/// A remote stream never matches. Otherwise the match key is the file's base
+/// name; when both sides know a byte size it must agree too, which separates
+/// same-named files (a 3 MB preview vs the 12 MB original). Candidates whose
+/// library file no longer exists on disk never match, so a stale row falls
+/// back to playing the staged copy.
+Song? matchLibrarySong(OpenedAudioFile file, List<Song> library) {
+  if (file.isRemote) return null;
+  final wanted = p.basename(file.displayName).toLowerCase();
+  for (final song in library) {
+    if (p.basename(song.url).toLowerCase() != wanted) continue;
+    // A replaced-in-place file keeps its name but not its bytes; without the
+    // size check the app would play the wrong audio under the right title.
+    if (file.sizeBytes != null) {
+      int? actualSize;
+      try {
+        final libraryFile = File(song.url);
+        if (!libraryFile.existsSync()) continue;
+        actualSize = libraryFile.lengthSync();
+      } on FileSystemException {
+        continue;
+      }
+      if (actualSize != file.sizeBytes) continue;
+    } else {
+      try {
+        if (!File(song.url).existsSync()) continue;
+      } on FileSystemException {
+        continue;
+      }
+    }
+    return song;
+  }
+  return null;
+}
+
 /// Builds a library-independent [Song] for an opened file.
 ///
-/// The filename is namespaced with `external::` on purpose: it is the primary
+/// The filename carries [kExternalSongPrefix] on purpose: it is the primary
 /// key for all user data, and a transient cache copy must never collide with
 /// (or inherit favorites/stats from) a real library entry. Playback, covers
 /// and queueing only need [Song.url], which points at the staged copy.
 Song transientSongForOpenedFile(OpenedAudioFile file) {
   final fallbackTitle = p.basenameWithoutExtension(file.displayName);
   final playableUrl = file.playableUrl;
-  final filename = 'external::$playableUrl';
+  final filename = '$kExternalSongPrefix$playableUrl';
 
   if (!file.isRemote && file.path != null) {
     try {
