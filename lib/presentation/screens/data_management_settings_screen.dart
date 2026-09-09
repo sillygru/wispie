@@ -18,7 +18,11 @@ class DataManagementSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
   final String? highlightId;
 
-  const DataManagementSettingsScreen({super.key, this.highlightId});
+  /// When true, renders content only for the wide master-detail pane.
+  final bool embedded;
+
+  const DataManagementSettingsScreen(
+      {super.key, this.highlightId, this.embedded = false});
 
   @override
   ConsumerState<DataManagementSettingsScreen> createState() =>
@@ -29,66 +33,67 @@ class _DataManagementSettingsScreenState
     extends ConsumerState<DataManagementSettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final content = AppSettingsList(
+      highlightId: widget.highlightId,
+      children: [
+        AppSettingsGroup(
+          label: 'Backup & Restore',
+          icon: AppIcons.cloudUpload,
+          children: [
+            AppSettingsTile(
+              searchId: 'data.export',
+              icon: AppIcons.upload,
+              title: 'Export App Data',
+              subtitle: 'Backup your stats, favorites, and playlists',
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final options = await _showExportOptionsDialog();
+                  if (options == null) return;
+
+                  await BackupService.instance.exportUserData(options: options);
+                } catch (e) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Export failed: $e')),
+                  );
+                }
+              },
+            ),
+            AppSettingsTile(
+              searchId: 'data.import',
+              icon: AppIcons.download,
+              title: 'Import App Data',
+              subtitle: 'Restore data from a backup (replaces all)',
+              onTap: () => _handleImport(),
+            ),
+            AppSettingsTile(
+              searchId: 'data.backups',
+              icon: AppIcons.cloudUpload,
+              title: 'Manage Backups',
+              subtitle: 'Create, restore, and manage app backups',
+              onTap: () => context.pushApp(const BackupManagementScreen()),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Storage',
+          icon: AppIcons.storage,
+          children: [
+            AppSettingsTile(
+              searchId: 'data.storage',
+              icon: AppIcons.storage,
+              title: 'Manage Storage',
+              subtitle: 'Disk usage and data management',
+              onTap: () => context.pushApp(const StorageManagementScreen()),
+            ),
+          ],
+        ),
+      ],
+    );
+    if (widget.embedded) return content;
     return AmbientScaffold(
       appBar: const AppTopBar(title: 'Data Management'),
-      body: AppSettingsList(
-        highlightId: widget.highlightId,
-        children: [
-          AppSettingsGroup(
-            label: 'Backup & Restore',
-            icon: AppIcons.cloudUpload,
-            children: [
-              AppSettingsTile(
-                searchId: 'data.export',
-                icon: AppIcons.upload,
-                title: 'Export App Data',
-                subtitle: 'Backup your stats, favorites, and playlists',
-                onTap: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  try {
-                    final options = await _showExportOptionsDialog();
-                    if (options == null) return;
-
-                    await BackupService.instance
-                        .exportUserData(options: options);
-                  } catch (e) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text('Export failed: $e')),
-                    );
-                  }
-                },
-              ),
-              AppSettingsTile(
-                searchId: 'data.import',
-                icon: AppIcons.download,
-                title: 'Import App Data',
-                subtitle: 'Restore data from a backup (replaces all)',
-                onTap: () => _handleImport(),
-              ),
-              AppSettingsTile(
-                searchId: 'data.backups',
-                icon: AppIcons.cloudUpload,
-                title: 'Manage Backups',
-                subtitle: 'Create, restore, and manage app backups',
-                onTap: () => context.pushApp(const BackupManagementScreen()),
-              ),
-            ],
-          ),
-          AppSettingsGroup(
-            label: 'Storage',
-            icon: AppIcons.storage,
-            children: [
-              AppSettingsTile(
-                searchId: 'data.storage',
-                icon: AppIcons.storage,
-                title: 'Manage Storage',
-                subtitle: 'Disk usage and data management',
-                onTap: () => context.pushApp(const StorageManagementScreen()),
-              ),
-            ],
-          ),
-        ],
-      ),
+      body: content,
     );
   }
 

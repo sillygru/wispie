@@ -33,6 +33,7 @@ import 'select_songs_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
+import '../components/wide_track_table.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   final String? relativePath;
@@ -493,52 +494,104 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
     if (isRoot) {
       if (wideFolders) {
-        return NotificationListener<ScrollNotification>(
-          onNotification: handleScrollNotification,
-          child: WideContentCenter(
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: _filterBar('Filter folders, playlists, songs...'),
+        final collectionCount = (showFavorites ? 1 : 0) +
+            (showMerged ? 1 : 0) +
+            visiblePlaylists.length +
+            visibleSubFolders.length;
+        if (itemCount == 0) {
+          return WideContentCenter(
+            child: Column(
+              children: [
+                _wideToolbar('Filter folders, playlists, songs...'),
+                Expanded(
+                  child: query.isEmpty
+                      ? const SizedBox.shrink()
+                      : AppEmptyState(
+                          icon: AppIcons.searchOff,
+                          title: 'No matches',
+                          message:
+                              'Nothing in your library matches "${_filter.trim()}".',
+                        ),
                 ),
-                if (itemCount == 0)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: query.isEmpty
-                        ? const SizedBox.shrink()
-                        : AppEmptyState(
-                            icon: AppIcons.searchOff,
-                            title: 'No matches',
-                            message:
-                                'Nothing in your library matches "${_filter.trim()}".',
-                          ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppTokens.s4,
-                      0,
-                      AppTokens.s4,
-                      AppTokens.scrollBottomInset,
-                    ),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisExtent: 76,
-                        crossAxisSpacing: AppTokens.s3,
-                        mainAxisSpacing: AppTokens.s2,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) =>
-                            Center(child: folderIndexBuilder(context, index)),
-                        childCount: itemCount,
-                      ),
-                    ),
-                  ),
               ],
             ),
+          );
+        }
+        return WideContentCenter(
+          child: Column(
+            children: [
+              _wideToolbar(
+                'Filter folders, playlists, songs...',
+                trailing:
+                    '${visibleSongs.length} ${visibleSongs.length == 1 ? 'track' : 'tracks'}',
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s4,
+                    0,
+                    AppTokens.s4,
+                    0,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 300,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: handleScrollNotification,
+                          child: ListView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.only(
+                              bottom: AppTokens.scrollBottomInset,
+                            ),
+                            itemCount: collectionCount,
+                            itemBuilder: folderIndexBuilder,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppTokens.s5),
+                      Expanded(
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: handleScrollNotification,
+                          child: CustomScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            slivers: [
+                              const SliverToBoxAdapter(
+                                child: WideTrackTableHeader(showAlbum: true),
+                              ),
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final song = visibleSongs[index];
+                                    return WideTrackRow(
+                                      song: song,
+                                      heroTagPrefix:
+                                          'library_${widget.relativePath ?? 'root'}',
+                                      showAlbum: true,
+                                      onTap: () => audioManager.playSong(
+                                        song,
+                                        contextQueue: visibleSongs,
+                                      ),
+                                    );
+                                  },
+                                  childCount: visibleSongs.length,
+                                ),
+                              ),
+                              const SliverPadding(
+                                padding: EdgeInsets.only(
+                                  bottom: AppTokens.scrollBottomInset,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -585,7 +638,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 if (wideFolders) ...[
                   SliverToBoxAdapter(child: _breadcrumbBar()),
                   SliverToBoxAdapter(
-                    child: _filterBar('Filter folders, songs...'),
+                    child: _wideToolbar(
+                      'Filter folders, songs...',
+                      trailing:
+                          '${visibleSongs.length} ${visibleSongs.length == 1 ? 'track' : 'tracks'}',
+                    ),
                   ),
                   if (itemCount == 0)
                     SliverFillRemaining(
@@ -600,25 +657,55 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                             ),
                     )
                   else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTokens.s4,
-                        0,
-                        AppTokens.s4,
-                        AppTokens.scrollBottomInset,
-                      ),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisExtent: 76,
-                          crossAxisSpacing: AppTokens.s3,
-                          mainAxisSpacing: AppTokens.s2,
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.s4,
+                          0,
+                          AppTokens.s4,
+                          AppTokens.scrollBottomInset,
                         ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) =>
-                              Center(child: folderIndexBuilder(context, index)),
-                          childCount: itemCount,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (visibleSubFolders.isNotEmpty)
+                              SizedBox(
+                                width: 280,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (var i = 0;
+                                        i < visibleSubFolders.length;
+                                        i++)
+                                      folderIndexBuilder(context, i),
+                                  ],
+                                ),
+                              ),
+                            if (visibleSubFolders.isNotEmpty)
+                              const SizedBox(width: AppTokens.s5),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const WideTrackTableHeader(
+                                    showAlbum: true,
+                                  ),
+                                  for (var i = 0; i < visibleSongs.length; i++)
+                                    WideTrackRow(
+                                      song: visibleSongs[i],
+                                      heroTagPrefix:
+                                          'library_${widget.relativePath ?? 'root'}',
+                                      showAlbum: true,
+                                      onTap: () => audioManager.playSong(
+                                        visibleSongs[i],
+                                        contextQueue: visibleSongs,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -689,6 +776,79 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Wide toolbar: left-aligned filter plus track count, so the browse
+  /// panes read as one desktop layout instead of a stretched phone list.
+  Widget _wideToolbar(String hint, {String? trailing}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s2,
+        AppTokens.s4,
+        AppTokens.s2,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: AppSurface(
+                  depth: AppDepth.well,
+                  borderRadius: AppTokens.brPill,
+                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                  child: Row(
+                    children: [
+                      const AppIcon(
+                        AppIcons.search,
+                        size: AppTokens.iconSm,
+                        color: AppTokens.fgTertiary,
+                      ),
+                      const SizedBox(width: AppTokens.s3),
+                      Expanded(
+                        child: TextField(
+                          controller: _filterController,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: hint,
+                            hintStyle: AppTokens.rowSubtitle(context),
+                          ),
+                          style: AppTokens.rowTitle(context),
+                          onChanged: (value) => setState(() => _filter = value),
+                        ),
+                      ),
+                      if (_filter.isNotEmpty)
+                        IconButton(
+                          icon: const AppIcon(AppIcons.close,
+                              size: AppTokens.iconSm),
+                          tooltip: 'Clear',
+                          onPressed: () {
+                            _filterController.clear();
+                            setState(() => _filter = '');
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: AppTokens.s3),
+            Text(
+              trailing,
+              style: AppTokens.meta(context).copyWith(
+                color: AppTokens.fgTertiary,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -837,7 +997,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     }
 
     final artState = ref.watch(artistAlbumArtProvider);
-    final columns = WideLayout.gridColumns(context, base: wideGrid ? 3 : 2);
+    final columns = WideLayout.gridColumns(context, base: wideGrid ? 4 : 2);
 
     Widget grid = GridView.builder(
       padding: const EdgeInsets.fromLTRB(

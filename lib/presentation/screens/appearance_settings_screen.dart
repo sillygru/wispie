@@ -16,7 +16,11 @@ class AppearanceSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
   final String? highlightId;
 
-  const AppearanceSettingsScreen({super.key, this.highlightId});
+  /// When true, renders content only for the wide master-detail pane.
+  final bool embedded;
+
+  const AppearanceSettingsScreen(
+      {super.key, this.highlightId, this.embedded = false});
 
   @override
   ConsumerState<AppearanceSettingsScreen> createState() =>
@@ -31,255 +35,256 @@ class _AppearanceSettingsScreenState
     final notifier = ref.read(settingsProvider.notifier);
     final accent = AppTokens.accentOf(context, ref);
 
+    final content = AppSettingsList(
+      highlightId: widget.highlightId,
+      children: [
+        AppSettingsGroup(
+          label: 'Display',
+          icon: AppIcons.viewList,
+          children: [
+            AppSettingsAnchor(
+              id: 'appearance.visualizer',
+              child: AppListRow(
+                dense: true,
+                leading: AppRowIcon(
+                  icon: AppIcons.waves,
+                  color: accent,
+                  size: 40,
+                ),
+                title: 'Audio Visualizer',
+                subtitle: 'Bars over the artwork while playing — synced '
+                    'follows the song, bass on the left',
+                trailing: DropdownButton<VisualizerMode>(
+                  value: settings.visualizerMode,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppTokens.brMd,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    notifier.setVisualizerMode(value);
+                  },
+                  items: const [
+                    DropdownMenuItem(
+                      value: VisualizerMode.off,
+                      child: Text('Off'),
+                    ),
+                    DropdownMenuItem(
+                      value: VisualizerMode.classic,
+                      child: Text('Classic'),
+                    ),
+                    DropdownMenuItem(
+                      value: VisualizerMode.synced,
+                      child: Text('Synced'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.graphicEq,
+              searchId: 'appearance.waveform',
+              title: 'Waveform Progress Bar',
+              subtitle: 'Show song waveform in player',
+              value: settings.showWaveform,
+              onChanged: notifier.setShowWaveform,
+            ),
+            // Haptics have no effect on desktop hardware.
+            if (!WideLayout.isWide(context))
+              AppSettingsSwitch(
+                icon: AppIcons.touchApp,
+                searchId: 'appearance.waveform_haptics',
+                title: 'Waveform Scrubbing Haptics',
+                subtitle: 'Haptic feedback for each bar while seeking',
+                value: settings.waveformHapticsEnabled,
+                onChanged: notifier.setWaveformHapticsEnabled,
+              ),
+            AppSettingsSwitch(
+              icon: AppIcons.timer,
+              searchId: 'appearance.song_duration',
+              title: 'Show Song Duration',
+              subtitle: 'Display duration in song lists',
+              value: settings.showSongDuration,
+              onChanged: notifier.setShowSongDuration,
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.swapVert,
+              searchId: 'appearance.auto_hide_bars',
+              title: 'Auto-Hide Bars',
+              subtitle:
+                  'Header and bottom dock hide on downward scroll, restore on upward scroll',
+              value: settings.autoHideBottomBarOnScroll,
+              onChanged: notifier.setAutoHideBottomBarOnScroll,
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.blur,
+              searchId: 'appearance.lyrics_blur',
+              title: 'Lyrics blur overlay',
+              subtitle: 'Progressive blur on the lyrics',
+              value: settings.lyricsBlurOverlayEnabled,
+              onChanged: notifier.setLyricsBlurOverlayEnabled,
+            ),
+            AppSettingsAnchor(
+              id: 'appearance.cover_sizing',
+              child: AppListRow(
+                dense: true,
+                leading: AppRowIcon(
+                  icon: AppIcons.photoSize,
+                  color: accent,
+                  size: 40,
+                ),
+                title: 'Player Cover Sizing',
+                subtitle: 'Auto-fit or preserve source aspect ratio',
+                trailing: DropdownButton<PlayerCoverSizingMode>(
+                  value: settings.coverSizingMode,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppTokens.brMd,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    notifier.setCoverSizingMode(value);
+                  },
+                  items: const [
+                    DropdownMenuItem(
+                      value: PlayerCoverSizingMode.autoFit,
+                      child: Text('Auto Fit'),
+                    ),
+                    DropdownMenuItem(
+                      value: PlayerCoverSizingMode.sourceAspect,
+                      child: Text('Source Size'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Player motion',
+          icon: AppIcons.graphicEq,
+          children: [
+            AppSettingsSwitch(
+              icon: AppIcons.album,
+              searchId: 'appearance.beat_cover',
+              title: 'Beat-reactive cover',
+              subtitle: 'Album art pulses with the beat',
+              value: settings.beatReactiveCoverEnabled,
+              onChanged: notifier.setBeatReactiveCoverEnabled,
+            ),
+            // Cover intensity — only visible when the cover toggle is on.
+            if (settings.beatReactiveCoverEnabled)
+              _MotionIntensityRow(
+                id: 'appearance.cover_intensity',
+                accent: accent,
+                title: 'Cover intensity',
+                subtitle: 'How strongly the cover reacts',
+                intensity: settings.coverMotionIntensity,
+                customIntensity: settings.coverMotionCustomIntensity,
+                onIntensityChanged: notifier.setCoverMotionIntensity,
+                onCustomChanged: notifier.setCoverMotionCustomIntensity,
+              ),
+            AppSettingsSwitch(
+              icon: AppIcons.autoAwesome,
+              searchId: 'appearance.beat_particles',
+              title: 'Beat-reactive particles',
+              subtitle: 'Floating particles that drift and breathe with the '
+                  'music',
+              value: settings.beatReactiveParticlesEnabled,
+              onChanged: notifier.setBeatReactiveParticlesEnabled,
+            ),
+            // Particle intensity — only visible when the particle toggle is on.
+            if (settings.beatReactiveParticlesEnabled)
+              _MotionIntensityRow(
+                id: 'appearance.particle_intensity',
+                accent: accent,
+                title: 'Particle density',
+                subtitle: 'How many particles and how lively',
+                intensity: settings.particleMotionIntensity,
+                customIntensity: settings.particleMotionCustomIntensity,
+                onIntensityChanged: notifier.setParticleMotionIntensity,
+                onCustomChanged: notifier.setParticleMotionCustomIntensity,
+              ),
+            // Output latency is a property of the listener's hardware, not the
+            // app: Bluetooth typically runs 150-250ms behind wired. Without
+            // this the pulse is permanently early on BT with no recourse.
+            AppSettingsAnchor(
+              id: 'appearance.beat_offset',
+              child: AppListRow(
+                dense: true,
+                leading: AppRowIcon(
+                  icon: AppIcons.syncAlt,
+                  color: accent,
+                  size: 40,
+                ),
+                title: 'Beat sync offset',
+                subtitle: settings.playerMotionLatencyMs == 0
+                    ? 'No offset — raise it if the pulse feels early'
+                    : '${settings.playerMotionLatencyMs} ms '
+                        '(raise for Bluetooth)',
+                trailing: SizedBox(
+                  width: 160,
+                  child: Slider(
+                    value: settings.playerMotionLatencyMs.toDouble(),
+                    min: SettingsNotifier.minMotionLatencyMs.toDouble(),
+                    max: SettingsNotifier.maxMotionLatencyMs.toDouble(),
+                    divisions: (SettingsNotifier.maxMotionLatencyMs -
+                            SettingsNotifier.minMotionLatencyMs) ~/
+                        10,
+                    label: '${settings.playerMotionLatencyMs} ms',
+                    onChanged: (value) =>
+                        notifier.setPlayerMotionLatencyMs(value.round()),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Home screen',
+          icon: AppIcons.home,
+          children: [
+            AppSettingsSwitch(
+              icon: AppIcons.autoAwesome,
+              searchId: 'appearance.quick_picks',
+              title: 'Quick Picks',
+              subtitle: 'Show quick pick recommendations',
+              value: settings.showQuickPicks,
+              onChanged: notifier.setShowQuickPicks,
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.clock,
+              searchId: 'appearance.recent_queues',
+              title: 'Recent Queues',
+              subtitle: 'Show recently played queues',
+              value: settings.showRecentQueues,
+              onChanged: notifier.setShowRecentQueues,
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.explore,
+              searchId: 'appearance.for_you',
+              title: 'For You',
+              subtitle: 'Show recommended playlists',
+              value: settings.showForYou,
+              onChanged: notifier.setShowForYou,
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Interaction',
+          icon: AppIcons.touchApp,
+          children: [
+            AppSettingsTile(
+              icon: AppIcons.flashOn,
+              searchId: 'appearance.quick_actions',
+              title: 'Quick Actions',
+              subtitle: 'Customize long-press actions',
+              onTap: () => context.pushApp(const QuickActionsSettingsScreen()),
+            ),
+          ],
+        ),
+      ],
+    );
+    if (widget.embedded) return content;
     return AmbientScaffold(
       appBar: const AppTopBar(title: 'Appearance'),
-      body: AppSettingsList(
-        highlightId: widget.highlightId,
-        children: [
-          AppSettingsGroup(
-            label: 'Display',
-            icon: AppIcons.viewList,
-            children: [
-              AppSettingsAnchor(
-                id: 'appearance.visualizer',
-                child: AppListRow(
-                  dense: true,
-                  leading: AppRowIcon(
-                    icon: AppIcons.waves,
-                    color: accent,
-                    size: 40,
-                  ),
-                  title: 'Audio Visualizer',
-                  subtitle: 'Bars over the artwork while playing — synced '
-                      'follows the song, bass on the left',
-                  trailing: DropdownButton<VisualizerMode>(
-                    value: settings.visualizerMode,
-                    underline: const SizedBox.shrink(),
-                    borderRadius: AppTokens.brMd,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      notifier.setVisualizerMode(value);
-                    },
-                    items: const [
-                      DropdownMenuItem(
-                        value: VisualizerMode.off,
-                        child: Text('Off'),
-                      ),
-                      DropdownMenuItem(
-                        value: VisualizerMode.classic,
-                        child: Text('Classic'),
-                      ),
-                      DropdownMenuItem(
-                        value: VisualizerMode.synced,
-                        child: Text('Synced'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              AppSettingsSwitch(
-                icon: AppIcons.graphicEq,
-                searchId: 'appearance.waveform',
-                title: 'Waveform Progress Bar',
-                subtitle: 'Show song waveform in player',
-                value: settings.showWaveform,
-                onChanged: notifier.setShowWaveform,
-              ),
-              // Haptics have no effect on desktop hardware.
-              if (!WideLayout.isWide(context))
-                AppSettingsSwitch(
-                  icon: AppIcons.touchApp,
-                  searchId: 'appearance.waveform_haptics',
-                  title: 'Waveform Scrubbing Haptics',
-                  subtitle: 'Haptic feedback for each bar while seeking',
-                  value: settings.waveformHapticsEnabled,
-                  onChanged: notifier.setWaveformHapticsEnabled,
-                ),
-              AppSettingsSwitch(
-                icon: AppIcons.timer,
-                searchId: 'appearance.song_duration',
-                title: 'Show Song Duration',
-                subtitle: 'Display duration in song lists',
-                value: settings.showSongDuration,
-                onChanged: notifier.setShowSongDuration,
-              ),
-              AppSettingsSwitch(
-                icon: AppIcons.swapVert,
-                searchId: 'appearance.auto_hide_bars',
-                title: 'Auto-Hide Bars',
-                subtitle:
-                    'Header and bottom dock hide on downward scroll, restore on upward scroll',
-                value: settings.autoHideBottomBarOnScroll,
-                onChanged: notifier.setAutoHideBottomBarOnScroll,
-              ),
-              AppSettingsSwitch(
-                icon: AppIcons.blur,
-                searchId: 'appearance.lyrics_blur',
-                title: 'Lyrics blur overlay',
-                subtitle: 'Progressive blur on the lyrics',
-                value: settings.lyricsBlurOverlayEnabled,
-                onChanged: notifier.setLyricsBlurOverlayEnabled,
-              ),
-              AppSettingsAnchor(
-                id: 'appearance.cover_sizing',
-                child: AppListRow(
-                  dense: true,
-                  leading: AppRowIcon(
-                    icon: AppIcons.photoSize,
-                    color: accent,
-                    size: 40,
-                  ),
-                  title: 'Player Cover Sizing',
-                  subtitle: 'Auto-fit or preserve source aspect ratio',
-                  trailing: DropdownButton<PlayerCoverSizingMode>(
-                    value: settings.coverSizingMode,
-                    underline: const SizedBox.shrink(),
-                    borderRadius: AppTokens.brMd,
-                    onChanged: (value) {
-                      if (value == null) return;
-                      notifier.setCoverSizingMode(value);
-                    },
-                    items: const [
-                      DropdownMenuItem(
-                        value: PlayerCoverSizingMode.autoFit,
-                        child: Text('Auto Fit'),
-                      ),
-                      DropdownMenuItem(
-                        value: PlayerCoverSizingMode.sourceAspect,
-                        child: Text('Source Size'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          AppSettingsGroup(
-            label: 'Player motion',
-            icon: AppIcons.graphicEq,
-            children: [
-              AppSettingsSwitch(
-                icon: AppIcons.album,
-                searchId: 'appearance.beat_cover',
-                title: 'Beat-reactive cover',
-                subtitle: 'Album art pulses with the beat',
-                value: settings.beatReactiveCoverEnabled,
-                onChanged: notifier.setBeatReactiveCoverEnabled,
-              ),
-              // Cover intensity — only visible when the cover toggle is on.
-              if (settings.beatReactiveCoverEnabled)
-                _MotionIntensityRow(
-                  id: 'appearance.cover_intensity',
-                  accent: accent,
-                  title: 'Cover intensity',
-                  subtitle: 'How strongly the cover reacts',
-                  intensity: settings.coverMotionIntensity,
-                  customIntensity: settings.coverMotionCustomIntensity,
-                  onIntensityChanged: notifier.setCoverMotionIntensity,
-                  onCustomChanged: notifier.setCoverMotionCustomIntensity,
-                ),
-              AppSettingsSwitch(
-                icon: AppIcons.autoAwesome,
-                searchId: 'appearance.beat_particles',
-                title: 'Beat-reactive particles',
-                subtitle: 'Floating particles that drift and breathe with the '
-                    'music',
-                value: settings.beatReactiveParticlesEnabled,
-                onChanged: notifier.setBeatReactiveParticlesEnabled,
-              ),
-              // Particle intensity — only visible when the particle toggle is on.
-              if (settings.beatReactiveParticlesEnabled)
-                _MotionIntensityRow(
-                  id: 'appearance.particle_intensity',
-                  accent: accent,
-                  title: 'Particle density',
-                  subtitle: 'How many particles and how lively',
-                  intensity: settings.particleMotionIntensity,
-                  customIntensity: settings.particleMotionCustomIntensity,
-                  onIntensityChanged: notifier.setParticleMotionIntensity,
-                  onCustomChanged: notifier.setParticleMotionCustomIntensity,
-                ),
-              // Output latency is a property of the listener's hardware, not the
-              // app: Bluetooth typically runs 150-250ms behind wired. Without
-              // this the pulse is permanently early on BT with no recourse.
-              AppSettingsAnchor(
-                id: 'appearance.beat_offset',
-                child: AppListRow(
-                  dense: true,
-                  leading: AppRowIcon(
-                    icon: AppIcons.syncAlt,
-                    color: accent,
-                    size: 40,
-                  ),
-                  title: 'Beat sync offset',
-                  subtitle: settings.playerMotionLatencyMs == 0
-                      ? 'No offset — raise it if the pulse feels early'
-                      : '${settings.playerMotionLatencyMs} ms '
-                          '(raise for Bluetooth)',
-                  trailing: SizedBox(
-                    width: 160,
-                    child: Slider(
-                      value: settings.playerMotionLatencyMs.toDouble(),
-                      min: SettingsNotifier.minMotionLatencyMs.toDouble(),
-                      max: SettingsNotifier.maxMotionLatencyMs.toDouble(),
-                      divisions: (SettingsNotifier.maxMotionLatencyMs -
-                              SettingsNotifier.minMotionLatencyMs) ~/
-                          10,
-                      label: '${settings.playerMotionLatencyMs} ms',
-                      onChanged: (value) =>
-                          notifier.setPlayerMotionLatencyMs(value.round()),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          AppSettingsGroup(
-            label: 'Home screen',
-            icon: AppIcons.home,
-            children: [
-              AppSettingsSwitch(
-                icon: AppIcons.autoAwesome,
-                searchId: 'appearance.quick_picks',
-                title: 'Quick Picks',
-                subtitle: 'Show quick pick recommendations',
-                value: settings.showQuickPicks,
-                onChanged: notifier.setShowQuickPicks,
-              ),
-              AppSettingsSwitch(
-                icon: AppIcons.clock,
-                searchId: 'appearance.recent_queues',
-                title: 'Recent Queues',
-                subtitle: 'Show recently played queues',
-                value: settings.showRecentQueues,
-                onChanged: notifier.setShowRecentQueues,
-              ),
-              AppSettingsSwitch(
-                icon: AppIcons.explore,
-                searchId: 'appearance.for_you',
-                title: 'For You',
-                subtitle: 'Show recommended playlists',
-                value: settings.showForYou,
-                onChanged: notifier.setShowForYou,
-              ),
-            ],
-          ),
-          AppSettingsGroup(
-            label: 'Interaction',
-            icon: AppIcons.touchApp,
-            children: [
-              AppSettingsTile(
-                icon: AppIcons.flashOn,
-                searchId: 'appearance.quick_actions',
-                title: 'Quick Actions',
-                subtitle: 'Customize long-press actions',
-                onTap: () =>
-                    context.pushApp(const QuickActionsSettingsScreen()),
-              ),
-            ],
-          ),
-        ],
-      ),
+      body: content,
     );
   }
 }

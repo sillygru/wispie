@@ -36,6 +36,24 @@ typedef _AlbumSave = ({
   String source,
 });
 
+/// Artists/albums still missing art, most-tracks-first.
+typedef MissingArt = ({
+  List<String> artists,
+  List<Map<String, String>> albums,
+});
+
+/// Progress callback: [done] of [total] keys resolved.
+typedef ArtFetchProgress = void Function(int done, int total);
+
+/// Outcome of one [PassiveArtFetcherService.runArtBurst] run.
+typedef ArtBurstResult = ({
+  int fetchedArtists,
+  int fetchedAlbums,
+  List<String> failedItems,
+  bool cancelled,
+  bool offline,
+});
+
 /// Passively fetches missing artist and album artwork while the app is foregrounded.
 ///
 /// Strategy: on every app open, burst-fetch everything missing through the
@@ -408,63 +426,161 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     }
   }
 
-  /// Burst sweep over everything missing. Runs on every app open (and picks
-  /// up library changes on later loop iterations); keys already resolved,
-  /// skipped as 404, or exhausted as transient this launch are filtered out.
-  Future<void> _sweepLibraryBurst() async {
+  /// Sorts keys in place by track count (most tracks first), name on ties.
+  @visibleForTesting
+  static void sortKeysByCount(List<String> keys, Map<String, int> counts) {
+    keys.sort((a, b) {
+      final byCount = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
+      if (byCount != 0) return byCount;
+      return a.compareTo(b);
+    });
+  }
+
+  /// Collects artists/albums still missing art, most-tracks-first.
+  MissingArt _collectMissingSorted(
+    List<Song> songs,
+    ArtistAlbumArtState artState,
+  ) {
+    final artistCounts = <String, int>{};
+    final artistDisplay = <String, String>{};
+    for (final song in songs) {
+      final split = LibraryLogic.splitArtistNames(song.artist);
+      final names = split.isEmpty ? [song.artist] : split;
+      for (final name in names) {
+        final clean = OnlineMetadataService.cleanTag(name);
+        if (clean == null) continue;
+        final lower = clean.toLowerCase();
+        artistCounts[lower] = (artistCounts[lower] ?? 0) + 1;
+        artistDisplay.putIfAbsent(lower, () => clean);
+      }
+    }
+
+    final albumCounts = <String, int>{};
+    final albumDisplay = <String, Map<String, String>>{};
+    final albumHasLocalCover = <String, bool>{};
+    for (final song in songs) {
+      final album = OnlineMetadataService.cleanTag(song.album);
+      if (album == null) continue;
+      final artist = OnlineMetadataService.cleanTag(song.artist);
+      final key = _albumKey(album, artist);
+      albumCounts[key] = (albumCounts[key] ?? 0) + 1;
+      albumDisplay.putIfAbsent(
+        key,
+        () => {'album': album, 'artist': artist ?? ''},
+      );
+      if (song.coverUrl != null && song.coverUrl!.trim().isNotEmpty) {
+        albumHasLocalCover[key] = true;
+      }
+    }
+
+    final artistKeys = artistCounts.keys.where((lower) {
+      if (_noResultArtists.containsKey(lower)) return false;
+      if (_triedThisLaunchArtists.contains(lower)) return false;
+      if (_inFlightArtists.contains(lower)) return false;
+      if (artState.getArtistArt(artistDisplay[lower]) != null) return false;
+      return true;
+    }).toList();
+    sortKeysByCount(artistKeys, artistCounts);
+
+    final albumKeys = albumCounts.keys.where((key) {
+      if (_noResultAlbums.containsKey(key)) return false;
+      if (_triedThisLaunchAlbums.contains(key)) return false;
+      if (_inFlightAlbums.contains(key)) return false;
+      // Albums with an embedded/local cover already show real art.
+      if (albumHasLocalCover[key] == true) return false;
+      final item = albumDisplay[key]!;
+      final itemArtist = item['artist']!;
+      if (artState.getAlbumArt(
+            item['album'],
+            artistName: itemArtist.isEmpty ? null : itemArtist,
+          ) !=
+          null) {
+        return false;
+      }
+      return true;
+    }).toList();
+    sortKeysByCount(albumKeys, albumCounts);
+
+    return (
+      artists: [for (final key in artistKeys) artistDisplay[key]!],
+      albums: [for (final key in albumKeys) albumDisplay[key]!],
+    );
+  }
+
+  /// Runs one burst over everything missing, most-tracks-first.
+  ///
+  /// Loop mode (from [_sweepLibraryBurst]) abandons work when backgrounded;
+  /// driven mode (indexer op) waits out backgrounding and only stops on
+  /// [isCancelled]. Progress callbacks fire with totals up front, then per
+  /// resolved key.
+  Future<ArtBurstResult> runArtBurst({
+    bool driven = false,
+    ArtFetchProgress? onArtistProgress,
+    ArtFetchProgress? onAlbumProgress,
+    bool Function()? isCancelled,
+  }) async {
+    bool cancelled() => isCancelled?.call() ?? false;
+    bool shouldContinue() {
+      if (!_isForegrounded) return false;
+      if (cancelled()) return false;
+      if (!driven && !_isRunning) return false;
+      return true;
+    }
+
+    ArtBurstResult finish({
+      required int fetchedArtists,
+      required int fetchedAlbums,
+      required List<String> failedItems,
+      required bool offline,
+    }) {
+      return (
+        fetchedArtists: fetchedArtists,
+        fetchedAlbums: fetchedAlbums,
+        failedItems: failedItems,
+        cancelled: cancelled(),
+        offline: offline,
+      );
+    }
+
     final ref = _containerRef;
-    if (ref == null) return;
+    if (ref == null) {
+      return finish(
+        fetchedArtists: 0,
+        fetchedAlbums: 0,
+        failedItems: const [],
+        offline: false,
+      );
+    }
     if (_offlineBackoffUntil != null &&
         DateTime.now().isBefore(_offlineBackoffUntil!)) {
-      return;
+      return finish(
+        fetchedArtists: 0,
+        fetchedAlbums: 0,
+        failedItems: const [],
+        offline: true,
+      );
     }
-    final songs = ref.read(songsProvider).value ?? const <Song>[];
-    if (songs.isEmpty) return;
-
+    final List<Song> songs = ref.read(songsProvider).value ?? const <Song>[];
+    if (songs.isEmpty) {
+      return finish(
+        fetchedArtists: 0,
+        fetchedAlbums: 0,
+        failedItems: const [],
+        offline: false,
+      );
+    }
     final artState = ref.read(artistAlbumArtProvider);
-
-    final missingArtists = <String>[];
-    {
-      final seen = <String>{};
-      for (final song in songs) {
-        final split = LibraryLogic.splitArtistNames(song.artist);
-        final names = split.isEmpty ? [song.artist] : split;
-        for (final name in names) {
-          final clean = OnlineMetadataService.cleanTag(name);
-          if (clean == null) continue;
-          final lower = clean.toLowerCase();
-          if (!seen.add(lower)) continue;
-          if (_noResultArtists.containsKey(lower)) continue;
-          if (_triedThisLaunchArtists.contains(lower)) continue;
-          if (_inFlightArtists.contains(lower)) continue;
-          if (artState.getArtistArt(clean) != null) continue;
-          missingArtists.add(clean);
-        }
-      }
+    final missing = _collectMissingSorted(songs, artState);
+    onArtistProgress?.call(0, missing.artists.length);
+    onAlbumProgress?.call(0, missing.albums.length);
+    if (missing.artists.isEmpty && missing.albums.isEmpty) {
+      return finish(
+        fetchedArtists: 0,
+        fetchedAlbums: 0,
+        failedItems: const [],
+        offline: false,
+      );
     }
-
-    final missingAlbums = <Map<String, String>>[];
-    {
-      final seen = <String>{};
-      for (final song in songs) {
-        final album = OnlineMetadataService.cleanTag(song.album);
-        if (album == null) continue;
-        final artist = OnlineMetadataService.cleanTag(song.artist);
-        final key = _albumKey(album, artist);
-        if (!seen.add(key)) continue;
-        if (_noResultAlbums.containsKey(key)) continue;
-        if (_triedThisLaunchAlbums.contains(key)) continue;
-        if (_inFlightAlbums.contains(key)) continue;
-        if (artState.getAlbumArt(album, artistName: artist) != null) continue;
-        // Albums with an embedded/local cover already show real art.
-        if (song.coverUrl != null && song.coverUrl!.trim().isNotEmpty) {
-          continue;
-        }
-        missingAlbums.add({'album': album, 'artist': artist ?? ''});
-      }
-    }
-
-    if (missingArtists.isEmpty && missingAlbums.isEmpty) return;
 
     var consecutiveTransient = 0;
     bool offlineAbort = false;
@@ -481,33 +597,59 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       }
     }
 
+    var fetchedArtists = 0;
+    var fetchedAlbums = 0;
+    final failedItems = <String>[];
+
+    // Artists first: biggest collections resolve first.
+    var artistDone = 0;
     final artistSaves = <_ArtistSave>[];
     await _runConcurrent(
-      missingArtists.map((artist) {
+      missing.artists.map((artist) {
         return () async {
           if (offlineAbort) return;
           final lower = artist.toLowerCase();
           _inFlightArtists.add(lower);
           try {
-            final resolved = await _resolveArtistArt(artist);
+            final resolved = await _resolveArtistArt(
+              artist,
+              shouldContinue: shouldContinue,
+              waitForForeground: driven,
+              isCancelled: cancelled,
+            );
             noteOutcome(resolved.outcome);
             if (resolved.outcome == _FetchOutcome.success &&
                 resolved.artistSave != null) {
               artistSaves.add(resolved.artistSave!);
             } else {
+              if (resolved.outcome == _FetchOutcome.transient) {
+                failedItems.add(artist);
+              }
               await _applyArtistResolution(artist, resolved);
             }
           } finally {
             _inFlightArtists.remove(lower);
+            artistDone++;
+            onArtistProgress?.call(artistDone, missing.artists.length);
           }
         };
       }).toList(),
       _burstConcurrency,
+      shouldContinue: shouldContinue,
+      waitForForeground: driven,
+      isCancelled: cancelled,
     );
 
     final notifier = ref.read(artistAlbumArtProvider.notifier);
     for (final save in artistSaves) {
-      if (!_isRunning || !_isForegrounded || offlineAbort) break;
+      if (offlineAbort) break;
+      if (!await _proceed(
+        shouldContinue: shouldContinue,
+        isCancelled: cancelled,
+        waitForForeground: driven,
+      )) {
+        break;
+      }
       if (ref.read(artistAlbumArtProvider).getArtistArt(save.artist) != null) {
         continue;
       }
@@ -518,19 +660,38 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
           imageUrl: save.imageUrl,
           source: save.source,
         );
+        fetchedArtists++;
       } catch (e) {
         debugPrint('PassiveArtFetcher: save artist art failed: $e');
       }
     }
 
-    if (offlineAbort || !_isRunning || !_isForegrounded) {
-      _noteOfflineAbort(offlineAbort);
-      return;
+    if (offlineAbort) {
+      _noteOfflineAbort(true);
+      return finish(
+        fetchedArtists: fetchedArtists,
+        fetchedAlbums: fetchedAlbums,
+        failedItems: failedItems,
+        offline: true,
+      );
+    }
+    if (!await _proceed(
+      shouldContinue: shouldContinue,
+      isCancelled: cancelled,
+      waitForForeground: driven,
+    )) {
+      return finish(
+        fetchedArtists: fetchedArtists,
+        fetchedAlbums: fetchedAlbums,
+        failedItems: failedItems,
+        offline: false,
+      );
     }
 
+    var albumDone = 0;
     final albumSaves = <_AlbumSave>[];
     await _runConcurrent(
-      missingAlbums.map((item) {
+      missing.albums.map((item) {
         return () async {
           if (offlineAbort) return;
           final album = item['album']!;
@@ -538,24 +699,47 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
           final key = _albumKey(album, artist.isEmpty ? null : artist);
           _inFlightAlbums.add(key);
           try {
-            final resolved = await _resolveAlbumArt(album, artist);
+            final resolved = await _resolveAlbumArt(
+              album,
+              artist,
+              shouldContinue: shouldContinue,
+              waitForForeground: driven,
+              isCancelled: cancelled,
+            );
             noteOutcome(resolved.outcome);
             if (resolved.outcome == _FetchOutcome.success &&
                 resolved.albumSave != null) {
               albumSaves.add(resolved.albumSave!);
             } else {
+              if (resolved.outcome == _FetchOutcome.transient) {
+                failedItems.add(
+                  artist.isEmpty ? album : '$album ($artist)',
+                );
+              }
               await _applyAlbumResolution(album, artist, resolved);
             }
           } finally {
             _inFlightAlbums.remove(key);
+            albumDone++;
+            onAlbumProgress?.call(albumDone, missing.albums.length);
           }
         };
       }).toList(),
       _burstConcurrency,
+      shouldContinue: shouldContinue,
+      waitForForeground: driven,
+      isCancelled: cancelled,
     );
 
     for (final save in albumSaves) {
-      if (!_isRunning || !_isForegrounded || offlineAbort) break;
+      if (offlineAbort) break;
+      if (!await _proceed(
+        shouldContinue: shouldContinue,
+        isCancelled: cancelled,
+        waitForForeground: driven,
+      )) {
+        break;
+      }
       final existing = ref.read(artistAlbumArtProvider).getAlbumArt(
             save.album,
             artistName: save.artist.isEmpty ? null : save.artist,
@@ -571,12 +755,61 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
           imageUrl: save.imageUrl,
           source: save.source,
         );
+        fetchedAlbums++;
       } catch (e) {
         debugPrint('PassiveArtFetcher: save album art failed: $e');
       }
     }
 
     _noteOfflineAbort(offlineAbort);
+    return finish(
+      fetchedArtists: fetchedArtists,
+      fetchedAlbums: fetchedAlbums,
+      failedItems: failedItems,
+      offline: offlineAbort,
+    );
+  }
+
+  /// True when work may proceed. Driven mode waits out backgrounding (cancel
+  /// still aborts); loop mode returns false immediately.
+  Future<bool> _proceed({
+    required bool Function() shouldContinue,
+    required bool Function() isCancelled,
+    required bool waitForForeground,
+  }) async {
+    if (shouldContinue()) return true;
+    if (!waitForForeground || isCancelled()) return false;
+    while (!shouldContinue()) {
+      if (isCancelled()) return false;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    return true;
+  }
+
+  /// Gap between attempts. Driven mode counts foreground time only, so the
+  /// 5s retry gap from the spec holds even across backgrounding.
+  Future<void> _retryWait({
+    required bool waitForForeground,
+    required bool Function() isCancelled,
+  }) async {
+    if (!waitForForeground) {
+      await Future.delayed(_retryDelay);
+      return;
+    }
+    var waited = Duration.zero;
+    const step = Duration(milliseconds: 250);
+    while (waited < _retryDelay) {
+      if (isCancelled()) return;
+      await Future.delayed(step);
+      if (_isForegrounded) waited += step;
+    }
+  }
+
+  /// Burst sweep over everything missing. Runs on every app open (and picks
+  /// up library changes on later loop iterations); keys already resolved,
+  /// skipped as 404, or exhausted as transient this launch are filtered out.
+  Future<void> _sweepLibraryBurst() async {
+    await runArtBurst();
   }
 
   void _noteOfflineAbort(bool offlineAbort) {
@@ -590,13 +823,24 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
 
   Future<void> _runConcurrent(
     List<Future<void> Function()> jobs,
-    int maxConcurrent,
-  ) async {
+    int maxConcurrent, {
+    bool Function()? shouldContinue,
+    bool waitForForeground = false,
+    bool Function()? isCancelled,
+  }) async {
     if (jobs.isEmpty) return;
+    bool cont() => shouldContinue?.call() ?? (_isRunning && _isForegrounded);
+    bool canc() => isCancelled?.call() ?? false;
     var index = 0;
     Future<void> worker() async {
       while (true) {
-        if (!_isRunning || !_isForegrounded) return;
+        if (!await _proceed(
+          shouldContinue: cont,
+          isCancelled: canc,
+          waitForForeground: waitForForeground,
+        )) {
+          return;
+        }
         final i = index++;
         if (i >= jobs.length) return;
         try {
@@ -691,8 +935,13 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   /// foreground-only attempts. Download failures count as transient: the key
   /// is retried next launch instead of being remembered as a miss.
   Future<({_FetchOutcome outcome, _ArtistSave? artistSave})> _resolveArtistArt(
-    String artist,
-  ) async {
+    String artist, {
+    bool Function()? shouldContinue,
+    bool waitForForeground = false,
+    bool Function()? isCancelled,
+  }) async {
+    bool cont() => shouldContinue?.call() ?? (_isRunning && _isForegrounded);
+    bool canc() => isCancelled?.call() ?? false;
     final ref = _containerRef;
     if (ref == null) {
       return (outcome: _FetchOutcome.abandoned, artistSave: null);
@@ -704,7 +953,11 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     }
 
     for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
-      if (!_isRunning || !_isForegrounded) {
+      if (!await _proceed(
+        shouldContinue: cont,
+        isCancelled: canc,
+        waitForForeground: waitForForeground,
+      )) {
         return (outcome: _FetchOutcome.abandoned, artistSave: null);
       }
       CoverLookupResult lookup;
@@ -728,7 +981,8 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
         for (final candidate in lookup.candidates.take(2)) {
           final imageUrl = candidate['url'];
           if (imageUrl == null || imageUrl.isEmpty) continue;
-          final localPath = await _downloadCover(imageUrl, 'artist_$artist');
+          final localPath =
+              await _downloadCover(imageUrl, 'artist_$artist', cont);
           if (localPath == null || localPath.isEmpty) continue;
           if (ref.read(artistAlbumArtProvider).getArtistArt(artist) != null) {
             return (outcome: _FetchOutcome.success, artistSave: null);
@@ -754,7 +1008,10 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       }
 
       if (attempt < _maxAttempts) {
-        await Future.delayed(_retryDelay);
+        await _retryWait(
+          waitForForeground: waitForForeground,
+          isCancelled: canc,
+        );
       }
     }
     return (outcome: _FetchOutcome.transient, artistSave: null);
@@ -763,8 +1020,13 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   /// Resolves one album, mirroring [_resolveArtistArt].
   Future<({_FetchOutcome outcome, _AlbumSave? albumSave})> _resolveAlbumArt(
     String album,
-    String artist,
-  ) async {
+    String artist, {
+    bool Function()? shouldContinue,
+    bool waitForForeground = false,
+    bool Function()? isCancelled,
+  }) async {
+    bool cont() => shouldContinue?.call() ?? (_isRunning && _isForegrounded);
+    bool canc() => isCancelled?.call() ?? false;
     final ref = _containerRef;
     if (ref == null) return (outcome: _FetchOutcome.abandoned, albumSave: null);
     final onlineService = OnlineMetadataService.instance;
@@ -780,7 +1042,11 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     final saveKey = artist.isNotEmpty ? '$artist|$album' : album;
 
     for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
-      if (!_isRunning || !_isForegrounded) {
+      if (!await _proceed(
+        shouldContinue: cont,
+        isCancelled: canc,
+        waitForForeground: waitForForeground,
+      )) {
         return (outcome: _FetchOutcome.abandoned, albumSave: null);
       }
       CoverLookupResult lookup;
@@ -807,7 +1073,8 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
         for (final candidate in lookup.candidates.take(2)) {
           final imageUrl = candidate['url'];
           if (imageUrl == null || imageUrl.isEmpty) continue;
-          final localPath = await _downloadCover(imageUrl, 'album_$saveKey');
+          final localPath =
+              await _downloadCover(imageUrl, 'album_$saveKey', cont);
           if (localPath == null || localPath.isEmpty) continue;
           if (ref
                   .read(artistAlbumArtProvider)
@@ -837,7 +1104,10 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       }
 
       if (attempt < _maxAttempts) {
-        await Future.delayed(_retryDelay);
+        await _retryWait(
+          waitForForeground: waitForForeground,
+          isCancelled: canc,
+        );
       }
     }
     return (outcome: _FetchOutcome.transient, albumSave: null);
@@ -847,18 +1117,22 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   int _activeDownloads = 0;
 
   /// Bounds concurrent image downloads/decodes; lookups stay on the wide pool.
-  Future<String?> _downloadCover(String imageUrl, String keyName) async {
+  Future<String?> _downloadCover(
+    String imageUrl,
+    String keyName,
+    bool Function() shouldContinue,
+  ) async {
     while (_activeDownloads >= _downloadConcurrency) {
-      if (!_isRunning || !_isForegrounded) return null;
+      if (!shouldContinue()) return null;
       final waiter = Completer<void>();
       _downloadWaiters.add(waiter);
       try {
-        await waiter.future.timeout(const Duration(seconds: 30));
+        await waiter.future.timeout(const Duration(seconds: 5));
       } on TimeoutException catch (_) {
         _downloadWaiters.remove(waiter);
       }
     }
-    if (!_isRunning || !_isForegrounded) return null;
+    if (!shouldContinue()) return null;
     _activeDownloads++;
     try {
       return await OnlineMetadataService.instance.downloadAndCacheCover(

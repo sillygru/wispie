@@ -14,7 +14,10 @@ import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
 class IndexerScreen extends ConsumerStatefulWidget {
-  const IndexerScreen({super.key});
+  /// When true, renders content only for the wide master-detail pane.
+  final bool embedded;
+
+  const IndexerScreen({super.key, this.embedded = false});
 
   @override
   ConsumerState<IndexerScreen> createState() => _IndexerScreenState();
@@ -34,112 +37,118 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final content = WideContentCenter(
+      maxWidth: WideLayout.maxNarrowWidth,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: 8.0,
+        ),
+        children: [
+          _buildSettingsGroup(
+            title: 'Indexer Settings',
+            icon: AppIcons.manageSearch,
+            children: [
+              SwitchListTile(
+                secondary: const AppIcon(AppIcons.copy),
+                title: const Text('Prevent Duplicate Tracks'),
+                subtitle: const Text(
+                  'Hide songs with the same filename across folders',
+                ),
+                value: settings.preventDuplicateTracks,
+                onChanged: (val) => notifier.setPreventDuplicateTracks(val),
+              ),
+              SwitchListTile(
+                secondary: const AppIcon(AppIcons.personAdd),
+                title: const Text('Extract Featured Artists'),
+                subtitle: const Text(
+                  'Move "ft./feat." artists from title to artist field',
+                ),
+                value: settings.extractFeatArtists,
+                onChanged: (val) => notifier.setExtractFeatArtists(val),
+              ),
+            ],
+          ),
+          _buildSettingsGroup(
+            title: 'Database Operations',
+            icon: AppIcons.storage,
+            children: [
+              _buildOperationTile(
+                id: 'optimize_databases',
+                icon: AppIcons.storage,
+                warningMessage:
+                    'This operation requires an app restart to apply changes.',
+              ),
+            ],
+          ),
+          _buildSettingsGroup(
+            title: 'Cover & Search',
+            icon: AppIcons.imageSearch,
+            children: [
+              _buildOperationTile(
+                id: 'repair_library_links',
+                icon: AppIcons.linkOff,
+                warningMessage:
+                    'Tracks whose files are no longer on this device will be '
+                    'removed from the library. Favourites, playlists and play '
+                    'counts are kept and reattach if the files come back.',
+              ),
+              _buildOperationTile(
+                id: 'rebuild_cover_caches',
+                icon: AppIcons.image,
+              ),
+              _buildOperationTile(
+                id: 'rebuild_search_indexes',
+                icon: AppIcons.search,
+                warningMessage:
+                    'You may need to restart the app for search index changes to fully apply.',
+              ),
+              _buildOperationTile(
+                id: 'rebuild_artist_album_art',
+                icon: AppIcons.album,
+              ),
+            ],
+          ),
+          _buildSettingsGroup(
+            title: 'Content Caches',
+            icon: AppIcons.collectionsBookmark,
+            children: [
+              _buildOperationTile(
+                id: 'rebuild_lyrics_cache',
+                icon: AppIcons.lyrics,
+              ),
+              _buildOperationTile(
+                id: 'rebuild_waveform_cache',
+                icon: AppIcons.graphicEq,
+              ),
+              _buildOperationTile(
+                id: 'rebuild_color_cache',
+                icon: AppIcons.palette,
+              ),
+              _buildOperationTile(
+                id: 'rebuild_blurred_cache',
+                icon: AppIcons.blur,
+              ),
+            ],
+          ),
+          _buildSettingsGroup(
+            title: 'Recommendations',
+            icon: AppIcons.autoAwesome,
+            children: [
+              _buildOperationTile(
+                id: 'rebuild_recommendations',
+                icon: AppIcons.autoAwesome,
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+    if (widget.embedded) return content;
     return AmbientScaffold(
       appBar: const AppTopBar(title: 'Indexer'),
-      body: WideContentCenter(
-        maxWidth: WideLayout.maxNarrowWidth,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.s4,
-            vertical: 8.0,
-          ),
-          children: [
-            _buildSettingsGroup(
-              title: 'Indexer Settings',
-              icon: AppIcons.manageSearch,
-              children: [
-                SwitchListTile(
-                  secondary: const AppIcon(AppIcons.copy),
-                  title: const Text('Prevent Duplicate Tracks'),
-                  subtitle: const Text(
-                    'Hide songs with the same filename across folders',
-                  ),
-                  value: settings.preventDuplicateTracks,
-                  onChanged: (val) => notifier.setPreventDuplicateTracks(val),
-                ),
-                SwitchListTile(
-                  secondary: const AppIcon(AppIcons.personAdd),
-                  title: const Text('Extract Featured Artists'),
-                  subtitle: const Text(
-                    'Move "ft./feat." artists from title to artist field',
-                  ),
-                  value: settings.extractFeatArtists,
-                  onChanged: (val) => notifier.setExtractFeatArtists(val),
-                ),
-              ],
-            ),
-            _buildSettingsGroup(
-              title: 'Database Operations',
-              icon: AppIcons.storage,
-              children: [
-                _buildOperationTile(
-                  id: 'optimize_databases',
-                  icon: AppIcons.storage,
-                  warningMessage:
-                      'This operation requires an app restart to apply changes.',
-                ),
-              ],
-            ),
-            _buildSettingsGroup(
-              title: 'Cover & Search',
-              icon: AppIcons.imageSearch,
-              children: [
-                _buildOperationTile(
-                  id: 'repair_library_links',
-                  icon: AppIcons.linkOff,
-                  warningMessage:
-                      'Tracks whose files are no longer on this device will be '
-                      'removed from the library. Favourites, playlists and play '
-                      'counts are kept and reattach if the files come back.',
-                ),
-                _buildOperationTile(
-                  id: 'rebuild_cover_caches',
-                  icon: AppIcons.image,
-                ),
-                _buildOperationTile(
-                  id: 'rebuild_search_indexes',
-                  icon: AppIcons.search,
-                  warningMessage:
-                      'You may need to restart the app for search index changes to fully apply.',
-                ),
-              ],
-            ),
-            _buildSettingsGroup(
-              title: 'Content Caches',
-              icon: AppIcons.collectionsBookmark,
-              children: [
-                _buildOperationTile(
-                  id: 'rebuild_lyrics_cache',
-                  icon: AppIcons.lyrics,
-                ),
-                _buildOperationTile(
-                  id: 'rebuild_waveform_cache',
-                  icon: AppIcons.graphicEq,
-                ),
-                _buildOperationTile(
-                  id: 'rebuild_color_cache',
-                  icon: AppIcons.palette,
-                ),
-                _buildOperationTile(
-                  id: 'rebuild_blurred_cache',
-                  icon: AppIcons.blur,
-                ),
-              ],
-            ),
-            _buildSettingsGroup(
-              title: 'Recommendations',
-              icon: AppIcons.autoAwesome,
-              children: [
-                _buildOperationTile(
-                  id: 'rebuild_recommendations',
-                  icon: AppIcons.autoAwesome,
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
+      body: content,
     );
   }
 
@@ -212,7 +221,10 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     final bool isFullyCached = operation.isFullyCached;
 
     String subtitle;
-    if (isRunning) {
+    if (isRunning && operation.hasSplitArtProgress) {
+      subtitle =
+          'Artists ${operation.artistProgressText} · Albums ${operation.albumProgressText}...';
+    } else if (isRunning) {
       subtitle = 'Processing ${operation.progressText}...';
     } else if (hasError) {
       subtitle = 'Error: ${operation.errorMessage ?? 'Unknown error'}';
@@ -276,10 +288,44 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               fontWeight: isRunning ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
-          if (isRunning && operation.totalCount > 0) ...[
+          if (isRunning &&
+              operation.totalCount > 0 &&
+              !operation.hasSplitArtProgress) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(
               value: operation.progress,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: AppTokens.brPill,
+            ),
+          ],
+          if (isRunning && operation.hasSplitArtProgress) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Artists ${operation.artistProgressText}',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: operation.artistProgress,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: AppTokens.brPill,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Albums ${operation.albumProgressText}',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: operation.albumProgress,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
               borderRadius: AppTokens.brPill,
             ),

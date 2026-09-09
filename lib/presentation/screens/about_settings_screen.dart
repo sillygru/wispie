@@ -12,7 +12,10 @@ import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
 class AboutSettingsScreen extends ConsumerWidget {
-  const AboutSettingsScreen({super.key});
+  /// When true, renders content only for the wide master-detail pane.
+  final bool embedded;
+
+  const AboutSettingsScreen({super.key, this.embedded = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,104 +39,106 @@ class AboutSettingsScreen extends ConsumerWidget {
                 ? 'Latest release: ${updateState.latestVersionLabel}'
                 : 'Tap below to check manually.';
 
-    return AmbientScaffold(
-      appBar: const AppTopBar(title: 'About'),
-      body: AppSettingsList(
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: AppTokens.s4),
-            child: AppSurface(
-              padding: const EdgeInsets.all(AppTokens.s5),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: AppTokens.brSm,
-                    child: Image.asset(
-                      'assets/app_icon.png',
-                      width: 64,
-                      height: 64,
-                      fit: BoxFit.cover,
-                    ),
+    final content = AppSettingsList(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: AppTokens.s4),
+          child: AppSurface(
+            padding: const EdgeInsets.all(AppTokens.s5),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: AppTokens.brSm,
+                  child: Image.asset(
+                    'assets/app_icon.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
                   ),
-                  const SizedBox(width: AppTokens.s4),
+                ),
+                const SizedBox(width: AppTokens.s4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Wispie', style: AppTokens.screenTitle(context)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Version ${updateState.currentVersion.isEmpty ? 'Unknown' : updateState.currentVersion}',
+                        style: AppTokens.meta(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTokens.s3),
+        AppSurface(
+          padding: const EdgeInsets.all(AppTokens.s4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  AppIcon(
+                    updateState.hasUpdate
+                        ? AppIcons.softwareUpdate
+                        : AppIcons.verified,
+                    color: accent,
+                    size: 20,
+                  ),
+                  const SizedBox(width: AppTokens.s3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Wispie', style: AppTokens.screenTitle(context)),
+                        Text(statusTitle, style: AppTokens.rowTitle(context)),
                         const SizedBox(height: 2),
-                        Text(
-                          'Version ${updateState.currentVersion.isEmpty ? 'Unknown' : updateState.currentVersion}',
-                          style: AppTokens.meta(context),
-                        ),
+                        Text(statusSubtitle,
+                            style: AppTokens.rowSubtitle(context)),
                       ],
                     ),
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: AppTokens.s3),
-          AppSurface(
-            padding: const EdgeInsets.all(AppTokens.s4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    AppIcon(
-                      updateState.hasUpdate
-                          ? AppIcons.softwareUpdate
-                          : AppIcons.verified,
-                      color: accent,
-                      size: 20,
+              const SizedBox(height: AppTokens.s4),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: updateState.isChecking
+                          ? null
+                          : () => updateNotifier.checkForUpdate(force: true),
+                      style: AppTokens.tonalButton,
+                      child: const Text('Check now'),
                     ),
+                  ),
+                  if (updateState.hasUpdate) ...[
                     const SizedBox(width: AppTokens.s3),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(statusTitle, style: AppTokens.rowTitle(context)),
-                          const SizedBox(height: 2),
-                          Text(statusSubtitle,
-                              style: AppTokens.rowSubtitle(context)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTokens.s4),
-                Row(
-                  children: [
-                    Expanded(
                       child: FilledButton(
-                        onPressed: updateState.isChecking
-                            ? null
-                            : () => updateNotifier.checkForUpdate(force: true),
-                        style: AppTokens.tonalButton,
-                        child: const Text('Check now'),
+                        onPressed: () => UpdateService().openLatestRelease(
+                          url: updateState.releaseUrl,
+                        ),
+                        child: const Text('View release'),
                       ),
                     ),
-                    if (updateState.hasUpdate) ...[
-                      const SizedBox(width: AppTokens.s3),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => UpdateService().openLatestRelease(
-                            url: updateState.releaseUrl,
-                          ),
-                          child: const Text('View release'),
-                        ),
-                      ),
-                    ],
                   ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+    if (embedded) return content;
+    return AmbientScaffold(
+      appBar: const AppTopBar(title: 'About'),
+      body: content,
     );
   }
 }

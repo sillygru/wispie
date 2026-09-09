@@ -18,7 +18,11 @@ class MiscSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
   final String? highlightId;
 
-  const MiscSettingsScreen({super.key, this.highlightId});
+  /// When true, renders content only for the wide master-detail pane.
+  final bool embedded;
+
+  const MiscSettingsScreen(
+      {super.key, this.highlightId, this.embedded = false});
 
   @override
   ConsumerState<MiscSettingsScreen> createState() => _MiscSettingsScreenState();
@@ -45,78 +49,79 @@ class _MiscSettingsScreenState extends ConsumerState<MiscSettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
 
-    return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Misc'),
-      body: AppSettingsList(
-        highlightId: widget.highlightId,
-        children: [
+    final content = AppSettingsList(
+      highlightId: widget.highlightId,
+      children: [
+        AppSettingsGroup(
+          label: 'Backup',
+          icon: AppIcons.cloudUpload,
+          children: [
+            _dropdownRow(
+              searchId: 'misc.auto_backup',
+              icon: AppIcons.cloudUpload,
+              title: 'Auto Backup',
+              subtitle: 'How often a backup is taken',
+              value: settings.autoBackupFrequencyHours,
+              options: _frequencyOptions,
+              onChanged: (val) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setAutoBackupFrequencyHours(val);
+                await ref
+                    .read(autoBackupProvider.notifier)
+                    .setFrequencyHours(val);
+              },
+            ),
+            _contentTypeRow(context, ref),
+            _dropdownRow(
+              searchId: 'misc.auto_delete_backups',
+              icon: AppIcons.delete,
+              title: 'Auto-Delete Old Backups',
+              subtitle: 'Discard backups older than this',
+              value: settings.autoBackupDeleteAfterDays,
+              options: _deleteOptions,
+              onChanged: (val) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setAutoBackupDeleteAfterDays(val);
+                await ref
+                    .read(autoBackupProvider.notifier)
+                    .setDeleteAfterDays(val);
+              },
+            ),
+          ],
+        ),
+        // Pull-to-refresh is a touch gesture with no desktop trigger.
+        if (!WideLayout.isWide(context))
           AppSettingsGroup(
-            label: 'Backup',
-            icon: AppIcons.cloudUpload,
+            label: 'Behavior',
+            icon: AppIcons.touchApp,
             children: [
-              _dropdownRow(
-                searchId: 'misc.auto_backup',
-                icon: AppIcons.cloudUpload,
-                title: 'Auto Backup',
-                subtitle: 'How often a backup is taken',
-                value: settings.autoBackupFrequencyHours,
-                options: _frequencyOptions,
-                onChanged: (val) async {
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .setAutoBackupFrequencyHours(val);
-                  await ref
-                      .read(autoBackupProvider.notifier)
-                      .setFrequencyHours(val);
-                },
-              ),
-              _contentTypeRow(context, ref),
-              _dropdownRow(
-                searchId: 'misc.auto_delete_backups',
-                icon: AppIcons.delete,
-                title: 'Auto-Delete Old Backups',
-                subtitle: 'Discard backups older than this',
-                value: settings.autoBackupDeleteAfterDays,
-                options: _deleteOptions,
-                onChanged: (val) async {
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .setAutoBackupDeleteAfterDays(val);
-                  await ref
-                      .read(autoBackupProvider.notifier)
-                      .setDeleteAfterDays(val);
-                },
+              FutureBuilder<bool>(
+                future:
+                    ref.read(storageServiceProvider).getPullToRefreshEnabled(),
+                builder: (context, snapshot) => AppSettingsSwitch(
+                  icon: AppIcons.touchApp,
+                  searchId: 'misc.pull_to_refresh',
+                  title: 'Pull to Refresh',
+                  subtitle: 'Swipe down to refresh the library',
+                  value: snapshot.data ?? true,
+                  onChanged: (val) async {
+                    await ref
+                        .read(storageServiceProvider)
+                        .setPullToRefreshEnabled(val);
+                    setState(() {});
+                  },
+                ),
               ),
             ],
           ),
-          // Pull-to-refresh is a touch gesture with no desktop trigger.
-          if (!WideLayout.isWide(context))
-            AppSettingsGroup(
-              label: 'Behavior',
-              icon: AppIcons.touchApp,
-              children: [
-                FutureBuilder<bool>(
-                  future: ref
-                      .read(storageServiceProvider)
-                      .getPullToRefreshEnabled(),
-                  builder: (context, snapshot) => AppSettingsSwitch(
-                    icon: AppIcons.touchApp,
-                    searchId: 'misc.pull_to_refresh',
-                    title: 'Pull to Refresh',
-                    subtitle: 'Swipe down to refresh the library',
-                    value: snapshot.data ?? true,
-                    onChanged: (val) async {
-                      await ref
-                          .read(storageServiceProvider)
-                          .setPullToRefreshEnabled(val);
-                      setState(() {});
-                    },
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
+      ],
+    );
+    if (widget.embedded) return content;
+    return AmbientScaffold(
+      appBar: const AppTopBar(title: 'Misc'),
+      body: content,
     );
   }
 

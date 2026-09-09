@@ -93,50 +93,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               AppTokens.s4,
               AppTokens.s3,
             ),
-            child: AppSurface(
-              depth: AppDepth.well,
-              borderRadius: AppTokens.brPill,
-              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-              child: Row(
-                children: [
-                  AppIcon(
-                    AppIcons.search,
-                    size: AppTokens.iconSm,
-                    color: AppTokens.fgTertiary,
-                  ),
-                  const SizedBox(width: AppTokens.s3),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      textInputAction: TextInputAction.search,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        border: InputBorder.none,
-                        hintText: 'Search settings',
-                        hintStyle: AppTokens.rowSubtitle(context),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isWide ? 480 : double.infinity,
+                ),
+                child: AppSurface(
+                  depth: AppDepth.well,
+                  borderRadius: AppTokens.brPill,
+                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                  child: Row(
+                    children: [
+                      AppIcon(
+                        AppIcons.search,
+                        size: AppTokens.iconSm,
+                        color: AppTokens.fgTertiary,
                       ),
-                      style: AppTokens.rowTitle(context),
-                      onChanged: (value) => setState(() => _query = value),
-                    ),
+                      const SizedBox(width: AppTokens.s3),
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: 'Search settings',
+                            hintStyle: AppTokens.rowSubtitle(context),
+                          ),
+                          style: AppTokens.rowTitle(context),
+                          onChanged: (value) => setState(() => _query = value),
+                        ),
+                      ),
+                      if (_query.isNotEmpty)
+                        IconButton(
+                          icon: const AppIcon(AppIcons.close,
+                              size: AppTokens.iconSm),
+                          tooltip: 'Clear',
+                          onPressed: () {
+                            _controller.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                    ],
                   ),
-                  if (_query.isNotEmpty)
-                    IconButton(
-                      icon:
-                          const AppIcon(AppIcons.close, size: AppTokens.iconSm),
-                      tooltip: 'Clear',
-                      onPressed: () {
-                        _controller.clear();
-                        setState(() => _query = '');
-                      },
-                    ),
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
-      body: isWide && !searching
-          ? _buildMasterDetail(context)
+      body: isWide
+          ? _buildMasterDetail(context, searching: searching)
           : WideContentCenter(
               maxWidth: WideLayout.maxNarrowWidth,
               child: searching ? _buildResults() : _buildGroups(context),
@@ -146,8 +154,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// Desktop arrangement: category list on the left, selected page inline on
   /// the right. Detail pages are the same screen widgets the phone pushes,
-  /// so mobile behaviour is untouched.
-  Widget _buildMasterDetail(BuildContext context) {
+  /// rendered content-only via [embedded], so mobile behaviour is untouched.
+  /// Search stays in the split: results replace the right pane, not the row.
+  Widget _buildMasterDetail(BuildContext context, {bool searching = false}) {
     final entries = [
       (AppIcons.library, 'Library', 'Music folders, scanning'),
       (AppIcons.playCircle, 'Playback', 'Audio settings, transitions'),
@@ -172,7 +181,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 280,
+            width: 300,
             child: ListView.builder(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(
@@ -189,10 +198,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   leading: AppRowIcon(icon: entry.$1, size: 40),
                   title: entry.$2,
                   subtitle: entry.$3,
-                  isActive: index == _selected,
+                  isActive: index == _selected && !searching,
                   onTap: () => setState(() {
                     _selected = index;
                     _detailHighlight = null;
+                    _controller.clear();
+                    _query = '';
                   }),
                 );
               },
@@ -200,50 +211,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(width: AppTokens.s4),
           Expanded(
-            child: IndexedStack(
-              index: _selected,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                KeyedSubtree(
-                  key: ValueKey('settings-detail-0-$_detailHighlight'),
-                  child: LibrarySettingsScreen(
-                    highlightId: _selected == 0 ? _detailHighlight : null,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s2,
+                    AppTokens.s2,
+                    AppTokens.s4,
+                    AppTokens.s1,
+                  ),
+                  child: Text(
+                    searching
+                        ? 'Results for "${_query.trim()}"'
+                        : entries[_selected].$2,
+                    style:
+                        AppTokens.screenTitle(context).copyWith(fontSize: 22),
                   ),
                 ),
-                KeyedSubtree(
-                  key: ValueKey('settings-detail-1-$_detailHighlight'),
-                  child: PlaybackSettingsScreen(
-                    highlightId: _selected == 1 ? _detailHighlight : null,
-                  ),
-                ),
-                KeyedSubtree(
-                  key: ValueKey('settings-detail-2-$_detailHighlight'),
-                  child: AppearanceSettingsScreen(
-                    highlightId: _selected == 2 ? _detailHighlight : null,
-                  ),
-                ),
-                const KeyedSubtree(
-                  key: ValueKey('settings-detail-3'),
-                  child: SyncSettingsScreen(),
-                ),
-                KeyedSubtree(
-                  key: ValueKey('settings-detail-4-$_detailHighlight'),
-                  child: DataManagementSettingsScreen(
-                    highlightId: _selected == 4 ? _detailHighlight : null,
-                  ),
-                ),
-                const KeyedSubtree(
-                  key: ValueKey('settings-detail-5'),
-                  child: IndexerScreen(),
-                ),
-                KeyedSubtree(
-                  key: ValueKey('settings-detail-6-$_detailHighlight'),
-                  child: MiscSettingsScreen(
-                    highlightId: _selected == 6 ? _detailHighlight : null,
-                  ),
-                ),
-                const KeyedSubtree(
-                  key: ValueKey('settings-detail-7'),
-                  child: AboutSettingsScreen(),
+                Expanded(
+                  child: searching
+                      ? _buildResults()
+                      : IndexedStack(
+                          index: _selected,
+                          children: [
+                            KeyedSubtree(
+                              key: ValueKey(
+                                  'settings-detail-0-$_detailHighlight'),
+                              child: LibrarySettingsScreen(
+                                highlightId:
+                                    _selected == 0 ? _detailHighlight : null,
+                                embedded: true,
+                              ),
+                            ),
+                            KeyedSubtree(
+                              key: ValueKey(
+                                  'settings-detail-1-$_detailHighlight'),
+                              child: PlaybackSettingsScreen(
+                                highlightId:
+                                    _selected == 1 ? _detailHighlight : null,
+                                embedded: true,
+                              ),
+                            ),
+                            KeyedSubtree(
+                              key: ValueKey(
+                                  'settings-detail-2-$_detailHighlight'),
+                              child: AppearanceSettingsScreen(
+                                highlightId:
+                                    _selected == 2 ? _detailHighlight : null,
+                                embedded: true,
+                              ),
+                            ),
+                            const KeyedSubtree(
+                              key: ValueKey('settings-detail-3'),
+                              child: SyncSettingsScreen(embedded: true),
+                            ),
+                            KeyedSubtree(
+                              key: ValueKey(
+                                  'settings-detail-4-$_detailHighlight'),
+                              child: DataManagementSettingsScreen(
+                                highlightId:
+                                    _selected == 4 ? _detailHighlight : null,
+                                embedded: true,
+                              ),
+                            ),
+                            const KeyedSubtree(
+                              key: ValueKey('settings-detail-5'),
+                              child: IndexerScreen(embedded: true),
+                            ),
+                            KeyedSubtree(
+                              key: ValueKey(
+                                  'settings-detail-6-$_detailHighlight'),
+                              child: MiscSettingsScreen(
+                                highlightId:
+                                    _selected == 6 ? _detailHighlight : null,
+                                embedded: true,
+                              ),
+                            ),
+                            const KeyedSubtree(
+                              key: ValueKey('settings-detail-7'),
+                              child: AboutSettingsScreen(embedded: true),
+                            ),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -378,7 +428,12 @@ class LibrarySettingsScreen extends ConsumerWidget {
   /// Row to reveal when opened from settings search.
   final String? highlightId;
 
-  const LibrarySettingsScreen({super.key, this.highlightId});
+  /// When true, renders content only for embedding in the wide
+  /// master-detail pane (no scaffold or top bar).
+  final bool embedded;
+
+  const LibrarySettingsScreen(
+      {super.key, this.highlightId, this.embedded = false});
 
   // Discrete steps for file size slider (in bytes)
   static const List<int> _fileSizeSteps = [
@@ -461,73 +516,75 @@ class LibrarySettingsScreen extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
+    final content = AppSettingsList(
+      highlightId: highlightId,
+      children: [
+        AppSettingsGroup(
+          label: 'Library',
+          icon: AppIcons.library,
+          children: [
+            AppSettingsTile(
+              icon: AppIcons.folder,
+              searchId: 'library.folders',
+              title: 'Music Folders',
+              subtitle: 'Manage music library folders',
+              onTap: () => context.pushApp(const FolderManagementScreen()),
+            ),
+            AppSettingsTile(
+              icon: AppIcons.refresh,
+              searchId: 'library.rescan',
+              title: 'Re-scan Library Now',
+              subtitle: 'Manually refresh all songs from disk',
+              onTap: () => appSnack(context, 'Scanning library…'),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Filters',
+          icon: AppIcons.filterList,
+          children: [
+            AppSettingsSwitch(
+              icon: AppIcons.videoLibrary,
+              searchId: 'library.include_videos',
+              title: 'Include Videos',
+              subtitle: 'Show video files in your song library',
+              value: settings.includeVideos,
+              onChanged: notifier.setIncludeVideos,
+            ),
+            AppSettingsSlider(
+              icon: AppIcons.dataUsage,
+              searchId: 'library.min_file_size',
+              title: 'Minimum File Size',
+              valueLabel: _formatFileSize(settings.minimumFileSizeBytes),
+              value: _nearestFileSizeIndex(settings.minimumFileSizeBytes)
+                  .toDouble(),
+              min: 0,
+              max: (_fileSizeSteps.length - 1).toDouble(),
+              divisions: _fileSizeSteps.length - 1,
+              onChanged: (val) =>
+                  notifier.setMinimumFileSizeBytes(_fileSizeSteps[val.round()]),
+            ),
+            AppSettingsSlider(
+              icon: AppIcons.timer,
+              searchId: 'library.min_duration',
+              title: 'Minimum Duration',
+              valueLabel: _formatDuration(settings.minimumTrackDurationMs),
+              value: _nearestDurationIndex(settings.minimumTrackDurationMs)
+                  .toDouble(),
+              min: 0,
+              max: (_durationSteps.length - 1).toDouble(),
+              divisions: _durationSteps.length - 1,
+              onChanged: (val) => notifier
+                  .setMinimumTrackDurationMs(_durationSteps[val.round()]),
+            ),
+          ],
+        ),
+      ],
+    );
+    if (embedded) return content;
     return AmbientScaffold(
       appBar: const AppTopBar(title: 'Library'),
-      body: AppSettingsList(
-        highlightId: highlightId,
-        children: [
-          AppSettingsGroup(
-            label: 'Library',
-            icon: AppIcons.library,
-            children: [
-              AppSettingsTile(
-                icon: AppIcons.folder,
-                searchId: 'library.folders',
-                title: 'Music Folders',
-                subtitle: 'Manage music library folders',
-                onTap: () => context.pushApp(const FolderManagementScreen()),
-              ),
-              AppSettingsTile(
-                icon: AppIcons.refresh,
-                searchId: 'library.rescan',
-                title: 'Re-scan Library Now',
-                subtitle: 'Manually refresh all songs from disk',
-                onTap: () => appSnack(context, 'Scanning library…'),
-              ),
-            ],
-          ),
-          AppSettingsGroup(
-            label: 'Filters',
-            icon: AppIcons.filterList,
-            children: [
-              AppSettingsSwitch(
-                icon: AppIcons.videoLibrary,
-                searchId: 'library.include_videos',
-                title: 'Include Videos',
-                subtitle: 'Show video files in your song library',
-                value: settings.includeVideos,
-                onChanged: notifier.setIncludeVideos,
-              ),
-              AppSettingsSlider(
-                icon: AppIcons.dataUsage,
-                searchId: 'library.min_file_size',
-                title: 'Minimum File Size',
-                valueLabel: _formatFileSize(settings.minimumFileSizeBytes),
-                value: _nearestFileSizeIndex(settings.minimumFileSizeBytes)
-                    .toDouble(),
-                min: 0,
-                max: (_fileSizeSteps.length - 1).toDouble(),
-                divisions: _fileSizeSteps.length - 1,
-                onChanged: (val) => notifier
-                    .setMinimumFileSizeBytes(_fileSizeSteps[val.round()]),
-              ),
-              AppSettingsSlider(
-                icon: AppIcons.timer,
-                searchId: 'library.min_duration',
-                title: 'Minimum Duration',
-                valueLabel: _formatDuration(settings.minimumTrackDurationMs),
-                value: _nearestDurationIndex(settings.minimumTrackDurationMs)
-                    .toDouble(),
-                min: 0,
-                max: (_durationSteps.length - 1).toDouble(),
-                divisions: _durationSteps.length - 1,
-                onChanged: (val) => notifier
-                    .setMinimumTrackDurationMs(_durationSteps[val.round()]),
-              ),
-            ],
-          ),
-        ],
-      ),
+      body: content,
     );
   }
 }

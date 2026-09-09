@@ -12,7 +12,6 @@ import '../../services/audio_player_manager.dart';
 import '../../services/library_logic.dart';
 import '../widgets/search_filter_chips.dart';
 import '../widgets/search_result_item.dart';
-import '../widgets/song_options_menu.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../../providers/selection_provider.dart';
 import '../components/app_feedback.dart';
@@ -23,6 +22,7 @@ import 'song_list_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
+import '../components/wide_track_table.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -126,24 +126,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             : const {},
         child: AmbientScaffold(
           appBar: AppBar(
-            title: TextField(
-              controller: _searchController,
-              focusNode: _searchFocus,
-              autofocus: !isWide,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => _playFirstResult(),
-              style: const TextStyle(fontSize: 18),
-              decoration: InputDecoration(
-                hintText: 'Search songs, artists, albums...',
-                border: InputBorder.none,
-                hintStyle: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurfaceVariant
-                      .withValues(alpha: 0.5),
+            title: Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isWide ? 560 : double.infinity,
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocus,
+                  autofocus: !isWide,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _playFirstResult(),
+                  style: const TextStyle(fontSize: 18),
+                  decoration: InputDecoration(
+                    hintText: 'Search songs, artists, albums...',
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.5),
+                    ),
+                  ),
+                  onChanged: _onSearchChanged,
                 ),
               ),
-              onChanged: _onSearchChanged,
             ),
             actions: [
               if (_query.isNotEmpty)
@@ -156,7 +164,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               preferredSize: const Size.fromHeight(56),
               child: Container(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: const SearchFilterChips(),
+                alignment: Alignment.centerLeft,
+                child: WideContentCenter(
+                  child: const Align(
+                    alignment: Alignment.centerLeft,
+                    child: SearchFilterChips(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -233,9 +247,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// Desktop results: Artists and Albums as grids with counts, Songs as a
-  /// full-width track list — the Spotify arrangement. Narrow windows keep
-  /// the single phone list in [_buildSearchResults].
+  /// Wide results: artists and albums as compact grids with counts, songs
+  /// as a track table. Narrow windows keep the single phone list in
+  /// [_buildSearchResults].
   Widget _buildWideResults(
     BuildContext context,
     AudioPlayerManager audioManager,
@@ -247,7 +261,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (artists.isEmpty && albums.isEmpty && songs.isEmpty) {
       return _buildNoResultsState(context);
     }
-    final columns = WideLayout.gridColumns(context, base: 3);
+    final columns = WideLayout.gridColumns(context, base: 4);
 
     return WideContentCenter(
       child: CustomScrollView(
@@ -262,18 +276,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
-                  mainAxisExtent: 96,
+                  mainAxisExtent: 76,
                   crossAxisSpacing: AppTokens.s3,
                   mainAxisSpacing: AppTokens.s2,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     if (!context.mounted) return const SizedBox.shrink();
-                    return Center(
-                      child: _buildResultItem(
-                        artists[index],
-                        audioManager,
-                        context,
+                    final group = artists[index];
+                    return _WideBrowseCard(
+                      title: group.artistName,
+                      subtitle:
+                          '${group.results.length} ${group.results.length == 1 ? 'track' : 'tracks'}',
+                      onTap: () => _showArtistSongs(
+                        group.artistName,
+                        group.results.map((r) => r.song).toList(),
                       ),
                     );
                   },
@@ -291,18 +308,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
-                  mainAxisExtent: 96,
+                  mainAxisExtent: 76,
                   crossAxisSpacing: AppTokens.s3,
                   mainAxisSpacing: AppTokens.s2,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     if (!context.mounted) return const SizedBox.shrink();
-                    return Center(
-                      child: _buildResultItem(
-                        albums[index],
-                        audioManager,
-                        context,
+                    final group = albums[index];
+                    return _WideBrowseCard(
+                      title: group.albumName,
+                      subtitle:
+                          '${group.artistName} · ${group.results.length} ${group.results.length == 1 ? 'track' : 'tracks'}',
+                      onTap: () => _showAlbumSongs(
+                        group.albumName,
+                        group.artistName,
+                        group.results.map((r) => r.song).toList(),
                       ),
                     );
                   },
@@ -315,13 +336,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             SliverToBoxAdapter(
               child: AppSectionHeader(label: 'Songs (${songs.length})'),
             ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (!context.mounted) return const SizedBox.shrink();
-                  return _buildWideSongItem(songs[index], audioManager);
-                },
-                childCount: songs.length,
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppTokens.s3),
+                child: WideTrackTableHeader(showAlbum: true),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (!context.mounted) return const SizedBox.shrink();
+                    return _buildWideSongItem(songs[index], audioManager);
+                  },
+                  childCount: songs.length,
+                ),
               ),
             ),
           ],
@@ -333,32 +363,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// Song rows keep the phone item (InkWell already handles hover), with a
-  /// desktop right-click affordance for the song menu on top.
+  /// Wide song rows use the shared track table: hover wash, duration
+  /// column and right-click menu built in.
   Widget _buildWideSongItem(
       SearchResult item, AudioPlayerManager audioManager) {
     final song = item.song;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTap: () {
-          if (!mounted) return;
-          showSongOptionsMenu(
-            context,
-            ref,
-            song.filename,
-            song.title,
-            song: song,
-          );
-        },
-        child: SearchResultItem(
-          result: item,
-          searchQuery: _query,
-          heroTagPrefix: 'search',
-          onTap: () => _playSearchResult(item, audioManager),
-        ),
-      ),
+    return WideTrackRow(
+      song: song,
+      heroTagPrefix: 'search',
+      showAlbum: true,
+      onTap: () => _playSearchResult(item, audioManager),
     );
   }
 
@@ -563,6 +577,75 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       albumName: albumName,
       artistName: artistName,
     ));
+  }
+}
+
+/// Compact wide-window browse card for artist/album hits: full name on
+/// hover via tooltip, count below, hover wash and click cursor.
+class _WideBrowseCard extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _WideBrowseCard({
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  State<_WideBrowseCard> createState() => _WideBrowseCardState();
+}
+
+class _WideBrowseCardState extends State<_WideBrowseCard> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: widget.title,
+      waitDuration: const Duration(milliseconds: 500),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: AppTokens.dFast,
+            curve: AppTokens.cStandard,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s3,
+              vertical: AppTokens.s2,
+            ),
+            decoration: BoxDecoration(
+              color: _hovering ? AppTokens.surface(2) : AppTokens.surface(1),
+              borderRadius: AppTokens.brMd,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTokens.rowTitle(context).copyWith(fontSize: 15),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTokens.rowSubtitle(context).copyWith(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

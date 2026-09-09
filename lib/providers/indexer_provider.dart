@@ -11,6 +11,7 @@ import '../services/cover_refresh_service.dart';
 import '../services/database_optimizer_service.dart';
 import '../services/database_service.dart';
 import '../services/ffmpeg_service.dart';
+import '../services/library_logic.dart';
 import '../services/library_repair_service.dart';
 import '../services/online_metadata_service.dart';
 import '../services/passive_art_fetcher_service.dart';
@@ -28,7 +29,9 @@ enum IndexerOperationState {
   error,
 }
 
-/// Represents a single indexer operation with its progress
+/// Represents a single indexer operation with its progress.
+/// Operations that track two channels (artist + album art) use the
+/// artist*/album* counters; every other operation uses the single channel.
 class IndexerOperation {
   final String id;
   final String name;
@@ -37,6 +40,10 @@ class IndexerOperation {
   final int processedCount;
   final int totalCount;
   final int targetCount;
+  final int artistProcessed;
+  final int artistTotal;
+  final int albumProcessed;
+  final int albumTotal;
   final int failedCount;
   final List<String> failedItems;
   final String? errorMessage;
@@ -51,6 +58,10 @@ class IndexerOperation {
     this.processedCount = 0,
     this.totalCount = 0,
     this.targetCount = 0,
+    this.artistProcessed = 0,
+    this.artistTotal = 0,
+    this.albumProcessed = 0,
+    this.albumTotal = 0,
     this.failedCount = 0,
     this.failedItems = const [],
     this.errorMessage,
@@ -63,6 +74,10 @@ class IndexerOperation {
     int? processedCount,
     int? totalCount,
     int? targetCount,
+    int? artistProcessed,
+    int? artistTotal,
+    int? albumProcessed,
+    int? albumTotal,
     int? failedCount,
     List<String>? failedItems,
     String? errorMessage,
@@ -75,6 +90,10 @@ class IndexerOperation {
       processedCount: processedCount ?? this.processedCount,
       totalCount: totalCount ?? this.totalCount,
       targetCount: targetCount ?? this.targetCount,
+      artistProcessed: artistProcessed ?? this.artistProcessed,
+      artistTotal: artistTotal ?? this.artistTotal,
+      albumProcessed: albumProcessed ?? this.albumProcessed,
+      albumTotal: albumTotal ?? this.albumTotal,
       failedCount: failedCount ?? this.failedCount,
       failedItems: failedItems ?? this.failedItems,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -84,8 +103,17 @@ class IndexerOperation {
   }
 
   double get progress => targetCount > 0 ? processedCount / targetCount : 0.0;
+  double get artistProgress =>
+      artistTotal > 0 ? artistProcessed / artistTotal : 0.0;
+  double get albumProgress =>
+      albumTotal > 0 ? albumProcessed / albumTotal : 0.0;
   bool get isRunning => state == IndexerOperationState.running;
   String get progressText => '$processedCount/$targetCount';
+  String get artistProgressText => '$artistProcessed/$artistTotal';
+  String get albumProgressText => '$albumProcessed/$albumTotal';
+
+  /// Whether this operation reports separate artist/album progress bars.
+  bool get hasSplitArtProgress => artistTotal > 0 || albumTotal > 0;
   bool get isFullyCached =>
       processedCount > 0 && processedCount == totalCount && totalCount > 0;
   bool get isDatabaseOperation => id == 'optimize_databases';
@@ -235,8 +263,9 @@ class IndexerNotifier extends Notifier<IndexerState> {
       ),
       'rebuild_artist_album_art': const IndexerOperation(
         id: 'rebuild_artist_album_art',
-        name: 'Rebuild Artist & Album Art Caches',
-        description: 'Fetch and cache images for all artists and albums',
+        name: 'Fetch Artist & Album Covers',
+        description:
+            'Fetch missing artist and album covers online, biggest collections first',
         isBlocking: false,
         requiresRestart: false,
       ),
@@ -341,10 +370,18 @@ class IndexerNotifier extends Notifier<IndexerState> {
 
     updatedOperations['rebuild_artist_album_art'] =
         updatedOperations['rebuild_artist_album_art']!.copyWith(
-      processedCount: artCounts['cached'],
-      totalCount: artCounts['total'],
-      targetCount: (artCounts['total']! - artCounts['cached']!)
-          .clamp(0, artCounts['total']!),
+      artistProcessed: artCounts['artistCached'],
+      artistTotal: artCounts['artistTotal'],
+      albumProcessed: artCounts['albumCached'],
+      albumTotal: artCounts['albumTotal'],
+      processedCount: artCounts['artistCached']! + artCounts['albumCached']!,
+      totalCount: artCounts['artistTotal']! + artCounts['albumTotal']!,
+      targetCount: ((artCounts['artistTotal']! - artCounts['artistCached']!) +
+              (artCounts['albumTotal']! - artCounts['albumCached']!))
+          .clamp(
+        0,
+        artCounts['artistTotal']! + artCounts['albumTotal']!,
+      ),
     );
 
     state = state.copyWith(operations: updatedOperations);
@@ -516,6 +553,33 @@ class IndexerNotifier extends Notifier<IndexerState> {
       operations[id] = op.copyWith(processedCount: processed);
       state = state.copyWith(operations: operations);
     }
+  }
+
+  /// Updates the separate artist/album progress channels of an operation,
+  /// keeping the combined counters in sync for shared subtitle logic.
+  void _updateArtProgress(
+    String id, {
+    int? artistDone,
+    int? artistTotal,
+    int? albumDone,
+    int? albumTotal,
+  }) {
+    final operations = Map<String, IndexerOperation>.from(state.operations);
+    final op = operations[id];
+    if (op == null) return;
+    final aDone = artistDone ?? op.artistProcessed;
+    final aTotal = artistTotal ?? op.artistTotal;
+    final bDone = albumDone ?? op.albumProcessed;
+    final bTotal = albumTotal ?? op.albumTotal;
+    operations[id] = op.copyWith(
+      artistProcessed: aDone,
+      artistTotal: aTotal,
+      albumProcessed: bDone,
+      albumTotal: bTotal,
+      processedCount: aDone + bDone,
+      totalCount: aTotal + bTotal,
+    );
+    state = state.copyWith(operations: operations);
   }
 
   /// Re-reads the library after an operation wrote to the `song` table.
@@ -1133,12 +1197,19 @@ class IndexerNotifier extends Notifier<IndexerState> {
     try {
       final artState = ref.read(artistAlbumArtProvider);
 
-      final artists = songs
-          .map((s) => OnlineMetadataService.cleanTag(s.artist))
-          .whereType<String>()
-          .toSet();
+      // Split multi-artist tags, mirroring the fetcher, so idle counts match
+      // the keys a run actually resolves.
+      final artists = <String>{};
+      for (final song in songs) {
+        final split = LibraryLogic.splitArtistNames(song.artist);
+        final names = split.isEmpty ? [song.artist] : split;
+        for (final name in names) {
+          final clean = OnlineMetadataService.cleanTag(name);
+          if (clean != null) artists.add(clean);
+        }
+      }
 
-      final albumKeys = <String>{};
+      final albumDisplay = <String, (String, String?)>{};
       for (final song in songs) {
         final album = OnlineMetadataService.cleanTag(song.album);
         if (album == null) continue;
@@ -1146,28 +1217,34 @@ class IndexerNotifier extends Notifier<IndexerState> {
         final key = artist != null
             ? '${artist.toLowerCase()}|${album.toLowerCase()}'
             : album.toLowerCase();
-        albumKeys.add(key);
+        albumDisplay.putIfAbsent(key, () => (album, artist));
       }
 
-      int cached = 0;
-
+      int artistCached = 0;
       for (final artist in artists) {
         final p = artState.getArtistArt(artist);
-        if (p != null && await File(p).exists()) cached++;
+        if (p != null && await File(p).exists()) artistCached++;
       }
 
-      for (final song in songs) {
-        final album = OnlineMetadataService.cleanTag(song.album);
-        if (album == null) continue;
-        final artist = OnlineMetadataService.cleanTag(song.artist);
-        final p = artState.getAlbumArt(album, artistName: artist);
-        if (p != null && await File(p).exists()) cached++;
+      int albumCached = 0;
+      for (final entry in albumDisplay.values) {
+        final p = artState.getAlbumArt(entry.$1, artistName: entry.$2);
+        if (p != null && await File(p).exists()) albumCached++;
       }
 
-      final total = artists.length + albumKeys.length;
-      return {'cached': cached, 'total': total};
+      return {
+        'artistCached': artistCached,
+        'artistTotal': artists.length,
+        'albumCached': albumCached,
+        'albumTotal': albumDisplay.length,
+      };
     } catch (_) {
-      return {'cached': 0, 'total': 0};
+      return {
+        'artistCached': 0,
+        'artistTotal': 0,
+        'albumCached': 0,
+        'albumTotal': 0,
+      };
     }
   }
 
@@ -1317,13 +1394,34 @@ class IndexerNotifier extends Notifier<IndexerState> {
       await notifier.clearAll();
     }
 
-    PassiveArtFetcherService.instance.start();
+    bool isCancelled() => _currentCancelToken?.isCancelled ?? false;
+    final result = await PassiveArtFetcherService.instance.runArtBurst(
+      driven: true,
+      onArtistProgress: (done, total) => _updateArtProgress(
+        'rebuild_artist_album_art',
+        artistDone: done,
+        artistTotal: total,
+      ),
+      onAlbumProgress: (done, total) => _updateArtProgress(
+        'rebuild_artist_album_art',
+        albumDone: done,
+        albumTotal: total,
+      ),
+      isCancelled: isCancelled,
+    );
 
-    _updateProgress('rebuild_artist_album_art', 1, 1);
+    _updateFailedItems('rebuild_artist_album_art', result.failedItems);
 
-    return const IndexerResult(
+    final fetched = result.fetchedArtists + result.fetchedAlbums;
+    final message = result.offline
+        ? 'Went offline — fetched $fetched covers, the rest resume automatically'
+        : 'Fetched $fetched artist & album covers'
+            ' (${result.fetchedArtists} artists, ${result.fetchedAlbums} albums)';
+
+    return IndexerResult(
       success: true,
-      message: 'Artist and Album artwork scan started in background',
+      message: message,
+      warnings: result.failedItems.isNotEmpty ? result.failedItems : null,
     );
   }
 }

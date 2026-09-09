@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package:metadata_god/metadata_god.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart'
     show createDatabaseFactoryFfi, sqfliteFfiInit;
@@ -34,9 +34,9 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Linux and Windows have no platform implementations for metadata_god,
-  // audio_session or audio_service; playback goes through just_audio_media_kit
-  // instead, and sqlite goes through sqflite_common_ffi.
+  // Linux and Windows have no platform implementations for audio_session or
+  // audio_service; playback goes through just_audio_media_kit instead, and
+  // sqlite goes through sqflite_common_ffi.
   final isMediaKitDesktop = Platform.isLinux || Platform.isWindows;
 
   if (isMediaKitDesktop) {
@@ -57,7 +57,6 @@ Future<void> main() async {
 
   // Parallel initialization
   await Future.wait([
-    if (!isMediaKitDesktop) _initializeMetadataGod(),
     if (!isMediaKitDesktop) _setupAudioSession(),
     if (!isMediaKitDesktop) _setupJustAudioBackground(),
   ], eagerError: false);
@@ -82,6 +81,8 @@ Future<void> main() async {
 
   await storage.setIsLocalMode(true);
 
+  await _initDesktopWindow(prefs);
+
   runApp(ProviderScope(
     overrides: [
       setupProvider
@@ -92,6 +93,44 @@ Future<void> main() async {
   ));
 }
 
+/// Desktop launch placement: maximize once on first run, then leave the
+/// window alone so user resizes are respected on later launches.
+Future<void> _initDesktopWindow(SharedPreferences prefs) async {
+  if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
+  try {
+    await windowManager.ensureInitialized();
+    const minSize = Size(960, 600);
+    const options = WindowOptions(
+      minimumSize: minSize,
+      size: minSize,
+      center: true,
+      title: 'Wispie',
+    );
+    final placed = prefs.getBool('desktop_window_placed_v1') ?? false;
+    if (!placed) {
+      await windowManager.waitUntilReadyToShow(options, () async {
+        await windowManager.show();
+        try {
+          await windowManager.maximize();
+        } on Exception catch (e) {
+          debugPrint('Desktop maximize failed: $e');
+        }
+        try {
+          await prefs.setBool('desktop_window_placed_v1', true);
+        } on Exception catch (e) {
+          debugPrint('Failed to persist window flag: $e');
+        }
+      });
+    } else {
+      await windowManager.waitUntilReadyToShow(options, () async {
+        await windowManager.show();
+      });
+    }
+  } on Exception catch (e) {
+    debugPrint('Desktop window init failed: $e');
+  }
+}
+
 DynamicLibrary _openLinuxSqlite() {
   // Distros disagree on the soname: most ship libsqlite3.so.0, some only
   // libsqlite3.so.1. Try both before giving up.
@@ -99,14 +138,6 @@ DynamicLibrary _openLinuxSqlite() {
     return DynamicLibrary.open('libsqlite3.so.0');
   } catch (_) {
     return DynamicLibrary.open('libsqlite3.so.1');
-  }
-}
-
-Future<void> _initializeMetadataGod() async {
-  try {
-    await MetadataGod.initialize();
-  } catch (e) {
-    debugPrint("Failed to initialize MetadataGod: $e");
   }
 }
 

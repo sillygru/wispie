@@ -8,7 +8,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
-import 'package:metadata_god/metadata_god.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
 import 'database_service.dart';
 import 'scanner_service.dart';
@@ -103,8 +102,8 @@ class FileManagerService {
   /// Updates all metadata for a song using FFmpeg with `-c copy` so no
   /// existing tag, cover or lyrics is dropped and no re-encode occurs.
   ///
-  /// Falls back to the legacy `MetadataGod` path only on desktop when
-  /// `ffmpeg` is not available.
+  /// Falls back to the pure-Dart `audio_metadata_reader` path only on desktop
+  /// when `ffmpeg` is not available.
   Future<void> updateSongMetadata(
       Song song, String title, String artist, String album) async {
     return _serializeTagWrite(
@@ -128,8 +127,8 @@ class FileManagerService {
             usesSystem ? await FFmpegService().isFFmpegAvailable() : true;
         if (usesSystem && !available) {
           debugPrint(
-              'FileManager: FFmpeg unavailable, falling back to MetadataGod: $e');
-          await _updateTextWithMetadataGod(fileUrl,
+              'FileManager: FFmpeg unavailable, falling back to audio_metadata_reader: $e');
+          await _updateTextWithAudioMetadataReader(fileUrl,
               title: title, artist: artist, album: album);
           return;
         }
@@ -192,12 +191,21 @@ class FileManagerService {
     }
   }
 
-  Future<void> _updateTextWithMetadataGod(String fileUrl,
+  /// Desktop fallback for text edits when no system `ffmpeg` is installed.
+  /// Uses the pure-Dart reader, which rewrites audio containers only — video
+  /// files (which it cannot safely parse) keep requiring FFmpeg.
+  Future<void> _updateTextWithAudioMetadataReader(String fileUrl,
       {required String title,
       required String artist,
       required String album}) async {
-    // Legacy path: copy to temp, mutate via _updateMetadataWithLibraries,
-    // then publish atomically. Preserved for desktop without ffmpeg.
+    final ext = p.extension(fileUrl).toLowerCase();
+    if (Song.videoExtensions.contains(ext)) {
+      throw Exception(
+          'Text metadata update for video files requires ffmpeg to be installed.');
+    }
+    // Same staging flow as the cover path: copy to temp, mutate via
+    // _updateMetadataWithLibraries, then publish atomically. Preserved for
+    // desktop without ffmpeg.
     final tempDir = await Directory.systemTemp.createTemp('gru_meta_');
     final tempFile = File(p.join(tempDir.path, p.basename(fileUrl)));
     try {
@@ -214,7 +222,7 @@ class FileManagerService {
       if (!hasAudio) {
         // If ffmpeg is available we validated; if not, skip strict check.
         debugPrint(
-            'FileManager: MetadataGod output validation skipped (no ffprobe)');
+            'FileManager: audio_metadata_reader output validation skipped (no ffprobe)');
       }
 
       if (Platform.isAndroid) {
@@ -268,7 +276,7 @@ class FileManagerService {
     debugPrint('FileManager: updateSongCover called for ${song.filename}');
 
     try {
-      Picture? newPicture;
+      amr.Picture? newPicture;
       if (imagePath != null) {
         final file = File(imagePath);
         if (!await file.exists()) {
@@ -296,9 +304,10 @@ class FileManagerService {
 
         final mimeType = _getMimeTypeFromExtension(p.extension(imagePath));
 
-        newPicture = Picture(
-          mimeType: mimeType,
-          data: bytes,
+        newPicture = amr.Picture(
+          bytes,
+          mimeType,
+          amr.PictureType.coverFront,
         );
       }
 
@@ -361,7 +370,7 @@ class FileManagerService {
             'FileManager: extraction could not read back cover, writing bytes directly');
         final ext = p.extension(imagePath).toLowerCase();
         final newCoverFile = File(p.join(coversDir.path, '$hash$ext'));
-        await newCoverFile.writeAsBytes(newPicture!.data);
+        await newCoverFile.writeAsBytes(newPicture!.bytes);
         return newCoverFile.path;
       }
 
@@ -679,7 +688,7 @@ class FileManagerService {
       {String? title,
       String? artist,
       String? album,
-      Picture? picture,
+      amr.Picture? picture,
       bool removePicture = false}) {
     return _serializeTagWrite(() => _updateMetadataInternalSerialized(
           fileUrl,
@@ -695,7 +704,7 @@ class FileManagerService {
       {String? title,
       String? artist,
       String? album,
-      Picture? picture,
+      amr.Picture? picture,
       bool removePicture = false}) async {
     try {
       final lock = await _acquireExclusiveLock(fileUrl);
@@ -705,7 +714,7 @@ class FileManagerService {
         try {
           await File(fileUrl).copy(tempFile.path);
 
-          // Use audio_metadata_reader for cover updates and MetadataGod for text
+          // Cover art and text go through audio_metadata_reader in one pass.
           await _updateMetadataWithLibraries(
             tempFile: tempFile,
             tempDir: tempDir,
@@ -788,61 +797,44 @@ class FileManagerService {
     }
   }
 
-  /// Helper method to update metadata using both audio_metadata_reader (for covers and lyrics)
-  /// and MetadataGod (for text). Works on all platforms.
+  /// Applies cover and text edits to the staged copy via audio_metadata_reader.
+  /// Works on all platforms; `updateMetadata` is a read-modify-write, so
+  /// untouched fields (lyrics, track numbers, existing pictures) survive.
   Future<void> _updateMetadataWithLibraries({
     required File tempFile,
     required Directory tempDir,
     String? title,
     String? artist,
     String? album,
-    Picture? picture,
+    amr.Picture? picture,
     bool removePicture = false,
   }) async {
-    // audio_metadata_reader rewrites the whole file synchronously, so it runs
-    // off the UI isolate.
-    if (picture != null || removePicture) {
-      // Built out here on purpose. The closure handed to Isolate.run captures
-      // whatever it references, and File, Directory and Picture have no
-      // business crossing an isolate boundary — so the request is reduced to
-      // strings, bytes and a bool first, and that is all the closure sees.
-      final request = _TagMutation(
-        tempFilePath: tempFile.path,
-        tempDirPath: tempDir.path,
-        pictureBytes: picture == null ? null : Uint8List.fromList(picture.data),
-        pictureMimeType: picture?.mimeType,
-        removePicture: removePicture,
-      );
-      await Isolate.run(() => _runTagMutation(request));
-    }
-
-    // If there are no MetadataGod-supported text changes, skip MetadataGod.
-    // This avoids clobbering lyric-only writes.
-    if (title == null && artist == null && album == null) {
+    // Skip no-op writes: the reader rewrites the whole file, and skipping
+    // also avoids clobbering lyric-only writes.
+    if (title == null &&
+        artist == null &&
+        album == null &&
+        picture == null &&
+        !removePicture) {
       return;
     }
-
-    // Use MetadataGod for text metadata (works reliably). Its work happens on a
-    // native worker thread, so this does not block the UI isolate.
-    final metadata = await MetadataGod.readMetadata(file: tempFile.path);
-    final updatedMetadata = Metadata(
-      title: title ?? metadata.title,
-      artist: artist ?? metadata.artist,
-      album: album ?? metadata.album,
-      albumArtist: metadata.albumArtist,
-      trackNumber: metadata.trackNumber,
-      trackTotal: metadata.trackTotal,
-      discNumber: metadata.discNumber,
-      discTotal: metadata.discTotal,
-      year: metadata.year,
-      genre: metadata.genre,
-      picture: metadata.picture, // Keep whatever audio_metadata_reader wrote
+    // Built out here on purpose. The closure handed to Isolate.run captures
+    // whatever it references, and File, Directory and Picture have no
+    // business crossing an isolate boundary — so the request is reduced to
+    // strings, bytes and bools first, and that is all the closure sees.
+    // The mutation itself is synchronous and rewrites the entire file, so it
+    // must stay off the UI isolate.
+    final request = _TagMutation(
+      tempFilePath: tempFile.path,
+      tempDirPath: tempDir.path,
+      pictureBytes: picture == null ? null : Uint8List.fromList(picture.bytes),
+      pictureMimeType: picture?.mimetype,
+      removePicture: removePicture,
+      title: title,
+      artist: artist,
+      album: album,
     );
-
-    await MetadataGod.writeMetadata(
-      file: tempFile.path,
-      metadata: updatedMetadata,
-    );
+    await Isolate.run(() => _runTagMutation(request));
   }
 
   /// Renames a song file locally.
@@ -1072,6 +1064,9 @@ class _TagMutation {
   final Uint8List? pictureBytes;
   final String? pictureMimeType;
   final bool removePicture;
+  final String? title;
+  final String? artist;
+  final String? album;
 
   const _TagMutation({
     required this.tempFilePath,
@@ -1079,12 +1074,16 @@ class _TagMutation {
     required this.pictureBytes,
     required this.pictureMimeType,
     required this.removePicture,
+    required this.title,
+    required this.artist,
+    required this.album,
   });
 }
 
-/// Writes cover art into the staged copy of the file. Runs in a background
-/// isolate — `amr.updateMetadata` is synchronous and rewrites the entire file,
-/// which on a large track is seconds of frozen UI if left on the main isolate.
+/// Writes cover art and text tags into the staged copy of the file. Runs in a
+/// background isolate — `amr.updateMetadata` is synchronous and rewrites the
+/// entire file, which on a large track is seconds of frozen UI if left on the
+/// main isolate.
 ///
 /// The `chdir` below is the library's own constraint: it emits its output as
 /// `a_new.<ext>` relative to the working directory rather than beside the
@@ -1108,7 +1107,7 @@ void _runTagMutation(_TagMutation request) {
           );
 
     amr.updateMetadata(tempFile, (metadata) {
-      // Handle different metadata types
+      // Cover art.
       if (metadata is amr.Mp3Metadata) {
         if (request.removePicture) {
           metadata.pictures.clear();
@@ -1130,6 +1129,14 @@ void _runTagMutation(_TagMutation request) {
           metadata.pictures = [amrPicture];
         }
       }
+      // Text tags. Only the fields the caller set are touched; everything
+      // else in the file is preserved as-is.
+      final newTitle = request.title;
+      if (newTitle != null) metadata.setTitle(newTitle);
+      final newArtist = request.artist;
+      if (newArtist != null) metadata.setArtist(newArtist);
+      final newAlbum = request.album;
+      if (newAlbum != null) metadata.setAlbum(newAlbum);
     });
 
     // The library writes to a_new.* - rename it back to original
