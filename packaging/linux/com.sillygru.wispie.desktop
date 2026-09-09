@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Wispie
+GenericName=Music Player
+Comment=A feature packed local music player
+Exec=wispie %U
+Icon=com.sillygru.wispie
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=music;player;audio;local;
+StartupWMClass=com.sillygru.wispie

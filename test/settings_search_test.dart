@@ -65,8 +65,8 @@ void main() {
 
     test('search is case-insensitive', () {
       expect(
-        find('TELEMETRY').single.anchorId,
-        'misc.telemetry',
+        find('BACKUP').map((e) => e.anchorId),
+        contains('misc.auto_backup'),
       );
     });
 

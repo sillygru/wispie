@@ -24,7 +24,6 @@ void main() {
         updatedState.visualizerMode,
         VisualizerMode.synced,
       ); // Should remain unchanged
-      expect(updatedState.telemetryEnabled, true); // Should remain unchanged
     });
 
     test('Should handle independent setting changes', () {

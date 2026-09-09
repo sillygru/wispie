@@ -7,7 +7,9 @@ import '../../providers/indexer_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../widgets/indexer_choice_dialog.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
@@ -33,106 +35,110 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
     return AmbientScaffold(
-      appBar: AppBar(
-        title: const Text('Indexer'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        children: [
-          _buildSettingsGroup(
-            title: 'Indexer Settings',
-            icon: AppIcons.manageSearch,
-            children: [
-              SwitchListTile(
-                secondary: const AppIcon(AppIcons.copy),
-                title: const Text('Prevent Duplicate Tracks'),
-                subtitle: const Text(
-                  'Hide songs with the same filename across folders',
+      appBar: const AppTopBar(title: 'Indexer'),
+      body: WideContentCenter(
+        maxWidth: WideLayout.maxNarrowWidth,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s4,
+            vertical: 8.0,
+          ),
+          children: [
+            _buildSettingsGroup(
+              title: 'Indexer Settings',
+              icon: AppIcons.manageSearch,
+              children: [
+                SwitchListTile(
+                  secondary: const AppIcon(AppIcons.copy),
+                  title: const Text('Prevent Duplicate Tracks'),
+                  subtitle: const Text(
+                    'Hide songs with the same filename across folders',
+                  ),
+                  value: settings.preventDuplicateTracks,
+                  onChanged: (val) => notifier.setPreventDuplicateTracks(val),
                 ),
-                value: settings.preventDuplicateTracks,
-                onChanged: (val) => notifier.setPreventDuplicateTracks(val),
-              ),
-              SwitchListTile(
-                secondary: const AppIcon(AppIcons.personAdd),
-                title: const Text('Extract Featured Artists'),
-                subtitle: const Text(
-                  'Move "ft./feat." artists from title to artist field',
+                SwitchListTile(
+                  secondary: const AppIcon(AppIcons.personAdd),
+                  title: const Text('Extract Featured Artists'),
+                  subtitle: const Text(
+                    'Move "ft./feat." artists from title to artist field',
+                  ),
+                  value: settings.extractFeatArtists,
+                  onChanged: (val) => notifier.setExtractFeatArtists(val),
                 ),
-                value: settings.extractFeatArtists,
-                onChanged: (val) => notifier.setExtractFeatArtists(val),
-              ),
-            ],
-          ),
-          _buildSettingsGroup(
-            title: 'Database Operations',
-            icon: AppIcons.storage,
-            children: [
-              _buildOperationTile(
-                id: 'optimize_databases',
-                icon: AppIcons.storage,
-                warningMessage:
-                    'This operation requires an app restart to apply changes.',
-              ),
-            ],
-          ),
-          _buildSettingsGroup(
-            title: 'Cover & Search',
-            icon: AppIcons.imageSearch,
-            children: [
-              _buildOperationTile(
-                id: 'repair_library_links',
-                icon: AppIcons.linkOff,
-                warningMessage:
-                    'Tracks whose files are no longer on this device will be '
-                    'removed from the library. Favourites, playlists and play '
-                    'counts are kept and reattach if the files come back.',
-              ),
-              _buildOperationTile(
-                id: 'rebuild_cover_caches',
-                icon: AppIcons.image,
-              ),
-              _buildOperationTile(
-                id: 'rebuild_search_indexes',
-                icon: AppIcons.search,
-                warningMessage:
-                    'You may need to restart the app for search index changes to fully apply.',
-              ),
-            ],
-          ),
-          _buildSettingsGroup(
-            title: 'Content Caches',
-            icon: AppIcons.collectionsBookmark,
-            children: [
-              _buildOperationTile(
-                id: 'rebuild_lyrics_cache',
-                icon: AppIcons.lyrics,
-              ),
-              _buildOperationTile(
-                id: 'rebuild_waveform_cache',
-                icon: AppIcons.graphicEq,
-              ),
-              _buildOperationTile(
-                id: 'rebuild_color_cache',
-                icon: AppIcons.palette,
-              ),
-              _buildOperationTile(
-                id: 'rebuild_blurred_cache',
-                icon: AppIcons.blur,
-              ),
-            ],
-          ),
-          _buildSettingsGroup(
-            title: 'Recommendations',
-            icon: AppIcons.autoAwesome,
-            children: [
-              _buildOperationTile(
-                id: 'rebuild_recommendations',
-                icon: AppIcons.autoAwesome,
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-        ],
+              ],
+            ),
+            _buildSettingsGroup(
+              title: 'Database Operations',
+              icon: AppIcons.storage,
+              children: [
+                _buildOperationTile(
+                  id: 'optimize_databases',
+                  icon: AppIcons.storage,
+                  warningMessage:
+                      'This operation requires an app restart to apply changes.',
+                ),
+              ],
+            ),
+            _buildSettingsGroup(
+              title: 'Cover & Search',
+              icon: AppIcons.imageSearch,
+              children: [
+                _buildOperationTile(
+                  id: 'repair_library_links',
+                  icon: AppIcons.linkOff,
+                  warningMessage:
+                      'Tracks whose files are no longer on this device will be '
+                      'removed from the library. Favourites, playlists and play '
+                      'counts are kept and reattach if the files come back.',
+                ),
+                _buildOperationTile(
+                  id: 'rebuild_cover_caches',
+                  icon: AppIcons.image,
+                ),
+                _buildOperationTile(
+                  id: 'rebuild_search_indexes',
+                  icon: AppIcons.search,
+                  warningMessage:
+                      'You may need to restart the app for search index changes to fully apply.',
+                ),
+              ],
+            ),
+            _buildSettingsGroup(
+              title: 'Content Caches',
+              icon: AppIcons.collectionsBookmark,
+              children: [
+                _buildOperationTile(
+                  id: 'rebuild_lyrics_cache',
+                  icon: AppIcons.lyrics,
+                ),
+                _buildOperationTile(
+                  id: 'rebuild_waveform_cache',
+                  icon: AppIcons.graphicEq,
+                ),
+                _buildOperationTile(
+                  id: 'rebuild_color_cache',
+                  icon: AppIcons.palette,
+                ),
+                _buildOperationTile(
+                  id: 'rebuild_blurred_cache',
+                  icon: AppIcons.blur,
+                ),
+              ],
+            ),
+            _buildSettingsGroup(
+              title: 'Recommendations',
+              icon: AppIcons.autoAwesome,
+              children: [
+                _buildOperationTile(
+                  id: 'rebuild_recommendations',
+                  icon: AppIcons.autoAwesome,
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
       ),
     );
   }

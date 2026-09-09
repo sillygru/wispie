@@ -8,6 +8,7 @@ import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import 'quick_actions_settings_screen.dart';
 import '../tokens/app_icons.dart';
 
@@ -84,14 +85,16 @@ class _AppearanceSettingsScreenState
                 value: settings.showWaveform,
                 onChanged: notifier.setShowWaveform,
               ),
-              AppSettingsSwitch(
-                icon: AppIcons.touchApp,
-                searchId: 'appearance.waveform_haptics',
-                title: 'Waveform Scrubbing Haptics',
-                subtitle: 'Haptic feedback for each bar while seeking',
-                value: settings.waveformHapticsEnabled,
-                onChanged: notifier.setWaveformHapticsEnabled,
-              ),
+              // Haptics have no effect on desktop hardware.
+              if (!WideLayout.isWide(context))
+                AppSettingsSwitch(
+                  icon: AppIcons.touchApp,
+                  searchId: 'appearance.waveform_haptics',
+                  title: 'Waveform Scrubbing Haptics',
+                  subtitle: 'Haptic feedback for each bar while seeking',
+                  value: settings.waveformHapticsEnabled,
+                  onChanged: notifier.setWaveformHapticsEnabled,
+                ),
               AppSettingsSwitch(
                 icon: AppIcons.timer,
                 searchId: 'appearance.song_duration',

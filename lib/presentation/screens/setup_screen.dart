@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../models/song.dart';
@@ -152,8 +153,17 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
 
   Future<void> _addFolder() async {
     final storage = StorageService();
-    final selection = await storage.pickMusicFolder(context);
-    if (selection == null || selection['path']!.isEmpty) {
+    final Map<String, String>? selection;
+    try {
+      selection = await storage.pickMusicFolder(context);
+    } on FolderPickerUnavailable catch (e) {
+      if (mounted) appSnack(context, e.userFacingHint);
+      return;
+    }
+    // Null means the user cancelled the native dialog — stay silent.
+    if (selection == null) return;
+    final selectedPath = selection['path'] ?? '';
+    if (selectedPath.isEmpty) {
       if (mounted) {
         appSnack(context, 'Unable to access selected folder');
       }
@@ -161,7 +171,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     }
 
     await storage.addMusicFolder(
-      selection['path']!,
+      selectedPath,
       selection['treeUri'],
       iosBookmarkId: selection['iosBookmarkId'],
       platform: selection['platform'],
@@ -674,153 +684,160 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                 borderRadius: AppTokens.brLg,
                 boxShadow: AppTokens.shadowRaised,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      AppRowIcon(
-                        icon: AppIcons.tune,
-                        color: accent,
-                        size: 36,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Motion & Display Settings',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTokens.fgPrimary,
-                                ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Visualizer Mode Dropdown
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Audio Visualizer'),
-                    subtitle: const Text('Playback visualizer effect'),
-                    trailing: DropdownButton<VisualizerMode>(
-                      value: settings.visualizerMode,
-                      underline: const SizedBox.shrink(),
-                      borderRadius: AppTokens.brMd,
-                      onChanged: (val) {
-                        if (val != null) notifier.setVisualizerMode(val);
-                      },
-                      items: const [
-                        DropdownMenuItem(
-                          value: VisualizerMode.off,
-                          child: Text('Off'),
+              // Ink canvas for the ListTiles below: without an intervening
+              // Material their splashes paint on this DecoratedBox and trip
+              // the "ink splashes may be invisible" assertion in debug.
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        AppRowIcon(
+                          icon: AppIcons.tune,
+                          color: accent,
+                          size: 36,
                         ),
-                        DropdownMenuItem(
-                          value: VisualizerMode.classic,
-                          child: Text('Classic'),
-                        ),
-                        DropdownMenuItem(
-                          value: VisualizerMode.synced,
-                          child: Text('Synced'),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Motion & Display Settings',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTokens.fgPrimary,
+                                  ),
                         ),
                       ],
                     ),
-                  ),
-                  const Divider(height: 1),
+                    const SizedBox(height: 16),
 
-                  // Beat-reactive cover toggle
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Beat-reactive Cover'),
-                    subtitle: const Text('Pulse album art to music beat'),
-                    value: settings.beatReactiveCoverEnabled,
-                    onChanged: notifier.setBeatReactiveCoverEnabled,
-                  ),
-                  if (settings.beatReactiveCoverEnabled)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Cover intensity'),
-                        subtitle: const Text('How strongly the cover reacts'),
-                        trailing: DropdownButton<PlayerMotionIntensity>(
-                          value: settings.coverMotionIntensity,
-                          underline: const SizedBox.shrink(),
-                          borderRadius: AppTokens.brMd,
-                          onChanged: (val) {
-                            if (val != null) {
-                              notifier.setCoverMotionIntensity(val);
-                            }
-                          },
-                          items: const [
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.subtle,
-                              child: Text('Subtle'),
-                            ),
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.balanced,
-                              child: Text('Balanced'),
-                            ),
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.bold,
-                              child: Text('Bold'),
-                            ),
-                          ],
-                        ),
+                    // Visualizer Mode Dropdown
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Audio Visualizer'),
+                      subtitle: const Text('Playback visualizer effect'),
+                      trailing: DropdownButton<VisualizerMode>(
+                        value: settings.visualizerMode,
+                        underline: const SizedBox.shrink(),
+                        borderRadius: AppTokens.brMd,
+                        onChanged: (val) {
+                          if (val != null) notifier.setVisualizerMode(val);
+                        },
+                        items: const [
+                          DropdownMenuItem(
+                            value: VisualizerMode.off,
+                            child: Text('Off'),
+                          ),
+                          DropdownMenuItem(
+                            value: VisualizerMode.classic,
+                            child: Text('Classic'),
+                          ),
+                          DropdownMenuItem(
+                            value: VisualizerMode.synced,
+                            child: Text('Synced'),
+                          ),
+                        ],
                       ),
                     ),
+                    const Divider(height: 1),
 
-                  // Beat-reactive particles toggle
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Beat-reactive Particles'),
-                    subtitle: const Text('Floating music particles in player'),
-                    value: settings.beatReactiveParticlesEnabled,
-                    onChanged: notifier.setBeatReactiveParticlesEnabled,
-                  ),
-                  if (settings.beatReactiveParticlesEnabled)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16),
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Particle density'),
-                        subtitle:
-                            const Text('How many particles and how lively'),
-                        trailing: DropdownButton<PlayerMotionIntensity>(
-                          value: settings.particleMotionIntensity,
-                          underline: const SizedBox.shrink(),
-                          borderRadius: AppTokens.brMd,
-                          onChanged: (val) {
-                            if (val != null) {
-                              notifier.setParticleMotionIntensity(val);
-                            }
-                          },
-                          items: const [
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.subtle,
-                              child: Text('Subtle'),
-                            ),
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.balanced,
-                              child: Text('Balanced'),
-                            ),
-                            DropdownMenuItem(
-                              value: PlayerMotionIntensity.bold,
-                              child: Text('Bold'),
-                            ),
-                          ],
+                    // Beat-reactive cover toggle
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Beat-reactive Cover'),
+                      subtitle: const Text('Pulse album art to music beat'),
+                      value: settings.beatReactiveCoverEnabled,
+                      onChanged: notifier.setBeatReactiveCoverEnabled,
+                    ),
+                    if (settings.beatReactiveCoverEnabled)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Cover intensity'),
+                          subtitle: const Text('How strongly the cover reacts'),
+                          trailing: DropdownButton<PlayerMotionIntensity>(
+                            value: settings.coverMotionIntensity,
+                            underline: const SizedBox.shrink(),
+                            borderRadius: AppTokens.brMd,
+                            onChanged: (val) {
+                              if (val != null) {
+                                notifier.setCoverMotionIntensity(val);
+                              }
+                            },
+                            items: const [
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.subtle,
+                                child: Text('Subtle'),
+                              ),
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.balanced,
+                                child: Text('Balanced'),
+                              ),
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.bold,
+                                child: Text('Bold'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
 
-                  // Waveform toggle
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Waveform Progress Bar'),
-                    subtitle: const Text('Show visual audio waveform'),
-                    value: settings.showWaveform,
-                    onChanged: notifier.setShowWaveform,
-                  ),
-                ],
+                    // Beat-reactive particles toggle
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Beat-reactive Particles'),
+                      subtitle:
+                          const Text('Floating music particles in player'),
+                      value: settings.beatReactiveParticlesEnabled,
+                      onChanged: notifier.setBeatReactiveParticlesEnabled,
+                    ),
+                    if (settings.beatReactiveParticlesEnabled)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Particle density'),
+                          subtitle:
+                              const Text('How many particles and how lively'),
+                          trailing: DropdownButton<PlayerMotionIntensity>(
+                            value: settings.particleMotionIntensity,
+                            underline: const SizedBox.shrink(),
+                            borderRadius: AppTokens.brMd,
+                            onChanged: (val) {
+                              if (val != null) {
+                                notifier.setParticleMotionIntensity(val);
+                              }
+                            },
+                            items: const [
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.subtle,
+                                child: Text('Subtle'),
+                              ),
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.balanced,
+                                child: Text('Balanced'),
+                              ),
+                              DropdownMenuItem(
+                                value: PlayerMotionIntensity.bold,
+                                child: Text('Bold'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // Waveform toggle
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Waveform Progress Bar'),
+                      subtitle: const Text('Show visual audio waveform'),
+                      value: settings.showWaveform,
+                      onChanged: notifier.setShowWaveform,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -963,7 +980,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                               itemBuilder: (context, index) {
                                 final folder = _musicFolders[index];
                                 final path = folder['path'] ?? '';
-                                final name = path.split('/').last;
+                                final name = p.basename(path);
 
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 8),
@@ -971,27 +988,31 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                                     color: AppTokens.surface(2),
                                     borderRadius: AppTokens.brMd,
                                   ),
-                                  child: ListTile(
-                                    leading: AppRowIcon(
-                                      icon: AppIcons.folder,
-                                      color: accent,
-                                    ),
-                                    title: Text(
-                                      name.isEmpty ? path : name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
+                                  // Ink canvas for the ListTile (see above).
+                                  child: Material(
+                                    type: MaterialType.transparency,
+                                    child: ListTile(
+                                      leading: AppRowIcon(
+                                        icon: AppIcons.folder,
+                                        color: accent,
                                       ),
-                                    ),
-                                    subtitle: Text(
-                                      path,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    trailing: IconButton(
-                                      icon: const AppIcon(AppIcons.delete,
-                                          size: 18),
-                                      onPressed: () => _removeFolder(folder),
+                                      title: Text(
+                                        name.isEmpty ? path : name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        path,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      trailing: IconButton(
+                                        icon: const AppIcon(AppIcons.delete,
+                                            size: 18),
+                                        onPressed: () => _removeFolder(folder),
+                                      ),
                                     ),
                                   ),
                                 );
@@ -1039,73 +1060,52 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                 borderRadius: AppTokens.brLg,
                 boxShadow: AppTokens.shadowRaised,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      AppRowIcon(
-                        icon: AppIcons.checkCircle,
-                        color: accent,
-                        size: 36,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Setup Summary',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTokens.fgPrimary,
-                                ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  _buildSummaryRow(
-                    'User Profile',
-                    _usernameController.text.trim().isEmpty
-                        ? 'Guest'
-                        : _usernameController.text.trim(),
-                    AppIcons.person,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildSummaryRow(
-                    'Visualizer Mode',
-                    settings.visualizerMode.name.toUpperCase(),
-                    AppIcons.waves,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildSummaryRow(
-                    'Music Folders',
-                    '${_musicFolders.length} selected',
-                    AppIcons.folder,
-                  ),
-
-                  const SizedBox(height: 20),
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
-
-                  // Telemetry toggle
-                  Consumer(
-                    builder: (context, ref, child) {
-                      final currentSettings = ref.watch(settingsProvider);
-                      return SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Anonymous telemetry'),
-                        subtitle: const Text(
-                          'Help improve Wispie with anonymous usage stats. No personal data is collected.',
+              // Ink canvas for the SwitchListTile below (see appearance card).
+              child: Material(
+                type: MaterialType.transparency,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        AppRowIcon(
+                          icon: AppIcons.checkCircle,
+                          color: accent,
+                          size: 36,
                         ),
-                        value: currentSettings.telemetryEnabled,
-                        onChanged: (val) {
-                          ref
-                              .read(settingsProvider.notifier)
-                              .setTelemetryEnabled(val);
-                        },
-                      );
-                    },
-                  ),
-                ],
+                        const SizedBox(width: 12),
+                        Text(
+                          'Setup Summary',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTokens.fgPrimary,
+                                  ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildSummaryRow(
+                      'User Profile',
+                      _usernameController.text.trim().isEmpty
+                          ? 'Guest'
+                          : _usernameController.text.trim(),
+                      AppIcons.person,
+                    ),
+                    const SizedBox(height: 10),
+                    _buildSummaryRow(
+                      'Visualizer Mode',
+                      settings.visualizerMode.name.toUpperCase(),
+                      AppIcons.waves,
+                    ),
+                    const SizedBox(height: 10),
+                    _buildSummaryRow(
+                      'Music Folders',
+                      '${_musicFolders.length} selected',
+                      AppIcons.folder,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

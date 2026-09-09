@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_filter.dart';
@@ -11,6 +12,7 @@ import '../../services/audio_player_manager.dart';
 import '../../services/library_logic.dart';
 import '../widgets/search_filter_chips.dart';
 import '../widgets/search_result_item.dart';
+import '../widgets/song_options_menu.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../../providers/selection_provider.dart';
 import '../components/app_feedback.dart';
@@ -20,6 +22,7 @@ import '../tokens/app_tokens.dart';
 import 'song_list_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -30,12 +33,14 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   String _query = '';
   Timer? _debounceTimer;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     _debounceTimer?.cancel();
     super.dispose();
   }
@@ -57,11 +62,55 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
   }
 
+  void _onEscape() {
+    final selectionState = ref.read(selectionProvider);
+    if (selectionState.isSelectionMode) {
+      ref.read(selectionProvider.notifier).exitSelectionMode();
+      return;
+    }
+    if (_query.isNotEmpty || _searchController.text.isNotEmpty) {
+      _clearSearch();
+      _searchFocus.unfocus();
+      return;
+    }
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
+  void _playFirstResult() {
+    final results = ref.read(searchResultsProvider(_query)).asData?.value;
+    if (results == null || results.isEmpty) return;
+    final audioManager = ref.read(audioPlayerManagerProvider);
+    final organized = _organizeResults(results, ref.read(searchFilterProvider));
+    for (final item in organized) {
+      if (item is SearchResult) {
+        _playSearchResult(item, audioManager);
+        return;
+      }
+    }
+    if (organized.isEmpty) return;
+    final first = organized.first;
+    if (first is _ArtistGroup) {
+      _showArtistSongs(
+        first.artistName,
+        first.results.map((r) => r.song).toList(),
+      );
+    } else if (first is _AlbumGroup) {
+      _showAlbumSongs(
+        first.albumName,
+        first.artistName,
+        first.results.map((r) => r.song).toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final filterState = ref.watch(searchFilterProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final selectionState = ref.watch(selectionProvider);
+    // Desktop keeps focus control explicit: no autofocus steal on push,
+    // Esc to clear/back, Enter to play the top hit.
+    final isWide = WideLayout.isWide(context);
 
     return PopScope(
       canPop: !selectionState.isSelectionMode,
@@ -71,44 +120,52 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ref.read(selectionProvider.notifier).exitSelectionMode();
         }
       },
-      child: AmbientScaffold(
-        appBar: AppBar(
-          title: TextField(
-            controller: _searchController,
-            autofocus: true,
-            style: const TextStyle(fontSize: 18),
-            decoration: InputDecoration(
-              hintText: 'Search songs, artists, albums...',
-              border: InputBorder.none,
-              hintStyle: TextStyle(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withValues(alpha: 0.5),
+      child: CallbackShortcuts(
+        bindings: isWide
+            ? {const SingleActivator(LogicalKeyboardKey.escape): _onEscape}
+            : const {},
+        child: AmbientScaffold(
+          appBar: AppBar(
+            title: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              autofocus: !isWide,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _playFirstResult(),
+              style: const TextStyle(fontSize: 18),
+              decoration: InputDecoration(
+                hintText: 'Search songs, artists, albums...',
+                border: InputBorder.none,
+                hintStyle: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurfaceVariant
+                      .withValues(alpha: 0.5),
+                ),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+            actions: [
+              if (_query.isNotEmpty)
+                IconButton(
+                  icon: const AppIcon(AppIcons.close),
+                  onPressed: _clearSearch,
+                ),
+            ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(56),
+              child: Container(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: const SearchFilterChips(),
               ),
             ),
-            onChanged: _onSearchChanged,
           ),
-          actions: [
-            if (_query.isNotEmpty)
-              IconButton(
-                icon: const AppIcon(AppIcons.close),
-                onPressed: _clearSearch,
-              ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(56),
-            child: Container(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: const SearchFilterChips(),
-            ),
-          ),
+          body: _query.isEmpty
+              ? _buildEmptyState(context)
+              : _buildSearchResults(context, audioManager, filterState),
+          bottomNavigationBar:
+              selectionState.isSelectionMode ? const BulkSelectionBar() : null,
         ),
-        body: _query.isEmpty
-            ? _buildEmptyState(context)
-            : _buildSearchResults(context, audioManager, filterState),
-        bottomNavigationBar:
-            selectionState.isSelectionMode ? const BulkSelectionBar() : null,
       ),
     );
   }
@@ -137,17 +194,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         // Group results based on filter state
         final displayResults = _organizeResults(results, filterState);
 
-        return ListView.builder(
-          padding: const EdgeInsets.only(
-            top: AppTokens.s2,
-            bottom: AppTokens.scrollBottomInset,
+        // Desktop spreads Artists/Albums into grids with result counts
+        // instead of stretching phone rows across a wide window.
+        if (WideLayout.isWide(context)) {
+          return _buildWideResults(context, audioManager, displayResults);
+        }
+
+        return WideContentCenter(
+          child: ListView.builder(
+            padding: const EdgeInsets.only(
+              top: AppTokens.s2,
+              bottom: AppTokens.scrollBottomInset,
+            ),
+            itemCount: displayResults.length,
+            itemBuilder: (context, index) {
+              if (!context.mounted) return const SizedBox.shrink();
+              final item = displayResults[index];
+              return _buildResultItem(item, audioManager, context);
+            },
           ),
-          itemCount: displayResults.length,
-          itemBuilder: (context, index) {
-            if (!context.mounted) return const SizedBox.shrink();
-            final item = displayResults[index];
-            return _buildResultItem(item, audioManager, context);
-          },
         );
       },
       loading: () => const AppLoading(),
@@ -165,6 +230,135 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       icon: AppIcons.searchOff,
       title: 'No results found for "$_query"',
       message: 'Try different keywords or check your filters.',
+    );
+  }
+
+  /// Desktop results: Artists and Albums as grids with counts, Songs as a
+  /// full-width track list — the Spotify arrangement. Narrow windows keep
+  /// the single phone list in [_buildSearchResults].
+  Widget _buildWideResults(
+    BuildContext context,
+    AudioPlayerManager audioManager,
+    List<dynamic> displayResults,
+  ) {
+    final artists = displayResults.whereType<_ArtistGroup>().toList();
+    final albums = displayResults.whereType<_AlbumGroup>().toList();
+    final songs = displayResults.whereType<SearchResult>().toList();
+    if (artists.isEmpty && albums.isEmpty && songs.isEmpty) {
+      return _buildNoResultsState(context);
+    }
+    final columns = WideLayout.gridColumns(context, base: 3);
+
+    return WideContentCenter(
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          if (artists.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: AppSectionHeader(label: 'Artists (${artists.length})'),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisExtent: 96,
+                  crossAxisSpacing: AppTokens.s3,
+                  mainAxisSpacing: AppTokens.s2,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (!context.mounted) return const SizedBox.shrink();
+                    return Center(
+                      child: _buildResultItem(
+                        artists[index],
+                        audioManager,
+                        context,
+                      ),
+                    );
+                  },
+                  childCount: artists.length,
+                ),
+              ),
+            ),
+          ],
+          if (albums.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: AppSectionHeader(label: 'Albums (${albums.length})'),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisExtent: 96,
+                  crossAxisSpacing: AppTokens.s3,
+                  mainAxisSpacing: AppTokens.s2,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (!context.mounted) return const SizedBox.shrink();
+                    return Center(
+                      child: _buildResultItem(
+                        albums[index],
+                        audioManager,
+                        context,
+                      ),
+                    );
+                  },
+                  childCount: albums.length,
+                ),
+              ),
+            ),
+          ],
+          if (songs.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: AppSectionHeader(label: 'Songs (${songs.length})'),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  if (!context.mounted) return const SizedBox.shrink();
+                  return _buildWideSongItem(songs[index], audioManager);
+                },
+                childCount: songs.length,
+              ),
+            ),
+          ],
+          const SliverPadding(
+            padding: EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Song rows keep the phone item (InkWell already handles hover), with a
+  /// desktop right-click affordance for the song menu on top.
+  Widget _buildWideSongItem(
+      SearchResult item, AudioPlayerManager audioManager) {
+    final song = item.song;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTap: () {
+          if (!mounted) return;
+          showSongOptionsMenu(
+            context,
+            ref,
+            song.filename,
+            song.title,
+            song: song,
+          );
+        },
+        child: SearchResultItem(
+          result: item,
+          searchQuery: _query,
+          heroTagPrefix: 'search',
+          onTap: () => _playSearchResult(item, audioManager),
+        ),
+      ),
     );
   }
 

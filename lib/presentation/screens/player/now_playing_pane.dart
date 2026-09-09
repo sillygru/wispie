@@ -618,6 +618,10 @@ class _VideoSurfaceState extends State<_VideoSurface>
   }
 
   Future<void> _setUp() async {
+    // video_player has no Linux/Windows implementation; the FFmpeg thumbnail
+    // fallback in the cover widget covers those platforms. Bail early so we
+    // never construct a controller that can only throw MissingPluginException.
+    if (Platform.isLinux || Platform.isWindows) return;
     final path = _resolveVideoPath();
     if (path == null) return;
 

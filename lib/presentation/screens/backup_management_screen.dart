@@ -13,7 +13,9 @@ import '../../presentation/widgets/import_progress_dialog.dart';
 import '../../presentation/widgets/backup_options_dialog.dart';
 import '../../providers/providers.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -431,52 +433,55 @@ class _BackupManagementScreenState
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
-      appBar: AppBar(
-        title: const Text('Backup Management'),
-      ),
+      appBar: const AppTopBar(title: 'Backup Management'),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isCreatingBackup ? null : _createBackup,
-                          icon: _isCreatingBackup
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const AppIcon(AppIcons.cloudUpload),
-                          label: Text(_isCreatingBackup
-                              ? 'Creating...'
-                              : 'Create Backup'),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+          : WideContentCenter(
+              maxWidth: WideLayout.maxNarrowWidth,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(AppTokens.s4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isCreatingBackup ? null : _createBackup,
+                            icon: _isCreatingBackup
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const AppIcon(AppIcons.cloudUpload),
+                            label: Text(_isCreatingBackup
+                                ? 'Creating...'
+                                : 'Create Backup'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _backups.isEmpty
-                      ? _buildEmptyState()
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _backups.length,
-                          itemBuilder: (context, index) {
-                            final backup = _backups[index];
-                            return _buildBackupCard(backup);
-                          },
-                        ),
-                ),
-              ],
+                  Expanded(
+                    child: _backups.isEmpty
+                        ? _buildEmptyState()
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTokens.s4,
+                            ),
+                            itemCount: _backups.length,
+                            itemBuilder: (context, index) {
+                              final backup = _backups[index];
+                              return _buildBackupCard(backup);
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
     );
   }

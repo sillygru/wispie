@@ -8,6 +8,7 @@ import '../components/app_settings.dart';
 import '../dialogs/lyrics_translation_sheet.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 
 class PlaybackSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
@@ -51,14 +52,17 @@ class _PlaybackSettingsScreenState
                 value: settings.lyricsSimulatedRichSyncEnabled,
                 onChanged: notifier.setLyricsSimulatedRichSyncEnabled,
               ),
-              AppSettingsSwitch(
-                icon: AppIcons.screenLock,
-                searchId: 'playback.keep_screen_awake',
-                title: 'Keep Screen Awake on Lyrics',
-                subtitle: 'Prevent sleep while the lyrics pane is open',
-                value: settings.keepScreenAwakeOnLyrics,
-                onChanged: notifier.setKeepScreenAwakeOnLyrics,
-              ),
+              // Screen-wakelock is a phone concern; desktops manage sleep
+              // at the OS level.
+              if (!WideLayout.isWide(context))
+                AppSettingsSwitch(
+                  icon: AppIcons.screenLock,
+                  searchId: 'playback.keep_screen_awake',
+                  title: 'Keep Screen Awake on Lyrics',
+                  subtitle: 'Prevent sleep while the lyrics pane is open',
+                  value: settings.keepScreenAwakeOnLyrics,
+                  onChanged: notifier.setKeepScreenAwakeOnLyrics,
+                ),
               AppSettingsSwitch(
                 icon: AppIcons.translate,
                 searchId: 'playback.lyrics_auto_translate',

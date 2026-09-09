@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import 'app_list_row.dart';
 import 'app_section_header.dart';
 import 'app_surface.dart';
@@ -370,23 +371,32 @@ class _AppSettingsListState extends State<AppSettingsList> {
 
   @override
   Widget build(BuildContext context) {
+    // Self-capping: sub-pages that forgot their WideContentCenter still read
+    // as a narrow column on wide windows. WideContentCenter is a no-op when
+    // narrow, so phone layout is untouched.
     if (widget.highlightId == null) {
-      return ListView(
-        physics: const BouncingScrollPhysics(),
-        padding: _padding,
-        children: widget.children,
+      return WideContentCenter(
+        maxWidth: WideLayout.maxNarrowWidth,
+        child: ListView(
+          physics: const BouncingScrollPhysics(),
+          padding: _padding,
+          children: widget.children,
+        ),
       );
     }
 
-    return _SettingsAnchorScope(
-      highlightId: widget.highlightId,
-      register: _register,
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: _padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: widget.children,
+    return WideContentCenter(
+      maxWidth: WideLayout.maxNarrowWidth,
+      child: _SettingsAnchorScope(
+        highlightId: widget.highlightId,
+        register: _register,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: _padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: widget.children,
+          ),
         ),
       ),
     );

@@ -13,9 +13,7 @@ class StatsService {
   Future<bool>? _activeFlush;
 
   StatsService() : _sessionId = const Uuid().v4() {
-    if (kIsWeb) {
-      _platform = 'web';
-    } else if (Platform.isAndroid) {
+    if (Platform.isAndroid) {
       _platform = 'android';
     } else if (Platform.isIOS) {
       _platform = 'ios';

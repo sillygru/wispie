@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/providers.dart';
+import '../../services/storage_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
@@ -39,15 +41,24 @@ class _FolderManagementScreenState
 
   Future<void> _addFolder() async {
     final storage = ref.read(storageServiceProvider);
-    final selection = await storage.pickMusicFolder(context);
-    if (selection == null || selection['path']!.isEmpty) {
+    final Map<String, String>? selection;
+    try {
+      selection = await storage.pickMusicFolder(context);
+    } on FolderPickerUnavailable catch (e) {
+      if (mounted) appSnack(context, e.userFacingHint);
+      return;
+    }
+    // Null means the user cancelled the native dialog — stay silent.
+    if (selection == null) return;
+    final selectedPath = selection['path'] ?? '';
+    if (selectedPath.isEmpty) {
       if (mounted) {
         appSnack(context, "Unable to access selected folder");
       }
       return;
     }
     await storage.addMusicFolder(
-      selection['path']!,
+      selectedPath,
       selection['treeUri'],
       iosBookmarkId: selection['iosBookmarkId'],
       platform: selection['platform'],
@@ -113,7 +124,7 @@ class _FolderManagementScreenState
                           itemBuilder: (context, index) {
                             final folder = _folders[index];
                             final path = folder['path'] ?? '';
-                            final name = path.split('/').last;
+                            final name = p.basename(path);
 
                             return AppListRow(
                               leading: AppRowIcon(

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'storage_service.dart';
 
 class TelemetryService {
   static final TelemetryService instance = TelemetryService._internal();
@@ -52,6 +51,15 @@ class TelemetryService {
     return digest.toString();
   }
 
+  String get _os {
+    if (Platform.isMacOS) return 'macOS';
+    if (Platform.isIOS) return 'iOS';
+    if (Platform.isAndroid) return 'android';
+    if (Platform.isWindows) return 'windows';
+    if (Platform.isLinux) return 'linux';
+    return 'unknown';
+  }
+
   Future<Map<String, dynamic>> _buildBasePayload() async {
     final uuid = await _getOrCreateUuid();
     final version = await _appVersion;
@@ -62,6 +70,7 @@ class TelemetryService {
       'project_id': _projectId,
       'version': version,
       'sig': sig,
+      'os': _os,
     };
   }
 
@@ -73,8 +82,6 @@ class TelemetryService {
     if (!_isSecretSet) return;
 
     try {
-      if (kIsWeb) return;
-
       debugPrint('Sending telemetry: ${jsonEncode(payload)}');
 
       final client = HttpClient();
@@ -95,19 +102,8 @@ class TelemetryService {
   }
 
   Future<void> reportLaunch() async {
-    final storage = StorageService();
-    final enabled = await storage.getTelemetryEnabled();
-    if (!enabled) return;
-
     final payload = await _buildBasePayload();
     payload['event'] = 'app_launch';
-    _send(payload);
-  }
-
-  Future<void> reportTelemetryToggle(bool enabled) async {
-    final payload = await _buildBasePayload();
-    payload['event'] = 'telemetry_toggle';
-    payload['telemetry_enabled'] = enabled;
     _send(payload);
   }
 }

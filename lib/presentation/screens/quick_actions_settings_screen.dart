@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/quick_action_config.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
+import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -124,8 +127,8 @@ class _QuickActionsSettingsScreenState
         .toList();
 
     return AmbientScaffold(
-      appBar: AppBar(
-        title: const Text("Quick Actions"),
+      appBar: AppTopBar(
+        title: 'Quick Actions',
         actions: [
           TextButton(
             onPressed: _resetToDefaults,
@@ -133,107 +136,120 @@ class _QuickActionsSettingsScreenState
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          if (enabledActions.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    AppIcon(
-                      AppIcons.checkCircle,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'ENABLED (${enabledActions.length})',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+      body: WideContentCenter(
+        maxWidth: WideLayout.maxNarrowWidth,
+        child: CustomScrollView(
+          slivers: [
+            if (enabledActions.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s4,
+                    AppTokens.s4,
+                    AppTokens.s4,
+                    8,
+                  ),
+                  child: Row(
+                    children: [
+                      AppIcon(
+                        AppIcons.checkCircle,
+                        size: 16,
                         color: Theme.of(context).colorScheme.primary,
-                        letterSpacing: 1.2,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        'ENABLED (${enabledActions.length})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverReorderableList(
-                itemCount: enabledActions.length,
-                onReorderItem: (oldIndex, newIndex) {
-                  setState(() {
-                    final item = enabledActions.removeAt(oldIndex);
-                    enabledActions.insert(newIndex, item);
-                    _orderedActions = [
-                      ...enabledActions,
-                      ...disabledActions,
-                    ];
-                  });
-                  _saveConfig();
-                },
-                itemBuilder: (context, index) {
-                  final action = enabledActions[index];
-                  return _buildActionTile(
-                    key: ValueKey(action),
-                    action: action,
-                    enabled: true,
-                    index: index,
-                  );
-                },
-              ),
-            ),
-          ],
-          if (disabledActions.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    AppIcon(
-                      AppIcons.close,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'DISABLED (${disabledActions.length})',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final action = disabledActions[index];
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                sliver: SliverReorderableList(
+                  itemCount: enabledActions.length,
+                  onReorderItem: (oldIndex, newIndex) {
+                    setState(() {
+                      final item = enabledActions.removeAt(oldIndex);
+                      enabledActions.insert(newIndex, item);
+                      _orderedActions = [
+                        ...enabledActions,
+                        ...disabledActions,
+                      ];
+                    });
+                    _saveConfig();
+                  },
+                  itemBuilder: (context, index) {
+                    final action = enabledActions[index];
                     return _buildActionTile(
                       key: ValueKey(action),
                       action: action,
-                      enabled: false,
+                      enabled: true,
                       index: index,
                     );
                   },
-                  childCount: disabledActions.length,
                 ),
               ),
+            ],
+            if (disabledActions.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s4,
+                    AppTokens.s4,
+                    AppTokens.s4,
+                    8,
+                  ),
+                  child: Row(
+                    children: [
+                      AppIcon(
+                        AppIcons.close,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'DISABLED (${disabledActions.length})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final action = disabledActions[index];
+                      return _buildActionTile(
+                        key: ValueKey(action),
+                        action: action,
+                        enabled: false,
+                        index: index,
+                      );
+                    },
+                    childCount: disabledActions.length,
+                  ),
+                ),
+              ),
+            ],
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 100),
             ),
           ],
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 100),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../widgets/backup_options_dialog.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -50,22 +51,6 @@ class _MiscSettingsScreenState extends ConsumerState<MiscSettingsScreen> {
         highlightId: widget.highlightId,
         children: [
           AppSettingsGroup(
-            label: 'Privacy',
-            icon: AppIcons.security,
-            children: [
-              AppSettingsSwitch(
-                icon: AppIcons.analytics,
-                searchId: 'misc.telemetry',
-                title: 'Telemetry',
-                subtitle:
-                    'Anonymous usage stats. No personal data is collected.',
-                value: settings.telemetryEnabled,
-                onChanged:
-                    ref.read(settingsProvider.notifier).setTelemetryEnabled,
-              ),
-            ],
-          ),
-          AppSettingsGroup(
             label: 'Backup',
             icon: AppIcons.cloudUpload,
             children: [
@@ -104,29 +89,32 @@ class _MiscSettingsScreenState extends ConsumerState<MiscSettingsScreen> {
               ),
             ],
           ),
-          AppSettingsGroup(
-            label: 'Behavior',
-            icon: AppIcons.touchApp,
-            children: [
-              FutureBuilder<bool>(
-                future:
-                    ref.read(storageServiceProvider).getPullToRefreshEnabled(),
-                builder: (context, snapshot) => AppSettingsSwitch(
-                  icon: AppIcons.touchApp,
-                  searchId: 'misc.pull_to_refresh',
-                  title: 'Pull to Refresh',
-                  subtitle: 'Swipe down to refresh the library',
-                  value: snapshot.data ?? true,
-                  onChanged: (val) async {
-                    await ref
-                        .read(storageServiceProvider)
-                        .setPullToRefreshEnabled(val);
-                    setState(() {});
-                  },
+          // Pull-to-refresh is a touch gesture with no desktop trigger.
+          if (!WideLayout.isWide(context))
+            AppSettingsGroup(
+              label: 'Behavior',
+              icon: AppIcons.touchApp,
+              children: [
+                FutureBuilder<bool>(
+                  future: ref
+                      .read(storageServiceProvider)
+                      .getPullToRefreshEnabled(),
+                  builder: (context, snapshot) => AppSettingsSwitch(
+                    icon: AppIcons.touchApp,
+                    searchId: 'misc.pull_to_refresh',
+                    title: 'Pull to Refresh',
+                    subtitle: 'Swipe down to refresh the library',
+                    value: snapshot.data ?? true,
+                    onChanged: (val) async {
+                      await ref
+                          .read(storageServiceProvider)
+                          .setPullToRefreshEnabled(val);
+                      setState(() {});
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );

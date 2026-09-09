@@ -7,7 +7,9 @@ import '../../services/storage_analysis_service.dart';
 import '../../providers/setup_provider.dart';
 import '../../providers/providers.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -571,138 +573,142 @@ class _StorageManagementScreenState
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
-      appBar: AppBar(
-        title: const Text('Manage Storage'),
-      ),
+      appBar: const AppTopBar(title: 'Manage Storage'),
       body: _isLoading || _isClearing
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadSizes,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildRepairCard(),
-                  _buildStorageCard(
-                    title: 'Database',
-                    subtitle: 'User data, statistics, and settings',
-                    size: _databaseSize,
-                    icon: AppIcons.storage,
-                    color: AppTokens.info,
-                    onClear: _databaseSize > 0 ? _handleClearDatabase : null,
-                    isDestructive: true,
-                  ),
-                  _buildStorageCard(
-                    title: 'Cover Cache',
-                    subtitle: 'Cached song album art',
-                    size: _coversSize,
-                    icon: AppIcons.image,
-                    color: AppTokens.info,
-                    onClear: _coversSize > 0 ? _handleClearCovers : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Backups',
-                    subtitle: 'Local backup files',
-                    size: _backupsSize,
-                    icon: AppIcons.cloudUpload,
-                    color: AppTokens.warning,
-                    onClear: _backupsSize > 0 ? _handleClearBackups : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Library Cache',
-                    subtitle: 'Cached song library data',
-                    size: _libraryCacheSize,
-                    icon: AppIcons.library,
-                    color: AppTokens.success,
-                    onClear:
-                        _libraryCacheSize > 0 ? _handleClearLibraryCache : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Search Index',
-                    subtitle: 'Search index for fast queries',
-                    size: _searchIndexSize,
-                    icon: AppIcons.search,
-                    color: AppTokens.success,
-                    onClear:
-                        _searchIndexSize > 0 ? _handleClearSearchIndex : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Waveform Cache',
-                    subtitle: 'Cached song waveforms for visualizers',
-                    size: _waveformCacheSize,
-                    icon: AppIcons.waves,
-                    color: AppTokens.info,
-                    onClear: _waveformCacheSize > 0
-                        ? _handleClearWaveformCache
-                        : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Beat Analysis',
-                    subtitle: 'Cached beat maps for the reactive player',
-                    size: _beatMapCacheSize,
-                    icon: AppIcons.graphicEq,
-                    color: AppTokens.success,
-                    onClear:
-                        _beatMapCacheSize > 0 ? _handleClearBeatMapCache : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Color Cache',
-                    subtitle: 'Cached theme colors from album art',
-                    size: _colorCacheSize,
-                    icon: AppIcons.palette,
-                    color: AppTokens.danger,
-                    onClear:
-                        _colorCacheSize > 0 ? _handleClearColorCache : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Lyrics Cache',
-                    subtitle: 'Cached lyrics availability and text',
-                    size: _lyricsCacheSize,
-                    icon: AppIcons.lyrics,
-                    color: AppTokens.info,
-                    onClear:
-                        _lyricsCacheSize > 0 ? _handleClearLyricsCache : null,
-                  ),
-                  _buildStorageCard(
-                    title: 'Blurred Cache',
-                    subtitle: 'Pre-generated blurred backgrounds',
-                    size: _blurredCacheSize,
-                    icon: AppIcons.blur,
-                    color: AppTokens.info,
-                    onClear:
-                        _blurredCacheSize > 0 ? _handleClearBlurredCache : null,
-                  ),
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 24),
-                  ListTile(
-                    title: const Text(
-                      'Clear All User Data',
-                      style: TextStyle(
-                        color: AppTokens.danger,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
+          : WideContentCenter(
+              maxWidth: WideLayout.maxNarrowWidth,
+              child: RefreshIndicator(
+                onRefresh: _loadSizes,
+                child: ListView(
+                  padding: const EdgeInsets.all(AppTokens.s4),
+                  children: [
+                    _buildRepairCard(),
+                    _buildStorageCard(
+                      title: 'Database',
+                      subtitle: 'User data, statistics, and settings',
+                      size: _databaseSize,
+                      icon: AppIcons.storage,
+                      color: AppTokens.info,
+                      onClear: _databaseSize > 0 ? _handleClearDatabase : null,
+                      isDestructive: true,
                     ),
-                    subtitle: const Text(
-                      'Permanently delete all data and reset app',
-                      style: TextStyle(color: AppTokens.danger),
+                    _buildStorageCard(
+                      title: 'Cover Cache',
+                      subtitle: 'Cached song album art',
+                      size: _coversSize,
+                      icon: AppIcons.image,
+                      color: AppTokens.info,
+                      onClear: _coversSize > 0 ? _handleClearCovers : null,
                     ),
-                    leading: const AppIcon(
-                      AppIcons.deleteForever,
+                    _buildStorageCard(
+                      title: 'Backups',
+                      subtitle: 'Local backup files',
+                      size: _backupsSize,
+                      icon: AppIcons.cloudUpload,
+                      color: AppTokens.warning,
+                      onClear: _backupsSize > 0 ? _handleClearBackups : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Library Cache',
+                      subtitle: 'Cached song library data',
+                      size: _libraryCacheSize,
+                      icon: AppIcons.library,
+                      color: AppTokens.success,
+                      onClear: _libraryCacheSize > 0
+                          ? _handleClearLibraryCache
+                          : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Search Index',
+                      subtitle: 'Search index for fast queries',
+                      size: _searchIndexSize,
+                      icon: AppIcons.search,
+                      color: AppTokens.success,
+                      onClear:
+                          _searchIndexSize > 0 ? _handleClearSearchIndex : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Waveform Cache',
+                      subtitle: 'Cached song waveforms for visualizers',
+                      size: _waveformCacheSize,
+                      icon: AppIcons.waves,
+                      color: AppTokens.info,
+                      onClear: _waveformCacheSize > 0
+                          ? _handleClearWaveformCache
+                          : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Beat Analysis',
+                      subtitle: 'Cached beat maps for the reactive player',
+                      size: _beatMapCacheSize,
+                      icon: AppIcons.graphicEq,
+                      color: AppTokens.success,
+                      onClear: _beatMapCacheSize > 0
+                          ? _handleClearBeatMapCache
+                          : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Color Cache',
+                      subtitle: 'Cached theme colors from album art',
+                      size: _colorCacheSize,
+                      icon: AppIcons.palette,
                       color: AppTokens.danger,
-                      size: 32,
+                      onClear:
+                          _colorCacheSize > 0 ? _handleClearColorCache : null,
                     ),
-                    onTap: _handleDangerousClear,
-                    tileColor: AppTokens.danger.withValues(alpha: 0.05),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: AppTokens.brSm,
-                      side: BorderSide(
-                        color: AppTokens.danger.withValues(alpha: 0.2),
+                    _buildStorageCard(
+                      title: 'Lyrics Cache',
+                      subtitle: 'Cached lyrics availability and text',
+                      size: _lyricsCacheSize,
+                      icon: AppIcons.lyrics,
+                      color: AppTokens.info,
+                      onClear:
+                          _lyricsCacheSize > 0 ? _handleClearLyricsCache : null,
+                    ),
+                    _buildStorageCard(
+                      title: 'Blurred Cache',
+                      subtitle: 'Pre-generated blurred backgrounds',
+                      size: _blurredCacheSize,
+                      icon: AppIcons.blur,
+                      color: AppTokens.info,
+                      onClear: _blurredCacheSize > 0
+                          ? _handleClearBlurredCache
+                          : null,
+                    ),
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 24),
+                    ListTile(
+                      title: const Text(
+                        'Clear All User Data',
+                        style: TextStyle(
+                          color: AppTokens.danger,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Permanently delete all data and reset app',
+                        style: TextStyle(color: AppTokens.danger),
+                      ),
+                      leading: const AppIcon(
+                        AppIcons.deleteForever,
+                        color: AppTokens.danger,
+                        size: 32,
+                      ),
+                      onTap: _handleDangerousClear,
+                      tileColor: AppTokens.danger.withValues(alpha: 0.05),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: AppTokens.brSm,
+                        side: BorderSide(
+                          color: AppTokens.danger.withValues(alpha: 0.2),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 80),
-                ],
+                    const SizedBox(height: 80),
+                  ],
+                ),
               ),
             ),
     );

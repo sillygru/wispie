@@ -5,6 +5,7 @@ import '../tokens/app_tokens.dart';
 import 'press_highlight.dart';
 import '../tokens/app_icons.dart';
 import 'app_icon.dart';
+import '../utils/wide_layout.dart';
 
 /// Opens the app's one bottom sheet.
 ///
@@ -22,11 +23,32 @@ Future<T?> showAppSheet<T>(
     isScrollControlled: isScrollControlled,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.55),
-    builder: (context) => AppSheet(
-      title: title,
-      showHandle: showHandle,
-      child: Builder(builder: builder),
-    ),
+    builder: (sheetContext) {
+      final sheet = AppSheet(
+        title: title,
+        showHandle: showHandle,
+        child: Builder(builder: builder),
+      );
+      // Capped on wide windows so sheets read as centered dialogs rather
+      // than full-width phone sheets stretched across a desktop window.
+      if (!WideLayout.isWide(sheetContext)) return sheet;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppTokens.s5),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: WideLayout.maxSheetWidth,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                child: sheet,
+              ),
+            ),
+          ),
+        ),
+      );
+    },
   );
 }
 

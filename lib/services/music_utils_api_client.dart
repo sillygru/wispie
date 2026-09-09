@@ -4,6 +4,22 @@ import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
+/// Outcome of a music-utils request, so callers can tell a definitive
+/// "no results" (404) apart from a transient failure (timeout, 5xx, offline)
+/// that should be retried on the next app open.
+enum MusicUtilsStatus {
+  ok,
+  notFound,
+  transient,
+}
+
+class MusicUtilsResult {
+  final Object? json;
+  final MusicUtilsStatus status;
+
+  const MusicUtilsResult(this.json, this.status);
+}
+
 /// Small JSON client for the unified music-utils service.
 ///
 /// The service returns metadata and cover CDN URLs. Wispie remains responsible
@@ -26,6 +42,14 @@ class MusicUtilsApiClient {
     String endpoint,
     Map<String, String> params,
   ) async {
+    final result = await getJsonResult(endpoint, params);
+    return result.status == MusicUtilsStatus.ok ? result.json : null;
+  }
+
+  Future<MusicUtilsResult> getJsonResult(
+    String endpoint,
+    Map<String, String> params,
+  ) async {
     final client = HttpClient();
     try {
       final base = Uri.parse(baseUrl);
@@ -41,22 +65,26 @@ class MusicUtilsApiClient {
       );
 
       final response = await request.close().timeout(_timeout);
+      if (response.statusCode == HttpStatus.notFound) {
+        await response.drain<void>();
+        return const MusicUtilsResult(null, MusicUtilsStatus.notFound);
+      }
       if (response.statusCode < HttpStatus.ok ||
           response.statusCode >= HttpStatus.multipleChoices) {
         await response.drain<void>();
-        return null;
+        return const MusicUtilsResult(null, MusicUtilsStatus.transient);
       }
 
       final body = await response.transform(utf8.decoder).join();
-      return jsonDecode(body);
+      return MusicUtilsResult(jsonDecode(body), MusicUtilsStatus.ok);
     } on SocketException catch (_) {
-      return null;
+      return const MusicUtilsResult(null, MusicUtilsStatus.transient);
     } on TimeoutException catch (_) {
-      return null;
+      return const MusicUtilsResult(null, MusicUtilsStatus.transient);
     } on HttpException catch (_) {
-      return null;
+      return const MusicUtilsResult(null, MusicUtilsStatus.transient);
     } on FormatException catch (_) {
-      return null;
+      return const MusicUtilsResult(null, MusicUtilsStatus.transient);
     } finally {
       client.close(force: true);
     }

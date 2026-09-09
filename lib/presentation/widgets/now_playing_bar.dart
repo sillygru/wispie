@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -48,10 +47,9 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar> {
     final isBarVisible = TickerMode.valuesOf(context).enabled &&
         (ModalRoute.of(context)?.isCurrent ?? true);
     final isDesktop =
-        !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
-    final isIPad = !kIsWeb &&
-        Platform.isIOS &&
-        MediaQuery.of(context).size.shortestSide >= 600;
+        Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    final isIPad =
+        Platform.isIOS && MediaQuery.of(context).size.shortestSide >= 600;
 
     return StreamBuilder<SequenceState?>(
       stream: player.sequenceStateStream,

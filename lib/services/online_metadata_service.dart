@@ -17,6 +17,20 @@ import 'scanner_service.dart';
 ///
 /// Deezer API: ~50 requests per 5s.
 /// iTunes API: ~20 requests per minute (soft-cap).
+/// music-utils API: ~200 requests per second (supports burst prefetch).
+enum CoverLookupOutcome {
+  found,
+  notFound,
+  transient,
+}
+
+class CoverLookupResult {
+  final List<Map<String, String>> candidates;
+  final CoverLookupOutcome outcome;
+
+  const CoverLookupResult(this.candidates, this.outcome);
+}
+
 class OnlineMetadataService {
   static final OnlineMetadataService instance =
       OnlineMetadataService._internal();
@@ -688,6 +702,77 @@ class OnlineMetadataService {
     if (_albumCandidatesCache.length > 200) _albumCandidatesCache.clear();
     _albumCandidatesCache[cacheKey] = candidates;
     return candidates;
+  }
+
+  /// music-utils-only artist lookup for burst prefetch. Never touches the
+  /// slow direct providers, so it is safe to run with high concurrency.
+  /// Empty success and explicit 404 both map to [CoverLookupOutcome.notFound];
+  /// timeouts, sockets and 5xx map to [CoverLookupOutcome.transient].
+  Future<CoverLookupResult> searchArtistCandidatesUnified(
+    String artistName,
+  ) async {
+    final clean = cleanTag(artistName);
+    if (clean == null) {
+      return const CoverLookupResult([], CoverLookupOutcome.notFound);
+    }
+    final cacheKey = clean.toLowerCase();
+    final cached = _artistCandidatesCache[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return CoverLookupResult(cached, CoverLookupOutcome.found);
+    }
+
+    final unified = await _musicUtils.getJsonResult('/cover/search', {
+      'q': clean,
+      'type': 'artist',
+      'limit': '10',
+    });
+    if (unified.status == MusicUtilsStatus.transient) {
+      return const CoverLookupResult([], CoverLookupOutcome.transient);
+    }
+    final candidates = _coverCandidatesFromResponse(unified.json);
+    if (candidates.isEmpty) {
+      return const CoverLookupResult([], CoverLookupOutcome.notFound);
+    }
+    if (_artistCandidatesCache.length > 200) _artistCandidatesCache.clear();
+    _artistCandidatesCache[cacheKey] = candidates;
+    return CoverLookupResult(candidates, CoverLookupOutcome.found);
+  }
+
+  /// music-utils-only album lookup for burst prefetch, mirroring
+  /// [searchArtistCandidatesUnified].
+  Future<CoverLookupResult> searchAlbumCandidatesUnified(
+    String albumName, {
+    String? artistName,
+  }) async {
+    final cleanAlbum = cleanTag(albumName);
+    if (cleanAlbum == null) {
+      return const CoverLookupResult([], CoverLookupOutcome.notFound);
+    }
+    final cleanArtist = cleanTag(artistName);
+    final cacheKey = cleanArtist != null
+        ? '${cleanArtist.toLowerCase()}|${cleanAlbum.toLowerCase()}'
+        : cleanAlbum.toLowerCase();
+    final cached = _albumCandidatesCache[cacheKey];
+    if (cached != null && cached.isNotEmpty) {
+      return CoverLookupResult(cached, CoverLookupOutcome.found);
+    }
+
+    final unified = await _musicUtils.getJsonResult('/cover/search', {
+      'type': 'album',
+      'album_name': cleanAlbum,
+      if (cleanArtist != null) 'artist_name': cleanArtist,
+      'limit': '10',
+    });
+    if (unified.status == MusicUtilsStatus.transient) {
+      return const CoverLookupResult([], CoverLookupOutcome.transient);
+    }
+    final candidates = _coverCandidatesFromResponse(unified.json);
+    if (candidates.isEmpty) {
+      return const CoverLookupResult([], CoverLookupOutcome.notFound);
+    }
+    if (_albumCandidatesCache.length > 200) _albumCandidatesCache.clear();
+    _albumCandidatesCache[cacheKey] = candidates;
+    return CoverLookupResult(candidates, CoverLookupOutcome.found);
   }
 
   String? _coverUrlFromResponse(Object? decoded) {

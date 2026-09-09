@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.sillygru.wispie</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Wispie</name>
+  <summary>A feature packed local music player</summary>
+  <description>
+    <p>
+      Wispie is a local-first music player. Point it at the folders where your
+      audio files live and it builds your library, fetches covers and lyrics,
+      and keeps your stats, favorites and playlists on your own machine.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.sillygru.wispie.desktop</launchable>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+    <category>Music</category>
+  </categories>
+  <provides>
+    <binary>wispie</binary>
+  </provides>
+</component>

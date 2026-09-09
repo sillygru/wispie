@@ -136,7 +136,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('theme_mode', 'dark');
       await prefs.setInt('minimum_track_duration_ms', 42000);
-      await prefs.setBool('telemetry_enabled', false);
+      await prefs.setBool('pull_to_refresh_enabled', false);
 
       final filename = await BackupService.instance.createBackup(
         BackupOptions(contentTypes: {BackupContentType.userSettings}),
@@ -144,7 +144,7 @@ void main() {
 
       await prefs.setString('theme_mode', 'light');
       await prefs.setInt('minimum_track_duration_ms', 1);
-      await prefs.setBool('telemetry_enabled', true);
+      await prefs.setBool('pull_to_refresh_enabled', true);
 
       await BackupService.instance.restoreFromBackup(
         backupInfoFor(filename),
@@ -162,8 +162,8 @@ void main() {
       await restored.reload();
       expect(restored.getString('theme_mode'), 'dark');
       expect(restored.getInt('minimum_track_duration_ms'), 42000);
-      // telemetry_enabled belongs to the UI category and must survive too.
-      expect(restored.getBool('telemetry_enabled'), isFalse);
+      // pull_to_refresh_enabled belongs to the UI category and must survive too.
+      expect(restored.getBool('pull_to_refresh_enabled'), isFalse);
     });
   });
 

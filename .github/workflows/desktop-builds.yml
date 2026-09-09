@@ -1,0 +1,183 @@
+name: Desktop Builds
+
+# Linux (x86_64 AppImage), Windows (x86_64 installer + portable zip) and macOS
+# (separate arm64 / x64 zips, NOT universal — thinned from one universal build).
+# Binaries ship unsigned: on macOS right-click > Open on first launch.
+# Windows/Linux runtime notes: install a system ffmpeg for lyrics/covers and
+# (Linux) xdg-desktop-portal + backend for the native folder picker
+# (file_picker 10.x uses the XDG portal, not zenity/kdialog).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'lib/**'
+      - 'linux/**'
+      - 'windows/**'
+      - 'macos/**'
+      - 'packaging/**'
+      - 'assets/app_icon.png'
+      - 'pubspec.yaml'
+      - '.github/workflows/desktop-builds.yml'
+  workflow_dispatch:
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake git ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux release bundle (x64)
+        run: flutter build linux --release
+
+      - name: Download appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+      - name: Build AppImage
+        run: ./packaging/linux/make_appimage.sh build/linux/x64/release/bundle Wispie-linux-x86_64.AppImage ./appimagetool
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-linux-x86_64
+          path: Wispie-linux-x86_64.AppImage
+          retention-days: 14
+
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows release (x64)
+        run: flutter build windows --release
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath Wispie-windows-x64-portable.zip -Force
+
+      - name: Read version from pubspec
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' |
+            Select-Object -First 1
+          $ver = $line.Matches.Groups[1].Value.Trim() -replace '\+.*$',''
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = '1.0.0' }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' `
+            "/DMyAppVersion=${{ steps.version.outputs.version }}" `
+            windows\packaging\wispie.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-windows-x64-setup
+          path: build/windows-installer/Wispie-Setup-x64.exe
+          retention-days: 14
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-windows-x64-portable
+          path: Wispie-windows-x64-portable.zip
+          retention-days: 14
+
+  macos:
+    # One universal build on Apple Silicon, then lipo-thin into separate
+    # single-arch apps (no Intel runners needed, no universal artifact).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+          architecture: arm64
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build macOS release (universal)
+        run: flutter build macos --release
+
+      - name: Assert file-picker entitlement is embedded
+        # file_picker hard-requires user-selected.read* even with the sandbox
+        # off; without it getDirectoryPath throws ENTITLEMENT_NOT_FOUND.
+        run: |
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          codesign -d --entitlements - "$APP" | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in $APP" && exit 1)
+
+      - name: Thin into single-arch apps and zip
+        run: |
+          chmod +x packaging/macos/thin_macos_app.sh
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          echo "Thinning $APP"
+          ./packaging/macos/thin_macos_app.sh "$APP" arm64 build/Wispie-arm64.app
+          ./packaging/macos/thin_macos_app.sh "$APP" x86_64 build/Wispie-x64.app
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent Wispie-arm64.app Wispie-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent Wispie-x64.app Wispie-macos-x64.zip
+          cd ..
+
+      - name: Upload macOS arm64 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-macos-arm64
+          path: build/Wispie-macos-arm64.zip
+          retention-days: 14
+
+      - name: Upload macOS x64 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-macos-x64
+          path: build/Wispie-macos-x64.zip
+          retention-days: 14

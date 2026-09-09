@@ -19,6 +19,7 @@ import 'backup_management_screen.dart';
 import 'custom_shuffle_settings_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
@@ -80,321 +81,326 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             ref.read(userDataProvider.notifier).refresh(force: true),
         child: NotificationListener<ScrollNotification>(
           onNotification: handleScrollNotification,
-          child: CustomScrollView(
-            controller: widget.scrollController,
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              AppSliverHeader(title: 'Profile', isScrolled: isScrolled),
+          child: WideContentCenter(
+            maxWidth: WideLayout.maxNarrowWidth,
+            child: CustomScrollView(
+              controller: widget.scrollController,
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                AppSliverHeader(title: 'Profile', isScrolled: isScrolled),
 
-              // Identity — a plain avatar and name, sitting on the background
-              // rather than on a gradient banner.
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTokens.s5,
-                    AppTokens.s2,
-                    AppTokens.s5,
-                    AppTokens.s5,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(
-                            alpha: AppTokens.accentWashAlpha,
-                          ),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          (authState.username ?? 'U')
-                              .substring(0, 1)
-                              .toUpperCase(),
-                          style: AppTokens.screenTitle(context)
-                              .copyWith(color: accent),
-                        ),
-                      ),
-                      const SizedBox(width: AppTokens.s4),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              authState.username ?? 'User',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTokens.screenTitle(context),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Wispie v$_appVersion',
-                              style: AppTokens.meta(context),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Stats
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTokens.s4,
-                  ),
-                  child: AppSurface(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppTokens.s4,
+                // Identity — a plain avatar and name, sitting on the background
+                // rather than on a gradient banner.
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTokens.s5,
+                      AppTokens.s2,
+                      AppTokens.s5,
+                      AppTokens.s5,
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        AppStatTile(
-                          label: 'Favorites',
-                          value: '${userData.favorites.length}',
+                        Container(
+                          width: 64,
+                          height: 64,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(
+                              alpha: AppTokens.accentWashAlpha,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            (authState.username ?? 'U')
+                                .substring(0, 1)
+                                .toUpperCase(),
+                            style: AppTokens.screenTitle(context)
+                                .copyWith(color: accent),
+                          ),
                         ),
-                        AppStatTile(
-                          label: 'Playlists',
-                          value:
-                              '${userData.playlists.where((p) => !p.isRecommendation).length}',
-                        ),
-                        AppStatTile(
-                          label: 'Hidden',
-                          value: '${userData.hidden.length}',
-                        ),
-                        AppStatTile(
-                          label: 'Suggest-less',
-                          value: '${userData.suggestLess.length}',
+                        const SizedBox(width: AppTokens.s4),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                authState.username ?? 'User',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTokens.screenTitle(context),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Wispie v$_appVersion',
+                                style: AppTokens.meta(context),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
 
-              // Fun stats
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppTokens.s4,
-                    AppTokens.s4,
-                    AppTokens.s4,
-                    0,
-                  ),
-                  child: AppSurface(
-                    padding: EdgeInsets.zero,
-                    child: ClipRRect(
-                      borderRadius: AppTokens.brMd,
-                      child: ExpansionTile(
-                        leading: AppIcon(AppIcons.analytics, color: accent),
-                        title: const Text('Fun Stats'),
-                        subtitle: const Text('Your listening habits analyzed'),
-                        shape: const Border(),
-                        collapsedShape: const Border(),
-                        children: const [
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              AppTokens.s4,
-                              0,
-                              AppTokens.s4,
-                              AppTokens.s4,
-                            ),
-                            child: FunStatsView(),
+                // Stats
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s4,
+                    ),
+                    child: AppSurface(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTokens.s4,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          AppStatTile(
+                            label: 'Favorites',
+                            value: '${userData.favorites.length}',
+                          ),
+                          AppStatTile(
+                            label: 'Playlists',
+                            value:
+                                '${userData.playlists.where((p) => !p.isRecommendation).length}',
+                          ),
+                          AppStatTile(
+                            label: 'Hidden',
+                            value: '${userData.hidden.length}',
+                          ),
+                          AppStatTile(
+                            label: 'Suggest-less',
+                            value: '${userData.suggestLess.length}',
                           ),
                         ],
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // Shuffle personality
-              const SliverToBoxAdapter(
-                child: AppSectionHeader(label: 'Shuffle Personality'),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppTokens.s4,
-                  ),
-                  child: ValueListenableBuilder<ShuffleState>(
-                    valueListenable: audioManager.shuffleStateNotifier,
-                    builder: (context, shuffleState, child) {
-                      final current = shuffleState.config.personality;
-                      final selectedValue = _pendingPersonality ?? current;
-
-                      return AppSurface(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppTokens.s2,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RadioGroup<ShufflePersonality>(
-                              groupValue: selectedValue,
-                              onChanged: (v) {
-                                if (v == null) return;
-                                setState(() {
-                                  _pendingPersonality = v;
-                                  _hasPersonalityChanges = v != current;
-                                });
-                              },
-                              child: const Column(
-                                children: [
-                                  _PersonalityTile(
-                                    title: 'Default',
-                                    subtitle: 'Balanced mix with anti-repeat',
-                                    value: ShufflePersonality.defaultMode,
-                                  ),
-                                  _PersonalityTile(
-                                    title: 'Explorer',
-                                    subtitle: 'Prioritizes new & rare songs',
-                                    value: ShufflePersonality.explorer,
-                                  ),
-                                  _PersonalityTile(
-                                    title: 'Consistent',
-                                    subtitle: 'Favorites heavy',
-                                    value: ShufflePersonality.consistent,
-                                  ),
-                                  _PersonalityTile(
-                                    title: 'Custom',
-                                    subtitle: 'Configure your own shuffle',
-                                    value: ShufflePersonality.custom,
-                                  ),
-                                ],
+                // Fun stats
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTokens.s4,
+                      AppTokens.s4,
+                      AppTokens.s4,
+                      0,
+                    ),
+                    child: AppSurface(
+                      padding: EdgeInsets.zero,
+                      child: ClipRRect(
+                        borderRadius: AppTokens.brMd,
+                        child: ExpansionTile(
+                          leading: AppIcon(AppIcons.analytics, color: accent),
+                          title: const Text('Fun Stats'),
+                          subtitle:
+                              const Text('Your listening habits analyzed'),
+                          shape: const Border(),
+                          collapsedShape: const Border(),
+                          children: const [
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                AppTokens.s4,
+                                0,
+                                AppTokens.s4,
+                                AppTokens.s4,
                               ),
+                              child: FunStatsView(),
                             ),
-                            if (_hasPersonalityChanges)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  AppTokens.s4,
-                                  AppTokens.s2,
-                                  AppTokens.s2,
-                                  AppTokens.s1,
-                                ),
-                                child: Row(
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Shuffle personality
+                const SliverToBoxAdapter(
+                  child: AppSectionHeader(label: 'Shuffle Personality'),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s4,
+                    ),
+                    child: ValueListenableBuilder<ShuffleState>(
+                      valueListenable: audioManager.shuffleStateNotifier,
+                      builder: (context, shuffleState, child) {
+                        final current = shuffleState.config.personality;
+                        final selectedValue = _pendingPersonality ?? current;
+
+                        return AppSurface(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppTokens.s2,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              RadioGroup<ShufflePersonality>(
+                                groupValue: selectedValue,
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() {
+                                    _pendingPersonality = v;
+                                    _hasPersonalityChanges = v != current;
+                                  });
+                                },
+                                child: const Column(
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Applies to the next queue',
-                                        style: AppTokens.meta(context)
-                                            .copyWith(color: accent),
-                                      ),
+                                    _PersonalityTile(
+                                      title: 'Default',
+                                      subtitle: 'Balanced mix with anti-repeat',
+                                      value: ShufflePersonality.defaultMode,
                                     ),
-                                    TextButton(
-                                      onPressed: () => setState(() {
-                                        _pendingPersonality = null;
-                                        _hasPersonalityChanges = false;
-                                      }),
-                                      child: const Text('Cancel'),
+                                    _PersonalityTile(
+                                      title: 'Explorer',
+                                      subtitle: 'Prioritizes new & rare songs',
+                                      value: ShufflePersonality.explorer,
                                     ),
-                                    const SizedBox(width: AppTokens.s2),
-                                    FilledButton(
-                                      onPressed: () {
-                                        audioManager.updateShuffleConfig(
-                                          shuffleState.config.copyWith(
-                                            personality: _pendingPersonality!,
-                                          ),
-                                          applyToCurrentQueue: false,
-                                        );
-                                        setState(() {
-                                          _pendingPersonality = null;
-                                          _hasPersonalityChanges = false;
-                                        });
-                                        appSnack(context, 'Personality saved',
-                                            tone: AppTone.success);
-                                      },
-                                      child: const Text('Apply'),
+                                    _PersonalityTile(
+                                      title: 'Consistent',
+                                      subtitle: 'Favorites heavy',
+                                      value: ShufflePersonality.consistent,
+                                    ),
+                                    _PersonalityTile(
+                                      title: 'Custom',
+                                      subtitle: 'Configure your own shuffle',
+                                      value: ShufflePersonality.custom,
                                     ),
                                   ],
                                 ),
                               ),
+                              if (_hasPersonalityChanges)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    AppTokens.s4,
+                                    AppTokens.s2,
+                                    AppTokens.s2,
+                                    AppTokens.s1,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Applies to the next queue',
+                                          style: AppTokens.meta(context)
+                                              .copyWith(color: accent),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => setState(() {
+                                          _pendingPersonality = null;
+                                          _hasPersonalityChanges = false;
+                                        }),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      const SizedBox(width: AppTokens.s2),
+                                      FilledButton(
+                                        onPressed: () {
+                                          audioManager.updateShuffleConfig(
+                                            shuffleState.config.copyWith(
+                                              personality: _pendingPersonality!,
+                                            ),
+                                            applyToCurrentQueue: false,
+                                          );
+                                          setState(() {
+                                            _pendingPersonality = null;
+                                            _hasPersonalityChanges = false;
+                                          });
+                                          appSnack(context, 'Personality saved',
+                                              tone: AppTone.success);
+                                        },
+                                        child: const Text('Apply'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: ValueListenableBuilder<ShuffleState>(
+                    valueListenable: audioManager.shuffleStateNotifier,
+                    builder: (context, shuffleState, child) {
+                      if (shuffleState.config.personality !=
+                          ShufflePersonality.custom) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.s4,
+                          AppTokens.s3,
+                          AppTokens.s4,
+                          0,
+                        ),
+                        child: AppSurfaceGroup(
+                          children: [
+                            _navRow(
+                              icon: AppIcons.tune,
+                              title: 'Configure Custom Shuffle',
+                              subtitle: 'Adjust shuffle behavior settings',
+                              accent: accent,
+                              onTap: () => context.pushApp(
+                                const CustomShuffleSettingsScreen(),
+                              ),
+                            ),
                           ],
                         ),
                       );
                     },
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: ValueListenableBuilder<ShuffleState>(
-                  valueListenable: audioManager.shuffleStateNotifier,
-                  builder: (context, shuffleState, child) {
-                    if (shuffleState.config.personality !=
-                        ShufflePersonality.custom) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTokens.s4,
-                        AppTokens.s3,
-                        AppTokens.s4,
-                        0,
-                      ),
-                      child: AppSurfaceGroup(
-                        children: [
-                          _navRow(
-                            icon: AppIcons.tune,
-                            title: 'Configure Custom Shuffle',
-                            subtitle: 'Adjust shuffle behavior settings',
-                            accent: accent,
-                            onTap: () => context.pushApp(
-                              const CustomShuffleSettingsScreen(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
 
-              // Profile / Data / App
-              const SliverToBoxAdapter(
-                child: AppSectionHeader(label: 'Profile'),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-                  child: AppSurfaceGroup(
-                    children: [
-                      _navRow(
-                        icon: AppIcons.person,
-                        title: 'Change Display Name',
-                        subtitle: 'Current: ${authState.username}',
-                        accent: accent,
-                        onTap: () =>
-                            _showChangeUsernameDialog(authState.username),
-                      ),
-                      _navRow(
-                        icon: AppIcons.cloudUpload,
-                        title: 'Manage Backups',
-                        subtitle: 'Create, restore, and manage app backups',
-                        accent: accent,
-                        onTap: () =>
-                            context.pushApp(const BackupManagementScreen()),
-                      ),
-                      _navRow(
-                        icon: AppIcons.settings,
-                        title: 'Settings',
-                        subtitle: 'Theme & storage',
-                        accent: accent,
-                        onTap: () => context.pushApp(const SettingsScreen()),
-                      ),
-                    ],
+                // Profile / Data / App
+                const SliverToBoxAdapter(
+                  child: AppSectionHeader(label: 'Profile'),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                    child: AppSurfaceGroup(
+                      children: [
+                        _navRow(
+                          icon: AppIcons.person,
+                          title: 'Change Display Name',
+                          subtitle: 'Current: ${authState.username}',
+                          accent: accent,
+                          onTap: () =>
+                              _showChangeUsernameDialog(authState.username),
+                        ),
+                        _navRow(
+                          icon: AppIcons.cloudUpload,
+                          title: 'Manage Backups',
+                          subtitle: 'Create, restore, and manage app backups',
+                          accent: accent,
+                          onTap: () =>
+                              context.pushApp(const BackupManagementScreen()),
+                        ),
+                        _navRow(
+                          icon: AppIcons.settings,
+                          title: 'Settings',
+                          subtitle: 'Theme & storage',
+                          accent: accent,
+                          onTap: () => context.pushApp(const SettingsScreen()),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
-              const SliverPadding(
-                padding: EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-              ),
-            ],
+                const SliverPadding(
+                  padding: EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+                ),
+              ],
+            ),
           ),
         ),
       ),

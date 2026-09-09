@@ -63,7 +63,6 @@ app.*.map.json
 # Keystore properties (contains passwords)
 /android/key.properties
 android/build/reports/problems/problems-report.html
-/macos
 /temp
 /.opencode
 *.jks

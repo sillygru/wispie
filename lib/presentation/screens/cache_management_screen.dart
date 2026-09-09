@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import '../../services/cache_service.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -70,67 +72,68 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
-      appBar: AppBar(
-        title: const Text("Sync & Storage"),
-      ),
+      appBar: const AppTopBar(title: 'Sync & Storage'),
       body: _isClearing
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                AppSurface(
-                  padding: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        const Text("Sync Cache (V3)",
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w500)),
-                        const SizedBox(height: 8),
-                        Text(_v3CacheSize,
-                            style: const TextStyle(
-                                fontSize: 32, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ListTile(
-                  leading: const AppIcon(AppIcons.refresh),
-                  title: const Text("Recalculate Size"),
-                  onTap: _calculateSizes,
-                ),
-                const Divider(),
-                ListTile(
-                  leading:
-                      const AppIcon(AppIcons.delete, color: AppTokens.danger),
-                  title: const Text("Clear Sync Cache",
-                      style: TextStyle(color: AppTokens.danger)),
-                  onTap: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text("Clear Sync Cache?"),
-                        content: const Text(
-                            "This will only remove temporary sync files. Your local history and settings are preserved in the database."),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text("Cancel")),
-                          TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text("Clear",
-                                  style: TextStyle(color: AppTokens.danger))),
+          : WideContentCenter(
+              maxWidth: WideLayout.maxNarrowWidth,
+              child: ListView(
+                padding: const EdgeInsets.all(AppTokens.s4),
+                children: [
+                  AppSurface(
+                    padding: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: [
+                          const Text("Sync Cache (V3)",
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          Text(_v3CacheSize,
+                              style: const TextStyle(
+                                  fontSize: 32, fontWeight: FontWeight.bold)),
                         ],
                       ),
-                    );
-                    if (confirm == true) {
-                      _performClear();
-                    }
-                  },
-                ),
-              ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  ListTile(
+                    leading: const AppIcon(AppIcons.refresh),
+                    title: const Text("Recalculate Size"),
+                    onTap: _calculateSizes,
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading:
+                        const AppIcon(AppIcons.delete, color: AppTokens.danger),
+                    title: const Text("Clear Sync Cache",
+                        style: TextStyle(color: AppTokens.danger)),
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text("Clear Sync Cache?"),
+                          content: const Text(
+                              "This will only remove temporary sync files. Your local history and settings are preserved in the database."),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text("Cancel")),
+                            TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text("Clear",
+                                    style: TextStyle(color: AppTokens.danger))),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        _performClear();
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
     );
   }

@@ -27,7 +27,7 @@ class FFmpegService {
   static final FFmpegService instance = FFmpegService();
 
   static bool get usesSystemProcess =>
-      !kIsWeb && !Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS;
+      !Platform.isAndroid && !Platform.isIOS && !Platform.isMacOS;
 
   static bool? _cachedFfmpegAvailable;
   static bool? _cachedFfprobeAvailable;
@@ -149,7 +149,7 @@ class FFmpegService {
   }
 
   Future<void> _ensurePlatformSupported() async {
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
       return;
     }
     if (await isFFmpegAvailable()) {
@@ -527,7 +527,25 @@ class FFmpegService {
         return null;
       }
 
-      final json = jsonDecode(output);
+      // FFprobeKit can leak the banner/stderr into getOutput() (e.g.
+      // "Input #0, mp3, from ..."). Only attempt JSON parsing when the
+      // payload actually looks like JSON.
+      if (!output.trimLeft().startsWith('{')) {
+        if (kDebugMode) {
+          debugPrint('FFmpegService: Non-JSON ffprobe output for: $filePath');
+        }
+        return null;
+      }
+
+      final Map<String, dynamic> json;
+      try {
+        json = jsonDecode(output) as Map<String, dynamic>;
+      } on FormatException catch (e) {
+        if (kDebugMode) {
+          debugPrint('FFmpegService: Malformed ffprobe JSON for $filePath: $e');
+        }
+        return null;
+      }
       final tags = json['format']?['tags'];
 
       if (tags == null) {

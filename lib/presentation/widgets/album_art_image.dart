@@ -112,15 +112,18 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     int? effectiveMemCacheHeight = widget.memCacheHeight;
 
     if (effectiveMemCacheWidth == null && effectiveMemCacheHeight == null) {
-      if (widget.width != null && widget.width! < 400) {
-        effectiveMemCacheWidth = (widget.width! * 2.5).toInt();
-      } else if (widget.height != null && widget.height! < 400) {
-        effectiveMemCacheHeight = (widget.height! * 2.5).toInt();
-      } else if (widget.width != null) {
-        effectiveMemCacheWidth = (widget.width! * 2.0).toInt().clamp(100, 1024);
-      } else if (widget.height != null) {
-        effectiveMemCacheHeight =
-            (widget.height! * 2.0).toInt().clamp(100, 1024);
+      final width = widget.width;
+      final height = widget.height;
+      final hasFiniteWidth = width != null && width.isFinite;
+      final hasFiniteHeight = height != null && height.isFinite;
+      if (hasFiniteWidth && width < 400) {
+        effectiveMemCacheWidth = (width * 2.5).toInt();
+      } else if (hasFiniteHeight && height < 400) {
+        effectiveMemCacheHeight = (height * 2.5).toInt();
+      } else if (hasFiniteWidth) {
+        effectiveMemCacheWidth = (width * 2.0).toInt().clamp(100, 1024);
+      } else if (hasFiniteHeight) {
+        effectiveMemCacheHeight = (height * 2.0).toInt().clamp(100, 1024);
       } else {
         effectiveMemCacheWidth = 1024;
       }
@@ -237,14 +240,18 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     var width = image.memCacheWidth;
     var height = image.memCacheHeight;
     if (width == null && height == null) {
-      if (image.width != null && image.width! < 400) {
-        width = (image.width! * 2.5).toInt();
-      } else if (image.height != null && image.height! < 400) {
-        height = (image.height! * 2.5).toInt();
-      } else if (image.width != null) {
-        width = (image.width! * 2.0).toInt().clamp(100, 1024);
-      } else if (image.height != null) {
-        height = (image.height! * 2.0).toInt().clamp(100, 1024);
+      final w = image.width;
+      final h = image.height;
+      final hasFiniteWidth = w != null && w.isFinite;
+      final hasFiniteHeight = h != null && h.isFinite;
+      if (hasFiniteWidth && w < 400) {
+        width = (w * 2.5).toInt();
+      } else if (hasFiniteHeight && h < 400) {
+        height = (h * 2.5).toInt();
+      } else if (hasFiniteWidth) {
+        width = (w * 2.0).toInt().clamp(100, 1024);
+      } else if (hasFiniteHeight) {
+        height = (h * 2.0).toInt().clamp(100, 1024);
       } else {
         width = 1024;
       }
@@ -340,6 +347,10 @@ class StaticAlbumArtImage extends StatelessWidget {
 
     Widget content;
 
+    // Locals: public fields do not promote, so copy before null checks.
+    final w = width;
+    final h = height;
+
     if (isLocal) {
       String path;
       try {
@@ -359,8 +370,8 @@ class StaticAlbumArtImage extends StatelessWidget {
         height: height,
         fit: fit,
         filterQuality: FilterQuality.low,
-        cacheWidth: width != null ? (width! * 2).toInt() : null,
-        cacheHeight: height != null ? (height! * 2).toInt() : null,
+        cacheWidth: w != null && w.isFinite ? (w * 2).toInt() : null,
+        cacheHeight: h != null && h.isFinite ? (h * 2).toInt() : null,
         errorBuilder: (context, error, stackTrace) {
           return errorWidget ?? _buildErrorWidget();
         },
@@ -372,8 +383,8 @@ class StaticAlbumArtImage extends StatelessWidget {
         height: height,
         fit: fit,
         filterQuality: FilterQuality.low,
-        cacheWidth: width != null ? (width! * 2).toInt() : null,
-        cacheHeight: height != null ? (height! * 2).toInt() : null,
+        cacheWidth: w != null && w.isFinite ? (w * 2).toInt() : null,
+        cacheHeight: h != null && h.isFinite ? (h * 2).toInt() : null,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return placeholder ?? _buildPlaceholderWidget();

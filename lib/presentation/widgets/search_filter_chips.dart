@@ -42,6 +42,12 @@ class SearchFilterChips extends ConsumerWidget {
             selected: filterState.albums,
             onTap: () => notifier.toggleFilter(SearchFilterType.albums),
           ),
+          const SizedBox(width: AppTokens.s2),
+          AppChip(
+            label: 'Lyrics',
+            selected: filterState.lyrics,
+            onTap: () => notifier.toggleFilter(SearchFilterType.lyrics),
+          ),
         ],
       ),
     );
@@ -80,6 +86,11 @@ class CompactSearchFilterChips extends ConsumerWidget {
           label: 'Albums',
           selected: filterState.albums,
           onTap: () => notifier.toggleFilter(SearchFilterType.albums),
+        ),
+        AppChip(
+          label: 'Lyrics',
+          selected: filterState.lyrics,
+          onTap: () => notifier.toggleFilter(SearchFilterType.lyrics),
         ),
       ],
     );

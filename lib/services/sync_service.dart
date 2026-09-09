@@ -59,7 +59,6 @@ class SyncService {
     'lyrics_auto_translate',
     'lyrics_translation_mode',
     'auto_hide_bottom_bar_on_scroll',
-    'telemetry_enabled',
     'auto_pause_on_volume_zero',
     'auto_resume_on_volume_restore',
   ];

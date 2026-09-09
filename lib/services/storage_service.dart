@@ -11,6 +11,27 @@ import 'cache_service.dart';
 import 'ios_folder_access_service.dart';
 import 'import_options.dart';
 
+class FolderPickerUnavailable implements Exception {
+  final String operatingSystem;
+  final Object? cause;
+
+  const FolderPickerUnavailable(this.operatingSystem, [this.cause]);
+
+  @override
+  String toString() =>
+      'FolderPickerUnavailable($operatingSystem${cause == null ? '' : ': $cause'})';
+
+  /// Short message suitable for a snackbar.
+  String get userFacingHint {
+    if (operatingSystem == 'linux') {
+      return 'Could not open the system folder dialog. '
+          'Install xdg-desktop-portal and a backend '
+          '(e.g. xdg-desktop-portal-gtk) and try again.';
+    }
+    return 'Could not open the system folder dialog ($operatingSystem).';
+  }
+}
+
 class StorageService {
   @visibleForTesting
   static String? testDocumentsPath;
@@ -23,7 +44,6 @@ class StorageService {
   static const String _isLocalModeKey = 'is_local_mode';
   static const String _localUsernameKey = 'local_username';
   static const String _pullToRefreshEnabledKey = 'pull_to_refresh_enabled';
-  static const String _telemetryEnabledKey = 'telemetry_enabled';
   static const String _telemetryIdKey = 'telemetry_id';
 
   /// Content types (by [BackupContentType.name]) included in automatic backups.
@@ -176,7 +196,34 @@ class StorageService {
     await CacheService.instance.markLibraryChanged();
   }
 
+  /// Returns null when the user cancels. Throws [FolderPickerUnavailable]
+  /// when the native dialog itself cannot be shown (e.g. no XDG portal on
+  /// Linux, missing file access entitlement on macOS) so callers can tell
+  /// failure apart from cancellation.
   Future<Map<String, String>?> pickMusicFolder([BuildContext? context]) async {
+    // Desktop always uses the native OS folder dialog: NSOpenPanel on macOS
+    // (requires the user-selected.read-write entitlement — declared in the
+    // Runner entitlements), IFileDialog on Windows (no setup), and the XDG
+    // desktop portal on Linux (needs xdg-desktop-portal + backend running).
+    // The in-app dart:io browser below is kept for mobile callers only.
+    if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
+      try {
+        final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+        if (selectedDirectory == null || selectedDirectory.isEmpty) {
+          return null;
+        }
+        return _normalizeFolderRecord({
+          'path': selectedDirectory,
+          'platform': Platform.operatingSystem,
+        });
+      } on Exception catch (e) {
+        // Covers PlatformException (macOS entitlement gate) and
+        // DBusMethodResponseException (Linux portal/bus absence).
+        debugPrint('Native folder picker unavailable: $e');
+        throw FolderPickerUnavailable(Platform.operatingSystem, e);
+      }
+    }
+
     if (context != null) {
       final selection = await showInAppFolderPicker(context);
       if (selection == null ||
@@ -405,16 +452,6 @@ class StorageService {
     await prefs.setBool(_pullToRefreshEnabledKey, value);
   }
 
-  Future<bool> getTelemetryEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_telemetryEnabledKey) ?? true;
-  }
-
-  Future<void> setTelemetryEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_telemetryEnabledKey, enabled);
-  }
-
   Future<String?> getTelemetryId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_telemetryIdKey);
@@ -523,7 +560,6 @@ class StorageService {
     'visualizer_mode',
     'auto_hide_bottom_bar_on_scroll',
     'pull_to_refresh_enabled',
-    'telemetry_enabled',
     'auto_pause_on_volume_zero',
     'auto_resume_on_volume_restore',
     'show_song_duration',
@@ -704,7 +740,6 @@ class StorageService {
     'show_for_you',
     'sound_reactive_particles_enabled',
     'pull_to_refresh_enabled',
-    'telemetry_enabled',
   ];
 
   static const List<String> _backupSettingsKeys = [

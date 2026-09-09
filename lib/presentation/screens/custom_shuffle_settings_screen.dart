@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/shuffle_config.dart';
 import '../../providers/providers.dart';
 import '../components/app_surface.dart';
+import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -107,8 +109,8 @@ class _CustomShuffleSettingsScreenState
         }
       },
       child: AmbientScaffold(
-        appBar: AppBar(
-          title: const Text('Custom Shuffle Settings'),
+        appBar: AppTopBar(
+          title: 'Custom Shuffle Settings',
           actions: [
             TextButton.icon(
               onPressed: _resetToDefaults,
@@ -123,162 +125,167 @@ class _CustomShuffleSettingsScreenState
               ),
           ],
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
-            if (_hasChanges)
-              AppSurface(
-                padding: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Row(
-                    children: [
-                      AppIcon(
-                        AppIcons.info,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Changes will apply to next queue',
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
+        body: WideContentCenter(
+          maxWidth: WideLayout.maxNarrowWidth,
+          child: ListView(
+            padding: const EdgeInsets.all(AppTokens.s4),
+            children: [
+              if (_hasChanges)
+                AppSurface(
+                  padding: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Row(
+                      children: [
+                        AppIcon(
+                          AppIcons.info,
+                          size: 20,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Changes will apply to next queue',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            if (_hasChanges) const SizedBox(height: 16),
-            _buildSectionTitle('Basic Settings'),
-            AppSurface(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text('Avoid Repeating Songs'),
-                    subtitle: const Text(
-                        'Reduce chance of playing recently played songs'),
-                    value: config.avoidRepeatingSongs,
-                    onChanged: (value) {
-                      _updateConfig(
-                          config.copyWith(avoidRepeatingSongs: value));
-                    },
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    title: const Text('Avoid Repeating Artists'),
-                    subtitle: const Text(
-                        'Reduce chance of playing same artist consecutively'),
-                    value: config.avoidRepeatingArtists,
-                    onChanged: (value) {
-                      _updateConfig(
-                          config.copyWith(avoidRepeatingArtists: value));
-                    },
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    title: const Text('Avoid Repeating Albums'),
-                    subtitle: const Text(
-                        'Reduce chance of playing same album consecutively'),
-                    value: config.avoidRepeatingAlbums,
-                    onChanged: (value) {
-                      _updateConfig(
-                          config.copyWith(avoidRepeatingAlbums: value));
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            ListTile(
-              title: const Text(
-                'Advanced Settings',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: const Text('Fine-tune individual weight values'),
-              trailing: AppIcon(
-                _showAdvanced ? AppIcons.arrowUp : AppIcons.arrowDown,
-              ),
-              onTap: () {
-                setState(() {
-                  _showAdvanced = !_showAdvanced;
-                });
-              },
-            ),
-            if (_showAdvanced) ...[
-              const SizedBox(height: 8),
+              if (_hasChanges) const SizedBox(height: 16),
+              _buildSectionTitle('Basic Settings'),
               AppSurface(
                 padding: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Weight Values (-99 to +99)',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '0 = neutral, negative = penalty, positive = boost',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildAdvancedSlider(
-                        label: 'Least Played Songs',
-                        value: config.leastPlayedWeight,
-                        onChanged: (value) {
-                          _updateConfig(
-                              config.copyWith(leastPlayedWeight: value));
-                        },
-                      ),
-                      _buildAdvancedSlider(
-                        label: 'Most Played Songs',
-                        value: config.mostPlayedWeight,
-                        onChanged: (value) {
-                          _updateConfig(
-                              config.copyWith(mostPlayedWeight: value));
-                        },
-                      ),
-                      _buildAdvancedSlider(
-                        label: 'Favorites',
-                        value: config.favoritesWeight,
-                        onChanged: (value) {
-                          _updateConfig(
-                              config.copyWith(favoritesWeight: value));
-                        },
-                      ),
-                      _buildAdvancedSlider(
-                        label: 'Suggest Less Songs',
-                        value: config.suggestLessWeight,
-                        onChanged: (value) {
-                          _updateConfig(
-                              config.copyWith(suggestLessWeight: value));
-                        },
-                      ),
-                      _buildAdvancedSlider(
-                        label: 'Songs in Playlists',
-                        value: config.playlistSongsWeight,
-                        onChanged: (value) {
-                          _updateConfig(
-                              config.copyWith(playlistSongsWeight: value));
-                        },
-                      ),
-                    ],
-                  ),
+                child: Column(
+                  children: [
+                    SwitchListTile(
+                      title: const Text('Avoid Repeating Songs'),
+                      subtitle: const Text(
+                          'Reduce chance of playing recently played songs'),
+                      value: config.avoidRepeatingSongs,
+                      onChanged: (value) {
+                        _updateConfig(
+                            config.copyWith(avoidRepeatingSongs: value));
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      title: const Text('Avoid Repeating Artists'),
+                      subtitle: const Text(
+                          'Reduce chance of playing same artist consecutively'),
+                      value: config.avoidRepeatingArtists,
+                      onChanged: (value) {
+                        _updateConfig(
+                            config.copyWith(avoidRepeatingArtists: value));
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      title: const Text('Avoid Repeating Albums'),
+                      subtitle: const Text(
+                          'Reduce chance of playing same album consecutively'),
+                      value: config.avoidRepeatingAlbums,
+                      onChanged: (value) {
+                        _updateConfig(
+                            config.copyWith(avoidRepeatingAlbums: value));
+                      },
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 24),
+              ListTile(
+                title: const Text(
+                  'Advanced Settings',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text('Fine-tune individual weight values'),
+                trailing: AppIcon(
+                  _showAdvanced ? AppIcons.arrowUp : AppIcons.arrowDown,
+                ),
+                onTap: () {
+                  setState(() {
+                    _showAdvanced = !_showAdvanced;
+                  });
+                },
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 8),
+                AppSurface(
+                  padding: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Weight Values (-99 to +99)',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '0 = neutral, negative = penalty, positive = boost',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildAdvancedSlider(
+                          label: 'Least Played Songs',
+                          value: config.leastPlayedWeight,
+                          onChanged: (value) {
+                            _updateConfig(
+                                config.copyWith(leastPlayedWeight: value));
+                          },
+                        ),
+                        _buildAdvancedSlider(
+                          label: 'Most Played Songs',
+                          value: config.mostPlayedWeight,
+                          onChanged: (value) {
+                            _updateConfig(
+                                config.copyWith(mostPlayedWeight: value));
+                          },
+                        ),
+                        _buildAdvancedSlider(
+                          label: 'Favorites',
+                          value: config.favoritesWeight,
+                          onChanged: (value) {
+                            _updateConfig(
+                                config.copyWith(favoritesWeight: value));
+                          },
+                        ),
+                        _buildAdvancedSlider(
+                          label: 'Suggest Less Songs',
+                          value: config.suggestLessWeight,
+                          onChanged: (value) {
+                            _updateConfig(
+                                config.copyWith(suggestLessWeight: value));
+                          },
+                        ),
+                        _buildAdvancedSlider(
+                          label: 'Songs in Playlists',
+                          value: config.playlistSongsWeight,
+                          onChanged: (value) {
+                            _updateConfig(
+                                config.copyWith(playlistSongsWeight: value));
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 32),
             ],
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );

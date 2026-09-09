@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -35,29 +34,32 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Linux has no platform implementations for metadata_god, audio_session or
-  // audio_service; playback goes through just_audio_media_kit instead.
-  final isLinux = !kIsWeb && Platform.isLinux;
+  // Linux and Windows have no platform implementations for metadata_god,
+  // audio_session or audio_service; playback goes through just_audio_media_kit
+  // instead, and sqlite goes through sqflite_common_ffi.
+  final isMediaKitDesktop = Platform.isLinux || Platform.isWindows;
 
-  if (isLinux) {
-    // Fedora and friends ship only the versioned soname; the unversioned
-    // libsqlite3.so lives in -devel packages that end users should not need.
-    sqlite3_open.open.overrideFor(
-      sqlite3_open.OperatingSystem.linux,
-      () => DynamicLibrary.open('libsqlite3.so.0'),
-    );
+  if (isMediaKitDesktop) {
+    if (Platform.isLinux) {
+      // Fedora and friends ship only the versioned soname; the unversioned
+      // libsqlite3.so lives in -devel packages that end users should not need.
+      sqlite3_open.open.overrideFor(
+        sqlite3_open.OperatingSystem.linux,
+        () => _openLinuxSqlite(),
+      );
+    }
     sqfliteFfiInit();
     // In-process ffi factory: the isolate-based one loads sqlite3 in its own
-    // isolate where the libsqlite3.so.0 override above would not apply.
+    // isolate where the libsqlite3 override above would not apply.
     databaseFactory = createDatabaseFactoryFfi(noIsolate: true);
     JustAudioMediaKit.ensureInitialized();
   }
 
   // Parallel initialization
   await Future.wait([
-    if (!isLinux) _initializeMetadataGod(),
-    if (!isLinux) _setupAudioSession(),
-    if (!isLinux) _setupJustAudioBackground(),
+    if (!isMediaKitDesktop) _initializeMetadataGod(),
+    if (!isMediaKitDesktop) _setupAudioSession(),
+    if (!isMediaKitDesktop) _setupJustAudioBackground(),
   ], eagerError: false);
 
   PaintingBinding.instance.imageCache.maximumSize = 250;
@@ -88,6 +90,16 @@ Future<void> main() async {
     ],
     child: const WispieApp(),
   ));
+}
+
+DynamicLibrary _openLinuxSqlite() {
+  // Distros disagree on the soname: most ship libsqlite3.so.0, some only
+  // libsqlite3.so.1. Try both before giving up.
+  try {
+    return DynamicLibrary.open('libsqlite3.so.0');
+  } catch (_) {
+    return DynamicLibrary.open('libsqlite3.so.1');
+  }
 }
 
 Future<void> _initializeMetadataGod() async {

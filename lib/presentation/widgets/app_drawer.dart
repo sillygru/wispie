@@ -19,6 +19,7 @@ import '../components/app_surface.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 /// The slide-out navigation panel.
 ///
@@ -96,178 +97,185 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     // Entrance: slide in from off-screen left — no opacity animation, so the
     // background is always opaque and there is no gray-flash before the panel.
     final animationValue = widget.drawerPosition;
-    final drawerWidth = MediaQuery.of(context).size.width * 0.48;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    // Capped on wide windows so the panel never covers half a desktop window.
+    final drawerWidth =
+        (screenWidth * 0.48).clamp(0.0, WideLayout.maxDrawerWidth);
     final slideInOffset = (1.0 - animationValue) * -drawerWidth;
 
-    return FractionallySizedBox(
+    return Align(
       alignment: Alignment.centerLeft,
-      widthFactor: 0.48,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final currentWidth = constraints.maxWidth;
-          final iconSize = (currentWidth * 0.17).clamp(24.0, 40.0);
-          final headerIconSize = (currentWidth * 0.17).clamp(24.0, 40.0);
-          final textFontSize = (currentWidth * 0.085).clamp(13.0, 18.0);
-          final headerFontSize = (currentWidth * 0.11).clamp(16.0, 24.0);
+      child: SizedBox(
+        width: drawerWidth,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final currentWidth = constraints.maxWidth;
+            final iconSize = (currentWidth * 0.17).clamp(24.0, 40.0);
+            final headerIconSize = (currentWidth * 0.17).clamp(24.0, 40.0);
+            final textFontSize = (currentWidth * 0.085).clamp(13.0, 18.0);
+            final headerFontSize = (currentWidth * 0.11).clamp(16.0, 24.0);
 
-          return RepaintBoundary(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                  AppTokens.surface(1),
-                  Theme.of(context).scaffoldBackgroundColor,
+            return RepaintBoundary(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color.alphaBlend(
+                    AppTokens.surface(1),
+                    Theme.of(context).scaffoldBackgroundColor,
+                  ),
+                  borderRadius: _panelRadius,
                 ),
-                borderRadius: _panelRadius,
-              ),
-              child: Transform.translate(
-                offset: Offset(slideInOffset, 0),
-                child: SafeArea(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(
-                        context,
-                        accent,
-                        iconSize: headerIconSize,
-                        fontSize: headerFontSize,
-                      ),
-                      Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppTokens.s1,
-                            0,
-                            AppTokens.s1,
-                            AppTokens.s3,
-                          ),
-                          children: [
-                            const AppSectionHeader(
-                              label: 'Library',
-                              padding: EdgeInsets.fromLTRB(
-                                AppTokens.s2,
-                                AppTokens.s2,
-                                AppTokens.s2,
-                                0,
-                              ),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.favorite,
-                              label: 'Favorites',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () async {
-                                final songs =
-                                    await ref.read(songsProvider.future);
-                                final userDataState =
-                                    ref.read(userDataProvider);
-                                final favSongs = songs
-                                    .where((s) =>
-                                        userDataState.isFavorite(s.filename))
-                                    .toList();
-                                if (context.mounted) {
-                                  _navigateTo(SongListScreen(
-                                    title: 'Favorites',
-                                    songs: favSongs,
-                                  ));
-                                }
-                              },
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.queue,
-                              label: 'Playlists',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () => _navigateTo(const PlaylistsScreen()),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.album,
-                              label: 'Albums',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () => _openLibrarySubTab(2),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.person,
-                              label: 'Artists',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () => _openLibrarySubTab(1),
-                            ),
-                            const AppSectionHeader(
-                              label: 'History',
-                              padding: EdgeInsets.fromLTRB(
-                                AppTokens.s2,
-                                AppTokens.s3,
-                                AppTokens.s2,
-                                0,
-                              ),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.clock,
-                              label: 'Song History',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () =>
-                                  _navigateTo(const PlayHistoryScreen()),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.queuePlayNext,
-                              label: 'Session History',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () =>
-                                  _navigateTo(const SessionHistoryScreen()),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.queue,
-                              label: 'Queue History',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: _openQueueHistory,
-                            ),
-                            const AppSectionHeader(
-                              label: 'Tools',
-                              padding: EdgeInsets.fromLTRB(
-                                AppTokens.s2,
-                                AppTokens.s3,
-                                AppTokens.s2,
-                                0,
-                              ),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.bedtime,
-                              label: 'Sleep Timer',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () =>
-                                  _navigateTo(const SleepTimerScreen()),
-                            ),
-                            const AppSectionHeader(
-                              label: 'App',
-                              padding: EdgeInsets.fromLTRB(
-                                AppTokens.s2,
-                                AppTokens.s3,
-                                AppTokens.s2,
-                                0,
-                              ),
-                            ),
-                            _buildNavItem(
-                              icon: AppIcons.settings,
-                              label: 'Settings',
-                              iconSize: iconSize,
-                              fontSize: textFontSize,
-                              onTap: () => _navigateTo(const SettingsScreen()),
-                              showBadge: updateAvailable,
-                            ),
-                          ],
+                child: Transform.translate(
+                  offset: Offset(slideInOffset, 0),
+                  child: SafeArea(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHeader(
+                          context,
+                          accent,
+                          iconSize: headerIconSize,
+                          fontSize: headerFontSize,
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppTokens.s1,
+                              0,
+                              AppTokens.s1,
+                              AppTokens.s3,
+                            ),
+                            children: [
+                              const AppSectionHeader(
+                                label: 'Library',
+                                padding: EdgeInsets.fromLTRB(
+                                  AppTokens.s2,
+                                  AppTokens.s2,
+                                  AppTokens.s2,
+                                  0,
+                                ),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.favorite,
+                                label: 'Favorites',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () async {
+                                  final songs =
+                                      await ref.read(songsProvider.future);
+                                  final userDataState =
+                                      ref.read(userDataProvider);
+                                  final favSongs = songs
+                                      .where((s) =>
+                                          userDataState.isFavorite(s.filename))
+                                      .toList();
+                                  if (context.mounted) {
+                                    _navigateTo(SongListScreen(
+                                      title: 'Favorites',
+                                      songs: favSongs,
+                                    ));
+                                  }
+                                },
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.queue,
+                                label: 'Playlists',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () =>
+                                    _navigateTo(const PlaylistsScreen()),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.album,
+                                label: 'Albums',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () => _openLibrarySubTab(2),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.person,
+                                label: 'Artists',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () => _openLibrarySubTab(1),
+                              ),
+                              const AppSectionHeader(
+                                label: 'History',
+                                padding: EdgeInsets.fromLTRB(
+                                  AppTokens.s2,
+                                  AppTokens.s3,
+                                  AppTokens.s2,
+                                  0,
+                                ),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.clock,
+                                label: 'Song History',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () =>
+                                    _navigateTo(const PlayHistoryScreen()),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.queuePlayNext,
+                                label: 'Session History',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () =>
+                                    _navigateTo(const SessionHistoryScreen()),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.queue,
+                                label: 'Queue History',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: _openQueueHistory,
+                              ),
+                              const AppSectionHeader(
+                                label: 'Tools',
+                                padding: EdgeInsets.fromLTRB(
+                                  AppTokens.s2,
+                                  AppTokens.s3,
+                                  AppTokens.s2,
+                                  0,
+                                ),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.bedtime,
+                                label: 'Sleep Timer',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () =>
+                                    _navigateTo(const SleepTimerScreen()),
+                              ),
+                              const AppSectionHeader(
+                                label: 'App',
+                                padding: EdgeInsets.fromLTRB(
+                                  AppTokens.s2,
+                                  AppTokens.s3,
+                                  AppTokens.s2,
+                                  0,
+                                ),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.settings,
+                                label: 'Settings',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () =>
+                                    _navigateTo(const SettingsScreen()),
+                                showBadge: updateAvailable,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

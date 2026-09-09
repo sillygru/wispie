@@ -17,6 +17,7 @@ import '../components/player_segmented_pill.dart';
 import '../components/pressable.dart';
 import '../components/song_actions.dart';
 import '../tokens/player_tokens.dart';
+import '../utils/wide_layout.dart';
 import '../widgets/basic_progress_bar.dart';
 import '../motion/player_motion_ensemble.dart';
 import '../widgets/beat_cover_glow.dart';
@@ -73,6 +74,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// snapping once the page settles.
   final ValueNotifier<double> _pagePosition = ValueNotifier(0);
 
+  /// Position of the Lyrics/Queue switch on wide windows. The wide layout has
+  /// no PageView to drive it, so this is set directly on tap.
+  final ValueNotifier<double> _landscapePosition = ValueNotifier(0);
+
   /// Whether the Now Playing pane is the one being looked at. The panes are kept
   /// alive across swipes, which is right for state but wrong for a video
   /// decoder — it would keep running behind the Lyrics or Queue pane.
@@ -90,6 +95,14 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   bool _appActive = true;
   double _dismissDrag = 0;
 
+  /// Right-column tab on wide windows: 0 is Lyrics, 1 is Queue. Seeded from
+  /// the opening pane so a deep link into Queue lands on Queue.
+  late int _landscapeTab;
+
+  /// Last layout branch taken in [_buildBody]. Lets [_syncWakeLock] know
+  /// whether the lyrics selection lives in the PageView or the wide tab.
+  bool _showingWide = false;
+
   /// Mirrors the OS "remove animations" accessibility switch. When it is on,
   /// every self-driven animation on this screen stops — the beat motion, the
   /// mote field and the backdrop spin — regardless of what the appearance
@@ -105,6 +118,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     super.initState();
     _pane = widget.initialPane.index;
     _pagePosition.value = _pane.toDouble();
+    _landscapeTab = switch (widget.initialPane) {
+      PlayerPane.queue => 1,
+      _ => 0,
+    };
+    _landscapePosition.value = _landscapeTab.toDouble();
     _nowPlayingVisible.value = _isNowPlayingVisible(_pagePosition.value);
     _lyricsVisible.value = _isLyricsVisible(_pagePosition.value);
     _pageController = PageController(initialPage: _pane);
@@ -149,6 +167,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _pageController.removeListener(_onPageScroll);
     _pageController.dispose();
     _pagePosition.dispose();
+    _landscapePosition.dispose();
     _nowPlayingVisible.dispose();
     _lyricsVisible.dispose();
     _releaseWakeLock();
@@ -176,14 +195,31 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _appActive = state == AppLifecycleState.resumed;
     _motion.appActive = _appActive;
     if (_appActive) {
-      _nowPlayingVisible.value = _isNowPlayingVisible(_pagePosition.value);
-      _lyricsVisible.value = _isLyricsVisible(_pagePosition.value);
+      _syncPaneVisibility();
       _syncRefresh();
     } else {
       _nowPlayingVisible.value = false;
       _lyricsVisible.value = false;
       DisplayRefreshService.instance.leavePlayer();
     }
+  }
+
+  /// Single place that maps layout state onto the visibility notifiers, so the
+  /// portrait PageView and the wide side-by-side layout cannot disagree about
+  /// whether video may decode or lyrics may sync.
+  void _syncPaneVisibility() {
+    if (!_appActive) {
+      _nowPlayingVisible.value = false;
+      _lyricsVisible.value = false;
+      return;
+    }
+    if (_showingWide) {
+      _nowPlayingVisible.value = true;
+      _lyricsVisible.value = _landscapeTab == 0;
+      return;
+    }
+    _nowPlayingVisible.value = _isNowPlayingVisible(_pagePosition.value);
+    _lyricsVisible.value = _isLyricsVisible(_pagePosition.value);
   }
 
   /// Loads the beat map for whatever is now playing.
@@ -260,10 +296,12 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     if (page == null) return;
     final prev = _pagePosition.value;
     _pagePosition.value = page;
-    _nowPlayingVisible.value = _appActive && _isNowPlayingVisible(page);
-    _lyricsVisible.value = _appActive && _isLyricsVisible(page);
+    if (!_showingWide) {
+      _nowPlayingVisible.value = _appActive && _isNowPlayingVisible(page);
+      _lyricsVisible.value = _appActive && _isLyricsVisible(page);
+    }
 
-    // Boost to 120Hz while actively swiping (your 30/60/90/120 dynamic panel).
+    // Boost to 120Hz while actively swiping (Tested on LTPS panels, should work on LTPO too).
     if ((page - prev).abs() > 0.005 && _appActive) {
       DisplayRefreshService.instance.boost120();
     }
@@ -302,7 +340,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// that.
   void _syncWakeLock() {
     final playing = ref.read(audioPlayerManagerProvider).playingNotifier.value;
-    final wanted = _pane == PlayerPane.lyrics.index &&
+    final lyricsSelected =
+        _showingWide ? _landscapeTab == 0 : _pane == PlayerPane.lyrics.index;
+    final wanted = lyricsSelected &&
         ref.read(settingsProvider).keepScreenAwakeOnLyrics &&
         playing;
 
@@ -327,6 +367,14 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       duration: PlayerTokens.dBase,
       curve: PlayerTokens.cEmphasized,
     );
+  }
+
+  void _selectLandscapeTab(int index) {
+    if (index == _landscapeTab) return;
+    setState(() => _landscapeTab = index);
+    _landscapePosition.value = index.toDouble();
+    _syncPaneVisibility();
+    _syncWakeLock();
   }
 
   void _onDismissDragUpdate(DragUpdateDetails details) {
@@ -413,6 +461,17 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
             settingsProvider.select((s) => s.beatReactiveParticlesEnabled));
     final showGlow = !_reduceMotion &&
         ref.watch(settingsProvider.select((s) => s.beatReactiveCoverEnabled));
+    final isWide = WideLayout.isWide(context);
+    if (isWide != _showingWide) {
+      _showingWide = isWide;
+      // Deferred: notifiers fan out to painters and lyric listeners.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _syncPaneVisibility();
+          _syncWakeLock();
+        }
+      });
+    }
 
     return Stack(
       key: _shellKey,
@@ -451,46 +510,117 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
             child: BeatParticleField(controller: _motion, accent: accent),
           ),
         SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context, song),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: PlayerTokens.s5,
-                  vertical: PlayerTokens.s2,
+          child: isWide
+              ? _buildWideContent(context, song, accent)
+              : Column(
+                  children: [
+                    _buildHeader(context, song),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: PlayerTokens.s5,
+                        vertical: PlayerTokens.s2,
+                      ),
+                      child: PlayerSegmentedPill(
+                        labels: const ['Lyrics', 'Player', 'Queue'],
+                        position: _pagePosition,
+                        onSelected: _goToPane,
+                        accent: accent,
+                      ),
+                    ),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const ClampingScrollPhysics(),
+                        children: [
+                          LyricsPane(
+                            song: song,
+                            accent: accent,
+                            paneVisible: _lyricsVisible,
+                          ),
+                          NowPlayingPane(
+                            song: song,
+                            accent: accent,
+                            motion: _motion,
+                            coverKey: _coverKey,
+                            paneVisible: _nowPlayingVisible,
+                          ),
+                          QueuePane(
+                            accent: accent,
+                            initialShowHistory: widget.queueShowsHistory,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _TransportDock(song: song, accent: accent),
+                  ],
                 ),
-                child: PlayerSegmentedPill(
-                  labels: const ['Lyrics', 'Player', 'Queue'],
-                  position: _pagePosition,
-                  onSelected: _goToPane,
-                  accent: accent,
+        ),
+      ],
+    );
+  }
+
+  /// Wide-window arrangement: cover and transport pinned left, Lyrics/Queue
+  /// tabbed on the right. Reuses the same panes as portrait, so playback,
+  /// motion and glow wiring stay untouched.
+  Widget _buildWideContent(BuildContext context, Song song, Color accent) {
+    return Column(
+      children: [
+        _buildHeader(context, song),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: WideLayout.playerSideWidth,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: NowPlayingPane(
+                        song: song,
+                        accent: accent,
+                        motion: _motion,
+                        coverKey: _coverKey,
+                        paneVisible: _nowPlayingVisible,
+                      ),
+                    ),
+                    _TransportDock(song: song, accent: accent),
+                  ],
                 ),
               ),
               Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const ClampingScrollPhysics(),
+                child: Column(
                   children: [
-                    LyricsPane(
-                      song: song,
-                      accent: accent,
-                      paneVisible: _lyricsVisible,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: PlayerTokens.s5,
+                        vertical: PlayerTokens.s2,
+                      ),
+                      child: PlayerSegmentedPill(
+                        labels: const ['Lyrics', 'Queue'],
+                        position: _landscapePosition,
+                        onSelected: _selectLandscapeTab,
+                        accent: accent,
+                      ),
                     ),
-                    NowPlayingPane(
-                      song: song,
-                      accent: accent,
-                      motion: _motion,
-                      coverKey: _coverKey,
-                      paneVisible: _nowPlayingVisible,
-                    ),
-                    QueuePane(
-                      accent: accent,
-                      initialShowHistory: widget.queueShowsHistory,
+                    Expanded(
+                      child: IndexedStack(
+                        index: _landscapeTab,
+                        children: [
+                          LyricsPane(
+                            song: song,
+                            accent: accent,
+                            paneVisible: _lyricsVisible,
+                          ),
+                          QueuePane(
+                            accent: accent,
+                            initialShowHistory: widget.queueShowsHistory,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-              _TransportDock(song: song, accent: accent),
             ],
           ),
         ),

@@ -126,3 +126,20 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Desktop integration: .desktop entry, hicolor icons and AppStream metadata.
+# These install to FHS locations on `cmake --install <build> --prefix /usr`
+# and are also consumed by packaging/linux/make_appimage.sh for the AppImage.
+set(PACKAGING_LINUX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/linux")
+if(EXISTS "${PACKAGING_LINUX_DIR}/com.sillygru.wispie.desktop")
+  install(FILES "${PACKAGING_LINUX_DIR}/com.sillygru.wispie.desktop"
+    DESTINATION "share/applications" COMPONENT Runtime)
+endif()
+if(EXISTS "${PACKAGING_LINUX_DIR}/com.sillygru.wispie.metainfo.xml")
+  install(FILES "${PACKAGING_LINUX_DIR}/com.sillygru.wispie.metainfo.xml"
+    DESTINATION "share/metainfo" COMPONENT Runtime)
+endif()
+if(EXISTS "${PACKAGING_LINUX_DIR}/icons")
+  install(DIRECTORY "${PACKAGING_LINUX_DIR}/icons/hicolor"
+    DESTINATION "share/icons" COMPONENT Runtime)
+endif()

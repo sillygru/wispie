@@ -3,6 +3,7 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_feedback.dart';
+import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../components/app_surface.dart';
@@ -20,6 +21,7 @@ import 'about_settings_screen.dart';
 import 'indexer_screen.dart';
 import 'sync_settings_screen.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,14 +36,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _controller = TextEditingController();
   String _query = '';
 
+  /// Wide-only master-detail selection. Narrow windows keep the push stack.
+  int _selected = 0;
+  String? _detailHighlight;
+
+  static const _categoryTitles = [
+    'Library',
+    'Playback',
+    'Appearance',
+    'Sync',
+    'Data Management',
+    'Indexer',
+    'Misc',
+    'About',
+  ];
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
+  int _categoryIndexForTitle(String title) {
+    final index = _categoryTitles.indexOf(title);
+    return index < 0 ? 0 : index;
+  }
+
+  void _selectDestination(SettingsDestination entry) {
+    // Pages carry breadcrumb 'Settings' and their own title; rows carry
+    // 'Settings › <Category>'.
+    final breadcrumb = entry.breadcrumb;
+    final categoryTitle = breadcrumb == 'Settings'
+        ? entry.title
+        : breadcrumb.split('›').last.trim();
+    setState(() {
+      _selected = _categoryIndexForTitle(categoryTitle);
+      _detailHighlight = entry.anchorId;
+      _controller.clear();
+      _query = '';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final searching = _query.trim().isNotEmpty;
+    final isWide = WideLayout.isWide(context);
     return AmbientScaffold(
       appBar: AppTopBar(
         title: 'Settings',
@@ -96,7 +135,121 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       ),
-      body: _query.trim().isEmpty ? _buildGroups(context) : _buildResults(),
+      body: isWide && !searching
+          ? _buildMasterDetail(context)
+          : WideContentCenter(
+              maxWidth: WideLayout.maxNarrowWidth,
+              child: searching ? _buildResults() : _buildGroups(context),
+            ),
+    );
+  }
+
+  /// Desktop arrangement: category list on the left, selected page inline on
+  /// the right. Detail pages are the same screen widgets the phone pushes,
+  /// so mobile behaviour is untouched.
+  Widget _buildMasterDetail(BuildContext context) {
+    final entries = [
+      (AppIcons.library, 'Library', 'Music folders, scanning'),
+      (AppIcons.playCircle, 'Playback', 'Audio settings, transitions'),
+      (AppIcons.palette, 'Appearance', 'Theme, display options'),
+      (AppIcons.cloudUpload, 'Sync', 'Google Drive, cross-device sync'),
+      (
+        AppIcons.storage,
+        'Data Management',
+        'Backup, restore, storage, optimize'
+      ),
+      (
+        AppIcons.dataObject,
+        'Indexer',
+        'Manage and rebuild all app indexes and caches'
+      ),
+      (AppIcons.misc, 'Misc', 'Privacy, behavior'),
+      (AppIcons.info, 'About', 'Version, updates, release notes'),
+    ];
+    return WideContentCenter(
+      maxWidth: WideLayout.maxContentWidth,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 280,
+            child: ListView.builder(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s4,
+                AppTokens.s2,
+                AppTokens.s2,
+                AppTokens.scrollBottomInset,
+              ),
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                return AppListRow(
+                  dense: true,
+                  leading: AppRowIcon(icon: entry.$1, size: 40),
+                  title: entry.$2,
+                  subtitle: entry.$3,
+                  isActive: index == _selected,
+                  onTap: () => setState(() {
+                    _selected = index;
+                    _detailHighlight = null;
+                  }),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: AppTokens.s4),
+          Expanded(
+            child: IndexedStack(
+              index: _selected,
+              children: [
+                KeyedSubtree(
+                  key: ValueKey('settings-detail-0-$_detailHighlight'),
+                  child: LibrarySettingsScreen(
+                    highlightId: _selected == 0 ? _detailHighlight : null,
+                  ),
+                ),
+                KeyedSubtree(
+                  key: ValueKey('settings-detail-1-$_detailHighlight'),
+                  child: PlaybackSettingsScreen(
+                    highlightId: _selected == 1 ? _detailHighlight : null,
+                  ),
+                ),
+                KeyedSubtree(
+                  key: ValueKey('settings-detail-2-$_detailHighlight'),
+                  child: AppearanceSettingsScreen(
+                    highlightId: _selected == 2 ? _detailHighlight : null,
+                  ),
+                ),
+                const KeyedSubtree(
+                  key: ValueKey('settings-detail-3'),
+                  child: SyncSettingsScreen(),
+                ),
+                KeyedSubtree(
+                  key: ValueKey('settings-detail-4-$_detailHighlight'),
+                  child: DataManagementSettingsScreen(
+                    highlightId: _selected == 4 ? _detailHighlight : null,
+                  ),
+                ),
+                const KeyedSubtree(
+                  key: ValueKey('settings-detail-5'),
+                  child: IndexerScreen(),
+                ),
+                KeyedSubtree(
+                  key: ValueKey('settings-detail-6-$_detailHighlight'),
+                  child: MiscSettingsScreen(
+                    highlightId: _selected == 6 ? _detailHighlight : null,
+                  ),
+                ),
+                const KeyedSubtree(
+                  key: ValueKey('settings-detail-7'),
+                  child: AboutSettingsScreen(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -131,7 +284,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 // The breadcrumb replaces the subtitle: from a result you need
                 // to know *where* it lives more than what it does.
                 subtitle: entry.breadcrumb,
-                onTap: () => context.pushApp(entry.open()),
+                onTap: () {
+                  // On wide windows search jumps inside the split view
+                  // instead of pushing another full screen.
+                  if (WideLayout.isWide(context)) {
+                    _selectDestination(entry);
+                  } else {
+                    context.pushApp(entry.open());
+                  }
+                },
               ),
           ],
         ),

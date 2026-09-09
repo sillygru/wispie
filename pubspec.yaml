@@ -37,6 +37,7 @@ dependencies:
   http: ^1.2.1
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
+  media_kit_libs_windows_audio: ^1.0.9
   sqflite_common_ffi: ^2.3.0
   sqlite3: ^2.4.0
 
@@ -55,6 +56,13 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/app_icon.png"
   adaptive_icon_background: "#121212"
+  windows:
+    generate: true
+    image_path: "assets/app_icon.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/app_icon.png"
 
 flutter:
   uses-material-design: true

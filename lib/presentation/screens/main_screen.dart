@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'profile_screen.dart';
+import 'search_screen.dart';
+import 'settings_screen.dart';
+import '../routes/app_page_route.dart';
 import '../widgets/now_playing_bar.dart';
 import '../widgets/app_drawer.dart';
 import '../../providers/providers.dart';
@@ -17,9 +21,11 @@ import '../widgets/external_open_banner.dart';
 import '../widgets/immersive_background.dart';
 import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
+import '../components/app_icon.dart';
 import '../components/app_nav_bar.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 class SyncIndicator extends ConsumerWidget {
   const SyncIndicator({super.key});
@@ -288,6 +294,243 @@ class _MainScreenState extends ConsumerState<MainScreen>
       }
     });
 
+    // Wide windows (tablet/desktop landscape) earn the desktop arrangement.
+    // Phones stay portrait-locked at the OS level, so this keys off size.
+    final isWide = WideLayout.isWide(context);
+    final accent = AppTokens.accentOf(context, ref);
+    final drawerSlideMax = (mediaQuery.size.width * _drawerWidthRatio).clamp(
+      0.0,
+      WideLayout.maxDrawerWidth,
+    );
+
+    Widget buildContentStack() {
+      return Stack(
+        children: [
+          AmbientBackground(
+            child: Stack(
+              children: _screens.asMap().entries.map((entry) {
+                final index = entry.key;
+                final screen = entry.value;
+                if (!_builtScreens.contains(index)) {
+                  // Only build if this screen has been selected before
+                  return const SizedBox.shrink();
+                }
+                return Offstage(
+                  offstage: index != _selectedIndex,
+                  child: TickerMode(
+                    enabled: index == _selectedIndex,
+                    child: screen,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Positioned(
+            top: topPadding,
+            left: 0,
+            right: 0,
+            child: const SyncIndicator(),
+          ),
+          Positioned(
+            top: topPadding + 40,
+            left: 0,
+            right: 0,
+            child: const AutoBackupIndicator(),
+          ),
+          Positioned(
+            top: topPadding + 80,
+            left: 0,
+            right: 0,
+            child: const ExternalOpenBanner(),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: isSelectionMode
+                ? const BulkSelectionBar()
+                : isWide
+                    ? Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: WideLayout.maxContentWidth,
+                          ),
+                          child: NowPlayingBar(
+                            padding: EdgeInsets.fromLTRB(
+                              12,
+                              0,
+                              12,
+                              nowPlayingBottomPadding,
+                            ),
+                          ),
+                        ),
+                      )
+                    : NowPlayingBar(
+                        padding: EdgeInsets.fromLTRB(
+                          12,
+                          0,
+                          12,
+                          nowPlayingBottomPadding,
+                        ),
+                      ),
+          ),
+        ],
+      );
+    }
+
+    Widget buildDrawerSlider({required Widget child}) {
+      return AnimatedBuilder(
+        animation: _drawerController,
+        builder: (context, child) {
+          final slideX = _drawerController.value * drawerSlideMax;
+          final showScrim = _isDrawerOpen ||
+              _isDraggingDrawer ||
+              _drawerController.isAnimating ||
+              _drawerController.value > 0;
+          return RepaintBoundary(
+            child: Transform.translate(
+              offset: Offset(slideX, 0),
+              child: Stack(
+                children: [
+                  child!,
+                  // Scrim dims the content when drawer is open
+                  if (showScrim)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: _closeDrawer,
+                        child: Container(
+                          color: Colors.black.withValues(
+                            alpha: 0.45 * _drawerController.value,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+        child: child,
+      );
+    }
+
+    Widget buildShellBody() {
+      return GestureDetector(
+        onHorizontalDragStart: _onHorizontalDragStart,
+        onHorizontalDragUpdate: _onHorizontalDragUpdate,
+        onHorizontalDragEnd: _onHorizontalDragEnd,
+        behavior: HitTestBehavior.translucent,
+        child: Stack(
+          children: [
+            // Drawer sits underneath the main content
+            AnimatedBuilder(
+              animation: _drawerController,
+              builder: (context, child) {
+                final shouldShow = _isDrawerOpen ||
+                    _isDraggingDrawer ||
+                    _drawerController.isAnimating ||
+                    _drawerController.value > 0;
+                if (!shouldShow) return const SizedBox.shrink();
+                return Positioned.fill(
+                  child: AppDrawer(
+                    onClose: _closeDrawer,
+                    drawerPosition: _drawerController.value,
+                  ),
+                );
+              },
+            ),
+            // Main content slides right to reveal the drawer
+            buildDrawerSlider(child: buildContentStack()),
+          ],
+        ),
+      );
+    }
+
+    Widget buildBottomDock() {
+      return TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 1, end: bottomDockVisibility),
+        duration: bottomDockState.isDragging
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        curve: bottomDockState.isDragging ? Curves.linear : Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return SizedBox(
+            height: bottomDockHeight * value,
+            child: ClipRect(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                heightFactor: value,
+                child: Transform.translate(
+                  offset: Offset(0, (1 - value) * 24),
+                  child: Opacity(
+                    opacity: value.clamp(0, 1).toDouble(),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+        child: AppNavBar(
+          selectedIndex: _selectedIndex,
+          onSelected: _onTabSelected,
+          items: const [
+            AppNavItem(
+              icon: AppIcons.home,
+              selectedIcon: AppIcons.home,
+              label: 'Home',
+            ),
+            AppNavItem(
+              icon: AppIcons.library,
+              selectedIcon: AppIcons.library,
+              label: 'Library',
+            ),
+            AppNavItem(
+              icon: AppIcons.person,
+              selectedIcon: AppIcons.person,
+              label: 'Profile',
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isWide && !isSelectionMode) {
+      void openSearch() => context.pushApp(const SearchScreen());
+      void openSettings() => context.pushApp(const SettingsScreen());
+      return Scaffold(
+        body: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+                openSearch,
+            const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+                openSearch,
+          },
+          child: PopScope(
+            canPop: !isSelectionMode,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) return;
+              if (isSelectionMode) {
+                ref.read(selectionProvider.notifier).exitSelectionMode();
+              }
+            },
+            child: Row(
+              children: [
+                _WideNavRail(
+                  selectedIndex: _selectedIndex,
+                  onSelected: _onTabSelected,
+                  accent: accent,
+                  onSearch: openSearch,
+                  onSettings: openSettings,
+                ),
+                Expanded(child: buildShellBody()),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       body: PopScope(
         canPop: !isSelectionMode,
@@ -297,178 +540,197 @@ class _MainScreenState extends ConsumerState<MainScreen>
             ref.read(selectionProvider.notifier).exitSelectionMode();
           }
         },
-        child: GestureDetector(
-          onHorizontalDragStart: _onHorizontalDragStart,
-          onHorizontalDragUpdate: _onHorizontalDragUpdate,
-          onHorizontalDragEnd: _onHorizontalDragEnd,
-          behavior: HitTestBehavior.translucent,
-          child: Stack(
-            children: [
-              // Drawer sits underneath the main content
-              AnimatedBuilder(
-                animation: _drawerController,
-                builder: (context, child) {
-                  final shouldShow = _isDrawerOpen ||
-                      _isDraggingDrawer ||
-                      _drawerController.isAnimating ||
-                      _drawerController.value > 0;
-                  if (!shouldShow) return const SizedBox.shrink();
-                  return Positioned.fill(
-                    child: AppDrawer(
-                      onClose: _closeDrawer,
-                      drawerPosition: _drawerController.value,
-                    ),
-                  );
-                },
+        child: buildShellBody(),
+      ),
+      bottomNavigationBar: isSelectionMode ? null : buildBottomDock(),
+    );
+  }
+}
+
+/// Side rail for wide windows: the same three destinations as [AppNavBar],
+/// laid out vertically desktop-style rather than as a bottom dock.
+class _WideNavRail extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final Color accent;
+  final VoidCallback? onSearch;
+  final VoidCallback? onSettings;
+
+  const _WideNavRail({
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.accent,
+    this.onSearch,
+    this.onSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dockColor = Color.alphaBlend(
+      AppTokens.floatingFill,
+      Theme.of(context).colorScheme.surface,
+    );
+    return Container(
+      width: 76,
+      color: dockColor,
+      child: SafeArea(
+        right: false,
+        child: Column(
+          children: [
+            const SizedBox(height: AppTokens.s4),
+            for (var i = 0; i < 3; i++)
+              _WideNavDestination(
+                index: i,
+                selected: i == selectedIndex,
+                accent: accent,
+                onTap: () => onSelected(i),
               ),
-              // Main content slides right to reveal the drawer
-              AnimatedBuilder(
-                animation: _drawerController,
-                builder: (context, child) {
-                  final slideX = _drawerController.value *
-                      mediaQuery.size.width *
-                      _drawerWidthRatio;
-                  final showScrim = _isDrawerOpen ||
-                      _isDraggingDrawer ||
-                      _drawerController.isAnimating ||
-                      _drawerController.value > 0;
-                  return RepaintBoundary(
-                    child: Transform.translate(
-                      offset: Offset(slideX, 0),
-                      child: Stack(
-                        children: [
-                          child!,
-                          // Scrim dims the content when drawer is open
-                          if (showScrim)
-                            Positioned.fill(
-                              child: GestureDetector(
-                                onTap: _closeDrawer,
-                                child: Container(
-                                  color: Colors.black.withValues(
-                                    alpha: 0.45 * _drawerController.value,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-                child: Stack(
-                  children: [
-                    AmbientBackground(
-                      child: Stack(
-                        children: _screens.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final screen = entry.value;
-                          if (!_builtScreens.contains(index)) {
-                            // Only build if this screen has been selected before
-                            return const SizedBox.shrink();
-                          }
-                          return Offstage(
-                            offstage: index != _selectedIndex,
-                            child: TickerMode(
-                              enabled: index == _selectedIndex,
-                              child: screen,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    Positioned(
-                      top: topPadding,
-                      left: 0,
-                      right: 0,
-                      child: const SyncIndicator(),
-                    ),
-                    Positioned(
-                      top: topPadding + 40,
-                      left: 0,
-                      right: 0,
-                      child: const AutoBackupIndicator(),
-                    ),
-                    Positioned(
-                      top: topPadding + 80,
-                      left: 0,
-                      right: 0,
-                      child: const ExternalOpenBanner(),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: isSelectionMode
-                          ? const BulkSelectionBar()
-                          : NowPlayingBar(
-                              padding: EdgeInsets.fromLTRB(
-                                12,
-                                0,
-                                12,
-                                nowPlayingBottomPadding,
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
+            const Spacer(),
+            if (onSearch != null)
+              _WideNavAction(
+                icon: AppIcons.search,
+                label: 'Search',
+                tooltip: 'Search (Ctrl+K)',
+                accent: accent,
+                onTap: onSearch!,
               ),
-            ],
-          ),
+            if (onSettings != null)
+              _WideNavAction(
+                icon: AppIcons.misc,
+                label: 'Settings',
+                tooltip: 'Settings',
+                accent: accent,
+                onTap: onSettings!,
+              ),
+            const SizedBox(height: AppTokens.s3),
+          ],
         ),
       ),
-      bottomNavigationBar: isSelectionMode
-          ? null
-          : TweenAnimationBuilder<double>(
-              tween: Tween<double>(
-                begin: 1,
-                end: bottomDockVisibility,
+    );
+  }
+}
+
+class _WideNavAction extends StatelessWidget {
+  final AppIconData icon;
+  final String label;
+  final String? tooltip;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _WideNavAction({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = AppTokens.fg(AppTokens.aTertiary);
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: AppTokens.dFast,
+              curve: AppTokens.cStandard,
+              width: 52,
+              height: 32,
+              decoration: BoxDecoration(
+                color: Colors.transparent,
+                borderRadius: AppTokens.brPill,
               ),
-              duration: bottomDockState.isDragging
-                  ? Duration.zero
-                  : const Duration(milliseconds: 180),
-              curve: bottomDockState.isDragging
-                  ? Curves.linear
-                  : Curves.easeOutCubic,
-              builder: (context, value, child) {
-                return SizedBox(
-                  height: bottomDockHeight * value,
-                  child: ClipRect(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      heightFactor: value,
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - value) * 24),
-                        child: Opacity(
-                          opacity: value.clamp(0, 1).toDouble(),
-                          child: child,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-              child: AppNavBar(
-                selectedIndex: _selectedIndex,
-                onSelected: _onTabSelected,
-                items: const [
-                  AppNavItem(
-                    icon: AppIcons.home,
-                    selectedIcon: AppIcons.home,
-                    label: 'Home',
-                  ),
-                  AppNavItem(
-                    icon: AppIcons.library,
-                    selectedIcon: AppIcons.library,
-                    label: 'Library',
-                  ),
-                  AppNavItem(
-                    icon: AppIcons.person,
-                    selectedIcon: AppIcons.person,
-                    label: 'Profile',
-                  ),
-                ],
+              alignment: Alignment.center,
+              child: AppIcon(
+                icon,
+                size: AppTokens.iconMd,
+                color: iconColor,
               ),
             ),
+            const SizedBox(height: AppTokens.s1),
+            Text(
+              label,
+              style: AppTokens.meta(context).copyWith(
+                color: iconColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final tip = tooltip;
+    if (tip == null || tip.isEmpty) return content;
+    return Tooltip(message: tip, child: content);
+  }
+}
+
+class _WideNavDestination extends StatelessWidget {
+  final int index;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _WideNavDestination({
+    required this.index,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final data = switch (index) {
+      0 => (AppIcons.home, 'Home'),
+      1 => (AppIcons.library, 'Library'),
+      _ => (AppIcons.person, 'Profile'),
+    };
+    final iconColor = selected ? accent : AppTokens.fg(AppTokens.aTertiary);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: AppTokens.dFast,
+              curve: AppTokens.cStandard,
+              width: 52,
+              height: 32,
+              decoration: BoxDecoration(
+                color: selected
+                    ? accent.withValues(alpha: AppTokens.accentWashAlpha)
+                    : Colors.transparent,
+                borderRadius: AppTokens.brPill,
+              ),
+              alignment: Alignment.center,
+              child: AppIcon(
+                data.$1,
+                size: AppTokens.iconMd,
+                color: iconColor,
+                strokeWidth: selected
+                    ? AppTokens.iconStrokeEmphasis
+                    : AppTokens.iconStroke,
+              ),
+            ),
+            const SizedBox(height: AppTokens.s1),
+            Text(
+              data.$2,
+              style: AppTokens.meta(context).copyWith(
+                color: iconColor,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

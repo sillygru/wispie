@@ -5,6 +5,7 @@ import '../widgets/song_list_item.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/library_logic.dart';
+import '../../services/storage_service.dart';
 import '../../models/song.dart';
 import '../../models/queue_snapshot.dart';
 import '../../services/audio_player_manager.dart';
@@ -30,6 +31,7 @@ import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../widgets/header_shuffle_button.dart';
 import '../tokens/app_icons.dart';
+import '../utils/wide_layout.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
@@ -59,8 +61,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Future<void> _selectMusicFolder() async {
     final storage = ref.read(storageServiceProvider);
-    final selection = await storage.pickMusicFolder(context);
-    if (selection == null || selection['path']!.isEmpty) {
+    final Map<String, String>? selection;
+    try {
+      selection = await storage.pickMusicFolder(context);
+    } on FolderPickerUnavailable catch (e) {
+      if (mounted) {
+        appSnack(context, e.userFacingHint, tone: AppTone.danger);
+      }
+      return;
+    }
+    // Null means the user cancelled the native dialog — stay silent.
+    if (selection == null) return;
+    final selectedPath = selection['path'] ?? '';
+    if (selectedPath.isEmpty) {
       if (mounted) {
         appSnack(context, 'Unable to access selected folder',
             tone: AppTone.danger);
@@ -69,7 +82,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     await storage.addMusicFolder(
-      selection['path']!,
+      selectedPath,
       selection['treeUri'],
       iosBookmarkId: selection['iosBookmarkId'],
       platform: selection['platform'],
@@ -477,6 +490,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final mixedPlaylists = ref.watch(mixedPlaylistsProvider);
           final queueHistory = ref.watch(queueHistoryProvider).value ?? [];
           final displayQueues = queueHistory.take(10).toList();
+          final quickPickColumns = WideLayout.gridColumns(context, base: 2);
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -487,182 +501,185 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             },
             child: NotificationListener<ScrollNotification>(
               onNotification: handleScrollNotification,
-              child: CustomScrollView(
-                controller: widget.scrollController,
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  AppSliverHeader(
-                    title: 'Wispie',
-                    isScrolled: isScrolled,
-                    actions: [
-                      HeaderShuffleButton(
-                        tooltip: 'Shuffle all',
-                        color: accent,
-                        onShufflePressed: () => audioManager.shuffleAndPlay(
-                          songs,
-                          isRestricted: false,
-                        ),
-                        onShuffleAfterSong: () =>
-                            audioManager.shuffleAfterCurrentSong(songs),
-                        onShuffleAfterQueue: () =>
-                            audioManager.shuffleAfterCurrentQueue(songs),
-                      ),
-                      IconButton(
-                        tooltip: 'Search',
-                        icon: const AppIcon(AppIcons.search),
-                        onPressed: () => context.pushApp(const SearchScreen()),
-                      ),
-                    ],
-                  ),
-
-                  // Quick Picks
-                  if (settings.showQuickPicks &&
-                      topRecommendations.isNotEmpty) ...[
-                    const SliverToBoxAdapter(
-                      child: AppSectionHeader(label: 'Quick Picks'),
-                    ),
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTokens.s5,
-                        0,
-                        AppTokens.s5,
-                        AppTokens.s2,
-                      ),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisExtent: 64,
-                          crossAxisSpacing: AppTokens.s3,
-                          mainAxisSpacing: AppTokens.s3,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => _buildQuickPickTile(
-                            topRecommendations[index],
-                            audioManager,
-                            sortedSongs,
+              child: WideContentCenter(
+                child: CustomScrollView(
+                  controller: widget.scrollController,
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    AppSliverHeader(
+                      title: 'Wispie',
+                      isScrolled: isScrolled,
+                      actions: [
+                        HeaderShuffleButton(
+                          tooltip: 'Shuffle all',
+                          color: accent,
+                          onShufflePressed: () => audioManager.shuffleAndPlay(
+                            songs,
+                            isRestricted: false,
                           ),
-                          childCount: topRecommendations.length.clamp(0, 6),
+                          onShuffleAfterSong: () =>
+                              audioManager.shuffleAfterCurrentSong(songs),
+                          onShuffleAfterQueue: () =>
+                              audioManager.shuffleAfterCurrentQueue(songs),
                         ),
-                      ),
-                    ),
-                  ],
-
-                  // Recent Queues
-                  if (settings.showRecentQueues &&
-                      displayQueues.isNotEmpty) ...[
-                    SliverToBoxAdapter(
-                      child: AppSectionHeader(
-                        label: 'Recent Queues',
-                        actionLabel: 'See All',
-                        onActionTap: () => Navigator.push(
-                          context,
-                          PlayerPageRoute(
-                            initialPane: PlayerPane.queue,
-                            queueShowsHistory: true,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: _computeMediaCarouselHeight(
-                          context,
-                          _queueCardSize,
-                        ),
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTokens.s5,
-                          ),
-                          itemCount: displayQueues.length,
-                          itemBuilder: (context, index) => _buildQueueCard(
-                            context,
-                            ref,
-                            displayQueues[index],
-                            audioManager,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // For You
-                  if (settings.showForYou) ...[
-                    const SliverToBoxAdapter(
-                      child: AppSectionHeader(label: 'For You'),
-                    ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: _computeMediaCarouselHeight(
-                          context,
-                          _cardSize,
-                        ),
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTokens.s5,
-                          ),
-                          itemCount: mixedPlaylists.length,
-                          itemBuilder: (context, index) {
-                            if (index < mixedPlaylists.length) {
-                              return _buildAutoPlaylistCard(
-                                mixedPlaylists[index],
-                                audioManager,
-                                ref,
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // Library
-                  SliverToBoxAdapter(
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: AppSectionHeader(label: 'Library'),
-                        ),
-                        const SortMenu(),
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: AppTokens.s2,
-                            right: AppTokens.s5,
-                            top: AppTokens.s2,
-                          ),
-                          child: Text(
-                            '${songs.length} tracks',
-                            style: AppTokens.meta(context),
-                          ),
+                        IconButton(
+                          tooltip: 'Search',
+                          icon: const AppIcon(AppIcons.search),
+                          onPressed: () =>
+                              context.pushApp(const SearchScreen()),
                         ),
                       ],
                     ),
-                  ),
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final song = sortedSongs[index];
-                        return SongListItem(
-                          song: song,
-                          heroTagPrefix: 'all_songs',
-                          onTap: () => audioManager.playSong(
-                            song,
-                            contextQueue: sortedSongs,
-                            playlistId: audioManager.currentPlaylistId,
+
+                    // Quick Picks
+                    if (settings.showQuickPicks &&
+                        topRecommendations.isNotEmpty) ...[
+                      const SliverToBoxAdapter(
+                        child: AppSectionHeader(label: 'Quick Picks'),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.s5,
+                          0,
+                          AppTokens.s5,
+                          AppTokens.s2,
+                        ),
+                        sliver: SliverGrid(
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: quickPickColumns,
+                            mainAxisExtent: 64,
+                            crossAxisSpacing: AppTokens.s3,
+                            mainAxisSpacing: AppTokens.s3,
                           ),
-                        );
-                      },
-                      childCount: sortedSongs.length,
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildQuickPickTile(
+                              topRecommendations[index],
+                              audioManager,
+                              sortedSongs,
+                            ),
+                            childCount: topRecommendations.length.clamp(0, 6),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Recent Queues
+                    if (settings.showRecentQueues &&
+                        displayQueues.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: AppSectionHeader(
+                          label: 'Recent Queues',
+                          actionLabel: 'See All',
+                          onActionTap: () => Navigator.push(
+                            context,
+                            PlayerPageRoute(
+                              initialPane: PlayerPane.queue,
+                              queueShowsHistory: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: _computeMediaCarouselHeight(
+                            context,
+                            _queueCardSize,
+                          ),
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTokens.s5,
+                            ),
+                            itemCount: displayQueues.length,
+                            itemBuilder: (context, index) => _buildQueueCard(
+                              context,
+                              ref,
+                              displayQueues[index],
+                              audioManager,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // For You
+                    if (settings.showForYou) ...[
+                      const SliverToBoxAdapter(
+                        child: AppSectionHeader(label: 'For You'),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: _computeMediaCarouselHeight(
+                            context,
+                            _cardSize,
+                          ),
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTokens.s5,
+                            ),
+                            itemCount: mixedPlaylists.length,
+                            itemBuilder: (context, index) {
+                              if (index < mixedPlaylists.length) {
+                                return _buildAutoPlaylistCard(
+                                  mixedPlaylists[index],
+                                  audioManager,
+                                  ref,
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Library
+                    SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: AppSectionHeader(label: 'Library'),
+                          ),
+                          const SortMenu(),
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: AppTokens.s2,
+                              right: AppTokens.s5,
+                              top: AppTokens.s2,
+                            ),
+                            child: Text(
+                              '${songs.length} tracks',
+                              style: AppTokens.meta(context),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SliverPadding(
-                    padding:
-                        EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-                  ),
-                ],
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final song = sortedSongs[index];
+                          return SongListItem(
+                            song: song,
+                            heroTagPrefix: 'all_songs',
+                            onTap: () => audioManager.playSong(
+                              song,
+                              contextQueue: sortedSongs,
+                              playlistId: audioManager.currentPlaylistId,
+                            ),
+                          );
+                        },
+                        childCount: sortedSongs.length,
+                      ),
+                    ),
+                    const SliverPadding(
+                      padding:
+                          EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

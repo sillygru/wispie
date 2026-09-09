@@ -527,15 +527,6 @@ final List<SettingsDestination> settingsRegistry = [
 
   // ------------------------------------------------------------------- misc
   SettingsDestination(
-    anchorId: 'misc.telemetry',
-    icon: AppIcons.analytics,
-    title: 'Telemetry',
-    subtitle: 'Anonymous usage stats. No personal data is collected.',
-    breadcrumb: 'Settings › Misc › Privacy',
-    keywords: const ['analytics', 'privacy', 'tracking', 'stats'],
-    open: () => const MiscSettingsScreen(highlightId: 'misc.telemetry'),
-  ),
-  SettingsDestination(
     anchorId: 'misc.auto_backup',
     icon: AppIcons.cloudUpload,
     title: 'Auto Backup',
