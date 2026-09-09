@@ -9,6 +9,7 @@ import '../models/song.dart';
 import '../providers/artist_album_art_provider.dart';
 import '../providers/providers.dart';
 import 'library_logic.dart';
+import 'music_utils_api_client.dart';
 import 'online_metadata_service.dart';
 
 /// Outcome of resolving artwork for one artist/album key.
@@ -104,15 +105,26 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   static const int _maxAttempts = 3;
   static const Duration _retryDelay = Duration(seconds: 5);
 
-  /// After this many consecutive transient failures the sweep is probably
-  /// offline, so it backs off instead of burning battery.
+  /// After this many consecutive transient failures the sweep probes the
+  /// API host before deciding it is offline. The probe (a raw socket
+  /// connect) is the only thing allowed to declare offline: server-side
+  /// 5xx/429, bad JSON and dead cover CDN URLs all look like "transient"
+  /// otherwise, and must only fail their own key, never the whole run.
   static const int _offlineBreakerThreshold = 10;
   static const Duration _offlineCooldown = Duration(minutes: 5);
+  static const Duration _probeTimeout = Duration(seconds: 5);
 
   dynamic _containerRef;
   bool _isForegrounded = true;
   bool _isRunning = false;
+
+  /// Passive sweep backoff only. Explicit user runs (driven mode) always
+  /// bypass it: a tap means "try the network now".
   DateTime? _offlineBackoffUntil;
+  Future<bool>? _probeInFlight;
+
+  @visibleForTesting
+  Future<bool> Function()? probeOverrideForTest;
 
   final Map<String, DateTime> _noResultArtists = {};
   final Map<String, DateTime> _noResultAlbums = {};
@@ -203,12 +215,16 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   }
 
   /// Drops every recorded 404 so the next sweep treats the whole library as
-  /// unfetched again. Called when the user wipes all art.
+  /// unfetched again. Called when the user wipes all art. Also lifts any
+  /// offline backoff: an explicit wipe followed by a fetch is the user
+  /// saying "try the network now", so stale backoff must not poison it.
   Future<void> clearAttempted() async {
     _noResultArtists.clear();
     _noResultAlbums.clear();
     _triedThisLaunchArtists.clear();
     _triedThisLaunchAlbums.clear();
+    _offlineBackoffUntil = null;
+    _probeInFlight = null;
     _persistTimer?.cancel();
     _persistTimer = null;
     try {
@@ -252,6 +268,22 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
 
   @visibleForTesting
   Future<void> flushPersistForTest() => _flushPersist();
+
+  @visibleForTesting
+  void setOfflineBackoffForTest(DateTime? until) {
+    _offlineBackoffUntil = until;
+  }
+
+  @visibleForTesting
+  bool get isBackingOffForTest =>
+      _offlineBackoffUntil != null &&
+      DateTime.now().isBefore(_offlineBackoffUntil!);
+
+  @visibleForTesting
+  Future<bool> isApiReachableForTest() => _isApiReachable();
+
+  @visibleForTesting
+  Future<bool> confirmApiReachableForTest() => _confirmApiReachable();
 
   void fetchArtistArtIfNeeded(String artist) {
     final clean = OnlineMetadataService.cleanTag(artist);
@@ -553,12 +585,18 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     }
     if (_offlineBackoffUntil != null &&
         DateTime.now().isBefore(_offlineBackoffUntil!)) {
-      return finish(
-        fetchedArtists: 0,
-        fetchedAlbums: 0,
-        failedItems: const [],
-        offline: true,
-      );
+      if (driven) {
+        // Explicit user action always tries the network; a stale passive
+        // backoff must never make a manual fetch report offline.
+        _offlineBackoffUntil = null;
+      } else {
+        return finish(
+          fetchedArtists: 0,
+          fetchedAlbums: 0,
+          failedItems: const [],
+          offline: true,
+        );
+      }
     }
     final List<Song> songs = ref.read(songsProvider).value ?? const <Song>[];
     if (songs.isEmpty) {
@@ -585,11 +623,20 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     var consecutiveTransient = 0;
     bool offlineAbort = false;
 
-    void noteOutcome(_FetchOutcome outcome) {
+    // Counts transient keys. Only a successful socket probe to the API host
+    // may set [offlineAbort]: completion order under 20-way concurrency
+    // makes "consecutive" meaningless on its own, and server-side failures
+    // must never abort the run. Fail-open: any doubt means keep going.
+    Future<void> noteOutcome(_FetchOutcome outcome) async {
       if (outcome == _FetchOutcome.transient) {
         consecutiveTransient++;
-        if (consecutiveTransient >= _offlineBreakerThreshold) {
-          offlineAbort = true;
+        if (consecutiveTransient >= _offlineBreakerThreshold && !offlineAbort) {
+          final reachable = await _confirmApiReachable();
+          if (!reachable) {
+            offlineAbort = true;
+          } else {
+            consecutiveTransient = 0;
+          }
         }
       } else if (outcome == _FetchOutcome.success ||
           outcome == _FetchOutcome.notFound) {
@@ -617,7 +664,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
               waitForForeground: driven,
               isCancelled: cancelled,
             );
-            noteOutcome(resolved.outcome);
+            await noteOutcome(resolved.outcome);
             if (resolved.outcome == _FetchOutcome.success &&
                 resolved.artistSave != null) {
               artistSaves.add(resolved.artistSave!);
@@ -706,7 +753,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
               waitForForeground: driven,
               isCancelled: cancelled,
             );
-            noteOutcome(resolved.outcome);
+            await noteOutcome(resolved.outcome);
             if (resolved.outcome == _FetchOutcome.success &&
                 resolved.albumSave != null) {
               albumSaves.add(resolved.albumSave!);
@@ -817,8 +864,48 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     _offlineBackoffUntil = DateTime.now().add(_offlineCooldown);
     debugPrint(
       'PassiveArtFetcher: backing off sweep for ${_offlineCooldown.inMinutes}m '
-      'after repeated transient failures',
+      'after probe-confirmed connectivity loss',
     );
+  }
+
+  /// Shared probe future so 20 concurrent workers hitting the breaker at
+  /// once trigger a single socket connect instead of 20.
+  Future<bool> _confirmApiReachable() {
+    final inFlight = _probeInFlight;
+    if (inFlight != null) return inFlight;
+    final future = _isApiReachable().whenComplete(() => _probeInFlight = null);
+    _probeInFlight = future;
+    return future;
+  }
+
+  /// True when the API host is reachable. A raw socket connect is used on
+  /// purpose: any HTTP response (even 500) proves the device is online, so
+  /// only socket/timeout failures count as offline. Fail-open: unexpected
+  /// results assume online so server errors never abort a run.
+  Future<bool> _isApiReachable() async {
+    final probe = probeOverrideForTest;
+    if (probe != null) return probe();
+    try {
+      final uri = Uri.parse(MusicUtilsApiClient.instance.baseUrl);
+      final host = uri.host;
+      if (host.isEmpty) return true;
+      final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+      final socket = await Socket.connect(host, port, timeout: _probeTimeout);
+      socket.destroy();
+      return true;
+    } on SocketException catch (e) {
+      debugPrint('PassiveArtFetcher: connectivity probe socket error: $e');
+      return false;
+    } on TimeoutException catch (e) {
+      debugPrint('PassiveArtFetcher: connectivity probe timeout: $e');
+      return false;
+    } on HandshakeException catch (e) {
+      debugPrint('PassiveArtFetcher: connectivity probe TLS error: $e');
+      return false;
+    } on ArgumentError catch (e) {
+      debugPrint('PassiveArtFetcher: connectivity probe bad URL: $e');
+      return true;
+    }
   }
 
   Future<void> _runConcurrent(

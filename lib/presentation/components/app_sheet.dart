@@ -73,6 +73,9 @@ class AppSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final accent = AppTokens.accentOf(context, ref);
+    const sheetRadius = BorderRadius.vertical(
+      top: Radius.circular(AppTokens.rLg),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -85,59 +88,65 @@ class AppSheet extends ConsumerWidget {
             theme.scaffoldBackgroundColor,
           ),
         ),
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppTokens.rLg),
-        ),
+        borderRadius: sheetRadius,
         boxShadow: AppTokens.shadowFloating,
       ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (showHandle)
-              Padding(
-                padding: const EdgeInsets.only(
-                  top: AppTokens.s3,
-                  bottom: AppTokens.s2,
-                ),
-                child: Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppTokens.fg(0.28),
-                      borderRadius: AppTokens.brPill,
+      // Ink canvas for ListTile descendants: without an intervening Material
+      // their splashes paint on this DecoratedBox and trip the
+      // "ink splashes may be invisible" assertion in debug.
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: sheetRadius,
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (showHandle)
+                Padding(
+                  padding: const EdgeInsets.only(
+                    top: AppTokens.s3,
+                    bottom: AppTokens.s2,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppTokens.fg(0.28),
+                        borderRadius: AppTokens.brPill,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (title != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTokens.s5,
-                  AppTokens.s2,
-                  AppTokens.s3,
-                  AppTokens.s3,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTokens.paneTitle(context),
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s5,
+                    AppTokens.s2,
+                    AppTokens.s3,
+                    AppTokens.s3,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTokens.paneTitle(context),
+                        ),
                       ),
-                    ),
-                    if (action != null) action!,
-                  ],
+                      if (action != null) action!,
+                    ],
+                  ),
                 ),
-              ),
-            Flexible(child: child),
-            const SizedBox(height: AppTokens.s2),
-          ],
+              Flexible(child: child),
+              const SizedBox(height: AppTokens.s2),
+            ],
+          ),
         ),
       ),
     );

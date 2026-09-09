@@ -79,7 +79,15 @@ class AppSurface extends StatelessWidget {
         borderRadius: radius,
         boxShadow: transparent ? null : AppTokens.shadowFor(depth),
       ),
-      child: child,
+      // Ink canvas for ListTile descendants: without an intervening Material
+      // their splashes paint on this DecoratedBox and trip the
+      // "ink splashes may be invisible" assertion in debug.
+      child: Material(
+        type: MaterialType.transparency,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
     );
 
     if (onTap != null || onLongPress != null) {

@@ -31,7 +31,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake git ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            appstream desktop-file-utils
 
       - uses: subosito/flutter-action@v2
         with:
@@ -155,11 +156,46 @@ jobs:
           rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
           dart pub token remove --all || true
 
+      - name: Purge stale SwiftPM/Xcode caches (CI-only)
+        # Fresh runners can carry a partial SPM artifact cache which makes
+        # xcodebuild fail with "<url> already exists in file system" +
+        # fatalError (e.g. ffmpeg_kit libswscale zip). Local checkouts are
+        # untouched; this only clears the ephemeral runner's HOME caches.
+        run: |
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+          rm -rf build/macos macos/build
+
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          flutter precache --macos
 
       - name: Build macOS release (universal)
-        run: flutter build macos --release
+        run: |
+          set -o pipefail
+          if flutter build macos --release; then
+            exit 0
+          fi
+          echo "::warning::SPM build failed, purging caches and retrying once"
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+          rm -rf build/macos macos/build
+          flutter clean
+          flutter pub get
+          flutter precache --macos
+          flutter build macos --release
+
+      - name: Build macOS release via CocoaPods fallback (runner-scoped)
+        # Runner-scoped only: does not touch pubspec.yaml, so local SPM
+        # behavior is preserved. Uses the vendored .podspec +
+        # scripts/setup_macos.sh single-zip path instead of 8 SPM binaries.
+        if: failure()
+        run: |
+          flutter config --no-enable-swift-package-manager
+          flutter clean
+          flutter pub get
+          flutter build macos --release
 
       - name: Assert file-picker entitlement is embedded
         # file_picker hard-requires user-selected.read* even with the sandbox

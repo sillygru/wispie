@@ -314,18 +314,18 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            leading: const AppIcon(AppIcons.edit),
-            title: const Text('Rename'),
+          AppSheetAction(
+            icon: AppIcons.edit,
+            label: 'Rename',
             onTap: () {
               Navigator.pop(context);
               _showRenameDialog(context, ref, playlistId, playlistName);
             },
           ),
-          ListTile(
-            leading: const AppIcon(AppIcons.delete, color: AppTokens.danger),
-            title:
-                const Text('Delete', style: TextStyle(color: AppTokens.danger)),
+          AppSheetAction(
+            icon: AppIcons.delete,
+            label: 'Delete',
+            isDanger: true,
             onTap: () {
               Navigator.pop(context);
               ref.read(userDataProvider.notifier).deletePlaylist(playlistId);

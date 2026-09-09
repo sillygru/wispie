@@ -230,7 +230,10 @@ class _LyricsTranslationSheetState
             height: 180,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: ColoredBox(
+              // Material carries both the fill and the ink canvas, so the
+              // language ListTiles below paint their splashes on top of it
+              // instead of under a ColoredBox.
+              child: Material(
                 color: Colors.white.withValues(alpha: 0.04),
                 child: ListView.builder(
                   itemCount: filteredLangs.length,
