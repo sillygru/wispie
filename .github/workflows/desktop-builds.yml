@@ -154,8 +154,8 @@ jobs:
 
       - name: Select Xcode 16.2 (newest on macos-14 image)
         # Newer toolchain, fewer surprises than the default 15.4.
-        # (Does NOT fix video_player_avfoundation's bare `#if TARGET_OS_OSX`
-        # — proven identical failure on 16.2; Fallback A handles that.)
+        # (video_player_avfoundation's bare `#if TARGET_OS_OSX` fails
+        # identically on both toolchains; patch_darwin_headers.sh handles it.)
         # Verified present on image 20260831.
         run: |
           sudo xcode-select -s /Applications/Xcode_16.2.app
@@ -193,90 +193,34 @@ jobs:
       - name: Build macOS release (universal)
         id: build-attempt-1
         continue-on-error: true
+        # Both known defects are handled up front on every attempt:
+        # patch_darwin_headers.sh fixes video_player_avfoundation's bare
+        # `#if TARGET_OS_OSX` ("Module 'Flutter' not found"), and
+        # prepare_spm_artifacts.sh removes AppleDouble sidecars from the
+        # ffmpeg_kit XCFramework archives + extracted trees (CodeSign
+        # ".../._libswscale" failure). The retry is deliberately incremental
+        # (no `flutter clean`): cleaning forces SPM to re-extract the dirty
+        # archives, which is what makes the sidecars come back.
         run: |
           set -o pipefail
+          bash packaging/macos/patch_darwin_headers.sh
           bash packaging/macos/prepare_spm_artifacts.sh
           if flutter build macos --release; then
             exit 0
           fi
-          echo "::warning::SPM build failed, purging caches and retrying once"
-          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
-          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
-          rm -rf build/macos macos/build
-          flutter clean
-          flutter pub get
-          flutter precache --macos
+          echo "::warning::macOS build failed, re-sanitizing and retrying incrementally (no clean)"
+          find "$HOME/Library/Caches/org.swift.swiftpm" \
+            "$HOME/Library/Developer/Xcode/DerivedData" \
+            build/macos macos/build \
+            \( -name '._*' -o -name '__MACOSX' \) -delete 2>/dev/null || true
+          bash packaging/macos/patch_darwin_headers.sh
           bash packaging/macos/prepare_spm_artifacts.sh
           flutter build macos --release
 
-      - name: Fallback A - patch video_player_avfoundation headers and rebuild
-        id: build-attempt-2
-        continue-on-error: true
+      - name: Fail if macOS build failed
         if: steps.build-attempt-1.outcome == 'failure'
-        # Makes the build toolchain-independent: 10 files under the plugin's
-        # darwin/ tree use bare `#if TARGET_OS_OSX` with no TargetConditionals
-        # import. Idempotent and version-globbed, so lock bumps can't silently
-        # disable it. Applied to PUB-CACHE (outside the repo), so it survives
-        # `flutter clean` and never touches the checkout.
         run: |
-          echo "::warning::Attempt 1 failed, patching video_player_avfoundation headers"
-          python3 - <<'PYEOF'
-          import glob
-          import os
-          pattern = os.path.join(
-              os.environ["HOME"],
-              ".pub-cache/hosted/pub.dev/video_player_avfoundation-*/darwin"
-              "/video_player_avfoundation/Sources/video_player_avfoundation_objc",
-          )
-          files = []
-          for base in glob.glob(pattern):
-              files += glob.glob(os.path.join(base, "include/video_player_avfoundation_objc/*.h"))
-              files += glob.glob(os.path.join(base, "*.m"))
-          if not files:
-              raise SystemExit("No video_player_avfoundation darwin sources found in pub-cache")
-          patched = 0
-          for f in sorted(files):
-              with open(f) as fh:
-                  src = fh.read()
-              if "TargetConditionals" in src or "TARGET_OS_OSX" not in src:
-                  continue
-              with open(f, "w") as fh:
-                  fh.write("#import <TargetConditionals.h>\n" + src)
-              patched += 1
-              print("patched " + f)
-          print("patched %d of %d files" % (patched, len(files)))
-          PYEOF
-          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
-          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
-          rm -rf build/macos macos/build
-          flutter clean
-          flutter pub get
-          flutter precache --macos
-          bash packaging/macos/prepare_spm_artifacts.sh
-          flutter build macos --release
-
-      - name: Fallback B - stock Xcode 15.4 and rebuild
-        id: build-attempt-3
-        continue-on-error: true
-        if: steps.build-attempt-1.outcome == 'failure' && steps.build-attempt-2.outcome == 'failure'
-        # Covers an Xcode 16.2-specific incompatibility with Flutter 3.47.2.
-        # The Fallback A header patch persists in PUB-CACHE, so the known
-        # TARGET_OS_OSX defect stays fixed under this toolchain too.
-        run: |
-          echo "::warning::Attempts 1-2 failed, falling back to stock Xcode 15.4"
-          sudo xcode-select -s /Applications/Xcode_15.4.app
-          xcodebuild -version
-          rm -rf build/macos macos/build
-          flutter clean
-          flutter pub get
-          flutter precache --macos
-          bash packaging/macos/prepare_spm_artifacts.sh
-          flutter build macos --release
-
-      - name: Fail if all macOS build attempts failed
-        if: steps.build-attempt-1.outcome == 'failure' && steps.build-attempt-2.outcome == 'failure' && steps.build-attempt-3.outcome == 'failure'
-        run: |
-          echo "::error::All macOS build attempts failed (Xcode 16.2 SPM, 16.2 + header patch, 15.4 + header patch). See above logs."
+          echo "::error::macOS build failed (see above logs)."
           exit 1
 
       - name: Assert file-picker entitlement is embedded

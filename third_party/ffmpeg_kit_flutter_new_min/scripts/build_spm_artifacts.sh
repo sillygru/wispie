@@ -35,7 +35,12 @@ rm -rf ios macos out stage
 mkdir -p ios macos out stage
 unzip -q -o ios.zip -d ios
 unzip -q -o macos.zip -d macos
-rm -rf ios/__MACOSX macos/__MACOSX
+# The upstream zips contain `._*` AppleDouble sidecar files. They must go:
+# `ditto --norsrc` below only suppresses *new* sidecars from xattrs, it does
+# not remove sidecar files already in the tree, and those end up inside the
+# XCFrameworks where Xcode's CodeSign phase rejects them
+# ("code object is not signed at all / In subcomponent: .../._<name>").
+find ios macos \( -name '._*' -o -name '__MACOSX' \) -delete
 
 # Strip bitcode everywhere (no-op if absent)
 for FW in $FRAMEWORKS; do
@@ -94,6 +99,10 @@ convert() {
   # --norsrc keeps resource forks/xattrs out so no `._*` AppleDouble sidecars
   # ship inside the frameworks (Xcode's CodeSign phase fails on them with
   # "code object is not signed at all / In subcomponent: .../._<name>").
+  # Belt and suspenders: drop any sidecars that survived into the staged
+  # frameworks (e.g. carried over from the upstream zips, which --norsrc
+  # alone does not remove).
+  find "$STAGE" "out/${FW}.xcframework" \( -name '._*' -o -name '__MACOSX' \) -delete 2>/dev/null || true
   (cd out && ditto -c -k --keepParent --norsrc "${FW}.xcframework" "${FW}.xcframework.zip")
   rm -rf "$STAGE"
 }
@@ -103,6 +112,19 @@ for FW in $FRAMEWORKS; do
   convert "$FW"
 done
 rm -rf stage
+
+# Gate: no AppleDouble sidecars may ship, or downstream Xcode CodeSign
+# phases fail. Fail here, not in someone else's CI.
+DIRTY=0
+for FW in $FRAMEWORKS; do
+  N=$(unzip -l "out/${FW}.xcframework.zip" | grep -c -E '/\._|__MACOSX' || true)
+  if [ "$N" -gt 0 ]; then
+    echo "ERROR: out/${FW}.xcframework.zip contains $N sidecar entries" >&2
+    DIRTY=1
+  fi
+done
+[ "$DIRTY" -eq 0 ] || exit 1
+echo "All zips free of AppleDouble sidecars"
 
 CK="out/checksums.json"
 echo "{" > "$CK"
