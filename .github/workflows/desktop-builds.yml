@@ -64,12 +64,15 @@ jobs:
         run: |
           chmod +x ./packaging/linux/make_appimage.sh ./packaging/linux/AppRun
           APPIMAGE_EXTRACT_AND_RUN=1 ./packaging/linux/make_appimage.sh build/linux/x64/release/bundle Wispie-linux-x86_64.AppImage ./appimagetool
+          chmod +x Wispie-linux-x86_64.AppImage
+          ls -l Wispie-linux-x86_64.AppImage
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: wispie-linux-x86_64
+          name: Wispie-linux-x86_64.AppImage
           path: Wispie-linux-x86_64.AppImage
+          if-no-files-found: error
           retention-days: 14
 
   windows-x64:
@@ -148,7 +151,15 @@ jobs:
         run: |
           flutter --version
           xcodebuild -version
-          pod --version
+
+      - name: Select Xcode 16.2 (newest on macos-14 image)
+        # Newer toolchain, fewer surprises than the default 15.4.
+        # (Does NOT fix video_player_avfoundation's bare `#if TARGET_OS_OSX`
+        # — proven identical failure on 16.2; Fallback A handles that.)
+        # Verified present on image 20260831.
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
 
       - name: Clear stale pub.dev credentials
         run: |
@@ -166,14 +177,25 @@ jobs:
           rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
           rm -rf build/macos macos/build
 
+      - name: Assert CocoaPods fully deintegrated
+        # All macos plugins are Swift Packages; leftover CocoaPods
+        # integration breaks the build with "module 'Flutter' not found".
+        run: |
+          test ! -e macos/Podfile || (echo "macos/Podfile still present" && exit 1)
+          ! grep -r "Pods/" macos/Flutter/*.xcconfig macos/Runner.xcworkspace/contents.xcworkspacedata || \
+            (echo "Pods references remain in macos config" && exit 1)
+
       - name: Install dependencies
         run: |
           flutter pub get
           flutter precache --macos
 
       - name: Build macOS release (universal)
+        id: build-attempt-1
+        continue-on-error: true
         run: |
           set -o pipefail
+          bash packaging/macos/prepare_spm_artifacts.sh
           if flutter build macos --release; then
             exit 0
           fi
@@ -184,18 +206,78 @@ jobs:
           flutter clean
           flutter pub get
           flutter precache --macos
+          bash packaging/macos/prepare_spm_artifacts.sh
           flutter build macos --release
 
-      - name: Build macOS release via CocoaPods fallback (runner-scoped)
-        # Runner-scoped only: does not touch pubspec.yaml, so local SPM
-        # behavior is preserved. Uses the vendored .podspec +
-        # scripts/setup_macos.sh single-zip path instead of 8 SPM binaries.
-        if: failure()
+      - name: Fallback A - patch video_player_avfoundation headers and rebuild
+        id: build-attempt-2
+        continue-on-error: true
+        if: steps.build-attempt-1.outcome == 'failure'
+        # Makes the build toolchain-independent: 10 files under the plugin's
+        # darwin/ tree use bare `#if TARGET_OS_OSX` with no TargetConditionals
+        # import. Idempotent and version-globbed, so lock bumps can't silently
+        # disable it. Applied to PUB-CACHE (outside the repo), so it survives
+        # `flutter clean` and never touches the checkout.
         run: |
-          flutter config --no-enable-swift-package-manager
+          echo "::warning::Attempt 1 failed, patching video_player_avfoundation headers"
+          python3 - <<'PYEOF'
+          import glob
+          import os
+          pattern = os.path.join(
+              os.environ["HOME"],
+              ".pub-cache/hosted/pub.dev/video_player_avfoundation-*/darwin"
+              "/video_player_avfoundation/Sources/video_player_avfoundation_objc",
+          )
+          files = []
+          for base in glob.glob(pattern):
+              files += glob.glob(os.path.join(base, "include/video_player_avfoundation_objc/*.h"))
+              files += glob.glob(os.path.join(base, "*.m"))
+          if not files:
+              raise SystemExit("No video_player_avfoundation darwin sources found in pub-cache")
+          patched = 0
+          for f in sorted(files):
+              with open(f) as fh:
+                  src = fh.read()
+              if "TargetConditionals" in src or "TARGET_OS_OSX" not in src:
+                  continue
+              with open(f, "w") as fh:
+                  fh.write("#import <TargetConditionals.h>\n" + src)
+              patched += 1
+              print("patched " + f)
+          print("patched %d of %d files" % (patched, len(files)))
+          PYEOF
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+          rm -rf build/macos macos/build
           flutter clean
           flutter pub get
+          flutter precache --macos
+          bash packaging/macos/prepare_spm_artifacts.sh
           flutter build macos --release
+
+      - name: Fallback B - stock Xcode 15.4 and rebuild
+        id: build-attempt-3
+        continue-on-error: true
+        if: steps.build-attempt-1.outcome == 'failure' && steps.build-attempt-2.outcome == 'failure'
+        # Covers an Xcode 16.2-specific incompatibility with Flutter 3.47.2.
+        # The Fallback A header patch persists in PUB-CACHE, so the known
+        # TARGET_OS_OSX defect stays fixed under this toolchain too.
+        run: |
+          echo "::warning::Attempts 1-2 failed, falling back to stock Xcode 15.4"
+          sudo xcode-select -s /Applications/Xcode_15.4.app
+          xcodebuild -version
+          rm -rf build/macos macos/build
+          flutter clean
+          flutter pub get
+          flutter precache --macos
+          bash packaging/macos/prepare_spm_artifacts.sh
+          flutter build macos --release
+
+      - name: Fail if all macOS build attempts failed
+        if: steps.build-attempt-1.outcome == 'failure' && steps.build-attempt-2.outcome == 'failure' && steps.build-attempt-3.outcome == 'failure'
+        run: |
+          echo "::error::All macOS build attempts failed (Xcode 16.2 SPM, 16.2 + header patch, 15.4 + header patch). See above logs."
+          exit 1
 
       - name: Assert file-picker entitlement is embedded
         # file_picker hard-requires user-selected.read* even with the sandbox

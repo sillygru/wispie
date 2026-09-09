@@ -90,8 +90,11 @@ convert() {
     -framework "$MAC_DIR" \
     -output "out/${FW}.xcframework" >/dev/null
 
-  # ditto preserves the macOS slice's Versions/ symlinks inside the zip
-  (cd out && ditto -c -k --keepParent "${FW}.xcframework" "${FW}.xcframework.zip")
+  # ditto preserves the macOS slice's Versions/ symlinks inside the zip;
+  # --norsrc keeps resource forks/xattrs out so no `._*` AppleDouble sidecars
+  # ship inside the frameworks (Xcode's CodeSign phase fails on them with
+  # "code object is not signed at all / In subcomponent: .../._<name>").
+  (cd out && ditto -c -k --keepParent --norsrc "${FW}.xcframework" "${FW}.xcframework.zip")
   rm -rf "$STAGE"
 }
 
