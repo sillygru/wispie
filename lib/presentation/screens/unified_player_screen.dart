@@ -561,67 +561,77 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   /// Wide-window arrangement: cover and transport pinned left, Lyrics/Queue
   /// tabbed on the right. Reuses the same panes as portrait, so playback,
-  /// motion and glow wiring stay untouched.
+  /// motion and glow wiring stay untouched. The cover column shrinks below
+  /// [WideLayout.playerSideWidth] on small-landscape tablets so the queue
+  /// keeps enough room for its rows and drag targets.
   Widget _buildWideContent(BuildContext context, Song song, Color accent) {
     return Column(
       children: [
         _buildHeader(context, song),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: WideLayout.playerSideWidth,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: NowPlayingPane(
-                        song: song,
-                        accent: accent,
-                        motion: _motion,
-                        coverKey: _coverKey,
-                        paneVisible: _nowPlayingVisible,
-                      ),
-                    ),
-                    _TransportDock(song: song, accent: accent),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: PlayerTokens.s5,
-                        vertical: PlayerTokens.s2,
-                      ),
-                      child: PlayerSegmentedPill(
-                        labels: const ['Lyrics', 'Queue'],
-                        position: _landscapePosition,
-                        onSelected: _selectLandscapeTab,
-                        accent: accent,
-                      ),
-                    ),
-                    Expanded(
-                      child: IndexedStack(
-                        index: _landscapeTab,
-                        children: [
-                          LyricsPane(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final sideWidth = (constraints.maxWidth * 0.42).clamp(
+                320.0,
+                WideLayout.playerSideWidth,
+              );
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: sideWidth,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: NowPlayingPane(
                             song: song,
                             accent: accent,
-                            paneVisible: _lyricsVisible,
+                            motion: _motion,
+                            coverKey: _coverKey,
+                            paneVisible: _nowPlayingVisible,
                           ),
-                          QueuePane(
-                            accent: accent,
-                            initialShowHistory: widget.queueShowsHistory,
-                          ),
-                        ],
-                      ),
+                        ),
+                        _TransportDock(song: song, accent: accent),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: PlayerTokens.s5,
+                            vertical: PlayerTokens.s2,
+                          ),
+                          child: PlayerSegmentedPill(
+                            labels: const ['Lyrics', 'Queue'],
+                            position: _landscapePosition,
+                            onSelected: _selectLandscapeTab,
+                            accent: accent,
+                          ),
+                        ),
+                        Expanded(
+                          child: IndexedStack(
+                            index: _landscapeTab,
+                            children: [
+                              LyricsPane(
+                                song: song,
+                                accent: accent,
+                                paneVisible: _lyricsVisible,
+                              ),
+                              QueuePane(
+                                accent: accent,
+                                initialShowHistory: widget.queueShowsHistory,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],

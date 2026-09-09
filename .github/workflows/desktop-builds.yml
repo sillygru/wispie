@@ -238,6 +238,14 @@ jobs:
           echo "Thinning $APP"
           ./packaging/macos/thin_macos_app.sh "$APP" arm64 build/Wispie-arm64.app
           ./packaging/macos/thin_macos_app.sh "$APP" x86_64 build/Wispie-x64.app
+          # thin_macos_app.sh re-signs ad-hoc; re-assert here because the
+          # pre-thin check above cannot catch entitlement loss during lipo +
+          # re-sign (which used to break getDirectoryPath with
+          # ENTITLEMENT_NOT_FOUND while `flutter run` kept working).
+          codesign -d --entitlements :- build/Wispie-arm64.app 2>/dev/null | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in build/Wispie-arm64.app" && exit 1)
+          codesign -d --entitlements :- build/Wispie-x64.app 2>/dev/null | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in build/Wispie-x64.app" && exit 1)
           cd build
           ditto -c -k --sequesterRsrc --keepParent Wispie-arm64.app Wispie-macos-arm64.zip
           ditto -c -k --sequesterRsrc --keepParent Wispie-x64.app Wispie-macos-x64.zip

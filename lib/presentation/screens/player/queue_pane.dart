@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -20,7 +21,9 @@ import '../../components/player_segmented_pill.dart';
 import '../../components/player_track_row.dart';
 import '../../components/queue_cover_mosaic.dart';
 import '../../tokens/player_tokens.dart';
+import '../../utils/wide_layout.dart';
 import '../../widgets/duration_display.dart' show DurationFormatter;
+import '../../widgets/song_options_menu.dart';
 
 /// Right pane: the live queue, plus past queue snapshots. Content only — the
 /// shell owns the backdrop, header, pill and transport dock. Do not add a
@@ -364,6 +367,113 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     });
   }
 
+  /// Wide-window equivalent of the left-swipe: no Dismissible surrounds the
+  /// row, so no hide-then-restore dance is needed — the move just lands.
+  Future<void> _moveToTopNow(
+    AudioPlayerManager audioManager,
+    QueueItem item,
+  ) async {
+    try {
+      await audioManager.moveUpcomingToTop(item.queueId);
+    } catch (_) {
+      // The row stays where it is; the next queue update re-renders it.
+    }
+  }
+
+  /// Cursor-anchored context menu for a wide-window queue row. Replaces both
+  /// swipe directions: Move to top (was left-swipe), Remove (was right-swipe).
+  Future<void> _showWideRowMenu(
+    BuildContext context,
+    Offset globalPosition,
+    AudioPlayerManager audioManager,
+    List<QueueItem> queue,
+    QueueItem item,
+  ) async {
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return;
+    final position = RelativeRect.fromRect(
+      globalPosition & const Size(1, 1),
+      Offset.zero & overlayBox.size,
+    );
+
+    final selection = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem(
+          value: 'play',
+          child: Row(
+            children: [
+              Icon(Icons.play_arrow_rounded, size: 20),
+              SizedBox(width: PlayerTokens.s2),
+              Text('Play'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'top',
+          child: Row(
+            children: [
+              Icon(Icons.vertical_align_top_rounded, size: 20),
+              SizedBox(width: PlayerTokens.s2),
+              Text('Move to top'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'remove',
+          child: Row(
+            children: [
+              Icon(
+                Icons.delete_outline_rounded,
+                size: 20,
+                color: Colors.redAccent,
+              ),
+              SizedBox(width: PlayerTokens.s2),
+              Text(
+                'Remove',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'more',
+          child: Row(
+            children: [
+              Icon(Icons.more_horiz_rounded, size: 20),
+              SizedBox(width: PlayerTokens.s2),
+              Text('Song options…'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || selection == null) return;
+
+    switch (selection) {
+      case 'play':
+        _jumpTo(audioManager, item);
+      case 'top':
+        await _moveToTopNow(audioManager, item);
+      case 'remove':
+        final absolute =
+            queue.indexWhere((queued) => queued.queueId == item.queueId);
+        if (absolute == -1) return;
+        await _remove(audioManager, item, absolute);
+      case 'more':
+        if (!context.mounted) return;
+        showSongOptionsMenu(
+          context,
+          ref,
+          item.song.filename,
+          item.song.title,
+          song: item.song,
+        );
+    }
+  }
+
   Future<void> _undo(AudioPlayerManager audioManager) async {
     final pending = _pendingRemoval;
     if (pending == null) return;
@@ -567,6 +677,26 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     QueueItem item,
     int index,
   ) {
+    // Wide windows are mouse-first: swipe makes no sense with a mouse, so the
+    // row drops Dismissible entirely in favour of a cursor-anchored right-click
+    // menu, and the whole row becomes the drag handle. Narrow windows
+    // (phones, portrait tablets) keep the touch behaviour below untouched.
+    if (WideLayout.isWide(context)) {
+      return _WideUpcomingRow(
+        key: ValueKey('upnext_${item.queueId}'),
+        accent: widget.accent,
+        item: item,
+        index: index,
+        onTap: () => _jumpTo(audioManager, item),
+        onOpenMenu: (position) => _showWideRowMenu(
+          context,
+          position,
+          audioManager,
+          queue,
+          item,
+        ),
+      );
+    }
     return Dismissible(
       key: ValueKey('upnext_${item.queueId}'),
       direction: DismissDirection.horizontal,
@@ -781,6 +911,129 @@ class _PendingRemoval {
   final int index;
 
   const _PendingRemoval({required this.item, required this.index});
+}
+
+/// Wide-window queue row: the entire row is the drag handle (left-mouse drag
+/// anywhere reorders), right-click / long-press / overflow button open the
+/// same cursor-anchored menu. No Dismissible — swipe is a touch gesture.
+///
+/// The reorderable list requires a key on every child; the parent passes the
+/// same `upnext_<queueId>` key the narrow Dismissible carries.
+class _WideUpcomingRow extends StatefulWidget {
+  final Color accent;
+  final QueueItem item;
+  final int index;
+  final VoidCallback onTap;
+  final void Function(Offset globalPosition) onOpenMenu;
+
+  const _WideUpcomingRow({
+    super.key,
+    required this.accent,
+    required this.item,
+    required this.index,
+    required this.onTap,
+    required this.onOpenMenu,
+  });
+
+  @override
+  State<_WideUpcomingRow> createState() => _WideUpcomingRowState();
+}
+
+class _WideUpcomingRowState extends State<_WideUpcomingRow> {
+  bool _hovering = false;
+
+  /// Left-mouse drag anywhere on the row reorders it. Touch pointers are
+  /// deliberately ignored here — a touch drag must scroll the list, and touch
+  /// reordering goes through the 48px handle below. When a mouse press lands
+  /// on the handle both recognizers fire, but the gesture arena lets exactly
+  /// one of them win, so no press can start two drags.
+  void _startMouseDrag(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) return;
+    if (event.buttons != kPrimaryMouseButton) return;
+    SliverReorderableList.maybeOf(context)?.startItemDragReorder(
+      index: widget.index,
+      event: event,
+      recognizer: ImmediateMultiDragGestureRecognizer(debugOwner: this)
+        ..gestureSettings = MediaQuery.maybeGestureSettingsOf(context),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s3),
+      child: Listener(
+        onPointerDown: _startMouseDrag,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovering = true),
+          onExit: (_) => setState(() => _hovering = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onSecondaryTapDown: (details) =>
+                widget.onOpenMenu(details.globalPosition),
+            onLongPressStart: (details) =>
+                widget.onOpenMenu(details.globalPosition),
+            child: AnimatedContainer(
+              duration: PlayerTokens.dFast,
+              curve: PlayerTokens.cStandard,
+              decoration: BoxDecoration(
+                color: _hovering
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.transparent,
+                borderRadius: PlayerTokens.brMd,
+              ),
+              child: PlayerTrackRow(
+                song: widget.item.song,
+                accent: widget.accent,
+                onTap: widget.onTap,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (details) =>
+                          widget.onOpenMenu(details.globalPosition),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: const SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Icon(
+                            Icons.more_vert_rounded,
+                            size: 20,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Touch drag path: a full 48px target, up from the bare
+                    // ~24px icon the narrow row uses. Confined to the handle
+                    // so touch scrolls starting anywhere else still scroll.
+                    ReorderableDragStartListener(
+                      index: widget.index,
+                      child: const MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            size: 22,
+                            color: Colors.white54,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _UndoBar extends StatelessWidget {

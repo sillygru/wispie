@@ -23,6 +23,7 @@ import '../widgets/bulk_selection_bar.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/folder_grid_image.dart';
 import '../widgets/song_list_item.dart';
+import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
 import '../components/song_actions.dart';
 import '../utils/wide_layout.dart';
@@ -47,6 +48,33 @@ class SongListScreen extends ConsumerWidget {
     this.artistName,
     this.albumName,
   });
+
+  /// Wide-window pointer affordance: click cursor plus right-click menu.
+  /// Same idiom as the library screen's desktop rows. Narrow windows get the
+  /// row untouched — long-press and the overflow button already cover touch.
+  Widget _desktopRow(
+    BuildContext context,
+    WidgetRef ref, {
+    required Song song,
+    required Widget child,
+  }) {
+    if (!WideLayout.isWide(context)) return child;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTap: () => showSongOptionsMenu(
+          context,
+          ref,
+          song.filename,
+          song.title,
+          song: song,
+          playlistId: playlistId,
+        ),
+        child: child,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -416,17 +444,22 @@ class SongListScreen extends ConsumerWidget {
                   delegate: SliverChildBuilderDelegate((context, index) {
                     final song = sortedSongs[index];
 
-                    return SongListItem(
+                    return _desktopRow(
+                      context,
+                      ref,
                       song: song,
-                      heroTagPrefix: 'song_list_$title',
-                      playlistId: playlistId,
-                      onTap: () {
-                        audioManager.playSong(
-                          song,
-                          contextQueue: sortedSongs,
-                          playlistId: playlistId,
-                        );
-                      },
+                      child: SongListItem(
+                        song: song,
+                        heroTagPrefix: 'song_list_$title',
+                        playlistId: playlistId,
+                        onTap: () {
+                          audioManager.playSong(
+                            song,
+                            contextQueue: sortedSongs,
+                            playlistId: playlistId,
+                          );
+                        },
+                      ),
                     );
                   }, childCount: sortedSongs.length),
                 ),

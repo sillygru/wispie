@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
+import 'presentation/widgets/orientation_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/setup_provider.dart';
 import 'providers/theme_provider.dart';
@@ -298,13 +299,15 @@ class _WispieAppState extends ConsumerState<WispieApp>
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       theme: AppTheme.getTheme(themeState),
-      home: AnimatedTheme(
-        data: AppTheme.getTheme(themeState),
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-        child: (!isSetupComplete || !authState.isAuthenticated)
-            ? const SetupScreen()
-            : const MainScreen(),
+      home: OrientationPolicy(
+        child: AnimatedTheme(
+          data: AppTheme.getTheme(themeState),
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          child: (!isSetupComplete || !authState.isAuthenticated)
+              ? const SetupScreen()
+              : const MainScreen(),
+        ),
       ),
     );
   }

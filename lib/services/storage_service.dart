@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'wispie_paths.dart';
@@ -203,7 +204,9 @@ class StorageService {
   Future<Map<String, String>?> pickMusicFolder([BuildContext? context]) async {
     // Desktop always uses the native OS folder dialog: NSOpenPanel on macOS
     // (requires the user-selected.read-write entitlement — declared in the
-    // Runner entitlements), IFileDialog on Windows (no setup), and the XDG
+    // Runner entitlements AND preserved through packaging/macos/thin_macos_app.sh;
+    // a re-sign without --entitlements surfaces here as code
+    // ENTITLEMENT_NOT_FOUND), IFileDialog on Windows (no setup), and the XDG
     // desktop portal on Linux (needs xdg-desktop-portal + backend running).
     // The in-app dart:io browser below is kept for mobile callers only.
     if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
@@ -216,9 +219,17 @@ class StorageService {
           'path': selectedDirectory,
           'platform': Platform.operatingSystem,
         });
+      } on PlatformException catch (e) {
+        // PlatformException carries the plugin error code (e.g. macOS
+        // ENTITLEMENT_NOT_FOUND, ENTITLEMENT_REQUIRED_WRITE); log it so a
+        // signing/packaging regression is distinguishable from a user cancel
+        // (which returns null, not an exception).
+        debugPrint(
+            'Native folder picker unavailable: code=${e.code} message=${e.message} details=${e.details}');
+        throw FolderPickerUnavailable(Platform.operatingSystem, e);
       } on Exception catch (e) {
-        // Covers PlatformException (macOS entitlement gate) and
-        // DBusMethodResponseException (Linux portal/bus absence).
+        // Covers DBusMethodResponseException (Linux portal/bus absence) and
+        // other platform failures.
         debugPrint('Native folder picker unavailable: $e');
         throw FolderPickerUnavailable(Platform.operatingSystem, e);
       }
