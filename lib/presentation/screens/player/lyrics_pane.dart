@@ -68,6 +68,139 @@ class LyricsPane extends ConsumerStatefulWidget {
     return (estimate + viewport * retryViewportStep * attempt)
         .clamp(minExtent, maxExtent);
   }
+
+  /// A simulated line renders karaoke only when the toggle is on; a true
+  /// network line always renders. Centralises the distinction so the setting
+  /// can never hide genuine word-sync.
+  @visibleForTesting
+  static RichLyricLine? effectiveWordLine(
+    RichLyricLine? line,
+    bool simulateEnabled,
+  ) {
+    if (line == null || line.words.isEmpty) return null;
+    if (!line.isSimulated) return line;
+    return simulateEnabled ? line : null;
+  }
+
+  /// True word-sync is present when any line carries real (non-simulated)
+  /// word timings.
+  @visibleForTesting
+  static bool hasTrueWordSync(Iterable<RichLyricLine?> lines) {
+    return lines.any(
+      (line) => line != null && line.words.isNotEmpty && !line.isSimulated,
+    );
+  }
+
+  @visibleForTesting
+  static String normalizeLyricText(String value) {
+    final lower = value.replaceAll('’', "'").replaceAll('‘', "'").toLowerCase();
+    final cleaned = lower.replaceAll(
+      RegExp(r'[^\p{L}\p{N}\s]', unicode: true),
+      '',
+    );
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// Normalised equality or containment. Short fragments (< 3 chars) must
+  /// match exactly so single characters cannot align unrelated lines.
+  @visibleForTesting
+  static bool lyricTextsMatch(String a, String b) {
+    final normA = normalizeLyricText(a);
+    final normB = normalizeLyricText(b);
+    if (normA.isEmpty || normB.isEmpty) return normA == normB;
+    if (normA == normB) return true;
+    if (normA.length < 3 || normB.length < 3) return false;
+    return normA.contains(normB) || normB.contains(normA);
+  }
+
+  /// Aligns network rich lines to local rows. Matching lyric text is preferred
+  /// because local and network timestamps can drift; time is the fallback when
+  /// text cannot be matched.
+  @visibleForTesting
+  static List<RichLyricLine?> alignRichLyrics(
+    List<LyricLine> local,
+    RichLyrics rich,
+  ) {
+    final richLines = rich.lines
+        .where(
+          (line) =>
+              line.text.trim().isNotEmpty && !containsMusicalSymbol(line.text),
+        )
+        .toList();
+    const tolerance = Duration(seconds: 2);
+
+    final used = <int>{};
+    final aligned = <RichLyricLine?>[];
+    for (final localLine in local) {
+      if (!localLine.isSynced) {
+        aligned.add(null);
+        continue;
+      }
+      var bestIndex = -1;
+      var bestDelta = tolerance + const Duration(milliseconds: 1);
+      var bestTextMatch = false;
+      for (var i = 0; i < richLines.length; i++) {
+        if (used.contains(i)) continue;
+        final delta = (richLines[i].start - localLine.time).abs();
+        final textMatch = lyricTextsMatch(richLines[i].text, localLine.text);
+
+        // The local LRC and rich payload often come from different sources.
+        // Text is the stable identity in that case; timestamps can drift by
+        // more than the old positional tolerance.
+        if (textMatch &&
+            (!bestTextMatch ||
+                delta < bestDelta ||
+                (delta == bestDelta && i < bestIndex))) {
+          bestTextMatch = true;
+          bestDelta = delta;
+          bestIndex = i;
+          continue;
+        }
+        if (!bestTextMatch &&
+            delta <= tolerance &&
+            (bestIndex < 0 || delta < bestDelta)) {
+          bestDelta = delta;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex >= 0) {
+        used.add(bestIndex);
+        aligned.add(richLines[bestIndex]);
+      } else {
+        aligned.add(null);
+      }
+    }
+    return aligned;
+  }
+
+  /// True lines win wherever present; simulated lines only fill gaps when the
+  /// toggle is on. Wordless true rows fall through to the simulated fallback.
+  @visibleForTesting
+  static List<RichLyricLine?> mergeWordLines({
+    required List<LyricLine> local,
+    required List<RichLyricLine?> trueAligned,
+    required List<RichLyricLine?> simulatedFallback,
+    required bool simulateEnabled,
+  }) {
+    final merged = <RichLyricLine?>[];
+    for (var i = 0; i < local.length; i++) {
+      final trueLine = i < trueAligned.length ? trueAligned[i] : null;
+      if (trueLine != null && trueLine.words.isNotEmpty) {
+        merged.add(trueLine);
+        continue;
+      }
+      if (simulateEnabled) {
+        final simulated =
+            i < simulatedFallback.length ? simulatedFallback[i] : null;
+        merged.add(
+          simulated != null && simulated.words.isNotEmpty ? simulated : null,
+        );
+      } else {
+        merged.add(null);
+      }
+    }
+    return merged;
+  }
 }
 
 class _LyricsPaneState extends ConsumerState<LyricsPane>
@@ -398,11 +531,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     final rich = await _lrclibService.getRichSync(widget.song);
     if (!mounted || _loadedFilename != filename || rich == null) return;
 
-    final aligned = _alignRichLyrics(local, rich);
-    final hasLocalLyrics = local.isNotEmpty;
-    if (hasLocalLyrics && aligned.whereType<RichLyricLine>().isEmpty) return;
-
-    if (!hasLocalLyrics) {
+    if (local.isEmpty) {
       final filteredRich = rich.lines
           .where((line) =>
               line.text.trim().isNotEmpty && !containsMusicalSymbol(line.text))
@@ -415,49 +544,49 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                 isSynced: true,
               ))
           .toList();
+      final hasTrue = LyricsPane.hasTrueWordSync(filteredRich);
+      final List<RichLyricLine?> wordLines;
+      if (hasTrue) {
+        wordLines = filteredRich;
+      } else if (ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled) {
+        wordLines = RichLyrics.fromLyricLines(
+          onlineLines,
+          songDuration: widget.song.duration,
+          song: widget.song,
+        ).lines;
+      } else {
+        wordLines = filteredRich;
+      }
       setState(() {
         _lyrics = onlineLines;
-        _wordLines = filteredRich;
-        _richSyncAvailable = filteredRich.any((line) => line.words.isNotEmpty);
+        _wordLines = wordLines;
+        _richSyncAvailable = hasTrue;
         _hasSynced = true;
         _loading = false;
       });
-    } else {
-      setState(() {
-        _wordLines = aligned;
-        _richSyncAvailable = aligned.any(
-          (line) => line != null && line.words.isNotEmpty,
-        );
-      });
+      _onPosition(ref.read(audioPlayerManagerProvider).player.position);
+      return;
     }
+
+    final aligned = LyricsPane.alignRichLyrics(local, rich);
+    if (aligned.whereType<RichLyricLine>().isEmpty) return;
+    final merged = LyricsPane.mergeWordLines(
+      local: local,
+      trueAligned: aligned,
+      simulatedFallback: _wordLines,
+      simulateEnabled:
+          ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled,
+    );
+    // A line-only payload or a full mismatch must not wipe the simulated
+    // first paint.
+    if (!LyricsPane.hasTrueWordSync(merged)) return;
+
+    setState(() {
+      _wordLines = merged;
+      _richSyncAvailable = true;
+    });
 
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
-  }
-
-  List<RichLyricLine?> _alignRichLyrics(
-    List<LyricLine> local,
-    RichLyrics rich,
-  ) {
-    final richLines =
-        rich.lines.where((line) => line.text.trim().isNotEmpty).toList();
-    final localTimed = local.where((line) => line.isSynced).toList();
-    if (richLines.length != localTimed.length) {
-      return List<RichLyricLine?>.filled(local.length, null);
-    }
-
-    final aligned = <RichLyricLine?>[];
-    var timedIndex = 0;
-    for (final localLine in local) {
-      if (!localLine.isSynced) {
-        aligned.add(null);
-        continue;
-      }
-      final candidate = richLines[timedIndex];
-      timedIndex++;
-      final delta = (candidate.start - localLine.time).abs();
-      aligned.add(delta <= const Duration(seconds: 2) ? candidate : null);
-    }
-    return aligned;
   }
 
   /// Looks lyrics up on LRCLIB and writes the chosen result into the file.
@@ -772,21 +901,47 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     ref.listen(
       settingsProvider.select((s) => s.lyricsSimulatedRichSyncEnabled),
       (_, enabled) {
+        // Disabling needs no state change: the build filters simulated lines
+        // out while true lines keep rendering. Enabling fills only the gaps
+        // so true word-sync is never replaced by estimation.
+        if (!enabled) return;
         final lyrics = _lyrics;
-        if (lyrics != null && lyrics.isNotEmpty && !_richSyncAvailable) {
-          setState(() {
-            if (enabled) {
-              final generatedWords = RichLyrics.fromLyricLines(
-                lyrics,
-                songDuration: widget.song.duration,
-                song: widget.song,
-              );
-              _wordLines = generatedWords.lines;
-            } else {
-              _wordLines = const [];
-            }
-          });
+        if (lyrics == null || lyrics.isEmpty) return;
+        var needsFill = false;
+        for (var i = 0; i < lyrics.length; i++) {
+          if (!lyrics[i].isSynced) continue;
+          final current = i < _wordLines.length ? _wordLines[i] : null;
+          if (current == null || current.words.isEmpty) {
+            needsFill = true;
+            break;
+          }
         }
+        if (!needsFill) return;
+        final generated = RichLyrics.fromLyricLines(
+          lyrics,
+          songDuration: widget.song.duration,
+          song: widget.song,
+        );
+        setState(() {
+          final merged = <RichLyricLine?>[];
+          for (var i = 0; i < lyrics.length; i++) {
+            final current = i < _wordLines.length ? _wordLines[i] : null;
+            if (current != null &&
+                current.words.isNotEmpty &&
+                !current.isSimulated) {
+              merged.add(current);
+              continue;
+            }
+            final simulated =
+                i < generated.lines.length ? generated.lines[i] : null;
+            merged.add(
+              simulated != null && simulated.words.isNotEmpty
+                  ? simulated
+                  : current,
+            );
+          }
+          _wordLines = merged;
+        });
       },
     );
 
@@ -900,6 +1055,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     final player = ref.watch(audioPlayerManagerProvider).player;
     final settings = ref.watch(settingsProvider);
     final blurEnabled = settings.lyricsBlurOverlayEnabled;
+    final simulateEnabled = settings.lyricsSimulatedRichSyncEnabled;
     final hasSynced = _hasSynced;
 
     // Rebuilds when the singing moves on or a gap opens — not on every tick of
@@ -940,8 +1096,10 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               }
             }
 
-            final wordLine =
-                index < _wordLines.length ? _wordLines[index] : null;
+            final wordLine = LyricsPane.effectiveWordLine(
+              index < _wordLines.length ? _wordLines[index] : null,
+              simulateEnabled,
+            );
             final lineContent = LyricsLine(
               text: line.text,
               translatedText: lineTranslation,
