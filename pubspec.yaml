@@ -70,6 +70,12 @@ flutter:
     - assets/app_icon.png
 
 dependency_overrides:
+  # Vendored: upstream sets no notification category and claims no
+  # media-button routing, so strict OEM surfaces (EMUI Control Centre)
+  # never list the app. Patches AudioService.java: CATEGORY_TRANSPORT on
+  # the notification plus FLAG_HANDLES_MEDIA_BUTTONS on the session.
+  audio_service:
+    path: third_party/audio_service
   # Vendored without linux/: upstream Linux support is x86_64-only and
   # fatal-errors on aarch64. Features degrade gracefully (see FFmpegService).
   ffmpeg_kit_flutter_new_min:
