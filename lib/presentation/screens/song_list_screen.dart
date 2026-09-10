@@ -27,9 +27,10 @@ import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
 import '../components/song_actions.dart';
 import '../utils/wide_layout.dart';
+import '../widgets/album_card_selector.dart';
 import 'select_songs_screen.dart';
 
-class SongListScreen extends ConsumerWidget {
+class SongListScreen extends ConsumerStatefulWidget {
   final String title;
   final List<Song> songs;
   final String? playlistId;
@@ -48,6 +49,51 @@ class SongListScreen extends ConsumerWidget {
     this.artistName,
     this.albumName,
   });
+
+  @override
+  ConsumerState<SongListScreen> createState() => _SongListScreenState();
+}
+
+class _SongListScreenState extends ConsumerState<SongListScreen> {
+  /// Selected album filter in the grouped artist view; null means "All songs".
+  String? _selectedAlbum;
+
+  /// Local sort for the grouped artist view. Null means the view default
+  /// (most played). Kept off the global settings so opening an artist never
+  /// re-sorts the rest of the library.
+  SongSortOrder? _localSort;
+
+  String get title => widget.title;
+  List<Song> get songs => widget.songs;
+  String? get playlistId => widget.playlistId;
+  bool get isArtist => widget.isArtist;
+  bool get isAlbum => widget.isAlbum;
+  String? get artistName => widget.artistName;
+  String? get albumName => widget.albumName;
+
+  @override
+  void didUpdateWidget(covariant SongListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title ||
+        oldWidget.artistName != widget.artistName ||
+        oldWidget.albumName != widget.albumName ||
+        oldWidget.playlistId != widget.playlistId) {
+      _selectedAlbum = null;
+      _localSort = null;
+    }
+  }
+
+  /// Mirrors the artist heuristic inside [build] so the pre-sort multi-album
+  /// gate agrees with the post-sort [effectiveIsArtist] decision.
+  static bool _looksLikeArtist(List<Song> songs, String title) {
+    if (songs.isEmpty) return false;
+    final lowerTitle = title.toLowerCase();
+    return songs.any(
+      (s) =>
+          s.artist.toLowerCase().contains(lowerTitle) ||
+          lowerTitle.contains(s.artist.toLowerCase()),
+    );
+  }
 
   /// Wide-window pointer affordance: click cursor plus right-click menu.
   /// Same idiom as the library screen's desktop rows. Narrow windows get the
@@ -77,7 +123,7 @@ class SongListScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final selectionState = ref.watch(selectionProvider);
     final sortOrder = ref.watch(settingsProvider).sortOrder;
@@ -87,9 +133,22 @@ class SongListScreen extends ConsumerWidget {
     final lastPlayedAsync = ref.watch(lastPlayedTimestampsProvider);
     final lastPlayedTimestamps = lastPlayedAsync.asData?.value ?? const {};
 
+    // Multi-album artists get the grouped layout (All songs + album chips).
+    // The check runs on the raw set — order-independent — so it agrees with
+    // the post-sort gate below.
+    final bool multiAlbumArtist = playlistId == null &&
+        (isArtist || _looksLikeArtist(songs, title)) &&
+        !isAlbum &&
+        LibraryLogic.hasMultipleAlbums(songs);
+
+    // Grouped artist lists default to most-played; the SortMenu on this
+    // screen then refines that local default instead of the global setting.
+    final SongSortOrder effectiveSortOrder =
+        multiAlbumArtist ? (_localSort ?? SongSortOrder.playCount) : sortOrder;
+
     final sortedSongs = LibraryLogic.sortSongs(
       songs,
-      sortOrder,
+      effectiveSortOrder,
       userData: userData,
       shuffleConfig: shuffleConfig,
       playCounts: playCounts,
@@ -181,6 +240,33 @@ class SongListScreen extends ConsumerWidget {
         title.toLowerCase() == 'unknown artist' ||
         title.toLowerCase() == 'unknown album';
 
+    // Grouped artist layout: albums ordered by total plays, songs filtered
+    // to the selected chip. The selection clamps back to All songs if the
+    // album disappears (e.g. metadata edit) instead of showing an empty list.
+    final bool showAlbumGroups = effectiveIsArtist &&
+        playlistId == null &&
+        LibraryLogic.hasMultipleAlbums(songs);
+    final Map<String, List<Song>> albumGroups =
+        showAlbumGroups ? LibraryLogic.groupSongsByAlbum(songs) : const {};
+    final List<String> orderedAlbums = showAlbumGroups
+        ? LibraryLogic.sortAlbumsByTotalPlays(
+            albumGroups,
+            playCounts: playCounts,
+          )
+        : const [];
+    final String? selectedAlbum = showAlbumGroups &&
+            _selectedAlbum != null &&
+            albumGroups.containsKey(_selectedAlbum)
+        ? _selectedAlbum
+        : null;
+    List<Song> visibleSongs = sortedSongs;
+    if (showAlbumGroups && selectedAlbum != null) {
+      final allowed =
+          albumGroups[selectedAlbum]!.map((s) => s.filename).toSet();
+      visibleSongs =
+          sortedSongs.where((s) => allowed.contains(s.filename)).toList();
+    }
+
     final isWide = WideLayout.isWide(context);
 
     Widget buildArtwork() {
@@ -228,9 +314,9 @@ class SongListScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppTokens.s2),
-          if (sortedSongs.isNotEmpty)
+          if (visibleSongs.isNotEmpty)
             CollectionDurationDisplay(
-              songs: sortedSongs,
+              songs: visibleSongs,
               showSongCount: true,
               compact: true,
               style: AppTokens.meta(context),
@@ -246,10 +332,10 @@ class SongListScreen extends ConsumerWidget {
         runSpacing: 12,
         children: [
           FilledButton.tonalIcon(
-            onPressed: sortedSongs.isNotEmpty
+            onPressed: visibleSongs.isNotEmpty
                 ? () {
                     audioManager.shuffleAndPlay(
-                      sortedSongs,
+                      visibleSongs,
                       isRestricted: true,
                     );
                   }
@@ -264,10 +350,10 @@ class SongListScreen extends ConsumerWidget {
             ),
           ),
           FilledButton.icon(
-            onPressed: sortedSongs.isNotEmpty
+            onPressed: visibleSongs.isNotEmpty
                 ? () {
                     audioManager.replaceQueue(
-                      sortedSongs,
+                      visibleSongs,
                       playlistId: playlistId,
                       forceLinear: true,
                       clearCurrentSong: true,
@@ -323,7 +409,13 @@ class SongListScreen extends ConsumerWidget {
                 floating: true,
                 snap: true,
                 actions: [
-                  const SortMenu(),
+                  if (showAlbumGroups)
+                    SortMenu(
+                      sortOrder: effectiveSortOrder,
+                      onSelected: (order) => setState(() => _localSort = order),
+                    )
+                  else
+                    const SortMenu(),
                   if (isUnknownArtistOrAlbum)
                     IconButton(
                       icon: const AppIcon(AppIcons.manageSearch),
@@ -431,7 +523,22 @@ class SongListScreen extends ConsumerWidget {
                         ),
                 ),
               ),
-              if (sortedSongs.isEmpty)
+              if (showAlbumGroups)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: AppTokens.s3),
+                    child: AlbumCardSelector(
+                      allSongs: songs,
+                      albums: orderedAlbums,
+                      albumGroups: albumGroups,
+                      selected: selectedAlbum,
+                      artistName: effectiveArtistName,
+                      onSelected: (album) =>
+                          setState(() => _selectedAlbum = album),
+                    ),
+                  ),
+                ),
+              if (visibleSongs.isEmpty)
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: AppEmptyState(
@@ -442,7 +549,7 @@ class SongListScreen extends ConsumerWidget {
               else
                 SliverList(
                   delegate: SliverChildBuilderDelegate((context, index) {
-                    final song = sortedSongs[index];
+                    final song = visibleSongs[index];
 
                     return _desktopRow(
                       context,
@@ -455,13 +562,13 @@ class SongListScreen extends ConsumerWidget {
                         onTap: () {
                           audioManager.playSong(
                             song,
-                            contextQueue: sortedSongs,
+                            contextQueue: visibleSongs,
                             playlistId: playlistId,
                           );
                         },
                       ),
                     );
-                  }, childCount: sortedSongs.length),
+                  }, childCount: visibleSongs.length),
                 ),
               const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
             ],

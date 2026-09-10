@@ -417,4 +417,89 @@ class LibraryLogic {
     });
     return keys;
   }
+
+  /// Display name for a song's album, collapsing blank tags so every song
+  /// lands in exactly one group.
+  static String albumDisplayName(Song song) {
+    final trimmed = song.album.trim();
+    return trimmed.isEmpty ? 'Unknown Album' : trimmed;
+  }
+
+  /// Groups [songs] by album, case-insensitively, preserving the first-seen
+  /// casing as the display name.
+  static Map<String, List<Song>> groupSongsByAlbum(List<Song> songs) {
+    final groups = <String, List<Song>>{};
+    final canonical = <String, String>{};
+    for (final song in songs) {
+      final display = albumDisplayName(song);
+      final name = canonical.putIfAbsent(display.toLowerCase(), () => display);
+      groups.putIfAbsent(name, () => []).add(song);
+    }
+    return groups;
+  }
+
+  /// Whether [songs] span more than one album. Drives the artist detail view:
+  /// multi-album artists get the All-songs-plus-albums layout, everyone else
+  /// keeps the flat list.
+  static bool hasMultipleAlbums(List<Song> songs) {
+    String? first;
+    for (final song in songs) {
+      final key = albumDisplayName(song).toLowerCase();
+      if (first == null) {
+        first = key;
+      } else if (key != first) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Total plays across [songs], preferring live [playCounts] over the
+  /// snapshot on each song.
+  static int totalPlaysForSongs(
+      List<Song> songs, Map<String, int>? playCounts) {
+    var total = 0;
+    for (final song in songs) {
+      total += playCounts?[song.filename] ?? song.playCount;
+    }
+    return total;
+  }
+
+  /// Returns album names ordered by total plays (descending), then track
+  /// count, then name — so an artist's biggest albums lead the chip row.
+  static List<String> sortAlbumsByTotalPlays(
+    Map<String, List<Song>> albumGroups, {
+    Map<String, int>? playCounts,
+  }) {
+    final keys = albumGroups.keys.toList();
+    keys.sort((a, b) {
+      final playsCompare = totalPlaysForSongs(
+        albumGroups[b]!,
+        playCounts,
+      ).compareTo(totalPlaysForSongs(albumGroups[a]!, playCounts));
+      if (playsCompare != 0) return playsCompare;
+      final countCompare =
+          albumGroups[b]!.length.compareTo(albumGroups[a]!.length);
+      if (countCompare != 0) return countCompare;
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    });
+    return keys;
+  }
+
+  /// Most-listened ordering with a title tiebreak, so unplayed songs still
+  /// read alphabetically instead of in scan order.
+  static List<Song> sortSongsByPlayCount(
+    List<Song> songs, {
+    Map<String, int>? playCounts,
+  }) {
+    final sorted = List<Song>.from(songs);
+    sorted.sort((a, b) {
+      final countA = playCounts?[a.filename] ?? a.playCount;
+      final countB = playCounts?[b.filename] ?? b.playCount;
+      final playsCompare = countB.compareTo(countA);
+      if (playsCompare != 0) return playsCompare;
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+    return sorted;
+  }
 }
