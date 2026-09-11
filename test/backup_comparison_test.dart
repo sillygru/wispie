@@ -75,7 +75,7 @@ void main() {
           ArchiveFile('test_user_stats.db', statsBytes.length, statsBytes));
 
       final zipBytes = ZipEncoder().encode(archive);
-      await zipFile.writeAsBytes(zipBytes!);
+      await zipFile.writeAsBytes(zipBytes);
 
       await backupDir.delete(recursive: true);
 

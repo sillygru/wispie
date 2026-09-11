@@ -7,8 +7,6 @@ import 'package:window_manager/window_manager.dart';
 import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart'
     show createDatabaseFactoryFfi, sqfliteFfiInit;
-import 'dart:ffi' show DynamicLibrary;
-import 'package:sqlite3/open.dart' as sqlite3_open;
 import 'dart:async';
 import 'dart:io';
 import 'presentation/screens/main_screen.dart';
@@ -41,17 +39,8 @@ Future<void> main() async {
   final isMediaKitDesktop = Platform.isLinux || Platform.isWindows;
 
   if (isMediaKitDesktop) {
-    if (Platform.isLinux) {
-      // Fedora and friends ship only the versioned soname; the unversioned
-      // libsqlite3.so lives in -devel packages that end users should not need.
-      sqlite3_open.open.overrideFor(
-        sqlite3_open.OperatingSystem.linux,
-        () => _openLinuxSqlite(),
-      );
-    }
     sqfliteFfiInit();
-    // In-process ffi factory: the isolate-based one loads sqlite3 in its own
-    // isolate where the libsqlite3 override above would not apply.
+    // In-process ffi factory (no separate sqlite worker isolate).
     databaseFactory = createDatabaseFactoryFfi(noIsolate: true);
     JustAudioMediaKit.ensureInitialized();
   }
@@ -129,16 +118,6 @@ Future<void> _initDesktopWindow(SharedPreferences prefs) async {
     }
   } on Exception catch (e) {
     debugPrint('Desktop window init failed: $e');
-  }
-}
-
-DynamicLibrary _openLinuxSqlite() {
-  // Distros disagree on the soname: most ship libsqlite3.so.0, some only
-  // libsqlite3.so.1. Try both before giving up.
-  try {
-    return DynamicLibrary.open('libsqlite3.so.0');
-  } catch (_) {
-    return DynamicLibrary.open('libsqlite3.so.1');
   }
 }
 

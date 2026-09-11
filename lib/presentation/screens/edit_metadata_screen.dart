@@ -55,17 +55,16 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
   Future<void> _pickImage(Song currentSong) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.image,
-        allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      final pickedPath = picked?.path;
+      if (pickedPath != null) {
         setState(() => _isSaving = true);
-        final path = result.files.single.path!;
         await ref
             .read(songsProvider.notifier)
-            .updateSongCover(currentSong, path);
+            .updateSongCover(currentSong, pickedPath);
 
         if (mounted) {
           appSnack(context, "Cover updated successfully");
@@ -331,22 +330,18 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           .read(fileManagerServiceProvider)
           .getCoverExportBytes(currentSong);
 
-      final savePath = await FilePicker.platform.saveFile(
+      final savedUri = await FilePicker.saveFile(
         dialogTitle: 'Export Cover',
         fileName:
             '${p.basenameWithoutExtension(currentSong.filename)}_cover.jpg',
         type: FileType.image,
-        bytes: bytes, // Required for Android/iOS
+        bytes: bytes,
       );
 
-      if (savePath != null) {
-        // On desktop, we need to write the file ourselves
-        if (!Platform.isAndroid && !Platform.isIOS) {
-          await File(savePath).writeAsBytes(bytes);
-        }
-
+      if (savedUri != null) {
+        // file_picker persists [bytes] itself on every platform.
         if (mounted) {
-          appSnack(context, "Cover exported to $savePath");
+          appSnack(context, "Cover exported to $savedUri");
         }
       }
     } catch (e) {

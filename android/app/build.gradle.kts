@@ -21,7 +21,8 @@ dependencies {
 
 android {
     namespace = "com.sillygru.wispie"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android 14 requires compileSdk 37; minSdk stays 24 for Android 7.0/8 compat.
+    compileSdk = 37
     ndkVersion = "28.2.13676358"  // Use a fully installed NDK version
 
     compileOptions {

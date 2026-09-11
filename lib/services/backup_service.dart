@@ -342,9 +342,6 @@ class BackupService {
         }
 
         final zipBytes = ZipEncoder().encode(archive);
-        if (zipBytes == null) {
-          throw Exception('Failed to encode backup archive');
-        }
         await File(backupPath).writeAsBytes(zipBytes);
 
         return backupFilename;
@@ -382,7 +379,9 @@ class BackupService {
         name: p.basename(zipPath),
         mimeType: 'application/zip',
       );
-      await Share.shareXFiles([xFile], text: 'Wispie Export');
+      await SharePlus.instance.share(
+        ShareParams(files: [xFile], text: 'Wispie Export'),
+      );
     } finally {
       if (await exportDir.exists()) {
         await exportDir.delete(recursive: true);
@@ -447,14 +446,15 @@ class BackupService {
   /// extracted content afterwards and must pass the result to either
   /// [performImport] or [discardValidation].
   Future<Map<String, dynamic>?> pickAndValidateBackup() async {
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['zip'],
     );
 
-    if (result == null || result.files.isEmpty) return null;
+    final pickedPath = picked?.path;
+    if (pickedPath == null || pickedPath.isEmpty) return null;
 
-    return validateBackupFile(File(result.files.first.path!));
+    return validateBackupFile(File(pickedPath));
   }
 
   /// Extracts [file] and reports what it actually contains.

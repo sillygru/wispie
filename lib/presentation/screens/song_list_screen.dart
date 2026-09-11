@@ -728,12 +728,11 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     }
 
     if (selected == 'custom') {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.image,
-        allowMultiple: false,
       );
-      if (picked != null && picked.files.single.path != null) {
-        final localPath = picked.files.single.path!;
+      final localPath = picked?.path;
+      if (localPath != null) {
         await ref.read(artistAlbumArtProvider.notifier).setArtistArt(
               artistName: artist,
               localPath: localPath,
@@ -859,12 +858,11 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     }
 
     if (selected == 'custom') {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFile(
         type: FileType.image,
-        allowMultiple: false,
       );
-      if (picked != null && picked.files.single.path != null) {
-        final localPath = picked.files.single.path!;
+      final localPath = picked?.path;
+      if (localPath != null) {
         await ref.read(artistAlbumArtProvider.notifier).setAlbumArt(
               albumKey: compositeKey,
               albumName: album,

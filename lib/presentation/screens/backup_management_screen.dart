@@ -295,7 +295,7 @@ class _BackupManagementScreenState
   Future<void> _exportBackup(BackupInfo backupInfo) async {
     try {
       final bytes = await backupInfo.file.readAsBytes();
-      final result = await FilePicker.platform.saveFile(
+      final result = await FilePicker.saveFile(
         fileName: backupInfo.filename,
         type: FileType.custom,
         allowedExtensions: ['zip'],

@@ -83,7 +83,12 @@ void songActionPlayNext(BuildContext host, WidgetRef ref, Song song) {
 }
 
 void songActionShare(Song song) {
-  Share.shareXFiles([XFile(song.url)], text: '${song.title} by ${song.artist}');
+  SharePlus.instance.share(
+    ShareParams(
+      files: [XFile(song.url)],
+      text: '${song.title} by ${song.artist}',
+    ),
+  );
 }
 
 /// Adds to the most recently updated playlist directly, offering a "Change"

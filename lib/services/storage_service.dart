@@ -211,7 +211,7 @@ class StorageService {
     // The in-app dart:io browser below is kept for mobile callers only.
     if (Platform.isMacOS || Platform.isLinux || Platform.isWindows) {
       try {
-        final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+        final selectedDirectory = await FilePicker.getDirectoryPath();
         if (selectedDirectory == null || selectedDirectory.isEmpty) {
           return null;
         }
@@ -275,7 +275,7 @@ class StorageService {
       });
     }
 
-    final selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    final selectedDirectory = await FilePicker.getDirectoryPath();
     if (selectedDirectory == null || selectedDirectory.isEmpty) return null;
     return _normalizeFolderRecord({
       'path': selectedDirectory,

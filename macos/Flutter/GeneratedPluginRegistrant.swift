@@ -8,7 +8,7 @@ import Foundation
 import audio_service
 import audio_session
 import ffmpeg_kit_flutter_new_min
-import file_picker
+import file_picker_darwin
 import just_audio
 import package_info_plus
 import screen_retriever_macos

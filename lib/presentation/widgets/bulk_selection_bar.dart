@@ -242,7 +242,7 @@ class BulkSelectionBar extends ConsumerWidget {
         final text = songs.length == 1
             ? '${songs[0].title} by ${songs[0].artist}'
             : '${songs.length} songs';
-        Share.shareXFiles(xFiles, text: text);
+        SharePlus.instance.share(ShareParams(files: xFiles, text: text));
         ref.read(selectionProvider.notifier).exitSelectionMode();
       },
     );

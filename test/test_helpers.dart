@@ -1,4 +1,3 @@
-import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +7,6 @@ import 'package:package_info_plus_platform_interface/package_info_platform_inter
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqlite3/open.dart';
 import 'package:wispie/services/database_service.dart';
 import 'package:wispie/services/storage_service.dart';
 import 'package:wispie/services/wispie_paths.dart';
@@ -50,14 +48,7 @@ class TestEnvironment {
     _tempDir = Directory.systemTemp.createTempSync('wispie_test_');
 
     if (Platform.isLinux) {
-      open.overrideFor(OperatingSystem.linux, () {
-        try {
-          return DynamicLibrary.open('libsqlite3.so.0');
-        } catch (_) {
-          return DynamicLibrary.open(
-              '/usr/lib/x86_64-linux-gnu/libsqlite3.so.0');
-        }
-      });
+      sqfliteFfiInit();
       databaseFactory = null;
       databaseFactory = createDatabaseFactoryFfi(noIsolate: true);
     } else {
