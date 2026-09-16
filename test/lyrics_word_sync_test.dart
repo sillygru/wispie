@@ -341,4 +341,3 @@ void main() {
     expect(aligned.single!.words.last.text, 'empty');
   });
 }
-

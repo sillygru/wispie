@@ -700,7 +700,6 @@ class LingvaTranslateService {
     );
   }
 
-
   Future<TranslationResponse> _fetchFromMyMemory({
     required HttpClient client,
     required String query,

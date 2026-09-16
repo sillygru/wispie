@@ -222,7 +222,8 @@ class LyricsPane extends ConsumerStatefulWidget {
             } else if (targetPtr + 1 < targetWords.length &&
                 (targetWords[targetPtr + 1] == remNorms[remPtr] ||
                     (targetWords[targetPtr + 1].length >= 3 &&
-                        (targetWords[targetPtr + 1].contains(remNorms[remPtr]) ||
+                        (targetWords[targetPtr + 1]
+                                .contains(remNorms[remPtr]) ||
                             remNorms[remPtr]
                                 .contains(targetWords[targetPtr + 1]))))) {
               targetPtr++;
@@ -249,8 +250,7 @@ class LyricsPane extends ConsumerStatefulWidget {
           if (remTarget.isNotEmpty && searchR + 1 < cursors.length) {
             final nextRc = cursors[searchR + 1];
             final nextRem = nextRc.remainingWords;
-            final nextNorms =
-                nextRem.map((w) => _cleanWord(w.text)).toList();
+            final nextNorms = nextRem.map((w) => _cleanWord(w.text)).toList();
             var nextMatch = 0;
             while (
                 nextMatch < remTarget.length && nextMatch < nextNorms.length) {
@@ -317,8 +317,7 @@ class LyricsPane extends ConsumerStatefulWidget {
       }
 
       if (!found) {
-        final fbLimit =
-            (rIdx + 5 < cursors.length) ? rIdx + 5 : cursors.length;
+        final fbLimit = (rIdx + 5 < cursors.length) ? rIdx + 5 : cursors.length;
         final fbStart = (rIdx >= 2) ? rIdx - 2 : 0;
         for (var searchR = fbStart; searchR < fbLimit; searchR++) {
           final rc = cursors[searchR];
@@ -1431,4 +1430,3 @@ class _RichCursor {
   List<RichLyricWord> get remainingWords =>
       cursor < line.words.length ? line.words.sublist(cursor) : const [];
 }
-

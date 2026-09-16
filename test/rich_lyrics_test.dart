@@ -412,7 +412,9 @@ void main() {
     expect(words[3].end, greaterThan(words[2].end));
   });
 
-  test('auto-detects millisecond payload and scales all line and word timestamps', () {
+  test(
+      'auto-detects millisecond payload and scales all line and word timestamps',
+      () {
     final rich = RichLyrics.fromApi(const {
       'format': 'json',
       'syncType': 'richsync',
@@ -451,7 +453,9 @@ void main() {
     expect(rich.toLrc(), '[00:52.85]On a dark desert highway');
   });
 
-  test('preserves all source words when quotes and punctuation differ from segments', () {
+  test(
+      'preserves all source words when quotes and punctuation differ from segments',
+      () {
     final rich = RichLyrics.fromApi(const {
       'content': {
         'lines': [
@@ -487,4 +491,3 @@ void main() {
     expect(words.last.end, const Duration(milliseconds: 108000));
   });
 }
-
