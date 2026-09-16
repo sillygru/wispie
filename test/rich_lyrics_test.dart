@@ -411,4 +411,80 @@ void main() {
     expect(words[3].start, greaterThanOrEqualTo(words[2].start));
     expect(words[3].end, greaterThan(words[2].end));
   });
+
+  test('auto-detects millisecond payload and scales all line and word timestamps', () {
+    final rich = RichLyrics.fromApi(const {
+      'format': 'json',
+      'syncType': 'richsync',
+      'content': {
+        'title': 'Hotel California',
+        'artist': 'Eagles',
+        'duration': 260337,
+        'lines': [
+          [
+            52859,
+            55179,
+            'On a dark desert highway',
+            [
+              [52859, 53102, 'On'],
+              [53102, 53278, 'a'],
+              [53278, 53751, 'dark'],
+              [53751, 54126, 'desert'],
+              [54126, 55179, 'highway'],
+            ],
+          ],
+        ],
+      },
+    });
+
+    expect(rich.lines, hasLength(1));
+    expect(rich.lines.first.start, const Duration(milliseconds: 52859));
+    expect(rich.lines.first.end, const Duration(milliseconds: 55179));
+    expect(rich.duration, const Duration(milliseconds: 260337));
+
+    final words = rich.lines.first.words;
+    expect(words, hasLength(5));
+    expect(words[0].start, const Duration(milliseconds: 52859));
+    expect(words[0].end, const Duration(milliseconds: 53102));
+    expect(words[4].text, 'highway');
+    expect(words[4].end, const Duration(milliseconds: 55179));
+    expect(rich.toLrc(), '[00:52.85]On a dark desert highway');
+  });
+
+  test('preserves all source words when quotes and punctuation differ from segments', () {
+    final rich = RichLyrics.fromApi(const {
+      'content': {
+        'lines': [
+          [
+            104.0,
+            108.0,
+            'Said, "I\'m fine," but it wasn\'t true',
+            [
+              [104.0, 104.5, 'Said,'],
+              [104.5, 105.0, "I'm"],
+              [105.0, 105.5, 'fine,'],
+              [105.5, 106.0, 'but'],
+              [106.0, 106.5, 'it'],
+              [106.5, 107.2, "wasn't"],
+              [107.2, 108.0, 'true'],
+            ],
+          ],
+        ],
+      },
+    });
+
+    final words = rich.lines.single.words;
+    expect(words.map((w) => w.text).toList(), [
+      'Said,',
+      '"I\'m',
+      'fine,"',
+      'but',
+      'it',
+      "wasn't",
+      'true',
+    ]);
+    expect(words.last.text, 'true');
+    expect(words.last.end, const Duration(milliseconds: 108000));
+  });
 }
+

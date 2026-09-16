@@ -55,8 +55,13 @@ class LyricsSession extends ChangeNotifier {
     required String? content,
     required Duration? duration,
     Song? song,
+    List<LyricLine>? parsedLyrics,
   }) {
     _rawContent = content;
+    _translated = null;
+    _hasCached = false;
+    _isSameLanguage = false;
+    _translating = false;
     if (content == null || content.trim().isEmpty) {
       _lyrics = const [];
       _wordLines = const [];
@@ -64,7 +69,7 @@ class LyricsSession extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final lines = LyricLine.parse(content);
+    final lines = parsedLyrics ?? LyricLine.parse(content);
     _lyrics = lines;
     try {
       final rich = RichLyrics.fromLyricLines(
@@ -106,17 +111,20 @@ class LyricsSession extends ChangeNotifier {
   Future<TranslationResult> translate({
     required String filename,
     required String targetLang,
+    String? content,
+    List<LyricLine>? lyrics,
     Duration perLineCap = const Duration(seconds: 3),
   }) async {
-    final content = _rawContent;
-    if (content == null || content.trim().isEmpty) {
+    final effectiveContent = content ?? _rawContent;
+    if (effectiveContent == null || effectiveContent.trim().isEmpty) {
       return TranslationResult.empty;
     }
+    final effectiveLyrics = lyrics ?? _lyrics;
 
     final cached = await _db.getTranslatedLyrics(
       filename,
       targetLang,
-      sourceContent: content,
+      sourceContent: effectiveContent,
     );
 
     if (cached == '[SAME_LANG]') {
@@ -129,9 +137,9 @@ class LyricsSession extends ChangeNotifier {
 
     if (cached != null &&
         cached.trim().isNotEmpty &&
-        cached.trim() != content.trim()) {
+        cached.trim() != effectiveContent.trim()) {
       _translated =
-          LyricLine.alignTranslation(_lyrics, LyricLine.parse(cached));
+          LyricLine.alignTranslation(effectiveLyrics, LyricLine.parse(cached));
       _hasCached = true;
       _isSameLanguage = false;
       notifyListeners();
@@ -143,14 +151,14 @@ class LyricsSession extends ChangeNotifier {
 
     try {
       final response = await _translateWithCap(
-        content: content,
+        content: effectiveContent,
         targetLang: targetLang,
         perLineCap: perLineCap,
       );
 
       final isSame = _isSameLanguageResponse(
         response: response,
-        original: content,
+        original: effectiveContent,
         targetLang: targetLang,
       );
 
@@ -159,7 +167,7 @@ class LyricsSession extends ChangeNotifier {
           filename,
           targetLang,
           '[SAME_LANG]',
-          sourceContent: content,
+          sourceContent: effectiveContent,
         );
         _translated = null;
         _hasCached = false;
@@ -173,10 +181,12 @@ class LyricsSession extends ChangeNotifier {
           filename,
           targetLang,
           response.text,
-          sourceContent: content,
+          sourceContent: effectiveContent,
         );
-        _translated =
-            LyricLine.alignTranslation(_lyrics, LyricLine.parse(response.text));
+        _translated = LyricLine.alignTranslation(
+          effectiveLyrics,
+          LyricLine.parse(response.text),
+        );
         _hasCached = true;
         _isSameLanguage = false;
         notifyListeners();
@@ -321,14 +331,17 @@ class FakeLyricsSession extends LyricsSession {
   Future<TranslationResult> translate({
     required String filename,
     required String targetLang,
+    String? content,
+    List<LyricLine>? lyrics,
     Duration perLineCap = const Duration(seconds: 3),
   }) async {
     final key = '$filename:$targetLang';
     final text = fakeTranslations[key];
     if (text == null) return TranslationResult.empty;
     if (text == '[SAME_LANG]') return TranslationResult.sameLanguage;
+    final effectiveLyrics = lyrics ?? this.lyrics;
     return TranslationResult.translated(
-      LyricLine.alignTranslation(lyrics, LyricLine.parse(text)),
+      LyricLine.alignTranslation(effectiveLyrics, LyricLine.parse(text)),
     );
   }
 }

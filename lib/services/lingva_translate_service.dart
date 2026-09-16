@@ -20,9 +20,6 @@ class TranslationResponse {
 class LingvaTranslateService {
   static const List<String> defaultHosts = [
     'lingva.ml',
-    'lingva.lunar.icu',
-    'translate.plausibility.cloud',
-    'lingva.garudalinux.org',
   ];
 
   static const Duration _timeout = Duration(seconds: 8);
@@ -415,7 +412,7 @@ class LingvaTranslateService {
     late final List<Future<TranslationResponse> Function(HttpClient)> starters;
 
     // Order by observed reliability: GTX (POST-safe) first, then
-    // Clients5, Lingva, Mobile, MyMemory last (short-query only).
+    // Clients5, Lingva, MyMemory last (short-query only).
     starters = [
       (client) => _fetchFromGTX(
             client: client,
@@ -437,12 +434,6 @@ class LingvaTranslateService {
               targetLang: targetLang,
               sourceLang: sourceLang,
             ),
-      (client) => _fetchFromGoogleMobile(
-            client: client,
-            query: query,
-            targetLang: targetLang,
-            sourceLang: sourceLang,
-          ),
       if (query.length <= _myMemoryMaxChars)
         (client) => _fetchFromMyMemory(
               client: client,
@@ -709,53 +700,6 @@ class LingvaTranslateService {
     );
   }
 
-  /// Google lightweight mobile translation endpoint fallback.
-  Future<TranslationResponse> _fetchFromGoogleMobile({
-    required HttpClient client,
-    required String query,
-    required String targetLang,
-    required String sourceLang,
-  }) async {
-    final uri = Uri.parse('https://translate.google.com/m');
-    final request = await client.postUrl(uri);
-    request.headers.set(
-      HttpHeaders.userAgentHeader,
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    );
-    request.headers.set(
-      HttpHeaders.contentTypeHeader,
-      'application/x-www-form-urlencoded; charset=utf-8',
-    );
-    final bodyBytes = utf8.encode(
-      'sl=${Uri.encodeQueryComponent(sourceLang)}&tl=${Uri.encodeQueryComponent(targetLang)}&q=${Uri.encodeQueryComponent(query)}',
-    );
-    request.contentLength = bodyBytes.length;
-    request.add(bodyBytes);
-
-    final response = await request.close().timeout(_timeout);
-    if (response.statusCode != 200) {
-      throw HttpException('Google Mobile HTTP ${response.statusCode}');
-    }
-
-    final body = await response.transform(utf8.decoder).join();
-    final match = RegExp(
-      r'class="result-container">([^<]*)<',
-      dotAll: true,
-    ).firstMatch(body);
-    if (match == null || match.group(1) == null) {
-      throw const FormatException('Invalid Google Mobile translation format');
-    }
-
-    var text = match.group(1)!;
-    text = text
-        .replaceAll('&#39;', "'")
-        .replaceAll('&quot;', '"')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>');
-
-    return TranslationResponse(text: text);
-  }
 
   Future<TranslationResponse> _fetchFromMyMemory({
     required HttpClient client,

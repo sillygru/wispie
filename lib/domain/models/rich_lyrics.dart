@@ -65,6 +65,23 @@ class RichLyrics {
     final rawLines = content['lines'];
     if (rawLines is! List) return const RichLyrics(lines: []);
 
+    final rawDuration = _number(content['duration']);
+    var isMilliseconds = rawDuration != null && rawDuration > 1000;
+    if (!isMilliseconds) {
+      for (final rawLine in rawLines) {
+        if (rawLine is! List || rawLine.length < 2) continue;
+        final start = _number(rawLine[0]);
+        final end = _number(rawLine[1]);
+        if (start != null && end != null) {
+          if (start > 1000 || end > 1000 || (end - start) > 60) {
+            isMilliseconds = true;
+            break;
+          }
+        }
+      }
+    }
+    final scale = isMilliseconds ? 0.001 : 1.0;
+
     final parsedLines = <RichLyricLine>[];
     for (final rawLine in rawLines) {
       if (rawLine is! List || rawLine.length < 3) continue;
@@ -75,8 +92,8 @@ class RichLyrics {
         continue;
       }
 
-      final start = _durationFromSeconds(startSeconds);
-      final end = _durationFromSeconds(endSeconds);
+      final start = _durationFromSeconds(startSeconds * scale);
+      final end = _durationFromSeconds(endSeconds * scale);
       if (end <= start || text.trim().isEmpty) continue;
 
       final timedSegments = <RichLyricWord>[];
@@ -93,8 +110,8 @@ class RichLyrics {
               wordText.trim().isEmpty) {
             continue;
           }
-          final wordStartDuration = _durationFromSeconds(wordStart);
-          final wordEndDuration = _durationFromSeconds(wordEnd);
+          final wordStartDuration = _durationFromSeconds(wordStart * scale);
+          final wordEndDuration = _durationFromSeconds(wordEnd * scale);
           if (wordEndDuration <= wordStartDuration) continue;
           timedSegments.add(RichLyricWord(
             start: wordStartDuration,
@@ -116,7 +133,9 @@ class RichLyrics {
     return RichLyrics(
       title: _string(content['title']),
       artist: _string(content['artist']),
-      duration: _durationFromSeconds(_number(content['duration'])),
+      duration: _durationFromSeconds(
+        rawDuration != null ? rawDuration * scale : null,
+      ),
       lines: parsedLines,
     );
   }
@@ -201,13 +220,35 @@ class RichLyrics {
     final merged = <RichLyricWord>[];
     var segmentIndex = 0;
     for (final sourceWord in sourceWords) {
-      if (segmentIndex >= segments.length) break;
-
       final expected = _normaliseForMatching(sourceWord);
+      if (expected.isEmpty) {
+        final fallbackTime = merged.isNotEmpty
+            ? merged.last.end
+            : (segmentIndex < segments.length
+                ? segments[segmentIndex].start
+                : Duration.zero);
+        merged.add(RichLyricWord(
+          start: fallbackTime,
+          end: fallbackTime,
+          text: sourceWord,
+        ));
+        continue;
+      }
+
+      if (segmentIndex >= segments.length) {
+        final fallbackTime =
+            merged.isNotEmpty ? merged.last.end : Duration.zero;
+        merged.add(RichLyricWord(
+          start: fallbackTime,
+          end: fallbackTime,
+          text: sourceWord,
+        ));
+        continue;
+      }
+
       final first = segments[segmentIndex];
       var last = first;
       var combined = '';
-      var matched = false;
 
       while (segmentIndex < segments.length) {
         last = segments[segmentIndex];
@@ -215,7 +256,6 @@ class RichLyrics {
         segmentIndex++;
         final normalised = _normaliseForMatching(combined);
         if (normalised == expected || normalised.length >= expected.length) {
-          matched = normalised == expected;
           break;
         }
       }
@@ -228,11 +268,6 @@ class RichLyrics {
         end: last.end,
         text: sourceWord,
       ));
-
-      // A malformed provider segment should not prevent the remaining source
-      // words from being displayed, but keep the normal path explicit for
-      // analyzers and future parser changes.
-      if (!matched && segmentIndex >= segments.length) break;
     }
 
     return merged;
@@ -242,7 +277,7 @@ class RichLyrics {
     return value
         .replaceAll('’', "'")
         .replaceAll('‘', "'")
-        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '')
         .toLowerCase();
   }
 

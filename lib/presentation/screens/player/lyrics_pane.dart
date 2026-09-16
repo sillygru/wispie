@@ -12,7 +12,6 @@ import '../../../providers/providers.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/database_service.dart';
 import '../../../services/display_refresh_service.dart';
-import '../../../services/lingva_translate_service.dart';
 import '../../../services/lrclib_service.dart';
 import '../../components/app_feedback.dart';
 import '../../dialogs/lyrics_search_sheet.dart';
@@ -109,13 +108,45 @@ class LyricsPane extends ConsumerStatefulWidget {
     final normB = normalizeLyricText(b);
     if (normA.isEmpty || normB.isEmpty) return normA == normB;
     if (normA == normB) return true;
+    if (normA.contains(normB) || normB.contains(normA)) return true;
+
+    // Check core text without parenthetical ad-libs
+    final coreA = normalizeLyricText(a.replaceAll(RegExp(r'\([^)]*\)'), ' '));
+    final coreB = normalizeLyricText(b.replaceAll(RegExp(r'\([^)]*\)'), ' '));
+    if (coreA.isNotEmpty && coreB.isNotEmpty) {
+      if (coreA == coreB) return true;
+      if (coreA.length >= 3 && coreB.length >= 3) {
+        if (coreA.contains(coreB) || coreB.contains(coreA)) return true;
+      }
+    }
+
     if (normA.length < 3 || normB.length < 3) return false;
-    return normA.contains(normB) || normB.contains(normA);
+    return false;
   }
 
-  /// Aligns network rich lines to local rows. Matching lyric text is preferred
-  /// because local and network timestamps can drift; time is the fallback when
-  /// text cannot be matched.
+  static String _cleanWord(String text) {
+    final clean = text
+        .replaceAll('’', '')
+        .replaceAll('‘', '')
+        .replaceAll("'", '')
+        .toLowerCase();
+    return clean.replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+  }
+
+  static List<String> _wordsOf(String text) {
+    final clean = text
+        .replaceAll('’', '')
+        .replaceAll('‘', '')
+        .replaceAll("'", '')
+        .toLowerCase();
+    final withSpaces =
+        clean.replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), ' ');
+    return withSpaces.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  }
+
+  /// Aligns network rich lines to local rows. Supports 1-to-many line splitting,
+  /// many-to-1 combining, and word-level slicing so split lines receive their
+  /// exact word timings rather than being locked or marked null.
   @visibleForTesting
   static List<RichLyricLine?> alignRichLyrics(
     List<LyricLine> local,
@@ -127,49 +158,200 @@ class LyricsPane extends ConsumerStatefulWidget {
               line.text.trim().isNotEmpty && !containsMusicalSymbol(line.text),
         )
         .toList();
-    const tolerance = Duration(seconds: 2);
 
-    final used = <int>{};
+    if (richLines.isEmpty) {
+      return List<RichLyricLine?>.filled(local.length, null);
+    }
+
+    final cursors = richLines.map((l) => _RichCursor(l)).toList();
     final aligned = <RichLyricLine?>[];
-    for (final localLine in local) {
+    var rIdx = 0;
+
+    for (var localIdx = 0; localIdx < local.length; localIdx++) {
+      final localLine = local[localIdx];
       if (!localLine.isSynced) {
         aligned.add(null);
         continue;
       }
-      var bestIndex = -1;
-      var bestDelta = tolerance + const Duration(milliseconds: 1);
-      var bestTextMatch = false;
-      for (var i = 0; i < richLines.length; i++) {
-        if (used.contains(i)) continue;
-        final delta = (richLines[i].start - localLine.time).abs();
-        final textMatch = lyricTextsMatch(richLines[i].text, localLine.text);
 
-        // The local LRC and rich payload often come from different sources.
-        // Text is the stable identity in that case; timestamps can drift by
-        // more than the old positional tolerance.
-        if (textMatch &&
-            (!bestTextMatch ||
-                delta < bestDelta ||
-                (delta == bestDelta && i < bestIndex))) {
-          bestTextMatch = true;
-          bestDelta = delta;
-          bestIndex = i;
-          continue;
+      final targetWords = _wordsOf(localLine.text);
+      if (targetWords.isEmpty) {
+        aligned.add(null);
+        continue;
+      }
+
+      List<RichLyricWord>? matchedWords;
+      RichLyricLine? exactLine;
+      var found = false;
+
+      final searchLimit =
+          (rIdx + 4 < cursors.length) ? rIdx + 4 : cursors.length;
+      final searchStart =
+          (rIdx > 0 && cursors[rIdx - 1].remainingWords.isNotEmpty)
+              ? rIdx - 1
+              : rIdx;
+
+      for (var searchR = searchStart; searchR < searchLimit; searchR++) {
+        final rc = cursors[searchR];
+        final remWords = rc.remainingWords;
+        if (remWords.isEmpty) continue;
+
+        final remNorms = remWords.map((w) => _cleanWord(w.text)).toList();
+
+        var overlap = 0;
+        var targetPtr = 0;
+        var remPtr = 0;
+        while (targetPtr < targetWords.length && remPtr < remNorms.length) {
+          final tw = targetWords[targetPtr];
+          final rw = remNorms[remPtr];
+          if (tw == rw ||
+              (tw.length >= 3 && (tw.contains(rw) || rw.contains(tw)))) {
+            overlap++;
+            targetPtr++;
+            remPtr++;
+          } else {
+            // Look ahead 1 word in either stream to skip minor transcription variants
+            if (remPtr + 1 < remNorms.length &&
+                (targetWords[targetPtr] == remNorms[remPtr + 1] ||
+                    (targetWords[targetPtr].length >= 3 &&
+                        (targetWords[targetPtr]
+                                .contains(remNorms[remPtr + 1]) ||
+                            remNorms[remPtr + 1]
+                                .contains(targetWords[targetPtr]))))) {
+              remPtr++;
+            } else if (targetPtr + 1 < targetWords.length &&
+                (targetWords[targetPtr + 1] == remNorms[remPtr] ||
+                    (targetWords[targetPtr + 1].length >= 3 &&
+                        (targetWords[targetPtr + 1].contains(remNorms[remPtr]) ||
+                            remNorms[remPtr]
+                                .contains(targetWords[targetPtr + 1]))))) {
+              targetPtr++;
+            } else {
+              targetPtr++;
+              remPtr++;
+            }
+          }
         }
-        if (!bestTextMatch &&
-            delta <= tolerance &&
-            (bestIndex < 0 || delta < bestDelta)) {
-          bestDelta = delta;
-          bestIndex = i;
+
+        final isSignificant = overlap >= 2 ||
+            overlap == targetWords.length ||
+            (targetWords.isNotEmpty && overlap / targetWords.length >= 0.4);
+
+        if (overlap > 0 && isSignificant) {
+          final assigned = remWords.sublist(0, remPtr);
+          rc.cursor += remPtr;
+          matchedWords = List.of(assigned);
+
+          // Check if remaining target words continue into next rich line
+          final remTarget = targetWords.sublist(
+            targetPtr < targetWords.length ? targetPtr : targetWords.length,
+          );
+          if (remTarget.isNotEmpty && searchR + 1 < cursors.length) {
+            final nextRc = cursors[searchR + 1];
+            final nextRem = nextRc.remainingWords;
+            final nextNorms =
+                nextRem.map((w) => _cleanWord(w.text)).toList();
+            var nextMatch = 0;
+            while (
+                nextMatch < remTarget.length && nextMatch < nextNorms.length) {
+              final tw = remTarget[nextMatch];
+              final nn = nextNorms[nextMatch];
+              if (tw == nn ||
+                  (tw.length >= 3 && (tw.contains(nn) || nn.contains(tw)))) {
+                nextMatch++;
+              } else {
+                break;
+              }
+            }
+            if (nextMatch > 0) {
+              matchedWords.addAll(nextRem.sublist(0, nextMatch));
+              nextRc.cursor += nextMatch;
+            }
+          }
+
+          if (remPtr == rc.line.words.length &&
+              matchedWords.length == rc.line.words.length &&
+              lyricTextsMatch(rc.line.text, localLine.text)) {
+            exactLine = rc.line;
+          } else if (rc.remainingWords.isNotEmpty) {
+            // If the next local line doesn't match the remaining words,
+            // this line was a 1-to-1 match with transcription differences.
+            var nextLineMatchesRemaining = false;
+            if (localIdx + 1 < local.length) {
+              final nextLocalWords = _wordsOf(local[localIdx + 1].text);
+              if (nextLocalWords.isNotEmpty) {
+                final remRemainingNorms =
+                    rc.remainingWords.map((w) => _cleanWord(w.text)).toList();
+                var checkMatch = 0;
+                while (checkMatch < nextLocalWords.length &&
+                    checkMatch < remRemainingNorms.length) {
+                  final tw = nextLocalWords[checkMatch];
+                  final rw = remRemainingNorms[checkMatch];
+                  if (tw == rw ||
+                      (tw.length >= 3 &&
+                          (tw.contains(rw) || rw.contains(tw)))) {
+                    checkMatch++;
+                  } else {
+                    break;
+                  }
+                }
+                if (checkMatch > 0) {
+                  nextLineMatchesRemaining = true;
+                }
+              }
+            }
+
+            if (!nextLineMatchesRemaining) {
+              matchedWords.addAll(rc.remainingWords);
+              rc.cursor = rc.line.words.length;
+            }
+          }
+
+          rIdx = searchR;
+          if (rc.remainingWords.isEmpty) {
+            rIdx = searchR + 1;
+          }
+          found = true;
+          break;
         }
       }
-      if (bestIndex >= 0) {
-        used.add(bestIndex);
-        aligned.add(richLines[bestIndex]);
+
+      if (!found) {
+        final fbLimit =
+            (rIdx + 5 < cursors.length) ? rIdx + 5 : cursors.length;
+        final fbStart = (rIdx >= 2) ? rIdx - 2 : 0;
+        for (var searchR = fbStart; searchR < fbLimit; searchR++) {
+          final rc = cursors[searchR];
+          if (rc.cursor > 0) continue;
+          final delta = (rc.line.start - localLine.time).abs();
+          final textMatch = lyricTextsMatch(rc.line.text, localLine.text);
+
+          if (textMatch && delta <= const Duration(seconds: 4)) {
+            exactLine = rc.line;
+            matchedWords = rc.line.words;
+            rc.cursor = rc.line.words.length;
+            rIdx = searchR + 1;
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (exactLine != null) {
+        aligned.add(exactLine);
+      } else if (matchedWords != null && matchedWords.isNotEmpty) {
+        aligned.add(RichLyricLine(
+          start: matchedWords.first.start,
+          end: matchedWords.last.end,
+          text: localLine.text,
+          words: matchedWords,
+          isSimulated: false,
+        ));
       } else {
         aligned.add(null);
       }
     }
+
     return aligned;
   }
 
@@ -469,6 +651,14 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _loading = false;
     });
 
+    _lyricsSession.load(
+      filename: filename,
+      content: content,
+      duration: widget.song.duration,
+      song: widget.song,
+      parsedLyrics: parsed,
+    );
+
     unawaited(_loadRichSync(filename, parsed));
 
     if (parsed.isNotEmpty) {
@@ -674,10 +864,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         _isSameLanguage = false;
       });
       final settings = ref.read(settingsProvider);
-      // For auto-translate we keep the original offline gate, but the button
-      // itself stays visible (via _isSameLanguage) until API proves same-lang.
-      if (settings.lyricsAutoTranslate &&
-          LingvaTranslateService.lyricsNeedTranslation(content, targetLang)) {
+      if (settings.lyricsAutoTranslate) {
         _performTranslation(targetLang, silent: true);
       }
       return;
@@ -739,6 +926,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       final result = await _lyricsSession.translate(
         filename: filename,
         targetLang: targetLang,
+        content: content,
+        lyrics: _lyrics,
         perLineCap: const Duration(seconds: 3),
       );
       if (!mounted || _loadedFilename != filename) return;
@@ -763,6 +952,10 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         ref.read(translationRevisionProvider.notifier).bump();
         if (!silent) {
           appSnack(context, 'Lyrics translated', tone: AppTone.success);
+        }
+      } else {
+        if (!silent) {
+          appSnack(context, 'Could not translate lyrics', tone: AppTone.danger);
         }
       }
     } catch (e) {
@@ -1229,3 +1422,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     );
   }
 }
+
+class _RichCursor {
+  final RichLyricLine line;
+  int cursor = 0;
+  _RichCursor(this.line);
+
+  List<RichLyricWord> get remainingWords =>
+      cursor < line.words.length ? line.words.sublist(cursor) : const [];
+}
+
