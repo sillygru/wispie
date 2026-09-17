@@ -197,10 +197,12 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     if (_appActive) {
       _syncPaneVisibility();
       _syncRefresh();
+      _syncWakeLock();
     } else {
       _nowPlayingVisible.value = false;
       _lyricsVisible.value = false;
       DisplayRefreshService.instance.leavePlayer();
+      _releaseWakeLock();
     }
   }
 
@@ -342,7 +344,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     final playing = ref.read(audioPlayerManagerProvider).playingNotifier.value;
     final lyricsSelected =
         _showingWide ? _landscapeTab == 0 : _pane == PlayerPane.lyrics.index;
-    final wanted = lyricsSelected &&
+    final wanted = _appActive &&
+        lyricsSelected &&
         ref.read(settingsProvider).keepScreenAwakeOnLyrics &&
         playing;
 

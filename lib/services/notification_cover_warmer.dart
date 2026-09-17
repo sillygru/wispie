@@ -26,10 +26,6 @@ class NotificationCoverWarmer {
   /// UI thread's back.
   static const Duration _breather = Duration(milliseconds: 250);
 
-  /// How long to idle before re-checking a back-off condition (a running scan,
-  /// or the app being in the background).
-  static const Duration _retryDelay = Duration(seconds: 2);
-
   /// How many songs we are still willing to process while backgrounded — just
   /// enough that an auto-advance or two lands on correct art.
   static const int _backgroundBudget = 2;
@@ -87,6 +83,12 @@ class NotificationCoverWarmer {
   int get pendingCount => _pending.length;
 
   @visibleForTesting
+  bool get isRunning => _running;
+
+  @visibleForTesting
+  int get backgroundProcessedCount => _backgroundProcessed;
+
+  @visibleForTesting
   void resetForTest() {
     _pending = const [];
     _done.clear();
@@ -96,17 +98,14 @@ class NotificationCoverWarmer {
   }
 
   void _schedule() {
-    if (_running || _pending.isEmpty) return;
+    if (_running || _pending.isEmpty || !_canWorkNow) return;
     _running = true;
     unawaited(_drain());
   }
 
   Future<void> _drain() async {
     try {
-      while (_pending.isNotEmpty) {
-        await _waitForWorkableMoment();
-        if (_pending.isEmpty) return;
-
+      while (_pending.isNotEmpty && _canWorkNow) {
         // Re-read the head each pass: setQueue may have reprioritised it while
         // the previous song was being processed.
         final song = _pending.first;
@@ -129,17 +128,12 @@ class NotificationCoverWarmer {
         // come back to it this session.
         _done.add(song.filename);
 
-        await Future<void>.delayed(_breather);
+        if (_pending.isNotEmpty && _canWorkNow) {
+          await Future<void>.delayed(_breather);
+        }
       }
     } finally {
       _running = false;
-    }
-  }
-
-  /// Idles until warming is appropriate again.
-  Future<void> _waitForWorkableMoment() async {
-    while (_pending.isNotEmpty && !_canWorkNow) {
-      await Future<void>.delayed(_retryDelay);
     }
   }
 

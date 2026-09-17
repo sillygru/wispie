@@ -143,7 +143,13 @@ class SpectrumController extends ChangeNotifier {
       _clock
         ..reset(player.position)
         ..playing = player.playing;
-      _positionSub = player.positionStream.listen(_clock.onPosition);
+      _positionSub = player.positionStream.listen((pos) {
+        if (!_appActive) return;
+        _clock.onPosition(pos);
+      });
+      if (!_appActive) {
+        _positionSub?.pause();
+      }
       _stateSub = player.playerStateStream.listen(_onPlayerState);
       _currentSong?.addListener(_loadBeatMap);
       PowerStateService.instance.powerSave.addListener(_onPowerSave);
@@ -183,6 +189,15 @@ class SpectrumController extends ChangeNotifier {
     final active = state == AppLifecycleState.resumed;
     if (_appActive == active) return;
     _appActive = active;
+    if (active) {
+      _positionSub?.resume();
+      final player = _player;
+      if (player != null) {
+        _clock.reset(player.position);
+      }
+    } else {
+      _positionSub?.pause();
+    }
     _syncTicker();
   }
 

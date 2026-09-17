@@ -20,4 +20,8 @@ class ScreenWakeLockService {
       await WakelockPlus.disable();
     }
   }
+
+  bool get isHeld => _reasons.isNotEmpty;
+
+  void resetForTest() => _reasons.clear();
 }

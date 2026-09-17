@@ -30,8 +30,34 @@ class NowPlayingBar extends ConsumerStatefulWidget {
   ConsumerState<NowPlayingBar> createState() => _NowPlayingBarState();
 }
 
-class _NowPlayingBarState extends ConsumerState<NowPlayingBar> {
+class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
+    with WidgetsBindingObserver {
   String? _lastSongId;
+  bool _appActive = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appActive = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final active = state == AppLifecycleState.resumed;
+    if (_appActive != active) {
+      setState(() {
+        _appActive = active;
+      });
+    }
+  }
 
   void _openPlayer(BuildContext context, MediaItem metadata) {
     Navigator.of(context).push(PlayerPageRoute(songId: metadata.id));
@@ -80,6 +106,7 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar> {
               player: player,
               visualizerMode: settings.visualizerMode,
               isBarVisible: isBarVisible,
+              appActive: _appActive,
               theme: theme,
               isDesktopOrTablet: isDesktop || isIPad,
               compact: widget.compact,
@@ -98,6 +125,7 @@ class _NowPlayingContent extends ConsumerWidget {
   final AudioPlayer player;
   final VisualizerMode visualizerMode;
   final bool isBarVisible;
+  final bool appActive;
   final ThemeData theme;
   final bool isDesktopOrTablet;
   final bool compact;
@@ -109,6 +137,7 @@ class _NowPlayingContent extends ConsumerWidget {
     required this.player,
     required this.visualizerMode,
     required this.isBarVisible,
+    required this.appActive,
     required this.theme,
     required this.isDesktopOrTablet,
     required this.compact,
@@ -302,7 +331,9 @@ class _NowPlayingContent extends ConsumerWidget {
             // dirtied the whole bar — including the backdrop blur behind it.
             child: RepaintBoundary(
               child: StreamBuilder<Duration>(
-                stream: player.positionStream,
+                stream:
+                    (isBarVisible && appActive) ? player.positionStream : null,
+                initialData: player.position,
                 builder: (context, snapshot) {
                   final position = snapshot.data ?? Duration.zero;
                   final duration = player.duration ?? Duration.zero;

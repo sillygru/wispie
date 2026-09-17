@@ -105,6 +105,14 @@ class TestEnvironment {
       (ByteData? message) async => null,
     );
 
+    // Mock wakelock_plus pigeon channel for ScreenWakeLockService.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler(
+      'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
+      (ByteData? message) async =>
+          const StandardMessageCodec().encodeMessage(<Object?>[null]),
+    );
+
     // Mock power channels (wispie + legacy gru_songs) for PowerStateService.
     for (final name in ['wispie/power', 'gru_songs/power']) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

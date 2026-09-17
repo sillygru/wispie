@@ -477,6 +477,11 @@ class PlayerMotionController extends ChangeNotifier {
   set appActive(bool value) {
     if (_appActive == value) return;
     _appActive = value;
+    if (value) {
+      _positionSub?.resume();
+    } else {
+      _positionSub?.pause();
+    }
     _syncTicker();
   }
 
@@ -497,7 +502,10 @@ class PlayerMotionController extends ChangeNotifier {
     }
   }
 
-  void _onPosition(Duration position) => _clock.onPosition(position);
+  void _onPosition(Duration position) {
+    if (!_appActive) return;
+    _clock.onPosition(position);
+  }
 
   double _visualPositionMs() => _clock.visualPositionMs;
 

@@ -34,7 +34,7 @@ class WaveformProgressBar extends ConsumerStatefulWidget {
 }
 
 class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   List<double>? _peaks;
   late AnimationController _revealController;
   late AnimationController _scrubController;
@@ -49,16 +49,19 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier(Duration.zero);
   final ValueNotifier<double?> _dragPositionNotifier = ValueNotifier(null);
-
-  TextStyle? _labelStyle;
-  String _formattedTotalTime = '0:00';
-
-  StreamSubscription<List<double>>? _waveformSubscription;
+  String _formattedTotalTime = '';
   int _loadToken = 0;
+  StreamSubscription<List<double>>? _waveformSubscription;
+  TextStyle? _labelStyle;
+  bool _appActive = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appActive = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _formattedTotalTime = _formatDuration(widget.total);
     _revealController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 240),
@@ -82,6 +85,7 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _waveformSubscription?.cancel();
     _loadToken++;
     _revealController.dispose();
@@ -93,11 +97,26 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final active = state == AppLifecycleState.resumed;
+    if (_appActive == active) return;
+    _appActive = active;
+    if (active) {
+      _positionSubscription?.resume();
+      final player = ref.read(audioPlayerManagerProvider).player;
+      _positionNotifier.value = player.position;
+    } else {
+      _positionSubscription?.pause();
+    }
+  }
+
   void _subscribeToPositionStream() {
     _positionSubscription?.cancel();
     if (widget.positionStream == null) return;
 
     _positionSubscription = widget.positionStream!.listen((position) {
+      if (!_appActive) return;
       final now = DateTime.now();
       if (_lastPositionUpdate == null ||
           now.difference(_lastPositionUpdate!).inMilliseconds > 200) {
@@ -105,6 +124,10 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
         _positionNotifier.value = position;
       }
     });
+
+    if (!_appActive) {
+      _positionSubscription?.pause();
+    }
   }
 
   @override

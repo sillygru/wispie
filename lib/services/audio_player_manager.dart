@@ -615,8 +615,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
             _syncCoverWarmer(state.currentIndex!);
           }
 
-          // Extract color from cover
-          if (song != null && _ref != null) {
+          // Extract color from cover only when foregrounded
+          if (!_isBackground && song != null && _ref != null) {
             final filenameAtExtraction = newFilename;
             ColorExtractionService.extractPalette(
               song.coverUrl,
@@ -1235,9 +1235,24 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // was looking, so opening the player still finds a beat map and a palette
     // waiting.
     if (wasBackground && !isBackground) {
-      _warmBeatAnalysis(currentSongNotifier.value);
+      final currentSong = currentSongNotifier.value;
+      _warmBeatAnalysis(currentSong);
       final index = _player.currentIndex;
       if (index != null) _warmThemePalettesAroundIndex(index);
+      if (currentSong != null && _ref != null) {
+        final filenameAtExtraction = currentSong.filename;
+        ColorExtractionService.extractPalette(
+          currentSong.coverUrl,
+          useIsolate: true,
+        ).then((palette) {
+          if (_currentSongFilename != filenameAtExtraction) return;
+          _ref?.read(themeProvider.notifier).updateExtractedPalette(
+                palette,
+                forFilename: filenameAtExtraction,
+              );
+        });
+        _preExtractNextColor();
+      }
     }
   }
 
@@ -1329,6 +1344,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   void _optimizeCoverForCurrentSong(Song? song) {
+    if (_isBackground) return;
     if (song == null || song.coverUrl == null || song.coverUrl!.isEmpty) return;
     final coverPath = song.coverUrl!;
     if (p.basename(coverPath).startsWith('c_')) return;
