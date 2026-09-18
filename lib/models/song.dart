@@ -43,6 +43,18 @@ enum PlayerMotionIntensity {
   custom,
 }
 
+/// The visual style of the player progress / seek bar.
+enum ProgressBarType {
+  /// Simple standard line progress bar with thumb.
+  basic,
+
+  /// Static decoded audio waveform progress bar.
+  waveform,
+
+  /// Sound-reactive dynamic waveform with real-time spectrum and beat response.
+  reactive,
+}
+
 class Song extends Equatable {
   static const Set<String> videoExtensions = {
     '.mp4',

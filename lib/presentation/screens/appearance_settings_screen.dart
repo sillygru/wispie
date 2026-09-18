@@ -79,16 +79,49 @@ class _AppearanceSettingsScreenState
                 ),
               ),
             ),
-            AppSettingsSwitch(
-              icon: AppIcons.graphicEq,
-              searchId: 'appearance.waveform',
-              title: 'Waveform Progress Bar',
-              subtitle: 'Show song waveform in player',
-              value: settings.showWaveform,
-              onChanged: notifier.setShowWaveform,
+            AppSettingsAnchor(
+              id: 'appearance.waveform',
+              child: AppListRow(
+                dense: true,
+                leading: AppRowIcon(
+                  icon: AppIcons.graphicEq,
+                  color: accent,
+                  size: 40,
+                ),
+                title: 'Progress Bar Style',
+                subtitle: switch (settings.progressBarType) {
+                  ProgressBarType.basic => 'Simple line progress bar',
+                  ProgressBarType.waveform => 'Static audio waveform',
+                  ProgressBarType.reactive =>
+                    'Sound-reactive dynamic waveform with live spectrum & beat response',
+                },
+                trailing: DropdownButton<ProgressBarType>(
+                  value: settings.progressBarType,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppTokens.brMd,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    notifier.setProgressBarType(value);
+                  },
+                  items: const [
+                    DropdownMenuItem(
+                      value: ProgressBarType.basic,
+                      child: Text('Standard'),
+                    ),
+                    DropdownMenuItem(
+                      value: ProgressBarType.waveform,
+                      child: Text('Waveform'),
+                    ),
+                    DropdownMenuItem(
+                      value: ProgressBarType.reactive,
+                      child: Text('Sound Reactive'),
+                    ),
+                  ],
+                ),
+              ),
             ),
             // Haptics have no effect on desktop hardware.
-            if (!WideLayout.isWide(context))
+            if (!WideLayout.isWide(context) && settings.showWaveform)
               AppSettingsSwitch(
                 icon: AppIcons.touchApp,
                 searchId: 'appearance.waveform_haptics',

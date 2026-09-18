@@ -118,6 +118,12 @@ class SpectrumController extends ChangeNotifier {
   /// True once a beat grid is driving the bars, as opposed to the idle walk.
   bool get isSynced => _gridBlend > 0;
 
+  /// The active [BeatMap] for the currently loaded song, if available.
+  BeatMap? get beatMap => _beatMap;
+
+  /// Latency-compensated playhead in milliseconds.
+  double get visualPositionMs => _clock.visualPositionMs;
+
   @override
   void addListener(VoidCallback listener) {
     super.addListener(listener);

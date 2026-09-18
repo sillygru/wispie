@@ -11,7 +11,8 @@ class SettingsState {
   final SongSortOrder sortOrder;
   final bool showSongDuration;
   final bool animatedSoundWaveEnabled;
-  final bool showWaveform;
+  final ProgressBarType progressBarType;
+  bool get showWaveform => progressBarType != ProgressBarType.basic;
   final bool waveformHapticsEnabled;
   final double fadeOutDuration;
   final double fadeInDuration;
@@ -55,7 +56,8 @@ class SettingsState {
     this.sortOrder = SongSortOrder.title,
     this.showSongDuration = false,
     this.animatedSoundWaveEnabled = true,
-    this.showWaveform = true,
+    ProgressBarType? progressBarType,
+    bool? showWaveform,
     this.waveformHapticsEnabled = true,
     this.fadeOutDuration = 0.0,
     this.fadeInDuration = 0.0,
@@ -77,7 +79,7 @@ class SettingsState {
     this.beatReactiveCoverEnabled = true,
     this.beatReactiveParticlesEnabled = true,
     this.coverMotionIntensity = PlayerMotionIntensity.subtle,
-    this.particleMotionIntensity = PlayerMotionIntensity.subtle,
+    this.particleMotionIntensity = PlayerMotionIntensity.bold,
     this.coverMotionCustomIntensity = 0.5,
     this.particleMotionCustomIntensity = 0.5,
     this.playerMotionLatencyMs = 80,
@@ -90,7 +92,13 @@ class SettingsState {
     this.lyricsSimulatedRichSyncEnabled = true,
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
-  }) : quickActionConfig = quickActionConfig ?? QuickActionConfig.defaults;
+  })  : progressBarType = progressBarType ??
+            (showWaveform != null
+                ? (showWaveform
+                    ? ProgressBarType.reactive
+                    : ProgressBarType.basic)
+                : ProgressBarType.reactive),
+        quickActionConfig = quickActionConfig ?? QuickActionConfig.defaults;
 
   SettingsState copyWith({
     VisualizerMode? visualizerMode,
@@ -100,6 +108,7 @@ class SettingsState {
     SongSortOrder? sortOrder,
     bool? showSongDuration,
     bool? animatedSoundWaveEnabled,
+    ProgressBarType? progressBarType,
     bool? showWaveform,
     bool? waveformHapticsEnabled,
     double? fadeOutDuration,
@@ -148,7 +157,12 @@ class SettingsState {
       showSongDuration: showSongDuration ?? this.showSongDuration,
       animatedSoundWaveEnabled:
           animatedSoundWaveEnabled ?? this.animatedSoundWaveEnabled,
-      showWaveform: showWaveform ?? this.showWaveform,
+      progressBarType: progressBarType ??
+          (showWaveform != null
+              ? (showWaveform
+                  ? ProgressBarType.reactive
+                  : ProgressBarType.basic)
+              : this.progressBarType),
       waveformHapticsEnabled:
           waveformHapticsEnabled ?? this.waveformHapticsEnabled,
       fadeOutDuration: fadeOutDuration ?? this.fadeOutDuration,
@@ -213,6 +227,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyShowSongDuration = 'show_song_duration';
   static const _keyAnimatedSoundWaveEnabled = 'animated_sound_wave_enabled';
   static const _keyShowWaveform = 'show_waveform';
+  static const _keyProgressBarType = 'progress_bar_type';
   static const _keyWaveformHapticsEnabled = 'waveform_haptics_enabled';
   static const _keyFadeOutDuration = 'fade_out_duration';
   static const _keyFadeInDuration = 'fade_in_duration';
@@ -296,7 +311,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
               particleIdx >= 0 &&
               particleIdx < PlayerMotionIntensity.values.length
           ? PlayerMotionIntensity.values[particleIdx]
-          : PlayerMotionIntensity.subtle;
+          : PlayerMotionIntensity.bold;
       coverCustom = (prefs.getDouble(_keyCoverMotionCustomIntensity) ?? 0.5)
           .clamp(0.0, 1.0);
       particleCustom =
@@ -317,7 +332,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       showSongDuration: prefs.getBool(_keyShowSongDuration) ?? false,
       animatedSoundWaveEnabled:
           prefs.getBool(_keyAnimatedSoundWaveEnabled) ?? true,
-      showWaveform: prefs.getBool(_keyShowWaveform) ?? true,
+      progressBarType: _loadProgressBarType(prefs),
       waveformHapticsEnabled: prefs.getBool(_keyWaveformHapticsEnabled) ?? true,
       fadeOutDuration: prefs.getDouble(_keyFadeOutDuration) ?? 0.0,
       fadeInDuration: prefs.getDouble(_keyFadeInDuration) ?? 0.0,
@@ -488,10 +503,35 @@ class SettingsNotifier extends Notifier<SettingsState> {
     await prefs.setBool(_keyAnimatedSoundWaveEnabled, enabled);
   }
 
-  Future<void> setShowWaveform(bool enabled) async {
-    state = state.copyWith(showWaveform: enabled);
+  Future<void> setProgressBarType(ProgressBarType type) async {
+    state = state.copyWith(progressBarType: type);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyShowWaveform, enabled);
+    await prefs.setInt(_keyProgressBarType, type.index);
+    await prefs.setBool(_keyShowWaveform, type != ProgressBarType.basic);
+  }
+
+  Future<void> setShowWaveform(bool enabled) async {
+    await setProgressBarType(
+      enabled ? ProgressBarType.reactive : ProgressBarType.basic,
+    );
+  }
+
+  static ProgressBarType _loadProgressBarType(SharedPreferences prefs) {
+    final index = prefs.getInt(_keyProgressBarType);
+    if (index != null && index >= 0 && index < ProgressBarType.values.length) {
+      return ProgressBarType.values[index];
+    }
+    final name = prefs.getString(_keyProgressBarType);
+    if (name != null) {
+      for (final type in ProgressBarType.values) {
+        if (type.name == name) return type;
+      }
+    }
+    final showWaveform = prefs.getBool(_keyShowWaveform);
+    if (showWaveform != null) {
+      return showWaveform ? ProgressBarType.reactive : ProgressBarType.basic;
+    }
+    return ProgressBarType.reactive;
   }
 
   Future<void> setWaveformHapticsEnabled(bool enabled) async {

@@ -143,7 +143,7 @@ class MotionIntensitySpec {
     coverBreath: 0.009,
     coverLift: 1.7,
     coverSway: 0.0030,
-    particleCount: 48,
+    particleCount: 50,
     particleImpulse: 0.47,
     particleOpacity: 0.26,
     particleDrift: 0.64,
@@ -154,7 +154,7 @@ class MotionIntensitySpec {
     coverBreath: 0.012,
     coverLift: 2.7,
     coverSway: 0.0047,
-    particleCount: 72,
+    particleCount: 76,
     particleImpulse: 0.77,
     particleOpacity: 0.33,
     particleDrift: 0.80,
@@ -165,7 +165,7 @@ class MotionIntensitySpec {
     coverBreath: 0.018,
     coverLift: 4.4,
     coverSway: 0.0078,
-    particleCount: 108,
+    particleCount: 113,
     particleImpulse: 1.28,
     particleOpacity: 0.36,
     particleDrift: 1.06,
@@ -177,7 +177,7 @@ class MotionIntensitySpec {
     coverBreath: 0.005,
     coverLift: 0.9,
     coverSway: 0.0015,
-    particleCount: 24,
+    particleCount: 25,
     particleImpulse: 0.24,
     particleOpacity: 0.13,
     particleDrift: 0.32,
@@ -189,7 +189,7 @@ class MotionIntensitySpec {
     coverBreath: 0.025,
     coverLift: 6.2,
     coverSway: 0.011,
-    particleCount: 144,
+    particleCount: 151,
     particleImpulse: 1.79,
     particleOpacity: 0.60,
     particleDrift: 1.48,
@@ -324,13 +324,13 @@ class PlayerMotionController extends ChangeNotifier {
   BeatMap? _beatMap;
   BeatFrame _frame = BeatFrame.idle;
   PlayerMotionIntensity _coverIntensityEnum = PlayerMotionIntensity.subtle;
-  PlayerMotionIntensity _particleIntensityEnum = PlayerMotionIntensity.subtle;
+  PlayerMotionIntensity _particleIntensityEnum = PlayerMotionIntensity.bold;
   double _coverCustomIntensity = 0.5;
   double _particleCustomIntensity = 0.5;
   MotionIntensitySpec _coverSpec =
       MotionIntensitySpec.of(PlayerMotionIntensity.subtle);
   MotionIntensitySpec _particleSpec =
-      MotionIntensitySpec.of(PlayerMotionIntensity.subtle);
+      MotionIntensitySpec.of(PlayerMotionIntensity.bold);
 
   bool _enabled = true;
   bool _appActive = true;

@@ -297,10 +297,10 @@ final List<SettingsDestination> settingsRegistry = [
   SettingsDestination(
     anchorId: 'appearance.waveform',
     icon: AppIcons.graphicEq,
-    title: 'Waveform Progress Bar',
-    subtitle: 'Show song waveform in player',
+    title: 'Progress Bar Style',
+    subtitle: 'Standard, waveform, or sound-reactive progress bar',
     breadcrumb: 'Settings › Appearance › Display',
-    keywords: const ['seek', 'progress', 'wave'],
+    keywords: const ['seek', 'progress', 'wave', 'reactive', 'spectrum'],
     open: () =>
         const AppearanceSettingsScreen(highlightId: 'appearance.waveform'),
   ),

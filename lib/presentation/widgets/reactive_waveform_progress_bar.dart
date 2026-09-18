@@ -6,11 +6,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/spectrum_bars.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/waveform_service.dart';
+import '../tokens/player_tokens.dart';
+import 'spectrum_controller.dart';
+import 'waveform_progress_bar.dart';
 
-class WaveformProgressBar extends ConsumerStatefulWidget {
+/// A sound-reactive progress bar driven by the offline beat analysis pipeline
+/// and real-time [SpectrumController].
+///
+/// Combines the full track waveform peaks with live frequency response across
+/// 4 bands (bass, lowMid, mid, air) and beat dynamics.
+class ReactiveWaveformProgressBar extends ConsumerStatefulWidget {
   final String filename;
   final String path;
   final Duration progress;
@@ -18,7 +27,7 @@ class WaveformProgressBar extends ConsumerStatefulWidget {
   final Function(Duration) onSeek;
   final Stream<Duration>? positionStream;
 
-  const WaveformProgressBar({
+  const ReactiveWaveformProgressBar({
     super.key,
     required this.filename,
     required this.path,
@@ -29,12 +38,16 @@ class WaveformProgressBar extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<WaveformProgressBar> createState() =>
-      _WaveformProgressBarState();
+  ConsumerState<ReactiveWaveformProgressBar> createState() =>
+      _ReactiveWaveformProgressBarState();
 }
 
-class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
+class _ReactiveWaveformProgressBarState
+    extends ConsumerState<ReactiveWaveformProgressBar>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  SpectrumController? _spectrumController;
+  bool _subscribedToSpectrum = false;
+
   List<double>? _peaks;
   late AnimationController _revealController;
   late AnimationController _scrubController;
@@ -84,8 +97,38 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _spectrumController ??= ref.read(spectrumControllerProvider);
+    _syncSpectrumSubscription();
+  }
+
+  void _syncSpectrumSubscription() {
+    final active =
+        TickerMode.valuesOf(context).enabled && _appActive && mounted;
+    if (_subscribedToSpectrum == active) return;
+    _subscribedToSpectrum = active;
+    final controller = _spectrumController;
+    if (controller == null) return;
+    if (active) {
+      controller.addListener(_onSpectrumFrame);
+    } else {
+      controller.removeListener(_onSpectrumFrame);
+    }
+  }
+
+  void _onSpectrumFrame() {
+    // CustomPainter handles repainting via Listenable; subscription ensures
+    // SpectrumController ticker keeps ticking while visible.
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_subscribedToSpectrum) {
+      _spectrumController?.removeListener(_onSpectrumFrame);
+      _subscribedToSpectrum = false;
+    }
     _waveformSubscription?.cancel();
     _loadToken++;
     _revealController.dispose();
@@ -102,6 +145,7 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
     final active = state == AppLifecycleState.resumed;
     if (_appActive == active) return;
     _appActive = active;
+    _syncSpectrumSubscription();
     if (active) {
       _positionSubscription?.resume();
       final player = ref.read(audioPlayerManagerProvider).player;
@@ -131,7 +175,7 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
   }
 
   @override
-  void didUpdateWidget(WaveformProgressBar oldWidget) {
+  void didUpdateWidget(ReactiveWaveformProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.filename != widget.filename) {
       _loadToken++;
@@ -162,7 +206,6 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
     final token = ++_loadToken;
     final waveformService = ref.read(waveformServiceProvider);
 
-    // Already decoded this session: paint it immediately with a fast left-to-right sweep
     final inMemory = waveformService.cachedWaveformSync(currentFilename);
     if (inMemory != null && inMemory.isNotEmpty && mounted) {
       setState(() {
@@ -177,13 +220,11 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
       return;
     }
 
-    // Cached on disk: load now with fast sweep
     if (isCached) {
       await _loadWaveform(isCached: true);
       return;
     }
 
-    // Uncached: start decoding in real-time immediately as playback begins
     await _loadWaveform(isCached: false);
   }
 
@@ -204,7 +245,6 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
         return;
       }
 
-      // Shorter snapshot should never replace a longer one
       if (_peaks != null && peaks.length < _peaks!.length) return;
 
       setState(() {
@@ -212,7 +252,6 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
       });
 
       if (isCached || peaks.length >= WaveformService.targetWaveformSamples) {
-        // Full waveform available: fast left-to-right sweep
         if (_revealController.value < 1.0) {
           if (isCached && _revealController.value == 0.0) {
             _animateRevealFast();
@@ -221,7 +260,6 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
           }
         }
       } else {
-        // Progressive CPU decode in real-time: smooth expansion to current fraction
         final target = (peaks.length / WaveformService.targetWaveformSamples)
             .clamp(0.0, 1.0);
         if (target > _revealController.value) {
@@ -229,11 +267,10 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
         }
       }
     }, onError: (e) {
-      debugPrint('WaveformProgressBar: load failed: $e');
+      debugPrint('ReactiveWaveformProgressBar: load failed: $e');
     });
   }
 
-  /// Fast left-to-right sweep for cached waveforms
   void _animateRevealFast() {
     _revealController.stop();
     _revealController.value = 0.0;
@@ -244,7 +281,6 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
     );
   }
 
-  /// Smoothly advances the expansion front as CPU yields new PCM data
   void _animateRevealTo(double target, {required bool isComplete}) {
     final current = _revealController.value;
     if (target <= current) return;
@@ -276,9 +312,10 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
   }
 
   int _calculateBarIndex(double x, double width) {
-    final totalBars = (width / 3.0).floor();
+    const step = 4.0;
+    final totalBars = (width / step).floor();
     if (totalBars <= 0) return 0;
-    return (x.clamp(0.0, width) / 3.0).floor().clamp(0, totalBars - 1);
+    return (x.clamp(0.0, width) / step).floor().clamp(0, totalBars - 1);
   }
 
   void _updateScrubDelta(double targetPercent) {
@@ -294,16 +331,21 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final colorScheme = Theme.of(context).colorScheme;
+    final primaryColor = colorScheme.primary;
+    final accentColor = colorScheme.secondary;
+    final inactiveColor = colorScheme.onSurface.withValues(alpha: 0.16);
 
     _labelStyle ??= TextStyle(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      color: colorScheme.onSurfaceVariant,
       fontWeight: FontWeight.bold,
       fontSize: 12,
     );
     if (_formattedTotalTime.isEmpty || _formattedTotalTime == '0:00') {
       _formattedTotalTime = _formatDuration(widget.total);
     }
+
+    final controller = _spectrumController;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -393,16 +435,17 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
                     return RepaintBoundary(
                       child: CustomPaint(
                         size: Size(constraints.maxWidth, constraints.maxHeight),
-                        painter: WaveformPainter(
+                        painter: ReactiveWaveformPainter(
+                          controller: controller,
                           peaks: _peaks,
                           revealProgress: _revealController.value,
                           positionNotifier: _positionNotifier,
                           dragPositionNotifier: _dragPositionNotifier,
                           total: widget.total,
-                          color: primaryColor,
+                          primaryColor: primaryColor,
+                          accentColor: accentColor,
+                          inactiveColor: inactiveColor,
                         ),
-                        isComplex: true,
-                        willChange: false,
                       ),
                     );
                   },
@@ -411,141 +454,187 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
             ),
           ),
         ),
-        const SizedBox(height: 6),
-        AnimatedBuilder(
-          animation: _scrubAnimation,
-          builder: (context, child) {
-            final animValue = _scrubAnimation.value;
-            final yOffset = animValue * 11.0;
-
-            return Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.topCenter,
-              children: [
-                if (animValue > 0.01)
-                  Positioned(
-                    top: -3.0,
-                    child: Opacity(
-                      opacity: animValue.clamp(0.0, 1.0),
-                      child: Transform.scale(
-                        scale: 0.85 + (0.15 * animValue),
-                        child: ValueListenableBuilder<int?>(
-                          valueListenable: _scrubDeltaNotifier,
-                          builder: (context, deltaSec, _) {
-                            final delta = deltaSec ?? 0;
-                            final deltaText =
-                                '${delta >= 0 ? '+' : ''}${delta}s';
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: primaryColor.withValues(alpha: 0.35),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Text(
-                                deltaText,
-                                style: TextStyle(
-                                  color: primaryColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.4,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                Transform.translate(
-                  offset: Offset(0, yOffset),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ValueListenableBuilder<double?>(
-                        valueListenable: _dragPositionNotifier,
-                        builder: (context, dragPos, child) {
-                          if (dragPos != null) {
-                            return Text(
-                              _formatDuration(widget.total * dragPos),
-                              style: _labelStyle,
-                            );
-                          }
-                          return ValueListenableBuilder<Duration>(
-                            valueListenable: _positionNotifier,
-                            builder: (context, position, child) {
-                              return Text(
-                                _formatDuration(position),
-                                style: _labelStyle,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      Text(
-                        _formattedTotalTime,
-                        style: _labelStyle,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
+        const SizedBox(height: PlayerTokens.s1),
+        _ReactiveScrubOverlay(
+          scrubAnimation: _scrubAnimation,
+          scrubDeltaNotifier: _scrubDeltaNotifier,
+          dragPositionNotifier: _dragPositionNotifier,
+          positionNotifier: _positionNotifier,
+          total: widget.total,
+          formattedTotalTime: _formattedTotalTime,
+          labelStyle: _labelStyle,
+          formatDuration: _formatDuration,
+          primaryColor: primaryColor,
         ),
       ],
     );
   }
 }
 
-double calculateWaveformBarHeight(double amplitude, double height) {
-  final shapedAmplitude = calibrateWaveformAmplitude(amplitude);
-  return math.max(1.0, shapedAmplitude * height * 0.85);
+class _ReactiveScrubOverlay extends StatelessWidget {
+  final Animation<double> scrubAnimation;
+  final ValueNotifier<int?> scrubDeltaNotifier;
+  final ValueNotifier<double?> dragPositionNotifier;
+  final ValueNotifier<Duration> positionNotifier;
+  final Duration total;
+  final String formattedTotalTime;
+  final TextStyle? labelStyle;
+  final String Function(Duration) formatDuration;
+  final Color primaryColor;
+
+  const _ReactiveScrubOverlay({
+    required this.scrubAnimation,
+    required this.scrubDeltaNotifier,
+    required this.dragPositionNotifier,
+    required this.positionNotifier,
+    required this.total,
+    required this.formattedTotalTime,
+    required this.labelStyle,
+    required this.formatDuration,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: scrubAnimation,
+      builder: (context, child) {
+        final animValue = scrubAnimation.value;
+        final yOffset = animValue * 11.0;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            if (animValue > 0.01)
+              Positioned(
+                top: -3.0,
+                child: Opacity(
+                  opacity: animValue.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 0.85 + (0.15 * animValue),
+                    child: ValueListenableBuilder<int?>(
+                      valueListenable: scrubDeltaNotifier,
+                      builder: (context, deltaSec, _) {
+                        final delta = deltaSec ?? 0;
+                        final String deltaText;
+                        final absDelta = delta.abs();
+                        if (absDelta >= 60) {
+                          final m = absDelta ~/ 60;
+                          final s = (absDelta % 60).toString().padLeft(2, '0');
+                          deltaText = '${delta >= 0 ? '+' : '-'}${m}m ${s}s';
+                        } else if (delta == 0) {
+                          deltaText = '0s';
+                        } else {
+                          deltaText = '${delta > 0 ? '+' : '-'}${absDelta}s';
+                        }
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 2.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: primaryColor,
+                            borderRadius: PlayerTokens.brSm,
+                          ),
+                          child: Text(
+                            deltaText,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            Transform.translate(
+              offset: Offset(0, yOffset),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ValueListenableBuilder<double?>(
+                    valueListenable: dragPositionNotifier,
+                    builder: (context, dragPos, child) {
+                      if (dragPos != null) {
+                        return Text(
+                          formatDuration(total * dragPos),
+                          style: labelStyle,
+                        );
+                      }
+                      return ValueListenableBuilder<Duration>(
+                        valueListenable: positionNotifier,
+                        builder: (context, position, child) {
+                          return Text(
+                            formatDuration(position),
+                            style: labelStyle,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  Text(
+                    formattedTotalTime,
+                    style: labelStyle,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
-double calibrateWaveformAmplitude(double amplitude) {
-  if (amplitude < 0.15) return amplitude * 0.8;
-  if (amplitude < 0.35) return 0.12 + (amplitude - 0.15) * 0.6;
-  if (amplitude < 0.6) return 0.24 + (amplitude - 0.35) * 0.5;
-  if (amplitude < 0.8) return 0.36 + (amplitude - 0.6) * 0.5;
-  return 0.46 + (amplitude - 0.8) * 0.4;
-}
-
-class WaveformPainter extends CustomPainter {
+/// Custom painter for the sound-reactive progress bar.
+///
+/// Draws:
+///  * Track waveform bars with amplitude calibration.
+///  * Beat and bass reactive height punch in the active playback zone.
+///  * Acoustic proximity ripple radiating around the playhead.
+///  * Integrated 4-band spectrum cursor (bass, low-mid, mid, air) at the playhead.
+///  * Solid color blocking without gradients or borders.
+class ReactiveWaveformPainter extends CustomPainter {
+  final SpectrumController? controller;
   final List<double>? peaks;
   final double revealProgress;
   final ValueNotifier<Duration> positionNotifier;
   final ValueNotifier<double?> dragPositionNotifier;
   final Duration total;
-  final Color color;
+  final Color primaryColor;
+  final Color accentColor;
+  final Color inactiveColor;
 
-  WaveformPainter({
+  ReactiveWaveformPainter({
+    required this.controller,
     required this.peaks,
     required this.revealProgress,
     required this.positionNotifier,
     required this.dragPositionNotifier,
     required this.total,
-    required this.color,
+    required this.primaryColor,
+    required this.accentColor,
+    required this.inactiveColor,
   }) : super(
-          repaint: Listenable.merge([positionNotifier, dragPositionNotifier]),
+          repaint: Listenable.merge([
+            if (controller != null) controller,
+            positionNotifier,
+            dragPositionNotifier,
+          ]),
         );
 
   @override
   void paint(Canvas canvas, Size size) {
-    const barWidth = 2.0;
-    const spacing = 1.0;
-    final totalBarsCount = (size.width / (barWidth + spacing)).floor();
+    const barWidth = 2.4;
+    const spacing = 1.6;
+    const step = barWidth + spacing;
+    final totalBarsCount = (size.width / step).floor();
     if (totalBarsCount <= 0) return;
-
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..strokeCap = StrokeCap.round;
 
     final double progress;
     if (dragPositionNotifier.value != null) {
@@ -557,21 +646,61 @@ class WaveformPainter extends CustomPainter {
           : 0.0;
     }
 
-    final inactiveColor = Colors.white.withValues(alpha: 0.18);
-    const compressedBarHeight = 2.5;
-
-    final barOffset = 2.35 / totalBarsCount;
-    final adjustedProgress = (progress - barOffset).clamp(0.0, 1.0);
-    final progressBarIndex = adjustedProgress * totalBarsCount;
-
+    final playheadBarIndex = progress * totalBarsCount;
     final peakData = peaks;
     final hasPeaks = peakData != null && peakData.isNotEmpty;
+    const compressedBarHeight = 2.5;
     final frontSpan = 3.0 / totalBarsCount;
 
+    // Read real-time frequency spectrum from the controller
+    final double bass;
+    final double lowMid;
+    final double mid;
+    final double air;
+    if (controller != null &&
+        controller!.levels.length >= SpectrumBars.barCount) {
+      bass = controller!.levels[0];
+      lowMid = controller!.levels[1];
+      mid = controller!.levels[2];
+      air = controller!.levels[3];
+    } else {
+      bass = SpectrumBars.floor;
+      lowMid = SpectrumBars.floor;
+      mid = SpectrumBars.floor;
+      air = SpectrumBars.floor;
+    }
+
+    // Dynamic audio energy factors
+    final beatEnergy = (bass * 0.5 + lowMid * 0.3 + mid * 0.15 + air * 0.05);
+    final isPlayingNow = controller?.isSynced ?? false || beatEnergy > 0.1;
+
+    final paint = Paint()..style = PaintingStyle.fill;
+    final radius = const Radius.circular(1.2);
+
+    final isScrubbing = dragPositionNotifier.value != null;
+    final visualPosMs = controller?.visualPositionMs ??
+        positionNotifier.value.inMilliseconds.toDouble();
+    final wavePhase = visualPosMs / 130.0;
+
+    const clusterBarWidth = 2.8;
+    const clusterGap = 1.4;
+    const totalClusterWidth = 4 * clusterBarWidth + 3 * clusterGap;
+    final playheadX = (playheadBarIndex * step).clamp(0.0, size.width);
+    final clusterLeft = (playheadX - totalClusterWidth / 2)
+        .clamp(0.0, size.width - totalClusterWidth);
+    final clusterRight = clusterLeft + totalClusterWidth;
+
     for (var i = 0; i < totalBarsCount; i++) {
+      final x = i * step + spacing / 2;
+      final xRight = x + barWidth;
+
+      // Skip painting background bar if it falls within the 4-band playhead cluster window
+      if (xRight >= clusterLeft - 0.5 && x <= clusterRight + 0.5) {
+        continue;
+      }
+
       final barFraction = (i + 0.5) / totalBarsCount;
 
-      // Reveal factor: 0.0 (compressed baseline) -> 1.0 (fully expanded peak)
       final double revealFactor;
       if (revealProgress <= 0.0 || !hasPeaks) {
         revealFactor = 0.0;
@@ -611,46 +740,123 @@ class WaveformPainter extends CustomPainter {
         targetHeight = compressedBarHeight;
       }
 
-      final barHeight =
+      final double baseHeight =
           ui.lerpDouble(compressedBarHeight, targetHeight, revealFactor)!;
 
-      final distanceFromProgress = (i - progressBarIndex).abs();
-      final isActive = i < progressBarIndex;
+      final distanceFromPlayhead = (i - playheadBarIndex).abs();
+      final isActive = i < playheadBarIndex;
 
-      final Color baseColor;
-      if (distanceFromProgress >= 2) {
-        baseColor = isActive ? color : inactiveColor;
-      } else {
-        final colorIntensity = isActive ? 1.0 : (2 - distanceFromProgress) / 2;
-        baseColor = Color.lerp(inactiveColor, color, colorIntensity)!;
+      // Acoustic proximity dynamics: bars near the playhead pulse and ripple
+      double dynamicScale = 1.0;
+      if (isPlayingNow && !isScrubbing) {
+        const proximitySpan = 18.0;
+        if (distanceFromPlayhead < proximitySpan) {
+          final proximity = 1.0 - (distanceFromPlayhead / proximitySpan);
+          final smoothProximity =
+              proximity * proximity * (3.0 - 2.0 * proximity);
+          final waveRipple = math.sin(distanceFromPlayhead * 0.52 - wavePhase) *
+              (0.12 + 0.10 * air);
+          final kickExpansion = bass * 0.42 * smoothProximity;
+          dynamicScale = 1.0 + kickExpansion + waveRipple * smoothProximity;
+        } else if (isActive) {
+          // Subtle rhythm breath on active track
+          dynamicScale = 1.0 + 0.08 * beatEnergy;
+        }
       }
 
-      // Subtle opacity scaling for compressed bars ahead of the generation front
-      final double alphaScale = ui.lerpDouble(0.65, 1.0, revealFactor)!;
-      paint.color = baseColor.withValues(
-          alpha: (baseColor.a * alphaScale).clamp(0.0, 1.0));
+      final finalHeight = (baseHeight * dynamicScale)
+          .clamp(compressedBarHeight, size.height * 0.94);
 
-      final x = i * (barWidth + spacing) + spacing / 2;
-      final y = (size.height - barHeight) / 2;
+      final Color barColor;
+      if (isActive) {
+        barColor = primaryColor;
+      } else {
+        barColor = inactiveColor;
+      }
+
+      paint.color = barColor;
+      final y = (size.height - finalHeight) / 2;
 
       canvas.drawRRect(
         RRect.fromLTRBR(
           x,
           y,
           x + barWidth,
-          y + barHeight,
-          const Radius.circular(1.2),
+          y + finalHeight,
+          radius,
         ),
         paint,
       );
     }
+
+    // Integrated 4-band spectrum cursor at the exact playhead position
+    _paintPlayheadVisualizer(
+      canvas: canvas,
+      size: size,
+      centerX: playheadX,
+      startX: clusterLeft,
+      levels: [bass, lowMid, mid, air],
+      accentColor: accentColor,
+      isScrubbing: isScrubbing,
+    );
+  }
+
+  void _paintPlayheadVisualizer({
+    required Canvas canvas,
+    required Size size,
+    required double centerX,
+    required double startX,
+    required List<double> levels,
+    required Color accentColor,
+    required bool isScrubbing,
+  }) {
+    const clusterBarWidth = 2.8;
+    const clusterGap = 1.4;
+
+    final paint = Paint()..color = accentColor;
+    const barRadius = Radius.circular(1.4);
+
+    for (var b = 0; b < 4; b++) {
+      final level = levels[b].clamp(SpectrumBars.floor, 1.0);
+      final barH = math.max(6.0, level * size.height * 0.88);
+      final bx = startX + b * (clusterBarWidth + clusterGap);
+      final by = (size.height - barH) / 2;
+
+      canvas.drawRRect(
+        RRect.fromLTRBR(
+          bx,
+          by,
+          bx + clusterBarWidth,
+          by + barH,
+          barRadius,
+        ),
+        paint,
+      );
+    }
+
+    // Micro seek-pip at the bottom center of the playhead to pinpoint exact seek position
+    final pipWidth = isScrubbing ? 4.0 : 3.0;
+    final pipHeight = isScrubbing ? 4.0 : 3.0;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(centerX, size.height - 2.5),
+          width: pipWidth,
+          height: pipHeight,
+        ),
+        const Radius.circular(1.0),
+      ),
+      paint,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant WaveformPainter oldDelegate) {
+  bool shouldRepaint(covariant ReactiveWaveformPainter oldDelegate) {
     return oldDelegate.peaks != peaks ||
         oldDelegate.revealProgress != revealProgress ||
-        oldDelegate.color != color ||
+        oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.accentColor != accentColor ||
+        oldDelegate.inactiveColor != inactiveColor ||
         oldDelegate.total != total;
   }
 }
