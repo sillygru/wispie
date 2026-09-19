@@ -25,24 +25,9 @@ class WispieTaskCleanupService : Service() {
         START_NOT_STICKY
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        try {
-            if (AudioService.instance?.isPlaying == true) {
-                return
-            }
-            val notificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(AUDIO_SERVICE_NOTIFICATION_ID)
-        } catch (_: SecurityException) {
-            // Best-effort cleanup; never crash task removal.
-        } catch (_: Exception) {
-        }
-        try {
-            if (AudioService.instance?.isPlaying != true) {
-                stopService(Intent(this, AudioService::class.java))
-            }
-        } catch (_: SecurityException) {
-        } catch (_: Exception) {
-        }
+        // Do not kill AudioService or cancel notification on task removal.
+        // Media playback, media session, and earbud controls must survive
+        // swiping the UI away from recent tasks.
         try {
             super.onTaskRemoved(rootIntent)
         } catch (_: Exception) {

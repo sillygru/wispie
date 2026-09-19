@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
@@ -76,17 +78,12 @@ public class AudioService extends MediaBrowserServiceCompat {
     private static final long AUTO_ENABLED_ACTIONS = PlaybackStateCompat.ACTION_STOP
             | PlaybackStateCompat.ACTION_PAUSE
             | PlaybackStateCompat.ACTION_PLAY
-            | PlaybackStateCompat.ACTION_REWIND
-            // Auto-enabling these is bad for Android Auto since it forces the
-            // previous/next buttons to always show.
-            //| PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-            //| PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+            | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+            | PlaybackStateCompat.ACTION_SKIP_TO_NEXT
             | PlaybackStateCompat.ACTION_FAST_FORWARD
+            | PlaybackStateCompat.ACTION_REWIND
             | PlaybackStateCompat.ACTION_SET_RATING
-            // "seek" is the exception because it's the only action that
-            // affects the appearance of the media notification, so we leave it
-            // up to the plugin user whether to enable it (via systemActions).
-            //| PlaybackStateCompat.ACTION_SEEK_TO
+            | PlaybackStateCompat.ACTION_SEEK_TO
             | PlaybackStateCompat.ACTION_PLAY_PAUSE
             | PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID
             | PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH
@@ -718,6 +715,7 @@ public class AudioService extends MediaBrowserServiceCompat {
     }
 
     private void enterPlayingState() {
+        requestAudioFocusNative();
         ContextCompat.startForegroundService(this, new Intent(AudioService.this, AudioService.class));
         if (!mediaSession.isActive())
             mediaSession.setActive(true);
@@ -756,6 +754,48 @@ public class AudioService extends MediaBrowserServiceCompat {
     private void activateMediaSession() {
         if (!mediaSession.isActive())
             mediaSession.setActive(true);
+    }
+
+    public void requestAudioFocusNative() {
+        try {
+            AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    AudioAttributes playbackAttributes = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build();
+                    AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                            .setAudioAttributes(playbackAttributes)
+                            .build();
+                    audioManager.requestAudioFocus(focusRequest);
+                } else {
+                    @SuppressWarnings("deprecation")
+                    int result = audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    public void launchAppIfIdle() {
+        if (listener == null) {
+            try {
+                if (contentIntent != null) {
+                    contentIntent.send();
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
+            try {
+                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                    startActivity(launchIntent);
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private void deactivateMediaSession() {
@@ -817,8 +857,12 @@ public class AudioService extends MediaBrowserServiceCompat {
         }
         this.mediaMetadata = mediaMetadata;
         mediaSession.setMetadata(mediaMetadata);
-        handler.removeCallbacksAndMessages(null);
-        handler.post(this::updateNotification);
+        if (!notificationCreated && mediaMetadata != null) {
+            internalStartForeground();
+        } else {
+            handler.removeCallbacksAndMessages(null);
+            handler.post(this::updateNotification);
+        }
     }
 
     private MediaMetadataCompat putArtToMetadata(MediaMetadataCompat mediaMetadata) {
@@ -847,6 +891,17 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     @Override
     public void onLoadChildren(final String parentMediaId, final Result<List<MediaBrowserCompat.MediaItem>> result, Bundle options) {
+        if (RECENT_ROOT_ID.equals(parentMediaId) || BROWSABLE_ROOT_ID.equals(parentMediaId)) {
+            if (mediaMetadata != null) {
+                MediaBrowserCompat.MediaItem item = new MediaBrowserCompat.MediaItem(
+                        mediaMetadata.getDescription(),
+                        MediaBrowserCompat.MediaItem.FLAG_PLAYABLE);
+                List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
+                items.add(item);
+                result.sendResult(items);
+                return;
+            }
+        }
         if (listener == null) {
             result.sendResult(new ArrayList<>());
             return;
@@ -901,7 +956,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPrepare() {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             if (!mediaSession.isActive())
                 mediaSession.setActive(true);
             listener.onPrepare();
@@ -909,7 +967,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPrepareFromMediaId(String mediaId, Bundle extras) {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             if (!mediaSession.isActive())
                 mediaSession.setActive(true);
             listener.onPrepareFromMediaId(mediaId, extras);
@@ -917,7 +978,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPrepareFromSearch(String query, Bundle extras) {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             if (!mediaSession.isActive())
                 mediaSession.setActive(true);
             listener.onPrepareFromSearch(query, extras);
@@ -925,7 +989,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPrepareFromUri(Uri uri, Bundle extras) {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             if (!mediaSession.isActive())
                 mediaSession.setActive(true);
             listener.onPrepareFromUri(uri, extras);
@@ -933,40 +1000,67 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPlay() {
-            if (listener == null) return;
+            requestAudioFocusNative();
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlay();
         }
 
         @Override
         public void onPlayFromMediaId(final String mediaId, final Bundle extras) {
-            if (listener == null) return;
+            requestAudioFocusNative();
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlayFromMediaId(mediaId, extras);
         }
 
         @Override
         public void onPlayFromSearch(final String query, final Bundle extras) {
-            if (listener == null) return;
+            requestAudioFocusNative();
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlayFromSearch(query, extras);
         }
 
         @Override
         public void onPlayFromUri(final Uri uri, final Bundle extras) {
-            if (listener == null) return;
+            requestAudioFocusNative();
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
+            if (!mediaSession.isActive())
+                mediaSession.setActive(true);
             listener.onPlayFromUri(uri, extras);
         }
 
         @Override
         public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
-            if (listener == null) return false;
+            if (mediaButtonEvent == null || mediaButtonEvent.getExtras() == null) return false;
             // TODO: use typesafe version once SDK 33 is released.
             @SuppressWarnings("deprecation")
             final KeyEvent event = (KeyEvent)mediaButtonEvent.getExtras().getParcelable(Intent.EXTRA_KEY_EVENT);
+            if (event == null) return false;
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 switch (event.getKeyCode()) {
                 case KEYCODE_BYPASS_PLAY:
+                case KeyEvent.KEYCODE_MEDIA_PLAY:
                     onPlay();
                     break;
                 case KEYCODE_BYPASS_PAUSE:
+                case KeyEvent.KEYCODE_MEDIA_PAUSE:
                     onPause();
                     break;
                 case KeyEvent.KEYCODE_MEDIA_STOP:
@@ -978,22 +1072,26 @@ public class AudioService extends MediaBrowserServiceCompat {
                 case KeyEvent.KEYCODE_MEDIA_REWIND:
                     onRewind();
                     break;
-                // Android unfortunately reroutes media button clicks to
-                // KEYCODE_MEDIA_PLAY/PAUSE instead of the expected KEYCODE_HEADSETHOOK
-                // or KEYCODE_MEDIA_PLAY_PAUSE. As a result, we can't genuinely tell if
-                // onMediaButtonEvent was called because a media button was actually
-                // pressed or because a PLAY/PAUSE action was pressed instead! To get
-                // around this, we make PLAY and PAUSE actions use different keycodes:
-                // KEYCODE_BYPASS_PLAY/PAUSE. Now if we get KEYCODE_MEDIA_PLAY/PUASE
-                // we know it is actually a media button press.
                 case KeyEvent.KEYCODE_MEDIA_NEXT:
+                    onSkipToNext();
+                    break;
                 case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-                case KeyEvent.KEYCODE_MEDIA_PLAY:
-                case KeyEvent.KEYCODE_MEDIA_PAUSE:
-                    // These are the "genuine" media button click events
+                    onSkipToPrevious();
+                    break;
                 case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
                 case KeyEvent.KEYCODE_HEADSETHOOK:
-                    listener.onClick(eventToButton(event));
+                    if (listener == null) {
+                        onPlay();
+                    } else {
+                        listener.onClick(eventToButton(event));
+                    }
+                    break;
+                default:
+                    if (listener != null) {
+                        listener.onClick(eventToButton(event));
+                    } else {
+                        launchAppIfIdle();
+                    }
                     break;
                 }
             }
@@ -1016,7 +1114,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onPause() {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             listener.onPause();
         }
 
@@ -1028,13 +1129,19 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         @Override
         public void onSkipToNext() {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             listener.onSkipToNext();
         }
 
         @Override
         public void onSkipToPrevious() {
-            if (listener == null) return;
+            if (listener == null) {
+                launchAppIfIdle();
+                return;
+            }
             listener.onSkipToPrevious();
         }
 
