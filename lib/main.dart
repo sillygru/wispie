@@ -138,9 +138,9 @@ Future<void> _setupJustAudioBackground() async {
       androidNotificationChannelDescription: 'Playback controls',
       androidNotificationIcon: 'drawable/ic_stat_music_note',
       androidNotificationOngoing: true,
-      // Explicitly the default: pause drops foreground, play re-enters it.
-      // Works under stock battery management; no exemption is required.
-      androidStopForegroundOnPause: true,
+      // Retain foreground state on pause so EMUI/Huawei power management does
+      // not evict the media session or terminate media button routing.
+      androidStopForegroundOnPause: false,
       androidShowNotificationBadge: true,
     );
   } catch (e) {

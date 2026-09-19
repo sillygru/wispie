@@ -26,6 +26,9 @@ class WispieTaskCleanupService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         try {
+            if (AudioService.instance?.isPlaying == true) {
+                return
+            }
             val notificationManager =
                 getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(AUDIO_SERVICE_NOTIFICATION_ID)
@@ -34,7 +37,9 @@ class WispieTaskCleanupService : Service() {
         } catch (_: Exception) {
         }
         try {
-            stopService(Intent(this, AudioService::class.java))
+            if (AudioService.instance?.isPlaying != true) {
+                stopService(Intent(this, AudioService::class.java))
+            }
         } catch (_: SecurityException) {
         } catch (_: Exception) {
         }

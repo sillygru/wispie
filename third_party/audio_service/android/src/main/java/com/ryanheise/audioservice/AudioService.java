@@ -100,7 +100,7 @@ public class AudioService extends MediaBrowserServiceCompat {
             | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE
             | PlaybackStateCompat.ACTION_SET_CAPTIONING_ENABLED;
 
-    static AudioService instance;
+    public static AudioService instance;
     private static PendingIntent contentIntent;
     private static ServiceListener listener;
     private static List<MediaSessionCompat.QueueItem> queue = new ArrayList<>();
@@ -321,11 +321,13 @@ public class AudioService extends MediaBrowserServiceCompat {
         mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
                 | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
         PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
-                .setActions(AUTO_ENABLED_ACTIONS);
+                .setActions(AUTO_ENABLED_ACTIONS)
+                .setState(PlaybackStateCompat.STATE_PAUSED, 0, 0f);
         mediaSession.setPlaybackState(stateBuilder.build());
         mediaSession.setCallback(mediaSessionCallback = new MediaSessionCallback());
         setSessionToken(mediaSession.getSessionToken());
         mediaSession.setQueue(queue);
+        mediaSession.setActive(true);
 
         PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, AudioService.class.getName());
@@ -409,10 +411,14 @@ public class AudioService extends MediaBrowserServiceCompat {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
             contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, flags);
+            mediaSession.setSessionActivity(contentIntent);
         } else {
             contentIntent = null;
         }
-        if (!config.androidResumeOnClick) {
+        if (config.androidResumeOnClick) {
+            PendingIntent mbrIntent = buildMediaButtonPendingIntent(PlaybackStateCompat.ACTION_PLAY_PAUSE);
+            mediaSession.setMediaButtonReceiver(mbrIntent);
+        } else {
             mediaSession.setMediaButtonReceiver(null);
         }
     }
