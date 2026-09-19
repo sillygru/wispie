@@ -1,0 +1,372 @@
+name: Release Draft
+
+# Push a tag matching v*release to auto-create a private draft release
+# with all platform binaries attached in a fixed order. Edit notes/assets
+# in the UI, then Publish when ready. Source archives are appended last
+# automatically by GitHub.
+#
+# Usage:
+#   git tag v1.4.4-release && git push origin v1.4.4-release
+
+on:
+  push:
+    tags:
+      - 'v*release'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)draft (e.g. v1.4.4-release)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    strategy:
+      matrix:
+        include:
+          - target-platform: android-arm
+            abi: armeabi-v7a
+            artifact-name: wispie-armeabi-v7a-release
+          - target-platform: android-arm64
+            abi: arm64-v8a
+            artifact-name: wispie-arm64-v8a-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Decode keystore and configure signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build release APK (${{ matrix.abi }})
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          TELEMETRY_SECRET: ${{ secrets.TELEMETRY_SECRET }}
+          WISPIE_ABI_FILTER: ${{ matrix.abi }}
+        run: >
+          flutter build apk
+          --target-platform ${{ matrix.target-platform }}
+          --dart-define=TELEMETRY_SECRET="$TELEMETRY_SECRET"
+          --dart-define=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"
+          --obfuscate
+          --split-debug-info=build/debug-info
+
+      - name: Rename APK for upload
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/${{ matrix.artifact-name }}.apk
+
+      - name: Upload APK (${{ matrix.abi }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: build/app/outputs/flutter-apk/${{ matrix.artifact-name }}.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  linux-x64:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake git ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            appstream desktop-file-utils
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: "3.47.2"
+          cache: true
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Linux release bundle (x64)
+        run: flutter build linux --release
+
+      - name: Download appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+      - name: Build AppImage
+        run: |
+          chmod +x ./packaging/linux/make_appimage.sh ./packaging/linux/AppRun
+          APPIMAGE_EXTRACT_AND_RUN=1 ./packaging/linux/make_appimage.sh build/linux/x64/release/bundle Wispie-linux-x86_64.AppImage ./appimagetool
+          chmod +x Wispie-linux-x86_64.AppImage
+          ls -l Wispie-linux-x86_64.AppImage
+
+      - name: Zip AppImage with lowercase name
+        run: |
+          rm -f wispie-linux-x86_64.AppImage.zip
+          zip -j wispie-linux-x86_64.AppImage.zip Wispie-linux-x86_64.AppImage
+          ls -l wispie-linux-x86_64.AppImage.zip
+
+      - name: Upload AppImage zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-linux-x86_64-appimage-zip
+          path: wispie-linux-x86_64.AppImage.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: "3.47.2"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows release (x64)
+        run: flutter build windows --release
+
+      - name: Portable zip with lowercase name
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* `
+            -DestinationPath Wispie-portable-tmp.zip -Force
+          Move-Item -Force Wispie-portable-tmp.zip wispie-windows-x64-portable.zip
+
+      - name: Read version from pubspec
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' |
+            Select-Object -First 1
+          $ver = $line.Matches.Groups[1].Value.Trim() -replace '\+.*$',''
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = '1.0.0' }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' `
+            "/DMyAppVersion=${{ steps.version.outputs.version }}" `
+            windows\packaging\wispie.iss
+
+      - name: Zip installer with lowercase name
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows-installer/Wispie-Setup-x64.exe `
+            -DestinationPath wispie-windows-x64-setup.zip -Force
+          Get-ChildItem wispie-windows-x64-*.zip
+
+      - name: Upload installer zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-windows-x64-setup-zip
+          path: wispie-windows-x64-setup.zip
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-windows-x64-portable-zip
+          path: wispie-windows-x64-portable.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: "3.47.2"
+          cache: true
+          architecture: arm64
+
+      - name: Log toolchain versions
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Select Xcode 16.2 (newest on macos-14 image)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          xcodebuild -version
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Purge stale SwiftPM/Xcode caches (CI-only)
+        run: |
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+          rm -rf build/macos macos/build
+
+      - name: Assert CocoaPods fully deintegrated
+        run: |
+          test ! -e macos/Podfile || (echo "macos/Podfile still present" && exit 1)
+          ! grep -r "Pods/" macos/Flutter/*.xcconfig macos/Runner.xcworkspace/contents.xcworkspacedata || \
+            (echo "Pods references remain in macos config" && exit 1)
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          flutter precache --macos
+
+      - name: Build macOS release (universal)
+        id: build-attempt-1
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bash packaging/macos/patch_darwin_headers.sh
+          bash packaging/macos/prepare_spm_artifacts.sh
+          if flutter build macos --release; then
+            exit 0
+          fi
+          echo "::warning::macOS build failed, re-sanitizing and retrying incrementally (no clean)"
+          find "$HOME/Library/Caches/org.swift.swiftpm" \
+            "$HOME/Library/Developer/Xcode/DerivedData" \
+            build/macos macos/build \
+            \( -name '._*' -o -name '__MACOSX' \) -delete 2>/dev/null || true
+          bash packaging/macos/patch_darwin_headers.sh
+          bash packaging/macos/prepare_spm_artifacts.sh
+          flutter build macos --release
+
+      - name: Fail if macOS build failed
+        if: steps.build-attempt-1.outcome == 'failure'
+        run: |
+          echo "::error::macOS build failed (see above logs)."
+          exit 1
+
+      - name: Assert file-picker entitlement is embedded
+        run: |
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          codesign -d --entitlements - "$APP" | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in $APP" && exit 1)
+
+      - name: Thin into single-arch apps and zip with lowercase names
+        run: |
+          chmod +x packaging/macos/thin_macos_app.sh
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          echo "Thinning $APP"
+          ./packaging/macos/thin_macos_app.sh "$APP" arm64 build/Wispie-arm64.app
+          ./packaging/macos/thin_macos_app.sh "$APP" x86_64 build/Wispie-x64.app
+          codesign -d --entitlements :- build/Wispie-arm64.app 2>/dev/null | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in build/Wispie-arm64.app" && exit 1)
+          codesign -d --entitlements :- build/Wispie-x64.app 2>/dev/null | grep -q "user-selected" || \
+            (echo "Missing user-selected entitlement in build/Wispie-x64.app" && exit 1)
+          cd build
+          ditto -c -k --sequesterRsrc --keepParent Wispie-arm64.app wispie-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent Wispie-x64.app wispie-macos-x64.zip
+          cd ..
+          ls -l build/wispie-macos-*.zip
+
+      - name: Upload macOS arm64 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-macos-arm64-zip
+          path: build/wispie-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload macOS x64 zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-macos-x64-zip
+          path: build/wispie-macos-x64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  create-draft:
+    needs: [android, linux-x64, windows-x64, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify staged files
+        run: |
+          ls -l dist
+          for f in \
+            wispie-arm64-v8a-release.apk \
+            wispie-armeabi-v7a-release.apk \
+            wispie-linux-x86_64.AppImage.zip \
+            wispie-macos-arm64.zip \
+            wispie-macos-x64.zip \
+            wispie-windows-x64-portable.zip \
+            wispie-windows-x64-setup.zip; do
+            test -f "dist/$f" || (echo "::error::Missing dist/$f" && exit 1)
+          done
+
+      - name: Create draft release with ordered assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          body: "Draft auto-created from tag ${{ github.event.inputs.tag || github.ref_name }} — edit before publishing."
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/wispie-arm64-v8a-release.apk
+            dist/wispie-armeabi-v7a-release.apk
+            dist/wispie-linux-x86_64.AppImage.zip
+            dist/wispie-macos-arm64.zip
+            dist/wispie-macos-x64.zip
+            dist/wispie-windows-x64-portable.zip
+            dist/wispie-windows-x64-setup.zip
