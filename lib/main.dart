@@ -137,9 +137,12 @@ Future<void> _setupJustAudioBackground() async {
       androidNotificationChannelName: 'Audio playback',
       androidNotificationChannelDescription: 'Playback controls',
       androidNotificationIcon: 'drawable/ic_stat_music_note',
-      androidNotificationOngoing: true,
       // Retain foreground state on pause so EMUI/Huawei power management does
       // not evict the media session or terminate media button routing.
+      // androidNotificationOngoing is omitted (defaults to false) because
+      // when androidStopForegroundOnPause is false, the active foreground service
+      // keeps the notification ongoing and audio_service asserts
+      // (!androidNotificationOngoing || androidStopForegroundOnPause).
       androidStopForegroundOnPause: false,
       androidShowNotificationBadge: true,
     );

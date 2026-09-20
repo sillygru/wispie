@@ -199,8 +199,9 @@ class SpectrumController extends ChangeNotifier {
       _positionSub?.resume();
       final player = _player;
       if (player != null) {
-        _clock.reset(player.position);
+        _clock.reanchor(player.position, playing: player.playing);
       }
+      _loadBeatMap();
     } else {
       _positionSub?.pause();
     }
@@ -254,7 +255,7 @@ class SpectrumController extends ChangeNotifier {
       _beatMapToken++;
       return;
     }
-    if (song.filename == _beatMapFilename) return;
+    if (song.filename == _beatMapFilename && _beatMap != null) return;
 
     _beatMapFilename = song.filename;
     final token = ++_beatMapToken;

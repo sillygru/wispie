@@ -70,6 +70,15 @@ class PlayheadClock {
     _playing = false;
   }
 
+  /// Re-anchors to [position] without easing, optionally updating [playing].
+  void reanchor(Duration position, {bool? playing}) {
+    _anchorPosition = position;
+    _anchorWallMs = DateTime.now().millisecondsSinceEpoch;
+    if (playing != null) {
+      _playing = playing;
+    }
+  }
+
   Duration get predicted {
     if (!_playing) return _anchorPosition;
     final elapsed = DateTime.now().millisecondsSinceEpoch - _anchorWallMs;

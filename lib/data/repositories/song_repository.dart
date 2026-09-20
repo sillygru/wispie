@@ -18,37 +18,45 @@ class SongRepository {
     throw UnsupportedError('Songs are managed by the scanner service');
   }
 
+  final Map<String, Future<String?>> _inFlightLyrics = {};
+
   /// Gets lyrics from embedded metadata in the audio file using FFmpeg.
   /// Always tries to read lyrics regardless of hasLyrics flag.
-  Future<String?> getLyrics(Song song) async {
-    if (kDebugMode) {
-      debugPrint('SongRepository: Getting lyrics for ${song.filename}');
-      debugPrint('SongRepository: File path: ${song.url}');
-      debugPrint('SongRepository: hasLyrics flag: ${song.hasLyrics}');
-    }
+  Future<String?> getLyrics(Song song) {
+    return _inFlightLyrics.putIfAbsent(song.filename, () async {
+      try {
+        if (kDebugMode) {
+          debugPrint('SongRepository: Getting lyrics for ${song.filename}');
+          debugPrint('SongRepository: File path: ${song.url}');
+          debugPrint('SongRepository: hasLyrics flag: ${song.hasLyrics}');
+        }
 
-    final cacheEntry = await _readLyricsCache(song);
-    if (cacheEntry != null &&
-        cacheEntry.hasLyrics &&
-        cacheEntry.lyrics != null) {
-      return cacheEntry.lyrics;
-    }
+        final cacheEntry = await _readLyricsCache(song);
+        if (cacheEntry != null &&
+            cacheEntry.hasLyrics &&
+            cacheEntry.lyrics != null) {
+          return cacheEntry.lyrics;
+        }
 
-    final lyrics = await _ffmpegService.getLyrics(song.url);
-    final normalizedLyrics =
-        (lyrics != null && lyrics.trim().isNotEmpty) ? lyrics : null;
-    await _writeLyricsCache(song, normalizedLyrics);
+        final lyrics = await _ffmpegService.getLyrics(song.url);
+        final normalizedLyrics =
+            (lyrics != null && lyrics.trim().isNotEmpty) ? lyrics : null;
+        await _writeLyricsCache(song, normalizedLyrics);
 
-    if (kDebugMode) {
-      if (normalizedLyrics != null) {
-        debugPrint(
-            'SongRepository: Found lyrics (${normalizedLyrics.length} chars)');
-      } else {
-        debugPrint('SongRepository: No lyrics found');
+        if (kDebugMode) {
+          if (normalizedLyrics != null) {
+            debugPrint(
+                'SongRepository: Found lyrics (${normalizedLyrics.length} chars)');
+          } else {
+            debugPrint('SongRepository: No lyrics found');
+          }
+        }
+
+        return normalizedLyrics;
+      } finally {
+        _inFlightLyrics.remove(song.filename);
       }
-    }
-
-    return normalizedLyrics;
+    });
   }
 
   /// Checks if a song has lyrics using cached data first, then FFmpeg if needed.

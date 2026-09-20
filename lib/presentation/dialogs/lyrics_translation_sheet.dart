@@ -109,6 +109,7 @@ class _LyricsTranslationSheetState
   }
 
   void _saveAndClose({bool translateNow = true, bool clearCache = false}) {
+    if (!mounted) return;
     final notifier = ref.read(settingsProvider.notifier);
     notifier.setLyricsTargetLanguage(_selectedLanguage);
     notifier.setLyricsTranslationMode(_displayMode);
@@ -133,8 +134,12 @@ class _LyricsTranslationSheetState
           entry.key.toLowerCase().contains(_filterQuery);
     }).toList();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        left: AppTokens.s4,
+        right: AppTokens.s4,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppTokens.s4,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

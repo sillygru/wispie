@@ -595,8 +595,7 @@ class _ReactiveScrubOverlay extends StatelessWidget {
 ///
 /// Draws:
 ///  * Track waveform bars with amplitude calibration.
-///  * Beat and bass reactive height punch in the active playback zone.
-///  * Acoustic proximity ripple radiating around the playhead.
+///  * Beat and bass reactive height punch on the active playback track.
 ///  * Integrated 4-band spectrum cursor (bass, low-mid, mid, air) at the playhead.
 ///  * Solid color blocking without gradients or borders.
 class ReactiveWaveformPainter extends CustomPainter {
@@ -678,9 +677,6 @@ class ReactiveWaveformPainter extends CustomPainter {
     final radius = const Radius.circular(1.2);
 
     final isScrubbing = dragPositionNotifier.value != null;
-    final visualPosMs = controller?.visualPositionMs ??
-        positionNotifier.value.inMilliseconds.toDouble();
-    final wavePhase = visualPosMs / 130.0;
 
     const clusterBarWidth = 2.8;
     const clusterGap = 1.4;
@@ -694,9 +690,17 @@ class ReactiveWaveformPainter extends CustomPainter {
       final x = i * step + spacing / 2;
       final xRight = x + barWidth;
 
-      // Skip painting background bar if it falls within the 4-band playhead cluster window
-      if (xRight >= clusterLeft - 0.5 && x <= clusterRight + 0.5) {
+      // Skip painting background bar if fully within the 4-band playhead cluster window
+      if (xRight > clusterLeft && x < clusterRight) {
         continue;
+      }
+
+      // Smooth edge fade for bars immediately bordering the cluster to avoid hard cut flickers
+      double edgeFade = 1.0;
+      if (x < clusterLeft && xRight > clusterLeft - spacing) {
+        edgeFade = ((clusterLeft - xRight) / spacing).clamp(0.0, 1.0);
+      } else if (x > clusterRight && x < clusterRight + spacing) {
+        edgeFade = ((x - clusterRight) / spacing).clamp(0.0, 1.0);
       }
 
       final barFraction = (i + 0.5) / totalBarsCount;
@@ -746,22 +750,14 @@ class ReactiveWaveformPainter extends CustomPainter {
       final distanceFromPlayhead = (i - playheadBarIndex).abs();
       final isActive = i < playheadBarIndex;
 
-      // Acoustic proximity dynamics: bars near the playhead pulse and ripple
+      // Clean rhythm response: active track pulses with beat & bass,
+      // smoothly lifting into the playhead without traveling sine wave ripples.
+      // Unplayed track stays steady and calm.
       double dynamicScale = 1.0;
-      if (isPlayingNow && !isScrubbing) {
-        const proximitySpan = 18.0;
-        if (distanceFromPlayhead < proximitySpan) {
-          final proximity = 1.0 - (distanceFromPlayhead / proximitySpan);
-          final smoothProximity =
-              proximity * proximity * (3.0 - 2.0 * proximity);
-          final waveRipple = math.sin(distanceFromPlayhead * 0.52 - wavePhase) *
-              (0.12 + 0.10 * air);
-          final kickExpansion = bass * 0.42 * smoothProximity;
-          dynamicScale = 1.0 + kickExpansion + waveRipple * smoothProximity;
-        } else if (isActive) {
-          // Subtle rhythm breath on active track
-          dynamicScale = 1.0 + 0.08 * beatEnergy;
-        }
+      if (isPlayingNow && !isScrubbing && isActive) {
+        final proximity = (1.0 - (distanceFromPlayhead / 4.0)).clamp(0.0, 1.0);
+        final leadIn = proximity * proximity * 0.06 * bass;
+        dynamicScale = 1.0 + 0.08 * beatEnergy + 0.04 * bass + leadIn;
       }
 
       final finalHeight = (baseHeight * dynamicScale)
@@ -774,7 +770,10 @@ class ReactiveWaveformPainter extends CustomPainter {
         barColor = inactiveColor;
       }
 
-      paint.color = barColor;
+      final double alphaScale = ui.lerpDouble(0.65, 1.0, revealFactor)!;
+      paint.color = barColor.withValues(
+        alpha: (barColor.a * alphaScale * edgeFade).clamp(0.0, 1.0),
+      );
       final y = (size.height - finalHeight) / 2;
 
       canvas.drawRRect(
@@ -818,7 +817,12 @@ class ReactiveWaveformPainter extends CustomPainter {
 
     for (var b = 0; b < 4; b++) {
       final level = levels[b].clamp(SpectrumBars.floor, 1.0);
-      final barH = math.max(6.0, level * size.height * 0.88);
+      final double barH;
+      if (isScrubbing) {
+        barH = (b == 1 || b == 2) ? size.height * 0.52 : size.height * 0.36;
+      } else {
+        barH = math.max(6.0, level * size.height * 0.88);
+      }
       final bx = startX + b * (clusterBarWidth + clusterGap);
       final by = (size.height - barH) / 2;
 
@@ -833,21 +837,6 @@ class ReactiveWaveformPainter extends CustomPainter {
         paint,
       );
     }
-
-    // Micro seek-pip at the bottom center of the playhead to pinpoint exact seek position
-    final pipWidth = isScrubbing ? 4.0 : 3.0;
-    final pipHeight = isScrubbing ? 4.0 : 3.0;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(centerX, size.height - 2.5),
-          width: pipWidth,
-          height: pipHeight,
-        ),
-        const Radius.circular(1.0),
-      ),
-      paint,
-    );
   }
 
   @override

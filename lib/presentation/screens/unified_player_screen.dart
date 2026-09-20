@@ -113,6 +113,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// Guards against a slow analysis landing after the user has skipped on.
   String? _beatMapFilename;
   int _beatMapToken = 0;
+  late final AudioPlayerManager _manager;
 
   @override
   void initState() {
@@ -131,12 +132,12 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
-    final manager = ref.read(audioPlayerManagerProvider);
-    _motion = PlayerMotionController(player: manager.player)..attach(this);
+    _manager = ref.read(audioPlayerManagerProvider);
+    _motion = PlayerMotionController(player: _manager.player)..attach(this);
     _ensemble = PlayerMotionEnsemble(controller: _motion);
-    manager.currentSongNotifier.addListener(_onSongChanged);
-    manager.playingNotifier.addListener(_syncWakeLock);
-    manager.playingNotifier.addListener(_syncRefresh);
+    _manager.currentSongNotifier.addListener(_onSongChanged);
+    _manager.playingNotifier.addListener(_syncWakeLock);
+    _manager.playingNotifier.addListener(_syncRefresh);
     PowerStateService.instance.powerSave.addListener(_syncMotionSettings);
     PowerStateService.instance.powerSave.addListener(_syncRefresh);
 
@@ -149,7 +150,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     });
     // Enter player refresh hint: 60Hz when playing, 30Hz when paused/power-save.
     DisplayRefreshService.instance.enterPlayer(
-      playing: manager.playingNotifier.value,
+      playing: _manager.playingNotifier.value,
       powerSave: PowerStateService.instance.powerSave.value,
     );
   }
@@ -158,10 +159,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   void dispose() {
     DisplayRefreshService.instance.leavePlayer();
     WidgetsBinding.instance.removeObserver(this);
-    final manager = ref.read(audioPlayerManagerProvider);
-    manager.currentSongNotifier.removeListener(_onSongChanged);
-    manager.playingNotifier.removeListener(_syncWakeLock);
-    manager.playingNotifier.removeListener(_syncRefresh);
+    _manager.currentSongNotifier.removeListener(_onSongChanged);
+    _manager.playingNotifier.removeListener(_syncWakeLock);
+    _manager.playingNotifier.removeListener(_syncRefresh);
     PowerStateService.instance.powerSave.removeListener(_syncMotionSettings);
     PowerStateService.instance.powerSave.removeListener(_syncRefresh);
     _ensemble.dispose();
@@ -199,6 +199,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       _syncPaneVisibility();
       _syncRefresh();
       _syncWakeLock();
+      if (_motion.beatMap == null) {
+        _onSongChanged();
+      }
     } else {
       _nowPlayingVisible.value = false;
       _lyricsVisible.value = false;
@@ -231,18 +234,20 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// only falls through to analysis when there is nothing cached, during which
   /// the motion layer breathes rather than sitting still.
   Future<void> _onSongChanged() async {
-    final song = ref.read(audioPlayerManagerProvider).currentSongNotifier.value;
+    if (!mounted) return;
+    final song = _manager.currentSongNotifier.value;
     if (song == null) {
       _beatMapFilename = null;
       _motion.beatMap = null;
       return;
     }
-    if (song.filename == _beatMapFilename) return;
+    if (song.filename == _beatMapFilename && _motion.beatMap != null) return;
 
     _beatMapFilename = song.filename;
     final token = ++_beatMapToken;
     _motion.beatMap = null;
 
+    if (!mounted) return;
     final service = ref.read(beatAnalysisServiceProvider);
     final cached = await service.readCached(song.filename);
     if (!mounted || token != _beatMapToken) return;
@@ -273,6 +278,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   }
 
   void _syncMotionSettings() {
+    if (!mounted) return;
     final settings = ref.read(settingsProvider);
     _motion
       ..powerSave = PowerStateService.instance.powerSave.value
@@ -320,8 +326,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   }
 
   void _syncRefresh() {
-    if (!_appActive) return;
-    final playing = ref.read(audioPlayerManagerProvider).playingNotifier.value;
+    if (!_appActive || !mounted) return;
+    final playing = _manager.playingNotifier.value;
     final powerSave = PowerStateService.instance.powerSave.value;
     if (playing && !powerSave) {
       // Stay at 60Hz idle; boost120() will temporarily lift to 120Hz.
@@ -342,11 +348,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// acquire/release must stay balanced — [_wakeLockHeld] is what guarantees
   /// that.
   void _syncWakeLock() {
-    final playing = ref.read(audioPlayerManagerProvider).playingNotifier.value;
+    if (!_appActive || !mounted) return;
+    final playing = _manager.playingNotifier.value;
     final lyricsSelected =
         _showingWide ? _landscapeTab == 0 : _pane == PlayerPane.lyrics.index;
-    final wanted = _appActive &&
-        lyricsSelected &&
+    final wanted = lyricsSelected &&
         ref.read(settingsProvider).keepScreenAwakeOnLyrics &&
         playing;
 

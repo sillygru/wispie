@@ -359,17 +359,17 @@ class LingvaTranslateService {
 
     // Translation endpoints are not consistent about preserving newlines. Do
     // not shift every following lyric when one endpoint collapses a line: fall
-    // back to one request per line, where the response cannot be ambiguous.
+    // back to one request per line in parallel, where the response cannot be ambiguous.
     if (splitLines.length != batch.length) {
-      final individualResults = <TranslationResponse>[];
-      for (final item in batch) {
-        final res = await _raceTranslation(
-          query: item.text,
-          targetLang: targetLang,
-          sourceLang: sourceLang,
-        );
-        individualResults.add(res);
-      }
+      final individualResults = await Future.wait(
+        batch.map(
+          (item) => _raceTranslation(
+            query: item.text,
+            targetLang: targetLang,
+            sourceLang: sourceLang,
+          ),
+        ),
+      );
       return _BatchResult(
         lines: [
           for (int i = 0; i < batch.length; i++)
@@ -444,6 +444,7 @@ class LingvaTranslateService {
     ];
 
     void settleFailure(Object error) {
+      if (completer.isCompleted) return;
       lastError = error;
       failures += 1;
       debugPrint(

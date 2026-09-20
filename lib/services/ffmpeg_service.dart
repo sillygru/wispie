@@ -528,18 +528,21 @@ class FFmpegService {
       }
 
       // FFprobeKit can leak the banner/stderr into getOutput() (e.g.
-      // "Input #0, mp3, from ..."). Only attempt JSON parsing when the
-      // payload actually looks like JSON.
-      if (!output.trimLeft().startsWith('{')) {
+      // "Input #0, mp3, from ..."). Extract the JSON payload between the first
+      // '{' and the last '}'.
+      final start = output.indexOf('{');
+      final end = output.lastIndexOf('}');
+      if (start == -1 || end == -1 || end <= start) {
         if (kDebugMode) {
           debugPrint('FFmpegService: Non-JSON ffprobe output for: $filePath');
         }
         return null;
       }
+      final jsonPayload = output.substring(start, end + 1);
 
       final Map<String, dynamic> json;
       try {
-        json = jsonDecode(output) as Map<String, dynamic>;
+        json = jsonDecode(jsonPayload) as Map<String, dynamic>;
       } on FormatException catch (e) {
         if (kDebugMode) {
           debugPrint('FFmpegService: Malformed ffprobe JSON for $filePath: $e');

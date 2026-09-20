@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wispie/domain/models/beat_map.dart';
 import 'package:wispie/domain/services/spectrum_bars.dart';
 import 'package:wispie/models/song.dart';
+import 'package:wispie/domain/services/playhead_clock.dart';
 import 'package:wispie/presentation/widgets/spectrum_controller.dart';
 
 /// A map whose four bands hold the given constant levels for its whole length.
@@ -278,6 +279,24 @@ void main() {
       for (final level in controller.levels) {
         expect(level, SpectrumBars.floor);
       }
+    });
+
+    test('PlayheadClock reanchor preserves playing state by default', () {
+      final clock = PlayheadClock(position: Duration.zero, playing: true);
+      expect(clock.playing, isTrue);
+
+      clock.reanchor(const Duration(seconds: 42));
+      expect(clock.playing, isTrue);
+      expect(clock.predicted.inSeconds, 42);
+    });
+
+    test('PlayheadClock reanchor can explicitly update playing state', () {
+      final clock = PlayheadClock(position: Duration.zero, playing: false);
+      expect(clock.playing, isFalse);
+
+      clock.reanchor(const Duration(seconds: 15), playing: true);
+      expect(clock.playing, isTrue);
+      expect(clock.predicted.inSeconds, 15);
     });
   });
 }

@@ -268,6 +268,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
       }
     }
 
+    if (!mounted) return;
     _line.value = '';
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
   }

@@ -128,11 +128,17 @@ class LyricsSession extends ChangeNotifier {
     );
 
     if (cached == '[SAME_LANG]') {
-      _isSameLanguage = true;
-      _hasCached = false;
-      _translated = null;
-      notifyListeners();
-      return TranslationResult.sameLanguage;
+      if (!LingvaTranslateService.lyricsNeedTranslation(
+        effectiveContent,
+        targetLang,
+      )) {
+        _isSameLanguage = true;
+        _hasCached = false;
+        _translated = null;
+        notifyListeners();
+        return TranslationResult.sameLanguage;
+      }
+      await _db.deleteTranslatedLyrics(filename, targetLang);
     }
 
     if (cached != null &&
@@ -224,7 +230,9 @@ class LyricsSession extends ChangeNotifier {
   }) {
     final detected = response.detectedSourceLang?.toLowerCase().trim();
     final target = targetLang.toLowerCase().trim();
-    if (detected != null && detected.isNotEmpty) {
+    final sourceNeedsTranslation =
+        LingvaTranslateService.lyricsNeedTranslation(original, targetLang);
+    if (!sourceNeedsTranslation && detected != null && detected.isNotEmpty) {
       if (detected == target ||
           detected.startsWith('$target-') ||
           target.startsWith('$detected-')) {

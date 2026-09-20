@@ -369,10 +369,10 @@ class PlayerMotionController extends ChangeNotifier {
   /// transcendentals per tempo change instead of three per frame.
   double _scaleForDecayMs = double.nan;
   double _envelopeScale = 1;
+  final AudioPlayer? _player;
 
-  /// Follows [player]'s clock. The player itself is not retained — only its
-  /// streams matter here, and they are cancelled on dispose.
-  PlayerMotionController({required AudioPlayer player}) {
+  /// Follows [player]'s clock.
+  PlayerMotionController({required AudioPlayer player}) : _player = player {
     _clock
       ..reset(player.position)
       ..playing = player.playing;
@@ -384,11 +384,12 @@ class PlayerMotionController extends ChangeNotifier {
   /// Detached from any player, for exercising the frame math and the clock
   /// without a platform audio session.
   @visibleForTesting
-  PlayerMotionController.forTesting();
+  PlayerMotionController.forTesting() : _player = null;
 
   BeatFrame get frame => _frame;
   MotionIntensitySpec get coverSpec => _coverSpec;
   MotionIntensitySpec get particleSpec => _particleSpec;
+  BeatMap? get beatMap => _beatMap;
   bool get hasBeatMap => _beatMap?.hasBeats ?? false;
 
   /// Monotonic animation clock. The particle simulation integrates against this,
@@ -479,6 +480,10 @@ class PlayerMotionController extends ChangeNotifier {
     _appActive = value;
     if (value) {
       _positionSub?.resume();
+      final player = _player;
+      if (player != null) {
+        _clock.reanchor(player.position, playing: player.playing);
+      }
     } else {
       _positionSub?.pause();
     }

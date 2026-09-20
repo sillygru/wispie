@@ -12,6 +12,7 @@ import '../../../providers/providers.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/database_service.dart';
 import '../../../services/display_refresh_service.dart';
+import '../../../services/lingva_translate_service.dart';
 import '../../../services/lrclib_service.dart';
 import '../../components/app_feedback.dart';
 import '../../dialogs/lyrics_search_sheet.dart';
@@ -670,7 +671,22 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
       if (!mounted || _loadedFilename != filename) return;
 
-      if (cached == '[SAME_LANG]') {
+      if (cached == '[SAME_LANG]' &&
+          LingvaTranslateService.lyricsNeedTranslation(
+            content ?? '',
+            settings.lyricsTargetLanguage,
+          )) {
+        await DatabaseService.instance.deleteTranslatedLyrics(
+          filename,
+          settings.lyricsTargetLanguage,
+        );
+        if (!mounted || _loadedFilename != filename) return;
+        if (settings.lyricsAutoTranslate) {
+          unawaited(
+            _performTranslation(settings.lyricsTargetLanguage, silent: true),
+          );
+        }
+      } else if (cached == '[SAME_LANG]') {
         setState(() {
           _translatedLyrics = null;
           _hasCachedTranslation = false;
@@ -693,6 +709,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               .deleteTranslatedLyrics(filename, settings.lyricsTargetLanguage);
           // Stale entry that duplicates the source blocks the translation UI
           // from rebuilding through the revision notifier.
+          if (!mounted) return;
           ref.read(translationRevisionProvider.notifier).bump();
         }
         if (settings.lyricsAutoTranslate &&
@@ -711,6 +728,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       }
     }
 
+    if (!mounted) return;
     // Land on the right line straight away rather than waiting for the next
     // playhead tick.
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
@@ -814,6 +832,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         _hasCachedTranslation = false;
         _isSameLanguage = false;
       });
+      if (!mounted) return;
       ref.read(translationRevisionProvider.notifier).bump();
       if (mounted) {
         appSnack(context, 'Cached translation cleared', tone: AppTone.info);
@@ -834,6 +853,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     final filename = widget.song.filename;
     final content = _rawLyricsContent;
     if (content == null || content.trim().isEmpty || _lyrics == null) return;
+    if (!mounted) return;
     final targetLang = ref.read(settingsProvider).lyricsTargetLanguage;
     final cached = await DatabaseService.instance.getTranslatedLyrics(
       filename,
@@ -842,12 +862,18 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     );
     if (!mounted || _loadedFilename != filename) return;
     if (cached == '[SAME_LANG]') {
-      setState(() {
-        _translatedLyrics = null;
-        _hasCachedTranslation = false;
-        _isSameLanguage = true;
-      });
-      return;
+      if (!LingvaTranslateService.lyricsNeedTranslation(content, targetLang)) {
+        setState(() {
+          _translatedLyrics = null;
+          _hasCachedTranslation = false;
+          _isSameLanguage = true;
+        });
+        return;
+      }
+      await DatabaseService.instance.deleteTranslatedLyrics(
+        filename,
+        targetLang,
+      );
     }
     if (cached == null ||
         cached.trim().isEmpty ||
@@ -855,13 +881,16 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       if (cached != null && cached.trim() == content.trim()) {
         await DatabaseService.instance
             .deleteTranslatedLyrics(filename, targetLang);
+        if (!mounted) return;
         ref.read(translationRevisionProvider.notifier).bump();
       }
+      if (!mounted) return;
       setState(() {
         _translatedLyrics = null;
         _hasCachedTranslation = false;
         _isSameLanguage = false;
       });
+      if (!mounted) return;
       final settings = ref.read(settingsProvider);
       if (settings.lyricsAutoTranslate) {
         _performTranslation(targetLang, silent: true);
@@ -892,13 +921,19 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     if (!mounted || _loadedFilename != filename) return;
 
     if (cached == '[SAME_LANG]') {
-      if (!mounted) return;
-      setState(() {
-        _translatedLyrics = null;
-        _hasCachedTranslation = false;
-        _isSameLanguage = true;
-      });
-      return;
+      if (!LingvaTranslateService.lyricsNeedTranslation(content, targetLang)) {
+        if (!mounted) return;
+        setState(() {
+          _translatedLyrics = null;
+          _hasCachedTranslation = false;
+          _isSameLanguage = true;
+        });
+        return;
+      }
+      await DatabaseService.instance.deleteTranslatedLyrics(
+        filename,
+        targetLang,
+      );
     }
 
     if (cached != null &&
@@ -941,6 +976,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           _hasCachedTranslation = false;
           _isSameLanguage = true;
         });
+        if (!mounted) return;
         ref.read(translationRevisionProvider.notifier).bump();
       } else if (result.lines != null) {
         setState(() {
@@ -948,6 +984,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           _hasCachedTranslation = result.isCached || true;
           _isSameLanguage = false;
         });
+        if (!mounted) return;
         ref.read(translationRevisionProvider.notifier).bump();
         if (!silent) {
           appSnack(context, 'Lyrics translated', tone: AppTone.success);

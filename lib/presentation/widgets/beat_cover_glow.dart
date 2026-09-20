@@ -195,8 +195,12 @@ class _CoverGlowPainter extends CustomPainter {
         now - _cachedRectAt! < _glowMinInterval) {
       return _cachedRect;
     }
-    final cover = coverKey.currentContext?.findRenderObject();
-    final shell = shellKey.currentContext?.findRenderObject();
+    final coverContext = coverKey.currentContext;
+    final shellContext = shellKey.currentContext;
+    if (coverContext == null || !coverContext.mounted) return null;
+    if (shellContext == null || !shellContext.mounted) return null;
+    final cover = coverContext.findRenderObject();
+    final shell = shellContext.findRenderObject();
     if (cover is! RenderBox || shell is! RenderBox) return null;
     if (!cover.attached || !shell.attached) return null;
     if (!cover.hasSize || !shell.hasSize) return null;
