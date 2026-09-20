@@ -45,6 +45,7 @@ class SettingsState {
   final bool lyricsAutoTranslate;
   final String lyricsTranslationMode;
   final bool lyricsSimulatedRichSyncEnabled;
+  final double lyricsTimingOffsetSeconds;
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
 
@@ -90,6 +91,7 @@ class SettingsState {
     this.lyricsAutoTranslate = false,
     this.lyricsTranslationMode = 'subtext',
     this.lyricsSimulatedRichSyncEnabled = true,
+    this.lyricsTimingOffsetSeconds = 0,
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
   })  : progressBarType = progressBarType ??
@@ -142,6 +144,7 @@ class SettingsState {
     bool? lyricsAutoTranslate,
     String? lyricsTranslationMode,
     bool? lyricsSimulatedRichSyncEnabled,
+    double? lyricsTimingOffsetSeconds,
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
   }) {
@@ -211,6 +214,8 @@ class SettingsState {
           lyricsTranslationMode ?? this.lyricsTranslationMode,
       lyricsSimulatedRichSyncEnabled:
           lyricsSimulatedRichSyncEnabled ?? this.lyricsSimulatedRichSyncEnabled,
+      lyricsTimingOffsetSeconds:
+          lyricsTimingOffsetSeconds ?? this.lyricsTimingOffsetSeconds,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       syncSettingsEnabled: syncSettingsEnabled ?? this.syncSettingsEnabled,
     );
@@ -263,6 +268,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyLyricsTranslationMode = 'lyrics_translation_mode';
   static const _keyLyricsSimulatedRichSyncEnabled =
       'lyrics_simulated_rich_sync_enabled';
+  static const _keyLyricsTimingOffsetSeconds = 'lyrics_timing_offset_seconds';
   static const String _keyAutoSyncEnabled = 'auto_sync_enabled';
   static const String _keySyncSettingsEnabled = 'sync_settings_enabled';
   static const double maxDelayDuration = 12.0;
@@ -379,6 +385,9 @@ class SettingsNotifier extends Notifier<SettingsState> {
           prefs.getString(_keyLyricsTranslationMode) ?? 'subtext',
       lyricsSimulatedRichSyncEnabled:
           prefs.getBool(_keyLyricsSimulatedRichSyncEnabled) ?? true,
+      lyricsTimingOffsetSeconds:
+          (prefs.getDouble(_keyLyricsTimingOffsetSeconds) ?? 0)
+              .clamp(-60.0, 60.0),
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
     );
@@ -416,6 +425,13 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(lyricsSimulatedRichSyncEnabled: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyLyricsSimulatedRichSyncEnabled, enabled);
+  }
+
+  Future<void> setLyricsTimingOffsetSeconds(double value) async {
+    final clamped = value.clamp(-60.0, 60.0);
+    state = state.copyWith(lyricsTimingOffsetSeconds: clamped);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_keyLyricsTimingOffsetSeconds, clamped);
   }
 
   Future<void> setFadeInDuration(double value) async {

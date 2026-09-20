@@ -57,6 +57,7 @@ class DatabaseService {
         onCreate: (db, v) async => createUserDataSchema(db),
         onUpgrade: (db, oldV, newV) async {
           if (oldV < 2) await upgradeUserDataFrom1To2(db);
+          if (oldV < 3) await upgradeUserDataFrom2To3(db);
         },
       );
     } catch (e) {
@@ -716,6 +717,27 @@ class DatabaseService {
     return _mapToSong(results.first);
   }
 
+  Future<double> getLyricsTimingOffset(String filename) async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return 0;
+    final rows = await db.query('lyrics_timing_offset',
+        columns: ['offset_seconds'],
+        where: 'filename = ?',
+        whereArgs: [filename],
+        limit: 1);
+    return rows.isEmpty ? 0 : (rows.first['offset_seconds'] as num).toDouble();
+  }
+
+  Future<void> setLyricsTimingOffset(String filename, double offset) async {
+    await _ensureInitialized();
+    await _userDataDatabase?.insert(
+      'lyrics_timing_offset',
+      {'filename': filename, 'offset_seconds': offset.clamp(-60.0, 60.0)},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<List<Song>> getSongs(
       {int? limit,
       int? offset,
@@ -1169,6 +1191,18 @@ class DatabaseService {
       // Update Song table
       await txn.update('song', {'filename': newFilename},
           where: 'filename = ?', whereArgs: [oldFilename]);
+      final existingOffset = await txn.query(
+        'lyrics_timing_offset',
+        where: 'filename = ?',
+        whereArgs: [newFilename],
+      );
+      if (existingOffset.isNotEmpty) {
+        await txn.delete('lyrics_timing_offset',
+            where: 'filename = ?', whereArgs: [oldFilename]);
+      } else {
+        await txn.update('lyrics_timing_offset', {'filename': newFilename},
+            where: 'filename = ?', whereArgs: [oldFilename]);
+      }
 
       // For favorites/suggestless/hidden, if target exists, we just delete the old one
       // (effectively "merging" the fact that it is a favorite/suggestless/hidden)
@@ -1258,6 +1292,8 @@ class DatabaseService {
     await _userDataDatabase!.transaction((txn) async {
       // Remove from songs
       await txn.delete('song', where: 'filename = ?', whereArgs: [filename]);
+      await txn.delete('lyrics_timing_offset',
+          where: 'filename = ?', whereArgs: [filename]);
 
       // Remove from favorites
       await txn

@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 const int kStatsDbVersion = 1;
-const int kUserDataDbVersion = 2;
+const int kUserDataDbVersion = 3;
 
 const List<String> _statsTableStmts = [
   '''
@@ -134,6 +134,11 @@ const List<String> _userDataTableStmts = [
       updated_at REAL,
       PRIMARY KEY (filename, target_lang)
     )''',
+  '''
+    CREATE TABLE IF NOT EXISTS lyrics_timing_offset (
+      filename TEXT PRIMARY KEY,
+      offset_seconds REAL NOT NULL DEFAULT 0
+    )''',
 ];
 
 // Kept for tests and debugging that join the schema.
@@ -167,6 +172,14 @@ Future<void> upgradeUserDataFrom1To2(Database db) async {
   await _ensureSongMissingColumns(db);
   await _createUserDataIndexes(db);
   await _ensureTranslatedLyricsSourceHash(db);
+}
+
+Future<void> upgradeUserDataFrom2To3(Database db) async {
+  await db.execute('''
+    CREATE TABLE IF NOT EXISTS lyrics_timing_offset (
+      filename TEXT PRIMARY KEY,
+      offset_seconds REAL NOT NULL DEFAULT 0
+    )''');
 }
 
 Future<void> _ensureSongMissingColumns(Database db) async {
