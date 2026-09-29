@@ -1,31 +1,104 @@
-name: Desktop Builds
+name: Build Binaries
 
-# Linux (x86_64 AppImage), Windows (x86_64 installer + portable zip) and macOS
-# (separate arm64 / x64 zips, NOT universal — thinned from one universal build).
-# Binaries ship unsigned: on macOS right-click > Open on first launch.
-# Windows/Linux runtime notes: install a system ffmpeg for lyrics/covers and
-# (Linux) xdg-desktop-portal + backend for the native folder picker
-# (file_picker 10.x uses the XDG portal, not zenity/kdialog).
+# Single source of truth for every release binary. Called by ci-builds.yml
+# (push to main) and by release-draft.yml (tag push, only when no complete CI
+# build exists for the tagged commit).
+#
+# Artifact names and the filenames inside them are identical across callers so
+# the release workflow can download one run's artifacts and attach them as-is.
+# Do not "prettify" the names here.
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - 'lib/**'
-      - 'linux/**'
-      - 'windows/**'
-      - 'macos/**'
-      - 'packaging/**'
-      - 'assets/app_icon.png'
-      - 'pubspec.yaml'
-      - '.github/workflows/desktop-builds.yml'
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to build (commit SHA, tag or branch)'
+        required: true
+        type: string
+      retention-days:
+        description: 'Artifact retention for this run'
+        required: false
+        default: 7
+        type: number
+
+permissions:
+  contents: read
 
 jobs:
+  android:
+    strategy:
+      matrix:
+        include:
+          - target-platform: android-arm
+            abi: armeabi-v7a
+            artifact-name: wispie-armeabi-v7a-release
+          - target-platform: android-arm64
+            abi: arm64-v8a
+            artifact-name: wispie-arm64-v8a-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          # Pinned so a CI build and a fallback tag build are byte-comparable.
+          flutter-version: "3.47.2"
+          cache: true
+
+      - name: Clear stale pub.dev credentials
+        run: |
+          rm -f "$HOME/.pub-cache/credentials.json"
+          rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
+          dart pub token remove --all || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Decode keystore and configure signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build release APK (${{ matrix.abi }})
+        env:
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          TELEMETRY_SECRET: ${{ secrets.TELEMETRY_SECRET }}
+          WISPIE_ABI_FILTER: ${{ matrix.abi }}
+        run: >
+          flutter build apk
+          --target-platform ${{ matrix.target-platform }}
+          --dart-define=TELEMETRY_SECRET="$TELEMETRY_SECRET"
+          --dart-define=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"
+          --obfuscate
+          --split-debug-info=build/debug-info
+
+      - name: Rename APK for upload
+        run: |
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/${{ matrix.artifact-name }}.apk
+
+      - name: Upload APK (${{ matrix.abi }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: build/app/outputs/flutter-apk/${{ matrix.artifact-name }}.apk
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
+
   linux-x64:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Linux build dependencies
         run: |
@@ -67,18 +140,26 @@ jobs:
           chmod +x Wispie-linux-x86_64.AppImage
           ls -l Wispie-linux-x86_64.AppImage
 
-      - name: Upload AppImage
+      - name: Zip AppImage with lowercase name
+        run: |
+          rm -f wispie-linux-x86_64.AppImage.zip
+          zip -j wispie-linux-x86_64.AppImage.zip Wispie-linux-x86_64.AppImage
+          ls -l wispie-linux-x86_64.AppImage.zip
+
+      - name: Upload AppImage zip
         uses: actions/upload-artifact@v4
         with:
-          name: Wispie-linux-x86_64.AppImage
-          path: Wispie-linux-x86_64.AppImage
+          name: wispie-linux-x86_64-appimage-zip
+          path: wispie-linux-x86_64.AppImage.zip
           if-no-files-found: error
-          retention-days: 14
+          retention-days: ${{ inputs.retention-days }}
 
   windows-x64:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -92,11 +173,12 @@ jobs:
       - name: Build Windows release (x64)
         run: flutter build windows --release
 
-      - name: Portable zip
+      - name: Portable zip with lowercase name
         shell: pwsh
         run: |
           Compress-Archive -Path build/windows/x64/runner/Release/* `
-            -DestinationPath Wispie-windows-x64-portable.zip -Force
+            -DestinationPath Wispie-portable-tmp.zip -Force
+          Move-Item -Force Wispie-portable-tmp.zip wispie-windows-x64-portable.zip
 
       - name: Read version from pubspec
         id: version
@@ -119,26 +201,35 @@ jobs:
             "/DMyAppVersion=${{ steps.version.outputs.version }}" `
             windows\packaging\wispie.iss
 
-      - name: Upload installer
+      - name: Zip installer with lowercase name
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows-installer/Wispie-Setup-x64.exe `
+            -DestinationPath wispie-windows-x64-setup.zip -Force
+          Get-ChildItem wispie-windows-x64-*.zip
+
+      - name: Upload installer zip
         uses: actions/upload-artifact@v4
         with:
-          name: wispie-windows-x64-setup
-          path: build/windows-installer/Wispie-Setup-x64.exe
-          retention-days: 14
+          name: wispie-windows-x64-setup-zip
+          path: wispie-windows-x64-setup.zip
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
 
       - name: Upload portable zip
         uses: actions/upload-artifact@v4
         with:
-          name: wispie-windows-x64-portable
-          path: Wispie-windows-x64-portable.zip
-          retention-days: 14
+          name: wispie-windows-x64-portable-zip
+          path: wispie-windows-x64-portable.zip
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
 
   macos:
-    # One universal build on Apple Silicon, then lipo-thin into separate
-    # single-arch apps (no Intel runners needed, no universal artifact).
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -231,36 +322,35 @@ jobs:
           codesign -d --entitlements - "$APP" | grep -q "user-selected" || \
             (echo "Missing user-selected entitlement in $APP" && exit 1)
 
-      - name: Thin into single-arch apps and zip
+      - name: Thin into single-arch apps and zip with lowercase names
         run: |
           chmod +x packaging/macos/thin_macos_app.sh
           APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
           echo "Thinning $APP"
           ./packaging/macos/thin_macos_app.sh "$APP" arm64 build/Wispie-arm64.app
           ./packaging/macos/thin_macos_app.sh "$APP" x86_64 build/Wispie-x64.app
-          # thin_macos_app.sh re-signs ad-hoc; re-assert here because the
-          # pre-thin check above cannot catch entitlement loss during lipo +
-          # re-sign (which used to break getDirectoryPath with
-          # ENTITLEMENT_NOT_FOUND while `flutter run` kept working).
           codesign -d --entitlements :- build/Wispie-arm64.app 2>/dev/null | grep -q "user-selected" || \
             (echo "Missing user-selected entitlement in build/Wispie-arm64.app" && exit 1)
           codesign -d --entitlements :- build/Wispie-x64.app 2>/dev/null | grep -q "user-selected" || \
             (echo "Missing user-selected entitlement in build/Wispie-x64.app" && exit 1)
           cd build
-          ditto -c -k --sequesterRsrc --keepParent Wispie-arm64.app Wispie-macos-arm64.zip
-          ditto -c -k --sequesterRsrc --keepParent Wispie-x64.app Wispie-macos-x64.zip
+          ditto -c -k --sequesterRsrc --keepParent Wispie-arm64.app wispie-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent Wispie-x64.app wispie-macos-x64.zip
           cd ..
+          ls -l build/wispie-macos-*.zip
 
       - name: Upload macOS arm64 zip
         uses: actions/upload-artifact@v4
         with:
-          name: wispie-macos-arm64
-          path: build/Wispie-macos-arm64.zip
-          retention-days: 14
+          name: wispie-macos-arm64-zip
+          path: build/wispie-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
 
       - name: Upload macOS x64 zip
         uses: actions/upload-artifact@v4
         with:
-          name: wispie-macos-x64
-          path: build/Wispie-macos-x64.zip
-          retention-days: 14
+          name: wispie-macos-x64-zip
+          path: build/wispie-macos-x64.zip
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}

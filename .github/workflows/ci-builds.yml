@@ -1,0 +1,37 @@
+name: CI Builds
+
+# Builds every release binary for a pushed commit. The tagged release run
+# reuses these artifacts instead of rebuilding the same commit — see
+# release-draft.yml (gate job) — so keep the retention window long enough to
+# cover "push, then tag".
+#
+# Binaries ship unsigned on macOS: right-click > Open on first launch.
+# Windows/Linux runtime notes: install a system ffmpeg for lyrics/covers and
+# (Linux) xdg-desktop-portal + backend for the native folder picker
+# (file_picker 10.x uses the XDG portal, not zenity/kdialog).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'lib/**'
+      - 'android/**'
+      - 'ios/**'
+      - 'linux/**'
+      - 'windows/**'
+      - 'macos/**'
+      - 'packaging/**'
+      - 'assets/app_icon.png'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ github.sha }}
+      retention-days: 7

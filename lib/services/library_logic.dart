@@ -146,6 +146,12 @@ class LibraryLogic {
 
           if (albumCompare != 0) return albumCompare;
 
+          // Compilations and live albums mix tracks from different years, so
+          // fall back to release order before title when both are tagged.
+          final dateA = a.songDateEpochSec;
+          final dateB = b.songDateEpochSec;
+          if (dateA != null && dateB != null) return dateA.compareTo(dateB);
+
           return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
         });
 
