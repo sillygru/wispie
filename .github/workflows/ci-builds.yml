@@ -24,7 +24,10 @@ on:
       - 'assets/app_icon.png'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - '.github/workflows/build.yml'
+      - '.github/workflows/ci-builds.yml'
       - '.github/workflows/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,6 +35,7 @@ permissions:
 jobs:
   build:
     uses: ./.github/workflows/build.yml
+    secrets: inherit
     with:
       ref: ${{ github.sha }}
       retention-days: 7
