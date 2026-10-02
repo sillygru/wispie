@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/rich_lyrics.dart';
 import '../../../domain/services/lyrics_session.dart';
+import '../../../domain/services/lyrics_timing_offset.dart';
 import '../../../models/song.dart';
 import '../../../providers/providers.dart';
 import '../../../providers/settings_provider.dart';
@@ -24,6 +25,8 @@ import '../../utils/wide_layout.dart';
 import '../../widgets/lyrics_gap_loader.dart';
 import '../../widgets/lyrics_line.dart';
 import '../../widgets/lyrics_resume_button.dart';
+import 'lyrics_timing_control.dart';
+import 'lyrics_timing_sheet.dart';
 
 /// Left pane. Content only — the shell owns the backdrop, header, pill and
 /// transport dock. Do not add a Scaffold, AppBar or background here.
@@ -467,9 +470,15 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   static const Duration _gapCollapseHold = PlayerTokens.dLyricsLoaderTransition;
 
   StreamSubscription<Duration>? _positionSub;
-  double _lyricsTimingOffset = 0;
   Timer? _lyricsTimingSaveTimer;
   bool _timingControlVisible = false;
+
+  /// Owns the offset, its active rung and the anchored slider window. Not a
+  /// plain field because the pill and the sheet edit the same value from two
+  /// places at once, and because rebuilding the whole action strip on every
+  /// 10ms nudge would drag the rest of the pane's layout along with it.
+  late final LyricsTimingController _timing = LyricsTimingController()
+    ..onChanged = _onLyricsTimingChanged;
   DateTime? _lastManualScroll;
   bool _positionSubscriptionActive = false;
 
@@ -532,6 +541,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _positionSub?.cancel();
     _scrollController.removeListener(_onUserScroll);
     _scrollController.dispose();
+    _timing.dispose();
     _activeLine.dispose();
     _playbackPosition.dispose();
     _gapSlot.dispose();
@@ -544,11 +554,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// Runs off the widget tree entirely: nothing here rebuilds unless one of the
   /// values changed.
   void _onPosition(Duration position) {
-    final offset = _lyricsTimingOffset;
-    final adjustedPosition = position -
-        Duration(
-          microseconds: (offset * Duration.microsecondsPerSecond).round(),
-        );
+    final adjustedPosition = applyLyricsTimingOffset(position, _timing.seconds);
     _playbackPosition.value = adjustedPosition;
     final lyrics = _lyrics;
     if (lyrics == null || lyrics.isEmpty || !_hasSynced) return;
@@ -624,8 +630,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _gapProgress.value = 0;
     _autoscrollPaused.value = false;
     _lyricsTimingSaveTimer?.cancel();
-    _lyricsTimingOffset =
-        await DatabaseService.instance.getLyricsTimingOffset(filename);
+    _timing.load(
+      await DatabaseService.instance.getLyricsTimingOffset(filename),
+    );
     if (!mounted || _loadedFilename != filename) return;
 
     // The repository caches to disk, so re-entering the pane is cheap.
@@ -1047,29 +1054,54 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     setState(() => _timingControlVisible = !_timingControlVisible);
   }
 
-  void _setLyricsTimingOffset(double value) {
+  /// Every committed edit from either timing surface lands here: the slider, the
+  /// nudge keys, the playhead snap and a rung switch.
+  ///
+  /// Previewing against the live playhead before persisting is the point — the
+  /// user is listening while they adjust, and a write that only lands on release
+  /// would show the change a beat after they made it.
+  void _onLyricsTimingChanged(double seconds) {
     if (!mounted) return;
-    setState(() {
-      _lyricsTimingOffset = value.clamp(-60.0, 60.0);
-    });
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
     _lyricsTimingSaveTimer?.cancel();
     _lyricsTimingSaveTimer = Timer(const Duration(seconds: 2), () {
       DatabaseService.instance.setLyricsTimingOffset(
         widget.song.filename,
-        _lyricsTimingOffset,
+        seconds,
       );
     });
   }
 
-  String _formatTimingOffset(double value) => value.toStringAsFixed(1);
+  void _openTimingSheet() {
+    final lyrics = _lyrics;
+    final activeIndex = _activeLine.value;
+    final hasActiveLine = _hasSynced &&
+        activeIndex >= 0 &&
+        lyrics != null &&
+        activeIndex < lyrics.length;
+    showLyricsTimingSheet(
+      context,
+      controller: _timing,
+      accent: widget.accent,
+      canSync: hasActiveLine,
+      playheadPosition: () =>
+          ref.read(audioPlayerManagerProvider).player.position,
+      activeLineTime: () {
+        if (lyrics == null ||
+            activeIndex < 0 ||
+            activeIndex >= lyrics.length ||
+            !lyrics[activeIndex].isSynced) {
+          return null;
+        }
+        return lyrics[activeIndex].time;
+      },
+    );
+  }
 
   void _seekToLyric(Duration lyricTime) {
-    final offset = Duration(
-      microseconds:
-          (_lyricsTimingOffset * Duration.microsecondsPerSecond).round(),
-    );
-    ref.read(audioPlayerManagerProvider).player.seek(lyricTime + offset);
+    ref.read(audioPlayerManagerProvider).player.seek(
+          undoLyricsTimingOffset(lyricTime, _timing.seconds),
+        );
   }
 
   void _maybeAutoScroll(int index) {
@@ -1295,65 +1327,36 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    icon: Icon(
-                      _timingControlVisible
-                          ? Icons.close_rounded
-                          : Icons.tune_rounded,
+                  // Scoped to the button: the tint is the only thing here that
+                  // depends on the value being non-zero, and rebuilding the pill
+                  // with it would restart its own animation on every nudge.
+                  AnimatedBuilder(
+                    animation: _timing,
+                    builder: (context, _) => IconButton(
+                      icon: Icon(
+                        _timingControlVisible
+                            ? Icons.close_rounded
+                            : Icons.tune_rounded,
+                      ),
+                      color: _timing.seconds == 0
+                          ? Colors.white
+                              .withValues(alpha: PlayerTokens.aSecondary)
+                          : widget.accent,
+                      tooltip: _timingControlVisible
+                          ? 'Hide lyric timing'
+                          : 'Adjust lyric timing — hold for precision controls',
+                      onPressed: _openTimingOffset,
+                      onLongPress: _openTimingSheet,
                     ),
-                    color: _lyricsTimingOffset == 0
-                        ? Colors.white
-                            .withValues(alpha: PlayerTokens.aSecondary)
-                        : widget.accent,
-                    tooltip: _timingControlVisible
-                        ? 'Hide lyric timing'
-                        : 'Adjust lyric timing',
-                    onPressed: _openTimingOffset,
                   ),
                   AnimatedSize(
                     duration: PlayerTokens.dFast,
                     curve: PlayerTokens.cStandard,
                     child: _timingControlVisible
-                        ? Container(
-                            width: 190,
-                            height: 40,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: PlayerTokens.s2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: widget.accent.withValues(alpha: 0.14),
-                              borderRadius: PlayerTokens.brPill,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      activeTrackColor: widget.accent,
-                                      thumbColor: widget.accent,
-                                      trackHeight: 3,
-                                    ),
-                                    child: Slider(
-                                      value: _lyricsTimingOffset,
-                                      min: -60,
-                                      max: 60,
-                                      divisions: 1200,
-                                      label: _formatTimingOffset(
-                                        _lyricsTimingOffset,
-                                      ),
-                                      onChanged: _setLyricsTimingOffset,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  '${_lyricsTimingOffset >= 0 ? '+' : ''}${_lyricsTimingOffset.toStringAsFixed(1)}',
-                                  style: PlayerTokens.meta(context).copyWith(
-                                    color: widget.accent,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        ? LyricsTimingControl(
+                            controller: _timing,
+                            accent: widget.accent,
+                            onOpenSheet: _openTimingSheet,
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -1572,101 +1575,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                 backgroundColor: widget.accent,
                 foregroundColor: PlayerTokens.onAccent(widget.accent),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LyricsTimingOffsetSheet extends StatefulWidget {
-  final double initialValue;
-  final Color accent;
-  final ValueChanged<double> onChanged;
-
-  const _LyricsTimingOffsetSheet({
-    required this.initialValue,
-    required this.accent,
-    required this.onChanged,
-  });
-
-  @override
-  State<_LyricsTimingOffsetSheet> createState() =>
-      _LyricsTimingOffsetSheetState();
-}
-
-class _LyricsTimingOffsetSheetState extends State<_LyricsTimingOffsetSheet> {
-  late double _value = widget.initialValue;
-
-  String get _label {
-    if (_value.abs() < 0.05) return 'In sync';
-    final sign = _value > 0 ? '+' : '−';
-    return '$sign${_value.abs().toStringAsFixed(1)} s';
-  }
-
-  void _set(double value) {
-    setState(() => _value = value);
-    widget.onChanged(value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          PlayerTokens.s5,
-          PlayerTokens.s2,
-          PlayerTokens.s5,
-          PlayerTokens.s5,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Lyric timing', style: PlayerTokens.paneTitle(context)),
-            const SizedBox(height: PlayerTokens.s1),
-            Text(
-              'Move the words forward or backward to match the music.',
-              style: PlayerTokens.trackSubtitle(context),
-            ),
-            const SizedBox(height: PlayerTokens.s4),
-            Center(
-              child: Text(
-                _label,
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      color: widget.accent,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: widget.accent,
-                thumbColor: widget.accent,
-                overlayColor: widget.accent.withValues(alpha: 0.12),
-              ),
-              child: Slider(
-                value: _value,
-                min: -60,
-                max: 60,
-                divisions: 1200,
-                label: _label,
-                onChanged: _set,
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Earlier', style: PlayerTokens.meta(context)),
-                Text('Later', style: PlayerTokens.meta(context)),
-              ],
-            ),
-            const SizedBox(height: PlayerTokens.s3),
-            FilledButton.tonalIcon(
-              onPressed: () => _set(0),
-              icon: const Icon(Icons.restart_alt_rounded),
-              label: const Text('Reset timing'),
             ),
           ],
         ),

@@ -483,28 +483,40 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                   controller: _pageController,
                   physics: const ClampingScrollPhysics(),
                   children: [
-                    Padding(
-                      padding: EdgeInsets.only(top: chromeHeight),
-                      child: LyricsPane(
-                        song: song,
-                        accent: accent,
-                        paneVisible: _lyricsVisible,
+                    _PaneTransition(
+                      position: _pagePosition,
+                      index: 0,
+                      child: Padding(
+                        padding: EdgeInsets.only(top: chromeHeight),
+                        child: LyricsPane(
+                          song: song,
+                          accent: accent,
+                          paneVisible: _lyricsVisible,
+                        ),
                       ),
                     ),
-                    _FullBleedPlayerPane(
-                      song: song,
-                      accent: accent,
-                      coverHeight: coverH,
-                      coverKey: _coverKey,
-                      paneVisible: _nowPlayingVisible,
-                      audioManager: _manager,
-                      pagePosition: _pagePosition,
-                    ),
-                    Padding(
-                      padding: EdgeInsets.only(top: chromeHeight),
-                      child: QueuePane(
+                    _PaneTransition(
+                      position: _pagePosition,
+                      index: 1,
+                      child: _FullBleedPlayerPane(
+                        song: song,
                         accent: accent,
-                        initialShowHistory: widget.queueShowsHistory,
+                        coverHeight: coverH,
+                        coverKey: _coverKey,
+                        paneVisible: _nowPlayingVisible,
+                        audioManager: _manager,
+                        pagePosition: _pagePosition,
+                      ),
+                    ),
+                    _PaneTransition(
+                      position: _pagePosition,
+                      index: 2,
+                      child: Padding(
+                        padding: EdgeInsets.only(top: chromeHeight),
+                        child: QueuePane(
+                          accent: accent,
+                          initialShowHistory: widget.queueShowsHistory,
+                        ),
                       ),
                     ),
                   ],
@@ -793,8 +805,18 @@ class _FullBleedPlayerPane extends ConsumerWidget {
               child: _SwipeFade(
                 position: pagePosition,
                 child: LayoutBuilder(
-                  builder: (context, coverConstraints) =>
-                      _buildCover(context, coverConstraints.maxHeight),
+                  builder: (context, c) {
+                    final double cap = MediaQuery.sizeOf(context).width * 1.12;
+                    final bool capped = c.maxHeight > cap;
+                    return Align(
+                      alignment: Alignment.bottomCenter,
+                      child: _buildCover(
+                        context,
+                        capped ? cap : c.maxHeight,
+                        fadeTop: capped,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -822,7 +844,8 @@ class _FullBleedPlayerPane extends ConsumerWidget {
     );
   }
 
-  Widget _buildCover(BuildContext context, double height) {
+  Widget _buildCover(BuildContext context, double height,
+      {bool fadeTop = false}) {
     return ValueListenableBuilder<PlaybackMediaMode>(
       valueListenable: audioManager.effectiveMediaModeNotifier,
       builder: (context, mode, _) {
@@ -867,22 +890,67 @@ class _FullBleedPlayerPane extends ConsumerWidget {
           height: height,
           child: ShaderMask(
             shaderCallback: (Rect bounds) {
-              return const LinearGradient(
+              return LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: <Color>[
+                  if (fadeTop) ...const <Color>[
+                    Colors.transparent,
+                    Color(0x80FFFFFF),
+                  ],
                   Colors.white,
                   Colors.white,
-                  Color(0xD7FFFFFF),
-                  Color(0x80FFFFFF),
-                  Color(0x28FFFFFF),
+                  const Color(0xD7FFFFFF),
+                  const Color(0x80FFFFFF),
+                  const Color(0x28FFFFFF),
                   Colors.transparent,
                 ],
-                stops: <double>[0.0, 0.55, 0.6625, 0.775, 0.8875, 1.0],
+                stops: <double>[
+                  if (fadeTop) ...const <double>[0.0, 0.07, 0.14] else 0.0,
+                  0.55,
+                  0.6625,
+                  0.775,
+                  0.8875,
+                  1.0,
+                ],
               ).createShader(bounds);
             },
             blendMode: BlendMode.dstIn,
             child: art,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Crossfade + slight parallax for a PageView pane. Always wraps its child
+/// (never swaps in and out) so pane state, like lyric scroll position, is
+/// kept. Opacity 1.0 paints directly with no extra layer.
+class _PaneTransition extends StatelessWidget {
+  final ValueListenable<double> position;
+  final int index;
+  final Widget child;
+
+  const _PaneTransition({
+    required this.position,
+    required this.index,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: position,
+      child: child,
+      builder: (context, pos, child) {
+        final double signed = pos - index;
+        final double d = signed.abs().clamp(0.0, 1.0);
+        return Opacity(
+          opacity: 1.0 - d,
+          child: FractionalTranslation(
+            translation: Offset(signed * 0.2, 0),
+            child: child,
           ),
         );
       },

@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
 import '../../domain/models/online_search_result.dart';
+import '../../domain/services/song_replacement_rules.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/online_metadata_service.dart';
+import '../../services/scanner_service.dart';
 import '../components/ambient_scaffold.dart';
 import '../widgets/album_art_image.dart';
 import '../tokens/app_tokens.dart';
@@ -351,6 +353,148 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _showReplaceHelp() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: const [
+            AppIcon(AppIcons.swapHoriz),
+            SizedBox(width: 8),
+            Text("Replace Song"),
+          ],
+        ),
+        content: const Text(
+          "Swaps this song's audio file for a different copy of the same song "
+          "— a better rip, a lossless version, a clean encode.\n\n"
+          "Everything Wispie knows about the song moves to the new file: its "
+          "play history, favourite status, playlists, and when it joined your "
+          "library.\n\n"
+          "Its metadata is re-read from the new file, so the tags, duration and "
+          "cover art you see afterwards are the new file's own. Anything the new "
+          "file does not carry is reported as unknown rather than borrowed from "
+          "the old entry — edit it afterwards if that happens.\n\n"
+          "The replacement has to come from outside your library folders and "
+          "have a different filename. Changing only the extension is enough.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Got it"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _replaceSong(Song currentSong) async {
+    final picked = await FilePicker.pickFile();
+    final pickedPath = picked?.path;
+    if (pickedPath == null || pickedPath.isEmpty || !mounted) return;
+
+    final check = await _checkReplacement(currentSong, pickedPath);
+    if (!mounted) return;
+
+    final ReplacementAccepted accepted;
+    switch (check) {
+      case ReplacementRejected rejected:
+        appSnack(context, rejected.reason, tone: AppTone.warning);
+        return;
+      case ReplacementAccepted ok:
+        accepted = ok;
+    }
+
+    final disposition = await _askOriginalDisposition(currentSong, accepted);
+    if (disposition == null || !mounted) return;
+
+    setState(() => _isSaving = true);
+    try {
+      final replaced = await ref.read(songsProvider.notifier).replaceSongFile(
+            currentSong,
+            accepted,
+            disposition: disposition,
+          );
+
+      if (!mounted) return;
+      // The screen resolves its song by filename, so it has to follow the
+      // replacement to its new identity — along with the fields showing what
+      // the new file turned out to say about itself.
+      setState(() {
+        _activeFilename = replaced.filename;
+        _filenameController.text =
+            p.basenameWithoutExtension(replaced.filename);
+        _titleController.text = replaced.title;
+        _artistController.text = replaced.artist;
+        _albumController.text = replaced.album;
+      });
+
+      appSnack(context, "Replaced with ${replaced.filename}",
+          tone: AppTone.success);
+    } catch (e) {
+      // A UI boundary, so this reports anything rather than letting a
+      // filesystem or database failure escape as a crash.
+      if (mounted) {
+        appSnack(context, "Could not replace the file: $e",
+            tone: AppTone.danger);
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<ReplacementCheck> _checkReplacement(
+      Song song, String sourcePath) async {
+    final folders = await ref.read(storageServiceProvider).getMusicFolders();
+    final library = ref.read(songsProvider).asData?.value ?? const <Song>[];
+
+    return SongReplacementRules.check(
+      original: song,
+      sourcePath: sourcePath,
+      isSupportedMediaFile: ScannerService.isSupportedMediaPath(sourcePath),
+      trackedFolders: folders.map((folder) => folder['path'] ?? ''),
+      libraryFilenames: library.map((s) => s.filename),
+      destinationExists:
+          File(SongReplacementRules.destinationFor(song, sourcePath))
+              .existsSync(),
+    );
+  }
+
+  Future<OriginalFileDisposition?> _askOriginalDisposition(
+      Song song, ReplacementAccepted accepted) {
+    return showDialog<OriginalFileDisposition>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text("Replace Song"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("${song.filename}\nreplaced by ${accepted.newFilename}"),
+            const SizedBox(height: 24),
+            const Text("What should happen to the original?"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, OriginalFileDisposition.hide),
+            child: const Text("KEEP, HIDE IT"),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, OriginalFileDisposition.delete),
+            style: TextButton.styleFrom(foregroundColor: AppTokens.danger),
+            child: const Text("DELETE IT"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -701,6 +845,25 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                 border: OutlineInputBorder(),
                 helperText: "Renaming the file will update it locally.",
               ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed:
+                        _isSaving ? null : () => _replaceSong(currentSong),
+                    icon: const AppIcon(AppIcons.swapHoriz),
+                    label: const Text("Replace Song"),
+                    style: AppTokens.tonalButton,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _showReplaceHelp,
+                  icon: const AppIcon(AppIcons.help),
+                  tooltip: "What does this do?",
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             Row(

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,8 @@ import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_sheet.dart';
 import '../components/pop_icon.dart';
+import '../components/pressable.dart';
+import '../components/progressive_bottom_blur.dart';
 import '../components/song_actions.dart';
 import '../routes/app_page_route.dart';
 import '../screens/select_songs_screen.dart';
@@ -33,6 +36,7 @@ import '../widgets/album_art_image.dart';
 import '../widgets/album_card_selector.dart';
 import '../widgets/audio_visualizer.dart';
 import '../widgets/bulk_selection_bar.dart';
+import '../widgets/clickable_artist_text.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
@@ -74,7 +78,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   String? _selectedAlbum;
   SongSortOrder? _localSort;
   final ScrollController _scroll = ScrollController();
-  double _scrollOffset = 0;
+  // Scroll position drives the hero parallax and the top bar through this
+  // notifier only. Nothing may call setState from the scroll listener:
+  // that rebuilt the screen (and re-sorted the song list) on every tick.
+  final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0);
   Color? _detailAccent;
   bool _detailNeutral = false;
   String _paletteKey = '';
@@ -89,14 +96,13 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _scrollOffset.dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    if (!mounted) return;
-    final double offset = _scroll.offset;
-    if ((offset - _scrollOffset).abs() < 2) return;
-    setState(() => _scrollOffset = offset);
+    if (!mounted || !_scroll.hasClients) return;
+    _scrollOffset.value = _scroll.offset;
   }
 
   @override
@@ -291,9 +297,6 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       }
     }
 
-    // Big title visible until scrolled past the header (~220px).
-    final bool showBarTitle = _scrollOffset > 230;
-
     // Immersive background: blurred header artwork so the whole page feels
     // tinted like the iOS reference, still clamped dark for white text.
     // Falls back to the flat gradient when no cover resolves.
@@ -305,6 +308,81 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       bgUrl = customArt;
       bgKey = customArt;
     }
+
+    final MediaQueryData mq = MediaQuery.of(context);
+    final double dpr = mq.devicePixelRatio;
+    final double topPad = mq.padding.top;
+
+    // Layout: any artist or album with a cover gets the full-bleed hero.
+    // Playlists and coverless entries keep the cover card, since a square
+    // cover stretched edge to edge just looks soft.
+    final bool hasAnyCover =
+        hasCustomArtwork || (firstSong?.coverUrl ?? '').isNotEmpty;
+    final bool photoHero =
+        (effectiveIsArtist || effectiveIsAlbum) && hasAnyCover;
+    final double photoH = (mq.size.height * 0.5).clamp(320.0, 520.0);
+    final double cardSide = (mq.size.width * 0.62).clamp(180.0, 300.0);
+    final double cardTop = topPad + 68;
+    // One art widget serves both heroes, so it decodes at the width it will
+    // actually paint at.
+    final double artWidth = photoHero ? mq.size.width : cardSide;
+
+    // Scroll offset at which the in-page title has slid under the top bar,
+    // so the bar can take the title over.
+    final double rawReveal = photoHero ? photoH - topPad - 150 : cardSide + 32;
+    final double titleRevealOffset = rawReveal < 120 ? 120 : rawReveal;
+
+    final String coverUrl = firstSong?.coverUrl ?? '';
+    Widget coverArt;
+    if (hasCustomArtwork && customArt != null) {
+      coverArt = Image.file(
+        File(customArt),
+        fit: BoxFit.cover,
+        // Width only: giving cacheWidth and cacheHeight together resizes to
+        // exactly that box and squashes non-square art.
+        cacheWidth: (artWidth * dpr).round(),
+        errorBuilder: (_, __, ___) =>
+            const ColoredBox(color: Color(0xFF1E1E1E)),
+      );
+    } else if (coverUrl.isNotEmpty) {
+      coverArt = AlbumArtImage(
+        url: coverUrl,
+        filename: firstSong?.filename,
+        width: photoHero ? null : cardSide,
+        height: photoHero ? null : cardSide,
+        memCacheWidth: (artWidth * dpr).round(),
+        fit: BoxFit.cover,
+      );
+    } else {
+      coverArt = const ColoredBox(
+        color: Color(0xFF1E1E1E),
+        child: Center(
+          child: AppIcon(AppIcons.musicNote, color: Colors.white24, size: 48),
+        ),
+      );
+    }
+
+    final VoidCallback? onArtworkTap = canFetchCover ? handleFetchCover : null;
+    final Widget hero = photoHero
+        ? _PhotoHero(
+            art: coverArt,
+            title: widget.title,
+            height: photoH,
+            scroll: _scrollOffset,
+            onTap: onArtworkTap,
+          )
+        : _CardHero(
+            art: coverArt,
+            side: cardSide,
+            topInset: cardTop,
+            scroll: _scrollOffset,
+            onTap: onArtworkTap,
+          );
+
+    final String? artistLine =
+        effectiveIsAlbum && !effectiveIsArtist && effectiveArtistName.isNotEmpty
+            ? effectiveArtistName
+            : null;
 
     return PopScope(
       canPop: !selectionState.isSelectionMode,
@@ -336,125 +414,123 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                       ),
                     ),
             ),
-            // Near-black fade behind the content's top region: the joint
-            // where the cover's opaque black bottom meets the background
-            // lands inside it, so both sides read the same and no line can
-            // draw. Static and screen-sized; scrolling rows simply travel
-            // through it. Detail-only.
-            Positioned.fill(
+            // Flat legibility scrim. Deliberately not a gradient: one that
+            // ends mid-screen makes scrolled content travel through a
+            // near-black zone and hides the blur. Raise 0x4D (30%) if rows
+            // lack contrast on a light cover.
+            const Positioned.fill(
               child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: <Color>[
-                        Colors.black.withValues(alpha: 0.78),
-                        Colors.black.withValues(alpha: 0.78),
-                        Colors.black.withValues(alpha: 0.0),
-                      ],
-                      stops: const <double>[0.0, 0.52, 0.72],
+                child: ColoredBox(color: Color(0x4D000000)),
+              ),
+            ),
+            WideContentCenter(
+              // Rows ease out under the floating mini player and under the
+              // top bar instead of hard-cutting.
+              child: ProgressiveBottomBlur(
+                height: 140,
+                topHeight: 64,
+                child: CustomScrollView(
+                  controller: _scroll,
+                  slivers: [
+                    SliverToBoxAdapter(child: hero),
+                    SliverToBoxAdapter(
+                      child: _DetailInfo(
+                        title: photoHero ? null : widget.title,
+                        artistLine: artistLine,
+                        visibleSongs: visibleSongs,
+                        sortedSongs: sortedSongs,
+                        playlistId: widget.playlistId,
+                        isUnknown: isUnknownArtistOrAlbum,
+                        albumCount: showAlbumGroups ? albumGroups.length : 0,
+                        accent: baseAccent,
+                      ),
                     ),
-                  ),
+                    if (showAlbumGroups)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: AppTokens.s2),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionHeader(
+                                title: 'Albums',
+                                trailing: selectedAlbum != null
+                                    ? _ClearChip(
+                                        onTap: () => setState(
+                                            () => _selectedAlbum = null),
+                                      )
+                                    : null,
+                              ),
+                              AlbumCardSelector(
+                                allSongs: widget.songs,
+                                albums: orderedAlbums,
+                                albumGroups: albumGroups,
+                                selected: selectedAlbum,
+                                artistName: effectiveArtistName,
+                                onSelected: (album) =>
+                                    setState(() => _selectedAlbum = album),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    SliverToBoxAdapter(
+                      child: _SectionHeader(
+                        title: selectedAlbum ?? 'Songs',
+                        trailing: Text(
+                          '${visibleSongs.length}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (visibleSongs.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(
+                            'No songs in this list',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final Song song = visibleSongs[index];
+                            return _GradientSongRow(
+                              song: song,
+                              accent: baseAccent,
+                              playlistId: widget.playlistId,
+                              heroTagPrefix: 'gradient_${widget.title}',
+                              visibleSongs: visibleSongs,
+                              // Every song on an artist page is by that
+                              // artist, so the album is the useful line.
+                              showAlbumLine: effectiveIsArtist,
+                            );
+                          },
+                          childCount: visibleSongs.length,
+                        ),
+                      ),
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 150)),
+                  ],
                 ),
               ),
             ),
-
-            WideContentCenter(
-              child: CustomScrollView(
-                controller: _scroll,
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _Header(
-                      title: widget.title,
-                      visibleSongs: visibleSongs,
-                      sortedSongs: sortedSongs,
-                      artworkPath: hasCustomArtwork ? artworkPath : null,
-                      canFetchCover: canFetchCover,
-                      onArtworkTap: handleFetchCover,
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _Actions(
-                      visibleSongs: visibleSongs,
-                      sortedSongs: sortedSongs,
-                      playlistId: widget.playlistId,
-                      isUnknown: isUnknownArtistOrAlbum,
-                    ),
-                  ),
-                  if (showAlbumGroups)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                            top: AppTokens.s4, bottom: AppTokens.s1),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: AppTokens.s4),
-                              child: Text(
-                                'Albums',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  letterSpacing: -0.2,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppTokens.s2),
-                            AlbumCardSelector(
-                              allSongs: widget.songs,
-                              albums: orderedAlbums,
-                              albumGroups: albumGroups,
-                              selected: selectedAlbum,
-                              artistName: effectiveArtistName,
-                              onSelected: (album) =>
-                                  setState(() => _selectedAlbum = album),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  if (visibleSongs.isEmpty)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text(
-                          'No songs in this list',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      ),
-                    )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final Song song = visibleSongs[index];
-                          return _GradientSongRow(
-                            song: song,
-                            accent: baseAccent,
-                            playlistId: widget.playlistId,
-                            heroTagPrefix: 'gradient_${widget.title}',
-                            visibleSongs: visibleSongs,
-                          );
-                        },
-                        childCount: visibleSongs.length,
-                      ),
-                    ),
-                  const SliverPadding(padding: EdgeInsets.only(bottom: 150)),
-                ],
-              ),
-            ),
-            // Floating transparent top bar with glass icon backings.
+            // Floating top bar: glass buttons over the hero, a blurred bar
+            // with the title once the hero has scrolled away.
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: _FloatingTopBar(
                 title: widget.title,
-                showTitle: showBarTitle,
+                scroll: _scrollOffset,
+                revealOffset: titleRevealOffset,
                 effectiveSortOrder: effectiveSortOrder,
                 showAlbumGroups: showAlbumGroups,
                 isUnknown: isUnknownArtistOrAlbum,
@@ -809,196 +885,293 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
-  final String title;
-  final List<Song> visibleSongs;
-  final List<Song> sortedSongs;
-  final String? artworkPath;
-  final bool canFetchCover;
-  final VoidCallback onArtworkTap;
+// ---------------------------------------------------------------------------
+// Heroes
+// ---------------------------------------------------------------------------
 
-  const _Header({
+/// Full-bleed artist or album art. Parallax on scroll, stretches on
+/// overscroll, and dissolves into the page's own blurred backdrop (alpha, not
+/// black) so the blur keeps showing through as the page scrolls. The title
+/// sits on the fade, large and left-aligned; that is the one bold moment on
+/// the screen.
+class _PhotoHero extends StatelessWidget {
+  final Widget art;
+  final String title;
+  final double height;
+  final ValueListenable<double> scroll;
+  final VoidCallback? onTap;
+
+  const _PhotoHero({
+    required this.art,
     required this.title,
-    required this.visibleSongs,
-    required this.sortedSongs,
-    required this.artworkPath,
-    required this.canFetchCover,
-    required this.onArtworkTap,
+    required this.height,
+    required this.scroll,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Full-bleed immersive cover like the player: full screen width starting
-    // at the very top under the status bar, no margins or rounded corners,
-    // fading into the blurred background with the title over its lower edge.
-    final double screenH = MediaQuery.sizeOf(context).height;
-    final double coverH = (screenH * 0.44).clamp(260.0, 460.0);
-    final String? customArt = artworkPath;
-    final Song? firstSong = LibraryLogic.pickCoverSong(sortedSongs);
-    final String firstCover = firstSong?.coverUrl ?? '';
+    final Widget photo = ShaderMask(
+      blendMode: BlendMode.dstIn,
+      // Eased falloff ending at zero alpha: no visible start or end line.
+      shaderCallback: (Rect bounds) => const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: <Color>[
+          Color(0xFFFFFFFF),
+          Color(0xFFFFFFFF),
+          Color(0xE5FFFFFF),
+          Color(0xA5FFFFFF),
+          Color(0x5AFFFFFF),
+          Color(0x1AFFFFFF),
+          Color(0x00FFFFFF),
+        ],
+        stops: <double>[0.0, 0.42, 0.536, 0.652, 0.768, 0.884, 1.0],
+      ).createShader(bounds),
+      child: art,
+    );
 
-    Widget art;
-    if (customArt != null) {
-      art = Image.file(
-        File(customArt),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
         width: double.infinity,
-        height: coverH,
-        fit: BoxFit.cover,
-        cacheWidth: 900,
-        cacheHeight: 900,
-        errorBuilder: (_, __, ___) => Container(color: Colors.black),
-      );
-    } else if (firstCover.isNotEmpty) {
-      art = AlbumArtImage(
-        url: firstCover,
-        filename: firstSong?.filename,
-        cacheVersion: firstSong?.mtime,
-        width: MediaQuery.sizeOf(context).width,
-        height: coverH,
-        memCacheWidth: (MediaQuery.sizeOf(context).width *
-                MediaQuery.devicePixelRatioOf(context))
-            .round(),
-        fit: BoxFit.cover,
-      );
-    } else {
-      art = Container(color: Colors.black);
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: canFetchCover ? onArtworkTap : null,
-          onLongPress: canFetchCover ? onArtworkTap : null,
-          child: SizedBox(
-            width: double.infinity,
-            height: coverH,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                art,
-                // Dissolve the photo into opaque black: the bottom lands on
-                // the same near-black as the page background, so the joint
-                // below the title cannot draw an edge the way a transparency
-                // fade over mottled blur did.
-                const Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[
-                          Colors.transparent,
-                          Colors.transparent,
-                          Color(0xCC000000),
-                          Color(0xF2000000),
-                        ],
-                        stops: <double>[0.0, 0.4, 0.72, 1.0],
-                      ),
+        height: height,
+        child: Stack(
+          // The stretched photo overflows the box while overscrolling.
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: ValueListenableBuilder<double>(
+                valueListenable: scroll,
+                child: photo,
+                builder: (context, offset, child) {
+                  final double pull = offset < 0 ? -offset : 0.0;
+                  return Transform.translate(
+                    // Pinned to the top while pulling, half-speed on scroll.
+                    offset: Offset(0, offset < 0 ? offset : offset * 0.35),
+                    child: Transform.scale(
+                      scale: 1 + pull / height,
+                      alignment: Alignment.topCenter,
+                      child: child,
                     ),
+                  );
+                },
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 56, 16, 14),
+                // A band that fades out at both ends, so the title reads on
+                // the photo without leaving an edge where the hero ends.
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      Color(0x00000000),
+                      Color(0x66000000),
+                      Color(0x73000000),
+                      Color(0x40000000),
+                      Color(0x00000000),
+                    ],
+                    stops: <double>[0.0, 0.35, 0.6, 0.85, 1.0],
                   ),
                 ),
-                // Title + count overlap the lower edge with a wash for
-                // legibility, mirroring the player info block hierarchy.
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(20, 48, 20, 18),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[
-                          Colors.transparent,
-                          Color(0x66000000),
-                        ],
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: AppTokens.screenTitle(context).copyWith(
-                            color: Colors.white,
-                            fontSize: 24,
-                          ),
-                        ),
-                        if (visibleSongs.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          CollectionDurationDisplay(
-                            songs: visibleSongs,
-                            showSongCount: true,
-                            compact: true,
-                            style: AppTokens.meta(context).copyWith(
-                              color: Colors.white.withValues(alpha: 0.72),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                child: _TitleText(title, fontSize: 36, shadow: true),
+              ),
             ),
-          ),
+          ],
         ),
-        // Fade tail: continues the cover's black dissolve past its edge so
-        // the photo meets the page with no cutoff line.
-        Container(
-          height: 56,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[Color(0xF2000000), Colors.transparent],
-            ),
-          ),
-        ),
-        const SizedBox(height: AppTokens.s1),
-      ],
+      ),
     );
   }
 }
 
-class _Actions extends ConsumerWidget {
+/// Centered cover card for playlists and coverless collections. Shrinks and
+/// fades as the page scrolls, grows slightly when pulled down.
+class _CardHero extends StatelessWidget {
+  final Widget art;
+  final double side;
+  final double topInset;
+  final ValueListenable<double> scroll;
+  final VoidCallback? onTap;
+
+  const _CardHero({
+    required this.art,
+    required this.side,
+    required this.topInset,
+    required this.scroll,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget card = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: side,
+        height: side,
+        decoration: BoxDecoration(
+          borderRadius: AppTokens.brLg,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 40,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: ClipRRect(borderRadius: AppTokens.brLg, child: art),
+      ),
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(top: topInset, bottom: AppTokens.s3),
+      child: Center(
+        child: ValueListenableBuilder<double>(
+          valueListenable: scroll,
+          child: card,
+          builder: (context, offset, child) {
+            final double t = (offset / side).clamp(0.0, 1.0);
+            final double pull =
+                offset < 0 ? (-offset / side).clamp(0.0, 0.3) : 0.0;
+            return Opacity(
+              opacity: 1 - 0.7 * t,
+              child: Transform.scale(
+                scale: 1 - 0.12 * t + pull,
+                child: child,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _TitleText extends StatelessWidget {
+  final String text;
+  final double fontSize;
+  final bool shadow;
+
+  const _TitleText(this.text, {required this.fontSize, this.shadow = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: AppTokens.screenTitle(context).copyWith(
+        color: Colors.white,
+        fontSize: fontSize,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.8,
+        height: 1.06,
+        shadows: shadow
+            ? <Shadow>[
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 18,
+                ),
+              ]
+            : null,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Info + actions
+// ---------------------------------------------------------------------------
+
+/// Everything between the hero and the lists: the title (when the hero does
+/// not already carry it), the artist link for albums, the stats, and the
+/// shuffle / play controls on one row.
+class _DetailInfo extends ConsumerWidget {
+  final String? title;
+  final String? artistLine;
   final List<Song> visibleSongs;
   final List<Song> sortedSongs;
   final String? playlistId;
   final bool isUnknown;
+  final int albumCount;
+  final Color accent;
 
-  const _Actions({
+  const _DetailInfo({
+    required this.title,
+    required this.artistLine,
     required this.visibleSongs,
     required this.sortedSongs,
     required this.playlistId,
     required this.isUnknown,
+    required this.albumCount,
+    required this.accent,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
-    final Color accent = AppTokens.accentOf(context, ref);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = visibleSongs.isNotEmpty;
+    final String? artist = artistLine;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppTokens.s4, AppTokens.s2, AppTokens.s4, AppTokens.s2),
+      padding: EdgeInsets.fromLTRB(16, title == null ? 2 : 0, 16, 4),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Circular actions instead of pills: big accent Play beside a
-          // smaller tonal Shuffle, centered. Same icons, same callbacks,
-          // flat with no glow.
+          if (title != null) _TitleText(title!, fontSize: 28),
+          if (artist != null && artist.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ClickableArtistText(
+              artist: artist,
+              style: AppTokens.rowTitle(context).copyWith(
+                color: accent,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              onArtistTap: (name) =>
+                  songActionGoToArtistByName(context, ref, name),
+            ),
+          ],
+          SizedBox(height: title == null ? 6 : 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _CircleAction(
-                size: 52,
-                iconSize: 24,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CollectionDurationDisplay(
+                      songs: visibleSongs,
+                      showSongCount: true,
+                      compact: true,
+                      style: AppTokens.meta(context).copyWith(
+                        color: Colors.white.withValues(alpha: 0.72),
+                      ),
+                    ),
+                    if (albumCount > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '$albumCount albums',
+                          style: AppTokens.meta(context).copyWith(
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              _RoundAction(
+                size: 48,
+                iconSize: 22,
                 tooltip: 'Shuffle',
                 background: scheme.secondaryContainer,
                 foreground: scheme.onSecondaryContainer,
@@ -1011,10 +1184,10 @@ class _Actions extends ConsumerWidget {
                   );
                 },
               ),
-              const SizedBox(width: AppTokens.s4),
-              _CircleAction(
-                size: 72,
-                iconSize: 32,
+              const SizedBox(width: 12),
+              _RoundAction(
+                size: 64,
+                iconSize: 30,
                 tooltip: 'Play',
                 background: accent,
                 foreground: AppTokens.onAccent(accent),
@@ -1033,7 +1206,7 @@ class _Actions extends ConsumerWidget {
           ),
           if (isUnknown && sortedSongs.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: AppTokens.s2),
+              padding: const EdgeInsets.only(top: AppTokens.s3),
               child: OutlinedButton.icon(
                 onPressed: () => songActionFetchMissingMetadataForList(
                     context, ref, sortedSongs),
@@ -1047,9 +1220,9 @@ class _Actions extends ConsumerWidget {
   }
 }
 
-/// Circular tap target for the detail actions. Detail-only variant reusing
-/// the app's own icon set; callbacks match the legacy pills exactly.
-class _CircleAction extends StatelessWidget {
+/// Circular tap target with press feedback. Same icon set and callbacks as
+/// the previous detail actions.
+class _RoundAction extends StatelessWidget {
   final double size;
   final double iconSize;
   final String tooltip;
@@ -1059,7 +1232,7 @@ class _CircleAction extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
 
-  const _CircleAction({
+  const _RoundAction({
     required this.size,
     required this.iconSize,
     required this.tooltip,
@@ -1078,8 +1251,8 @@ class _CircleAction extends StatelessWidget {
         enabled ? foreground : Colors.white.withValues(alpha: 0.35);
     return Tooltip(
       message: tooltip,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: Pressable(
+        pressedScale: 0.92,
         onTap: enabled ? onTap : null,
         child: Container(
           width: size,
@@ -1093,15 +1266,98 @@ class _CircleAction extends StatelessWidget {
   }
 }
 
-/// Transparent song row for the gradient detail: same content as the legacy
-/// list item (artwork, title, artist, duration, heart, play-count, menu)
-/// painted directly on the gradient with an accent wash when active.
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final Widget? trailing;
+
+  const _SectionHeader({required this.title, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget? end = trailing;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                letterSpacing: -0.2,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (end != null) end,
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown beside "Albums" while an album filter is active.
+class _ClearChip extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ClearChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      pressedScale: 0.94,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: AppTokens.brPill,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Show all',
+              style: AppTokens.meta(context).copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.close_rounded,
+              size: 14,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Song row
+// ---------------------------------------------------------------------------
+
+/// Transparent song row painted on the page backdrop. The active / selected
+/// wash is a rounded, fading highlight with the ripple above it. Each row
+/// watches only the slices of state it displays, so a favorite toggle or a
+/// selection change rebuilds one row instead of the whole list.
 class _GradientSongRow extends ConsumerWidget {
   final Song song;
   final Color accent;
   final String? playlistId;
   final String heroTagPrefix;
   final List<Song> visibleSongs;
+  final bool showAlbumLine;
 
   const _GradientSongRow({
     required this.song,
@@ -1109,169 +1365,381 @@ class _GradientSongRow extends ConsumerWidget {
     required this.playlistId,
     required this.heroTagPrefix,
     required this.visibleSongs,
+    required this.showAlbumLine,
   });
+
+  static final BorderRadius _radius = BorderRadius.circular(14);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userData = ref.watch(userDataProvider);
-    final settings = ref.watch(settingsProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
-    final selectionState = ref.watch(selectionProvider);
-    final bool isSelected =
-        selectionState.selectedFilenames.contains(song.filename);
-    final bool isFavorite = userData.isFavorite(song.filename);
-    final bool isSuggestLess = userData.isSuggestLess(song.filename);
+    final bool isSelectionMode =
+        ref.watch(selectionProvider.select((s) => s.isSelectionMode));
+    final bool isSelected = ref.watch(selectionProvider
+        .select((s) => s.selectedFilenames.contains(song.filename)));
+    final bool isFavorite =
+        ref.watch(userDataProvider.select((d) => d.isFavorite(song.filename)));
+    final bool isSuggestLess = ref
+        .watch(userDataProvider.select((d) => d.isSuggestLess(song.filename)));
+    final VisualizerMode visualizerMode =
+        ref.watch(settingsProvider.select((s) => s.visualizerMode));
+    final bool showDuration =
+        ref.watch(settingsProvider.select((s) => s.showSongDuration));
     final String heroTag = '${heroTagPrefix}_${song.filename}';
+    final String subtitle = showAlbumLine && song.album.trim().isNotEmpty
+        ? song.album
+        : song.artist;
 
     return ValueListenableBuilder<Song?>(
       valueListenable: audioManager.currentSongNotifier,
       builder: (context, currentSong, _) {
         final bool isActive = currentSong?.filename == song.filename;
-        return Container(
-          color: isSelected || isActive
-              ? accent.withValues(alpha: 0.14)
-              : Colors.transparent,
-          child: Opacity(
-            opacity: isSuggestLess ? 0.55 : 1.0,
-            child: InkWell(
-              onTap: selectionState.isSelectionMode
-                  ? () => ref
-                      .read(selectionProvider.notifier)
-                      .toggleSelection(song.filename)
-                  : () {
-                      audioManager.playSong(
-                        song,
-                        contextQueue: visibleSongs,
-                        playlistId: playlistId,
-                      );
+        return Opacity(
+          opacity: isSuggestLess ? 0.55 : 1.0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                color: isSelected || isActive
+                    ? accent.withValues(alpha: 0.14)
+                    : Colors.transparent,
+                borderRadius: _radius,
+              ),
+              // Clip + transparent Material: the ripple paints above the
+              // wash and stays inside the rounded corners.
+              child: ClipRRect(
+                borderRadius: _radius,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    onTap: isSelectionMode
+                        ? () => ref
+                            .read(selectionProvider.notifier)
+                            .toggleSelection(song.filename)
+                        : () {
+                            audioManager.playSong(
+                              song,
+                              contextQueue: visibleSongs,
+                              playlistId: playlistId,
+                            );
+                          },
+                    onLongPress: () {
+                      if (!isSelectionMode) {
+                        ref
+                            .read(selectionProvider.notifier)
+                            .enterSelectionMode(song.filename);
+                        HapticFeedback.heavyImpact();
+                      } else {
+                        showSongOptionsMenu(
+                            context, ref, song.filename, song.title,
+                            song: song, playlistId: playlistId);
+                      }
                     },
-              onLongPress: () {
-                if (!selectionState.isSelectionMode) {
-                  ref
-                      .read(selectionProvider.notifier)
-                      .enterSelectionMode(song.filename);
-                  HapticFeedback.heavyImpact();
-                } else {
-                  showSongOptionsMenu(context, ref, song.filename, song.title,
-                      song: song, playlistId: playlistId);
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s3,
-                  vertical: AppTokens.s2,
-                ),
-                child: Row(
-                  children: [
-                    _RowArtwork(
-                      song: song,
-                      heroTag: heroTag,
-                      accent: accent,
-                      isSelected: isSelected,
-                      isActive: isActive,
-                      audioManager: audioManager,
-                      visualizerMode: settings.visualizerMode,
-                    ),
-                    const SizedBox(width: AppTokens.s3),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: AppTokens.s2,
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTokens.rowTitle(context).copyWith(
-                              color: Colors.white,
-                              decoration: isSuggestLess
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
+                          _RowArtwork(
+                            song: song,
+                            heroTag: heroTag,
+                            accent: accent,
+                            isSelected: isSelected,
+                            isActive: isActive,
+                            audioManager: audioManager,
+                            visualizerMode: visualizerMode,
                           ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  song.artist,
+                          const SizedBox(width: AppTokens.s3),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  song.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style:
-                                      AppTokens.rowSubtitle(context).copyWith(
-                                    color: Colors.white.withValues(alpha: 0.62),
+                                  style: AppTokens.rowTitle(context).copyWith(
+                                    color: isActive ? accent : Colors.white,
+                                    decoration: isSuggestLess
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        subtitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTokens.rowSubtitle(context)
+                                            .copyWith(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.62),
+                                        ),
+                                      ),
+                                    ),
+                                    if (showDuration &&
+                                        song.duration != null &&
+                                        song.duration!.inSeconds > 0) ...[
+                                      const SizedBox(width: AppTokens.s2),
+                                      DurationBadge(
+                                        duration: song.duration,
+                                        isSubtle: true,
+                                        showIcon: false,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!isSelectionMode) ...[
+                            if (song.playCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(
+                                      alpha: AppTokens.accentWashAlpha),
+                                  borderRadius: AppTokens.brPill,
+                                ),
+                                child: Text(
+                                  '${song.playCount}',
+                                  style: AppTokens.meta(context).copyWith(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: accent,
                                   ),
                                 ),
                               ),
-                              if (settings.showSongDuration &&
-                                  song.duration != null &&
-                                  song.duration!.inSeconds > 0) ...[
-                                const SizedBox(width: AppTokens.s2),
-                                DurationBadge(
-                                  duration: song.duration,
-                                  isSubtle: true,
-                                  showIcon: false,
-                                ),
-                              ],
-                            ],
-                          ),
+                            PopIcon(
+                              isActive: isFavorite,
+                              activeColor: accent,
+                              inactiveColor:
+                                  Colors.white.withValues(alpha: 0.5),
+                              size: 20,
+                              onTap: () => ref
+                                  .read(userDataProvider.notifier)
+                                  .toggleFavorite(song.filename),
+                            ),
+                            IconButton(
+                              iconSize: 20,
+                              visualDensity: VisualDensity.compact,
+                              icon: AppIcon(
+                                AppIcons.moreVert,
+                                color: Colors.white.withValues(alpha: 0.62),
+                              ),
+                              onPressed: () {
+                                showSongOptionsMenu(
+                                  context,
+                                  ref,
+                                  song.filename,
+                                  song.title,
+                                  song: song,
+                                  playlistId: playlistId,
+                                );
+                              },
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    if (!selectionState.isSelectionMode) ...[
-                      if (song.playCount > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: accent.withValues(
-                                alpha: AppTokens.accentWashAlpha),
-                            borderRadius: AppTokens.brPill,
-                          ),
-                          child: Text(
-                            '${song.playCount}',
-                            style: AppTokens.meta(context).copyWith(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: accent,
-                            ),
-                          ),
-                        ),
-                      PopIcon(
-                        isActive: isFavorite,
-                        activeColor: accent,
-                        inactiveColor: Colors.white.withValues(alpha: 0.5),
-                        size: 20,
-                        onTap: () => ref
-                            .read(userDataProvider.notifier)
-                            .toggleFavorite(song.filename),
-                      ),
-                      IconButton(
-                        iconSize: 20,
-                        visualDensity: VisualDensity.compact,
-                        icon: AppIcon(
-                          AppIcons.moreVert,
-                          color: Colors.white.withValues(alpha: 0.62),
-                        ),
-                        onPressed: () {
-                          showSongOptionsMenu(
-                            context,
-                            ref,
-                            song.filename,
-                            song.title,
-                            song: song,
-                            playlistId: playlistId,
-                          );
-                        },
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Top bar
+// ---------------------------------------------------------------------------
+
+class _FloatingTopBar extends StatelessWidget {
+  final String title;
+  final ValueListenable<double> scroll;
+  final double revealOffset;
+  final SongSortOrder effectiveSortOrder;
+  final bool showAlbumGroups;
+  final bool isUnknown;
+  final bool canFetchCover;
+  final bool effectiveIsArtist;
+  final bool effectiveIsAlbum;
+  final String? playlistId;
+  final List<Song> sortedSongs;
+  final List<Song> visibleSongs;
+  final ValueChanged<SongSortOrder> onLocalSort;
+  final VoidCallback onFetchCover;
+  final VoidCallback onPlaylistOptions;
+  final VoidCallback onMerge;
+  final VoidCallback onFetchMissing;
+
+  const _FloatingTopBar({
+    required this.title,
+    required this.scroll,
+    required this.revealOffset,
+    required this.effectiveSortOrder,
+    required this.showAlbumGroups,
+    required this.isUnknown,
+    required this.canFetchCover,
+    required this.effectiveIsArtist,
+    required this.effectiveIsAlbum,
+    required this.playlistId,
+    required this.sortedSongs,
+    required this.visibleSongs,
+    required this.onLocalSort,
+    required this.onFetchCover,
+    required this.onPlaylistOptions,
+    required this.onMerge,
+    required this.onFetchMissing,
+  });
+
+  /// 0 while the in-page title is still visible, 1 once the bar owns it.
+  static double _reveal(double offset, double revealOffset) =>
+      ((offset - (revealOffset - 60)) / 60).clamp(0.0, 1.0);
+
+  @override
+  Widget build(BuildContext context) {
+    final double topPad = MediaQuery.paddingOf(context).top;
+    return Stack(
+      children: [
+        // Over the hero: an eased scrim behind the glass buttons. Once the
+        // hero has scrolled away: a blurred bar. Nothing blurs the photo
+        // itself, only content that has actually scrolled underneath.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ValueListenableBuilder<double>(
+              valueListenable: scroll,
+              builder: (context, offset, _) {
+                final double t = _reveal(offset, revealOffset);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (t < 1)
+                      Opacity(
+                        opacity: 1 - t,
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: <Color>[
+                                Color(0x8C000000),
+                                Color(0x69000000),
+                                Color(0x24000000),
+                                Color(0x00000000),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (t > 0)
+                      Opacity(
+                        opacity: t,
+                        child: ClipRect(
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                            child: const ColoredBox(color: Color(0x66000000)),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+              AppTokens.s3, topPad + AppTokens.s2, AppTokens.s3, AppTokens.s2),
+          child: Row(
+            children: [
+              GlassCircleButton(
+                icon: const AppIcon(AppIcons.arrowBack, color: Colors.white),
+                tooltip: 'Back',
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: IgnorePointer(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: scroll,
+                    builder: (context, offset, _) => Opacity(
+                      opacity: _reveal(offset, revealOffset),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.s3),
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: AppTokens.rowTitle(context).copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              _GlassWrap(
+                child: showAlbumGroups
+                    ? SortMenu(
+                        sortOrder: effectiveSortOrder,
+                        onSelected: onLocalSort,
+                      )
+                    : const SortMenu(),
+              ),
+              if (isUnknown)
+                GlassCircleButton(
+                  icon: const AppIcon(AppIcons.manageSearch,
+                      color: Colors.white, size: 20),
+                  tooltip: 'Fetch Missing Metadata',
+                  onPressed: onFetchMissing,
+                )
+              else if (canFetchCover)
+                GlassCircleButton(
+                  icon: const AppIcon(AppIcons.imageSearch,
+                      color: Colors.white, size: 20),
+                  tooltip: effectiveIsArtist
+                      ? 'Fetch Artist Cover Online'
+                      : (effectiveIsAlbum
+                          ? 'Fetch Album Cover Online'
+                          : 'Fetch Cover Online'),
+                  onPressed: onFetchCover,
+                ),
+              if (playlistId != null)
+                GlassCircleButton(
+                  icon: const AppIcon(AppIcons.moreVert,
+                      color: Colors.white, size: 20),
+                  tooltip: 'Playlist Options',
+                  onPressed: onPlaylistOptions,
+                ),
+              if (playlistId == null &&
+                  !effectiveIsArtist &&
+                  !effectiveIsAlbum &&
+                  sortedSongs.length >= 2)
+                GlassCircleButton(
+                  icon: const AppIcon(AppIcons.merge,
+                      color: Colors.white, size: 20),
+                  tooltip: 'Merge Songs',
+                  onPressed: onMerge,
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1358,136 +1826,6 @@ class _RowArtwork extends StatelessWidget {
                   );
                 },
               ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FloatingTopBar extends StatelessWidget {
-  final String title;
-  final bool showTitle;
-  final SongSortOrder effectiveSortOrder;
-  final bool showAlbumGroups;
-  final bool isUnknown;
-  final bool canFetchCover;
-  final bool effectiveIsArtist;
-  final bool effectiveIsAlbum;
-  final String? playlistId;
-  final List<Song> sortedSongs;
-  final List<Song> visibleSongs;
-  final ValueChanged<SongSortOrder> onLocalSort;
-  final VoidCallback onFetchCover;
-  final VoidCallback onPlaylistOptions;
-  final VoidCallback onMerge;
-  final VoidCallback onFetchMissing;
-
-  const _FloatingTopBar({
-    required this.title,
-    required this.showTitle,
-    required this.effectiveSortOrder,
-    required this.showAlbumGroups,
-    required this.isUnknown,
-    required this.canFetchCover,
-    required this.effectiveIsArtist,
-    required this.effectiveIsAlbum,
-    required this.playlistId,
-    required this.sortedSongs,
-    required this.visibleSongs,
-    required this.onLocalSort,
-    required this.onFetchCover,
-    required this.onPlaylistOptions,
-    required this.onMerge,
-    required this.onFetchMissing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // No full-width blur here on purpose: blurring the cover underneath
-    // smeared it into ghost faces across the status area. The scrim alone
-    // keeps the buttons legible; only the small circular buttons blur.
-    final double topPad = MediaQuery.paddingOf(context).top;
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-          AppTokens.s3, topPad + AppTokens.s2, AppTokens.s3, AppTokens.s2),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            Colors.black.withValues(alpha: 0.55),
-            Colors.black.withValues(alpha: 0.0),
-          ],
-        ),
-      ),
-      child: Row(
-        children: [
-          GlassCircleButton(
-            icon: const AppIcon(AppIcons.arrowBack, color: Colors.white),
-            tooltip: 'Back',
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-          Expanded(
-            child: AnimatedOpacity(
-              duration: AppTokens.dFast,
-              opacity: showTitle ? 1.0 : 0.0,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppTokens.rowTitle(context).copyWith(
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          _GlassWrap(
-            child: showAlbumGroups
-                ? SortMenu(
-                    sortOrder: effectiveSortOrder,
-                    onSelected: onLocalSort,
-                  )
-                : const SortMenu(),
-          ),
-          if (isUnknown)
-            GlassCircleButton(
-              icon: const AppIcon(AppIcons.manageSearch,
-                  color: Colors.white, size: 20),
-              tooltip: 'Fetch Missing Metadata',
-              onPressed: onFetchMissing,
-            )
-          else if (canFetchCover)
-            GlassCircleButton(
-              icon: const AppIcon(AppIcons.imageSearch,
-                  color: Colors.white, size: 20),
-              tooltip: effectiveIsArtist
-                  ? 'Fetch Artist Cover Online'
-                  : (effectiveIsAlbum
-                      ? 'Fetch Album Cover Online'
-                      : 'Fetch Cover Online'),
-              onPressed: onFetchCover,
-            ),
-          if (playlistId != null)
-            GlassCircleButton(
-              icon: const AppIcon(AppIcons.moreVert,
-                  color: Colors.white, size: 20),
-              tooltip: 'Playlist Options',
-              onPressed: onPlaylistOptions,
-            ),
-          if (playlistId == null &&
-              !effectiveIsArtist &&
-              !effectiveIsAlbum &&
-              sortedSongs.length >= 2)
-            GlassCircleButton(
-              icon:
-                  const AppIcon(AppIcons.merge, color: Colors.white, size: 20),
-              tooltip: 'Merge Songs',
-              onPressed: onMerge,
             ),
         ],
       ),

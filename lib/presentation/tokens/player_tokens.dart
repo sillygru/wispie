@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
+import '../widgets/collection_accent_scope.dart';
 
 /// Shared design tokens for the unified player screen.
 ///
@@ -94,6 +95,13 @@ class PlayerTokens {
   static const double aTertiary = 0.42;
   static const double aPlayed = 0.42;
 
+  /// Tint for an accent-filled surface that has to stay a background — the
+  /// timing pill, nudge keys, selection chips. Higher than the 0.12 the sheets
+  /// use for the same idea, because these sit over the blurred cover rather
+  /// than over a flat sheet fill, where 0.12 disappears into the artwork.
+  static const double accentWash = 0.14;
+  static const double lyricsTimingControlHeight = 40;
+
   // Layout
   static const double coverMaxFraction = 0.72;
   static const double rowHeight = 68;
@@ -118,16 +126,24 @@ class PlayerTokens {
   /// [AudioPlayerManager] already pushes extracted palettes into [themeProvider]
   /// as tracks change, so this stays in sync on its own.
   ///
+  /// A [CollectionAccentScope] further up the tree wins — that is how an artist
+  /// or album page tints itself from its own cover instead of the track that
+  /// happens to be playing.
+  ///
   /// Used exactly as extracted. `selectAccent` has already lifted it
   /// into a legible band; correcting it a second time here is what pushed the
   /// player and the rest of the app onto two different colours.
   static Color accentOf(BuildContext context, WidgetRef ref) {
+    final scoped = CollectionAccentScope.maybeOf(context)?.accent;
+    if (scoped != null) return scoped;
     final extracted = ref.watch(themeProvider).extractedColor;
     return extracted ?? Theme.of(context).colorScheme.primary;
   }
 
   /// Non-watching variant for callbacks and one-shot reads.
   static Color readAccent(BuildContext context, WidgetRef ref) {
+    final scoped = CollectionAccentScope.maybeOf(context)?.accent;
+    if (scoped != null) return scoped;
     return ref.read(themeProvider).extractedColor ??
         Theme.of(context).colorScheme.primary;
   }

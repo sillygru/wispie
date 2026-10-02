@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/lyrics_timing_offset.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
@@ -76,6 +77,15 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
   StreamSubscription<Duration>? _positionSub;
   bool _positionSubscriptionActive = false;
 
+  /// The song's timing offset, in seconds.
+  ///
+  /// The pane shifts the playhead onto the lyric clock before it picks the
+  /// active line, so without this the peek and the full lyrics view would
+  /// disagree by the whole offset — and the peek is what the user watches while
+  /// adjusting it. The write is debounced by the pane, so the peek settles onto
+  /// the new value a couple of seconds after a tune rather than instantly.
+  double _timingOffsetSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -117,9 +127,14 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
   void _onPosition(Duration position) {
     if (!_hasSynced) return;
 
+    final adjustedPosition = applyLyricsTimingOffset(
+      position,
+      _timingOffsetSeconds,
+    );
+
     final gap = computeLyricsGapLoaderState(
       lyrics: _lines,
-      position: position,
+      position: adjustedPosition,
       delay: _gapLoaderDelay,
       minimumWindow: _minimumGapLoaderWindow,
     );
@@ -148,7 +163,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
 
     if (_gapVisible.value) return;
 
-    final active = _activeIndexFor(position);
+    final active = _activeIndexFor(adjustedPosition);
     final resolved = active >= 0 ? _resolveText(active) : '';
     if (resolved != _line.value) {
       _line.value = resolved;
@@ -216,6 +231,12 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
     _translatedLines = const [];
     _gapVisible.value = false;
     _gapProgress.value = 0;
+
+    final offset = await DatabaseService.instance.getLyricsTimingOffset(
+      filename,
+    );
+    if (!mounted || _loadedFilename != filename) return;
+    _timingOffsetSeconds = offset;
 
     final content = await ref.read(songRepositoryProvider).getLyrics(
           widget.song,

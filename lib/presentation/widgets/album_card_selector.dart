@@ -1,12 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
+import '../components/pressable.dart';
 import '../tokens/app_tokens.dart';
+import 'album_art_image.dart';
 import 'collection_cover.dart';
 
 /// Album picker for the grouped artist view: a horizontal carousel of cover
@@ -45,6 +45,23 @@ class AlbumCardSelector extends ConsumerWidget {
 
   static const double _cardWidth = 124;
 
+  /// Fades cards out at the window edges instead of a hard clip. The left
+  /// fade fits inside the list's own s4 padding, so at rest nothing on the
+  /// left is faded; it only appears once cards scroll beneath it.
+  static Shader _edgeFade(Rect rect) {
+    final double left = 14 / rect.width;
+    final double right = 28 / rect.width;
+    return LinearGradient(
+      colors: const <Color>[
+        Color(0x00000000),
+        Color(0xFF000000),
+        Color(0xFF000000),
+        Color(0x00000000),
+      ],
+      stops: <double>[0.0, left, 1.0 - right, 1.0],
+    ).createShader(rect);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final artState = ref.watch(artistAlbumArtProvider);
@@ -52,52 +69,55 @@ class AlbumCardSelector extends ConsumerWidget {
 
     return SizedBox(
       height: 182,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-        itemCount: albums.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s3),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return _AlbumCard(
-              title: 'All songs',
-              subtitle: _trackCount(allSongs.length),
-              cover: CollectionCover(
-                songs: allSongs,
-              ),
-              isSelected: selected == null,
-              accent: accent,
-              onTap: () => onSelected(null),
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: _edgeFade,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+          itemCount: albums.length + 1,
+          separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s3),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _AlbumCard(
+                title: 'All songs',
+                subtitle: _trackCount(allSongs.length),
+                cover: CollectionCover(
+                  songs: allSongs,
+                ),
+                isSelected: selected == null,
+                accent: accent,
+                onTap: () => onSelected(null),
+              );
+            }
+            final album = albums[index - 1];
+            final albumSongs = albumGroups[album] ?? const <Song>[];
+            final cachedArt = artState.getAlbumArt(
+              album,
+              artistName: artistName,
             );
-          }
-          final album = albums[index - 1];
-          final albumSongs = albumGroups[album] ?? const <Song>[];
-          final cachedArt = artState.getAlbumArt(
-            album,
-            artistName: artistName,
-          );
-          final Widget cover = (cachedArt != null && cachedArt.isNotEmpty)
-              ? Image.file(
-                  File(cachedArt),
-                  fit: BoxFit.cover,
-                  width: _cardWidth,
-                  height: _cardWidth,
-                  cacheWidth: 310,
-                  cacheHeight: 310,
-                  errorBuilder: (_, __, ___) => CollectionCover(
-                    songs: albumSongs,
-                  ),
-                )
-              : CollectionCover(songs: albumSongs);
-          return _AlbumCard(
-            title: album,
-            subtitle: _trackCount(albumSongs.length),
-            cover: cover,
-            isSelected: selected == album,
-            accent: accent,
-            onTap: () => onSelected(album),
-          );
-        },
+            // Width-only decode: giving cacheWidth and cacheHeight together
+            // resizes to exactly those numbers and squashes non-square art.
+            final Widget cover = (cachedArt != null && cachedArt.isNotEmpty)
+                ? AlbumArtImage(
+                    url: cachedArt,
+                    width: _cardWidth,
+                    height: _cardWidth,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 310,
+                    placeholder: CollectionCover(songs: albumSongs),
+                  )
+                : CollectionCover(songs: albumSongs);
+            return _AlbumCard(
+              title: album,
+              subtitle: _trackCount(albumSongs.length),
+              cover: cover,
+              isSelected: selected == album,
+              accent: accent,
+              onTap: () => onSelected(album),
+            );
+          },
+        ),
       ),
     );
   }
@@ -129,8 +149,8 @@ class _AlbumCard extends StatelessWidget {
       selected: isSelected,
       button: true,
       label: '$title, $subtitle',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: Pressable(
+        pressedScale: 0.96,
         onTap: () {
           HapticFeedback.selectionClick();
           onTap();
@@ -150,12 +170,14 @@ class _AlbumCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       cover,
-                      if (isSelected)
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: accent.withValues(alpha: 0.28),
-                          ),
+                      AnimatedOpacity(
+                        opacity: isSelected ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        child: ColoredBox(
+                          color: accent.withValues(alpha: 0.28),
                         ),
+                      ),
                     ],
                   ),
                 ),

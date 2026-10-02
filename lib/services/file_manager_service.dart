@@ -882,6 +882,43 @@ class FileManagerService {
     debugPrint("Successfully renamed ${song.filename} to $newFilename");
   }
 
+  /// Copies [sourcePath] to [destinationPath], which must sit inside one of the
+  /// tracked music folders.
+  ///
+  /// Filesystem only — no database, no library state. The caller has to be able
+  /// to read the replacement's metadata off disk before deciding what it means,
+  /// so nothing here may run ahead of that.
+  Future<void> copySongFile(String sourcePath, String destinationPath) async {
+    final source = File(sourcePath);
+    if (!await source.exists()) {
+      throw FileSystemException('The replacement file is missing', sourcePath);
+    }
+    if (await File(destinationPath).exists()) {
+      throw FileSystemException(
+          'A file already exists at the destination', destinationPath);
+    }
+
+    if (Platform.isAndroid) {
+      final matchingFolder = await _getMatchingMusicFolder(destinationPath);
+      final treeUri = matchingFolder?['treeUri'];
+      final rootPath = matchingFolder?['path'];
+      if (treeUri != null && treeUri.isNotEmpty && rootPath != null) {
+        if (!p.isWithin(rootPath, destinationPath) &&
+            !p.equals(rootPath, p.dirname(destinationPath))) {
+          throw Exception('Destination is outside the music folder.');
+        }
+        await AndroidStorageService.writeFileFromPath(
+          treeUri: treeUri,
+          sourceRelativePath: p.relative(destinationPath, from: rootPath),
+          sourcePath: sourcePath,
+        );
+        return;
+      }
+    }
+
+    await source.copy(destinationPath);
+  }
+
   /// Deletes a song file from the filesystem.
   Future<void> deleteSongFile(Song song) async {
     if (Platform.isAndroid) {

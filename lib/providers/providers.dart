@@ -22,6 +22,7 @@ import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
 import '../domain/services/search_service.dart';
 import '../domain/services/song_affinity_service.dart';
+import '../domain/services/song_replacement_rules.dart';
 import 'search_provider.dart';
 import '../presentation/widgets/spectrum_controller.dart';
 import '../data/repositories/song_repository.dart';
@@ -1120,6 +1121,139 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       notifier.error('Failed to rename song');
       debugPrint('Failed to rename song: $e');
       rethrow;
+    }
+  }
+
+  /// Swaps [song]'s audio file for the one [accepted] describes, carrying
+  /// every filename-keyed record onto it, and returns the song under its new
+  /// identity.
+  Future<Song> replaceSongFile(
+    Song song,
+    ReplacementAccepted accepted, {
+    required OriginalFileDisposition disposition,
+  }) async {
+    final replaced = await _installReplacementFile(song, accepted);
+    await _disposeOriginalSong(song, disposition);
+    return replaced;
+  }
+
+  /// Copies the replacement in, reads what it says about itself, and moves
+  /// every filename-keyed record onto it.
+  ///
+  /// The ordering is the design, not an implementation detail. The copy lands
+  /// first because the replacement's metadata can only be read off disk, and is
+  /// read from the destination so the read sees the file where it will live.
+  /// The databases move next, while the original is still the song every
+  /// filename-keyed record points at.
+  ///
+  /// So a failure anywhere in here leaves the original completely intact with
+  /// at most a stray copy to discard.
+  Future<Song> _installReplacementFile(
+    Song song,
+    ReplacementAccepted accepted,
+  ) async {
+    final notifier = ref.read(metadataSaveProvider.notifier);
+    notifier.start();
+
+    var copyWritten = false;
+    var libraryMovedToCopy = false;
+
+    try {
+      final fileManager = ref.read(fileManagerServiceProvider);
+      await fileManager.copySongFile(
+        accepted.sourcePath,
+        accepted.destinationPath,
+      );
+      copyWritten = true;
+
+      final read = await ScannerService.readSongMetadata(
+        File(accepted.destinationPath),
+        existingSong: song,
+      );
+
+      // Whatever the file states about itself is taken from the file, whole:
+      // tags, duration, cover art, embedded lyrics, release year. What the
+      // file cannot know — when it joined the library, how often it was played
+      // — stays with the song, since that is the thing being carried over.
+      final replaced = Song(
+        title: read.title,
+        artist: read.artist,
+        album: read.album,
+        filename: accepted.newFilename,
+        url: accepted.destinationPath,
+        coverUrl: read.coverUrl,
+        hasLyrics: read.hasLyrics,
+        playCount: song.playCount,
+        duration: read.duration,
+        mtime: read.mtime,
+        createdEpochSec: song.createdEpochSec,
+        songDateEpochSec: read.songDateEpochSec,
+      );
+
+      // Play history, favourites, playlists, merged groups, saved queues,
+      // translations and cover lookups all move here, across both databases.
+      await DatabaseService.instance
+          .renameFile(song.filename, accepted.newFilename);
+      libraryMovedToCopy = true;
+
+      // Keyed off the old file's URL, which nothing will ever read again.
+      await ref.read(songRepositoryProvider).invalidateLyricsCache(song);
+
+      await _applyLocalSongUpdate(replaced, previousFilename: song.filename);
+      ref.read(userDataProvider.notifier).refresh();
+
+      notifier.success('Song replaced');
+      return replaced;
+    } catch (e) {
+      // Only while nothing points at the copy: past that it *is* the song.
+      if (copyWritten && !libraryMovedToCopy) {
+        await _discardReplacementCopy(accepted.destinationPath);
+      }
+      notifier.error('Failed to replace song');
+      debugPrint('Failed to replace song: $e');
+      rethrow;
+    }
+  }
+
+  /// Gets rid of, or hides, the file the replacement superseded.
+  ///
+  /// Deliberately outside the replacement's own failure handling: the swap has
+  /// already succeeded by now, so a leftover original is a cleanup problem to
+  /// report, not a reason to fail it. An original that has since vanished
+  /// counts as disposed — which is why nothing here propagates.
+  Future<void> _disposeOriginalSong(
+    Song song,
+    OriginalFileDisposition disposition,
+  ) async {
+    final userData = ref.read(userDataProvider.notifier);
+    try {
+      switch (disposition) {
+        case OriginalFileDisposition.delete:
+          await ref.read(fileManagerServiceProvider).deleteSongFile(song);
+          await DatabaseService.instance.deleteFile(song.filename);
+          await userData.refresh();
+        case OriginalFileDisposition.hide:
+          await userData.toggleHidden(song.filename);
+      }
+    } catch (e) {
+      debugPrint('Could not dispose of ${song.filename}: $e');
+      ref
+          .read(metadataSaveProvider.notifier)
+          .error('Song replaced, but the original could not be cleaned up');
+    }
+  }
+
+  /// Removes a replacement copy that never became the song.
+  ///
+  /// Best effort by design — on Android the destination may sit behind a
+  /// document provider, where a raw delete can fail, and a stray file is a much
+  /// smaller problem than a half-finished replacement.
+  Future<void> _discardReplacementCopy(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } on FileSystemException catch (e) {
+      debugPrint('Could not discard replacement copy $path: $e');
     }
   }
 

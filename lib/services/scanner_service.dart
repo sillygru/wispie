@@ -1483,6 +1483,30 @@ class ScannerService {
     }
   }
 
+  /// Reads everything a single file says about itself, the way a scan would:
+  /// tags, duration, embedded lyrics, release year and cover art.
+  ///
+  /// Exists so a file that reaches the library by some route other than a scan
+  /// gets the metadata a scanned file would have had, rather than a second and
+  /// subtly different reader quietly disagreeing with the scanner about what a
+  /// file contains.
+  ///
+  /// [existingSong] contributes only what a file cannot know about itself: its
+  /// "date added" carries over, and the release year falls back to the existing
+  /// one when the file has none. Nothing else is inherited, so a replacement
+  /// file with no tags reports that honestly instead of borrowing the row it is
+  /// replacing. Play counts are likewise absent — they belong to the caller.
+  static Future<Song> readSongMetadata(File file, {Song? existingSong}) async {
+    final coversDir = await coversDirectory();
+    return _processSingleFile(
+      file,
+      coversDir,
+      <String, String?>{},
+      <String, int>{},
+      existingSong: existingSong,
+    );
+  }
+
   static Future<Song> _processSingleFile(File file, Directory coversDir,
       Map<String, String?> folderCoverCache, Map<String, int> playCounts,
       {double? mtime, Song? existingSong}) async {

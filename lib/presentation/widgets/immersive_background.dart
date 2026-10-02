@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
+import 'collection_accent_scope.dart';
 import 'smooth_color_builder.dart';
 
 /// The app-wide immersive backdrop.
@@ -33,7 +34,11 @@ class AmbientLayer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final extracted = ref.watch(themeProvider.select((s) => s.extractedColor));
-    final target = colorOverride ?? extracted ?? theme.colorScheme.primary;
+    // An artist or album page carries its own cover, so its bloom follows that
+    // artwork rather than the track playing behind it.
+    final scoped = CollectionAccentScope.maybeOf(context)?.accent;
+    final target =
+        colorOverride ?? scoped ?? extracted ?? theme.colorScheme.primary;
 
     return SmoothColorBuilder(
       targetColor: target,

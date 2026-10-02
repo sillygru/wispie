@@ -1,19 +1,13 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-/// Progressive blur + fade on the top and bottom edge of a scrolling pane.
-///
-/// Each edge's strength follows how much content is scrolled underneath it:
-/// zero at the start/end of the list, easing (smoothstep) to full once a
-/// fade-height of content is hidden. Nothing is timer-driven, so it tracks
-/// drags, flings and lyric auto-scroll identically.
-///
-/// Cost model: the blur bands are only built while an edge is active, use
-/// cached filters, and tiny sigmas are skipped. The content fade is a single
-/// ShaderMask whose gradient is rebuilt from two doubles.
+/// Edge fade + progressive blur for scrolling panes.
+/// The fade follows scroll position; the blur only shows once scrolling has
+/// settled, so it costs no GPU while content is moving.
 class ProgressiveBottomBlur extends StatefulWidget {
   const ProgressiveBottomBlur({
     super.key,
@@ -22,7 +16,6 @@ class ProgressiveBottomBlur extends StatefulWidget {
     this.topHeight = defaultTopHeight,
   });
 
-  /// Bottom fade height. Also what panes use as their end spacer.
   static const double defaultHeight = 96;
   static const double defaultTopHeight = 56;
 
@@ -34,35 +27,45 @@ class ProgressiveBottomBlur extends StatefulWidget {
   State<ProgressiveBottomBlur> createState() => _ProgressiveBottomBlurState();
 }
 
-class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
+class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur>
+    with SingleTickerProviderStateMixin {
   final ValueNotifier<double> _top = ValueNotifier<double>(0);
   final ValueNotifier<double> _bottom = ValueNotifier<double>(0);
 
-  // Inverse smoothstep samples, 0 at the outer edge -> 1 at the inner edge.
+  /// 1 = blur visible (idle), 0 = hidden (scrolling).
+  late final AnimationController _settle = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 220),
+    reverseDuration: const Duration(milliseconds: 80),
+  );
+  Timer? _timer;
+
   static const List<double> _ease = [0.0, 0.156, 0.5, 0.844, 1.0];
 
   @override
   void dispose() {
+    _timer?.cancel();
+    _settle.dispose();
     _top.dispose();
     _bottom.dispose();
     super.dispose();
   }
 
-  static double _strength(double hiddenPixels, double fade) {
-    final t = (hiddenPixels / fade).clamp(0.0, 1.0);
+  static double _strength(double hidden, double fade) {
+    final t = (hidden / fade).clamp(0.0, 1.0);
     return t * t * (3 - 2 * t);
   }
 
-  void _set(ValueNotifier<double> notifier, double value) {
-    if ((notifier.value - value).abs() < 0.004) return;
-    // Metrics notifications can arrive mid-layout; never rebuild then.
+  void _set(ValueNotifier<double> n, double v) {
+    if ((n.value - v).abs() < 0.004) return;
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) notifier.value = value;
+        if (mounted) n.value = v;
       });
     } else {
-      notifier.value = value;
+      n.value = v;
     }
   }
 
@@ -73,18 +76,30 @@ class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
             ? n.metrics
             : null;
     if (m == null || m.axis != Axis.vertical) return false;
+
+    if (n is ScrollStartNotification || n is ScrollUpdateNotification) {
+      _timer?.cancel();
+      _timer = null;
+      if (_settle.value > 0 && _settle.status != AnimationStatus.reverse) {
+        _settle.reverse();
+      }
+    } else if (n is ScrollEndNotification) {
+      _timer?.cancel();
+      _timer = Timer(const Duration(milliseconds: 160), () {
+        if (mounted) _settle.forward();
+      });
+    }
+
     _set(_top, _strength(m.pixels - m.minScrollExtent, widget.topHeight));
     _set(_bottom, _strength(m.maxScrollExtent - m.pixels, widget.height));
-    return false; // observe only
+    return false;
   }
 
   Shader _mask(Rect rect) {
-    final t = _top.value;
-    final b = _bottom.value;
+    final t = _top.value, b = _bottom.value;
     final topFrac = (widget.topHeight / rect.height).clamp(0.0, 0.5);
     final botFrac = (widget.height / rect.height).clamp(0.0, 0.5);
     final last = _ease.length - 1;
-
     final colors = <Color>[];
     final stops = <double>[];
     for (var i = 0; i <= last; i++) {
@@ -92,12 +107,9 @@ class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
       stops.add(topFrac * i / last);
     }
     for (var i = 0; i <= last; i++) {
-      colors.add(
-        Colors.black.withValues(alpha: 1 - b * (1 - _ease[last - i])),
-      );
+      colors.add(Colors.black.withValues(alpha: 1 - b * (1 - _ease[last - i])));
       stops.add(1 - botFrac + botFrac * i / last);
     }
-
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -122,8 +134,16 @@ class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
               child: child,
             ),
           ),
-          _EdgeBlur(strength: _top, height: widget.topHeight, atTop: true),
-          _EdgeBlur(strength: _bottom, height: widget.height, atTop: false),
+          _EdgeBlur(
+              strength: _top,
+              settle: _settle,
+              height: widget.topHeight,
+              atTop: true),
+          _EdgeBlur(
+              strength: _bottom,
+              settle: _settle,
+              height: widget.height,
+              atTop: false),
         ],
       ),
     );
@@ -133,44 +153,39 @@ class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
 class _EdgeBlur extends StatelessWidget {
   const _EdgeBlur({
     required this.strength,
+    required this.settle,
     required this.height,
     required this.atTop,
   });
 
   final ValueListenable<double> strength;
+  final Animation<double> settle;
   final double height;
   final bool atTop;
 
-  // Per-layer sigma at full strength; layers compound toward the edge.
-  static const List<double> _sigmas = [0.8, 1.2, 1.8, 2.6, 3.6];
-  static const int _steps = 10;
-  static const double _minSigma = 0.3;
+  static const List<double> _sigmas = [1.0, 2.2, 4.0];
+  static const int _steps = 12;
+  static final Map<int, List<ImageFilter?>> _cache = {};
 
-  // [step][layer]; null = too weak to be worth a GPU pass.
-  static final List<List<ImageFilter?>> _cache = List.generate(
-    _steps + 1,
-    (step) => [
-      for (final s in _sigmas)
-        s * step / _steps < _minSigma
-            ? null
-            : ImageFilter.blur(
-                sigmaX: s * step / _steps,
-                sigmaY: s * step / _steps,
-              ),
-    ],
-  );
+  static List<ImageFilter?> _filters(int q) => _cache.putIfAbsent(q, () {
+        final k = q / _steps;
+        return [
+          for (final s in _sigmas)
+            s * k < 0.3 ? null : ImageFilter.blur(sigmaX: s * k, sigmaY: s * k),
+        ];
+      });
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: strength,
-      builder: (context, value, _) {
-        final step = (value * _steps).round();
-        if (step == 0) return const SizedBox.shrink();
-
-        final filters = _cache[step];
-        final bandHeight = height / _sigmas.length;
-
+    // No Opacity here: a BackdropFilter inside an Opacity layer blurs
+    // nothing. The fade-in is done by ramping the sigma instead.
+    return ListenableBuilder(
+      listenable: Listenable.merge([strength, settle]),
+      builder: (context, _) {
+        final q = (strength.value * settle.value * _steps).round();
+        if (q == 0) return const SizedBox.shrink();
+        final filters = _filters(q);
+        final band = height / _sigmas.length;
         return Align(
           alignment: atTop ? Alignment.topCenter : Alignment.bottomCenter,
           child: IgnorePointer(
@@ -186,7 +201,7 @@ class _EdgeBlur extends StatelessWidget {
                         right: 0,
                         top: atTop ? 0 : null,
                         bottom: atTop ? null : 0,
-                        height: bandHeight * (filters.length - i),
+                        height: band * (filters.length - i),
                         child: ClipRect(
                           child: BackdropFilter(
                             filter: filters[i]!,

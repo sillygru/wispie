@@ -8,6 +8,7 @@ import '../../providers/artist_album_art_provider.dart';
 import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../services/library_logic.dart';
 import '../../services/online_metadata_service.dart';
 import '../../services/passive_art_fetcher_service.dart';
@@ -23,6 +24,7 @@ import '../tokens/app_tokens.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/collection_cover.dart';
+import '../widgets/collection_accent.dart';
 import '../widgets/song_list_item.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
@@ -435,183 +437,196 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
           ref.read(selectionProvider.notifier).exitSelectionMode();
         }
       },
-      child: AmbientScaffold(
-        body: WideContentCenter(
-          child: CustomScrollView(
-            slivers: [
-              AppSliverHeader(
-                title: title,
-                large: false,
-                floating: true,
-                snap: true,
-                actions: [
-                  if (showAlbumGroups)
-                    SortMenu(
-                      sortOrder: effectiveSortOrder,
-                      onSelected: (order) => setState(() => _localSort = order),
-                    )
-                  else
-                    const SortMenu(),
-                  if (isUnknownArtistOrAlbum)
-                    IconButton(
-                      icon: const AppIcon(AppIcons.manageSearch),
-                      onPressed: () => songActionFetchMissingMetadataForList(
-                        context,
-                        ref,
-                        sortedSongs,
+      // Everything below is tinted from this collection's own cover, not from
+      // whatever is playing. Artists and albums are browsed, not listened to,
+      // so borrowing the current track's hue made the page change colour as
+      // the queue moved on.
+      child: CollectionAccent(
+        artworkPath: hasCustomArtwork ? artworkPath : null,
+        songs: sortedSongs,
+        fallback: ref.watch(themeProvider).extractedColor ??
+            Theme.of(context).colorScheme.primary,
+        child: AmbientScaffold(
+          body: WideContentCenter(
+            child: CustomScrollView(
+              slivers: [
+                AppSliverHeader(
+                  title: title,
+                  large: false,
+                  floating: true,
+                  snap: true,
+                  actions: [
+                    if (showAlbumGroups)
+                      SortMenu(
+                        sortOrder: effectiveSortOrder,
+                        onSelected: (order) =>
+                            setState(() => _localSort = order),
+                      )
+                    else
+                      const SortMenu(),
+                    if (isUnknownArtistOrAlbum)
+                      IconButton(
+                        icon: const AppIcon(AppIcons.manageSearch),
+                        onPressed: () => songActionFetchMissingMetadataForList(
+                          context,
+                          ref,
+                          sortedSongs,
+                        ),
+                        tooltip: 'Fetch Missing Metadata',
+                      )
+                    else if (canFetchCover)
+                      IconButton(
+                        icon: const AppIcon(AppIcons.imageSearch),
+                        onPressed: handleFetchCover,
+                        tooltip: effectiveIsArtist
+                            ? 'Fetch Artist Cover Online'
+                            : (effectiveIsAlbum
+                                ? 'Fetch Album Cover Online'
+                                : 'Fetch Cover Online'),
                       ),
-                      tooltip: 'Fetch Missing Metadata',
-                    )
-                  else if (canFetchCover)
-                    IconButton(
-                      icon: const AppIcon(AppIcons.imageSearch),
-                      onPressed: handleFetchCover,
-                      tooltip: effectiveIsArtist
-                          ? 'Fetch Artist Cover Online'
-                          : (effectiveIsAlbum
-                              ? 'Fetch Album Cover Online'
-                              : 'Fetch Cover Online'),
-                    ),
-                  if (playlistId != null)
-                    IconButton(
-                      icon: const AppIcon(AppIcons.moreVert),
-                      onPressed: () => _showPlaylistOptions(context, ref),
-                      tooltip: 'Playlist Options',
-                    ),
-                  if (playlistId == null &&
-                      !effectiveIsArtist &&
-                      !effectiveIsAlbum &&
-                      sortedSongs.length >= 2)
-                    IconButton(
-                      icon: const AppIcon(AppIcons.merge),
-                      onPressed: () async {
-                        final result =
-                            await context.pushApp<Map<String, dynamic>>(
-                          SelectSongsScreen(
-                            songs: sortedSongs,
-                            title: 'Select Songs to Merge',
-                          ),
-                        );
-                        if (result != null && context.mounted) {
-                          final selected = result['filenames'] as List<String>;
-                          final priority = result['priority'] as String?;
-                          if (selected.length >= 2) {
-                            try {
-                              await ref
-                                  .read(userDataProvider.notifier)
-                                  .createMergedGroup(
-                                    selected,
-                                    priorityFilename: priority,
+                    if (playlistId != null)
+                      IconButton(
+                        icon: const AppIcon(AppIcons.moreVert),
+                        onPressed: () => _showPlaylistOptions(context, ref),
+                        tooltip: 'Playlist Options',
+                      ),
+                    if (playlistId == null &&
+                        !effectiveIsArtist &&
+                        !effectiveIsAlbum &&
+                        sortedSongs.length >= 2)
+                      IconButton(
+                        icon: const AppIcon(AppIcons.merge),
+                        onPressed: () async {
+                          final result =
+                              await context.pushApp<Map<String, dynamic>>(
+                            SelectSongsScreen(
+                              songs: sortedSongs,
+                              title: 'Select Songs to Merge',
+                            ),
+                          );
+                          if (result != null && context.mounted) {
+                            final selected =
+                                result['filenames'] as List<String>;
+                            final priority = result['priority'] as String?;
+                            if (selected.length >= 2) {
+                              try {
+                                await ref
+                                    .read(userDataProvider.notifier)
+                                    .createMergedGroup(
+                                      selected,
+                                      priorityFilename: priority,
+                                    );
+                                if (context.mounted) {
+                                  appSnack(
+                                    context,
+                                    'Merged ${selected.length} songs',
                                   );
-                              if (context.mounted) {
-                                appSnack(
-                                  context,
-                                  'Merged ${selected.length} songs',
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                appSnack(context, 'Error: $e');
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  appSnack(context, 'Error: $e');
+                                }
                               }
                             }
                           }
-                        }
-                      },
-                      tooltip: 'Merge Songs',
-                    ),
-                ],
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: isWide
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              buildArtwork(),
-                              const SizedBox(width: 32),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    buildTitleBlock(),
-                                    const SizedBox(height: 20),
-                                    buildActions(),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            const SizedBox(height: 16),
-                            Center(child: buildArtwork()),
-                            const SizedBox(height: 16),
-                            buildTitleBlock(),
-                            const SizedBox(height: 24),
-                            buildActions(),
-                            const SizedBox(height: 24),
-                          ],
-                        ),
+                        },
+                        tooltip: 'Merge Songs',
+                      ),
+                  ],
                 ),
-              ),
-              if (showAlbumGroups)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.only(bottom: AppTokens.s3),
-                    child: AlbumCardSelector(
-                      allSongs: songs,
-                      albums: orderedAlbums,
-                      albumGroups: albumGroups,
-                      selected: selectedAlbum,
-                      artistName: effectiveArtistName,
-                      onSelected: (album) =>
-                          setState(() => _selectedAlbum = album),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: isWide
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                buildArtwork(),
+                                const SizedBox(width: 32),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      buildTitleBlock(),
+                                      const SizedBox(height: 20),
+                                      buildActions(),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              Center(child: buildArtwork()),
+                              const SizedBox(height: 16),
+                              buildTitleBlock(),
+                              const SizedBox(height: 24),
+                              buildActions(),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
+                  ),
+                ),
+                if (showAlbumGroups)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: AppTokens.s3),
+                      child: AlbumCardSelector(
+                        allSongs: songs,
+                        albums: orderedAlbums,
+                        albumGroups: albumGroups,
+                        selected: selectedAlbum,
+                        artistName: effectiveArtistName,
+                        onSelected: (album) =>
+                            setState(() => _selectedAlbum = album),
+                      ),
                     ),
                   ),
-                ),
-              if (visibleSongs.isEmpty)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: AppEmptyState(
-                    icon: AppIcons.musicNote,
-                    title: 'No songs in this list',
-                  ),
-                )
-              else
-                SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final song = visibleSongs[index];
+                if (visibleSongs.isEmpty)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AppEmptyState(
+                      icon: AppIcons.musicNote,
+                      title: 'No songs in this list',
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final song = visibleSongs[index];
 
-                    return _desktopRow(
-                      context,
-                      ref,
-                      song: song,
-                      child: SongListItem(
+                      return _desktopRow(
+                        context,
+                        ref,
                         song: song,
-                        heroTagPrefix: 'song_list_$title',
-                        playlistId: playlistId,
-                        onTap: () {
-                          audioManager.playSong(
-                            song,
-                            contextQueue: visibleSongs,
-                            playlistId: playlistId,
-                          );
-                        },
-                      ),
-                    );
-                  }, childCount: visibleSongs.length),
-                ),
-              const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-            ],
+                        child: SongListItem(
+                          song: song,
+                          heroTagPrefix: 'song_list_$title',
+                          playlistId: playlistId,
+                          onTap: () {
+                            audioManager.playSong(
+                              song,
+                              contextQueue: visibleSongs,
+                              playlistId: playlistId,
+                            );
+                          },
+                        ),
+                      );
+                    }, childCount: visibleSongs.length),
+                  ),
+                const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+              ],
+            ),
           ),
+          bottomNavigationBar:
+              selectionState.isSelectionMode ? const BulkSelectionBar() : null,
         ),
-        bottomNavigationBar:
-            selectionState.isSelectionMode ? const BulkSelectionBar() : null,
       ),
     );
   }

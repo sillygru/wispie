@@ -7,6 +7,7 @@ import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../data/migrations.dart';
+import '../domain/services/lyrics_timing_offset.dart';
 import '../models/playlist.dart';
 import '../models/queue_snapshot.dart';
 import '../models/song.dart';
@@ -733,7 +734,13 @@ class DatabaseService {
     await _ensureInitialized();
     await _userDataDatabase?.insert(
       'lyrics_timing_offset',
-      {'filename': filename, 'offset_seconds': offset.clamp(-60.0, 60.0)},
+      {
+        'filename': filename,
+        // Quantized on the way in so a session of 10ms nudges cannot walk the
+        // stored value sideways through float addition, and so every consumer
+        // reads back exactly the number the tuning UI displayed.
+        'offset_seconds': quantizeLyricsTimingOffset(offset),
+      },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -1182,6 +1189,10 @@ class DatabaseService {
 
   /// Renames a file in all database tables.
   /// If the target filename already exists, stats are merged.
+  ///
+  /// Every table that names a song has to move with it, in both databases. A
+  /// table left behind does not merely lose data — it becomes unreachable
+  /// garbage keyed to a filename nothing will ever ask about again.
   Future<void> renameFile(String oldFilename, String newFilename) async {
     await _ensureInitialized();
     if (_statsDatabase == null || _userDataDatabase == null) return;
@@ -1240,12 +1251,53 @@ class DatabaseService {
             where: 'filename = ?', whereArgs: [oldFilename]);
       }
 
+      // The negative cover cache is keyed by filename, so leaving it behind
+      // would suppress a cover lookup for the renamed song forever.
+      final newCoverMiss = await txn
+          .query('cover_miss', where: 'filename = ?', whereArgs: [newFilename]);
+      if (newCoverMiss.isNotEmpty) {
+        await txn.delete('cover_miss',
+            where: 'filename = ?', whereArgs: [oldFilename]);
+      } else {
+        await txn.update('cover_miss', {'filename': newFilename},
+            where: 'filename = ?', whereArgs: [oldFilename]);
+      }
+
+      // Translated lyrics are keyed by (filename, language). Only the row the
+      // new name already holds for that same language is redundant — dropping
+      // every language would lose the ones the new name is missing.
+      final oldTranslations = await txn.query('translated_lyrics',
+          where: 'filename = ?', whereArgs: [oldFilename]);
+      for (final translation in oldTranslations) {
+        final targetLang = translation['target_lang'] as String?;
+        if (targetLang == null) continue;
+        final existingTranslation = await txn.query(
+          'translated_lyrics',
+          where: 'filename = ? AND target_lang = ?',
+          whereArgs: [newFilename, targetLang],
+        );
+        if (existingTranslation.isNotEmpty) {
+          await txn.delete('translated_lyrics',
+              where: 'filename = ? AND target_lang = ?',
+              whereArgs: [oldFilename, targetLang]);
+        } else {
+          await txn.update('translated_lyrics', {'filename': newFilename},
+              where: 'filename = ? AND target_lang = ?',
+              whereArgs: [oldFilename, targetLang]);
+        }
+      }
+
       // Update Merged Songs - if old filename is in a merge group, update it
       await txn.update('merged_song', {'filename': newFilename},
           where: 'filename = ?', whereArgs: [oldFilename]);
       // Update merged_song_group priority_filename if it matches old filename
       await txn.update('merged_song_group', {'priority_filename': newFilename},
           where: 'priority_filename = ?', whereArgs: [oldFilename]);
+
+      // Saved queues name the song by filename. The primary key is
+      // (snapshot_id, position), so there is nothing to collide with.
+      await txn.update('queue_snapshot_song', {'song_filename': newFilename},
+          where: 'song_filename = ?', whereArgs: [oldFilename]);
 
       // Update Playlist Songs
       // Get all playlist entries for old filename

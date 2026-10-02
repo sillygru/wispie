@@ -50,6 +50,15 @@ class AppTheme {
   static ThemeData getPlayerTheme(ThemeState state, Color? coverColor) =>
       getTheme(state, coverColor: coverColor);
 
+  /// Theme for a page that has its own artwork to match — an artist or album
+  /// page, which follows *its* cover rather than the playing track's.
+  ///
+  /// Separate from [getTheme] because the neutral test has to come from the
+  /// accent being applied, not from the playing track's palette: a colourless
+  /// album opened over a colourful track must still go colourless.
+  static ThemeData forAccent(Color accent, {required bool isNeutral}) =>
+      isNeutral ? _oledTheme() : _coverTheme(accent);
+
   /// The one place a cover accent becomes a theme. Both the app and the player
   /// route through it, which is what keeps them on the same colour — they used
   /// to apply their own separate corrections and end up two shades apart.
