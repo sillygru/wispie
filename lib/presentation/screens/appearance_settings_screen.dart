@@ -187,6 +187,14 @@ class _AppearanceSettingsScreenState
                 ),
               ),
             ),
+            AppSettingsSwitch(
+              icon: AppIcons.autoAwesome,
+              searchId: 'appearance.full_bleed_design',
+              title: 'New player & detail design',
+              subtitle: 'Full-bleed player cover and gradient detail screens',
+              value: settings.fullBleedDesignEnabled,
+              onChanged: notifier.setFullBleedDesignEnabled,
+            ),
           ],
         ),
         AppSettingsGroup(

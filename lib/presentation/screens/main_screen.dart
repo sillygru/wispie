@@ -97,7 +97,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   // Gesture detection for drawer
   static const double _edgeDragWidth = 60.0;
-  static const double _drawerWidthRatio = 0.48;
 
   // Track which screens have been built to enable lazy loading
   final Set<int> _builtScreens = {0};
@@ -154,7 +153,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!_isDraggingDrawer) return;
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final delta = details.delta.dx / (screenWidth * _drawerWidthRatio);
+    final delta = details.delta.dx / WideLayout.drawerWidth(screenWidth);
 
     _drawerController.value = (_drawerController.value + delta).clamp(0.0, 1.0);
   }
@@ -298,10 +297,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     // Phones stay portrait-locked at the OS level, so this keys off size.
     final isWide = WideLayout.isWide(context);
     final accent = AppTokens.accentOf(context, ref);
-    final drawerSlideMax = (mediaQuery.size.width * _drawerWidthRatio).clamp(
-      0.0,
-      WideLayout.maxDrawerWidth,
-    );
+    final drawerSlideMax = WideLayout.drawerWidth(mediaQuery.size.width);
 
     Widget buildContentStack() {
       return Stack(

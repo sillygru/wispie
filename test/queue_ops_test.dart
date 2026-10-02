@@ -209,8 +209,7 @@ void main() {
           ['curr', 'songA', 'songB', 'newSong', 'songRest']);
     });
 
-    test('overrides to currentIndex + 1 when candidate is already in top order',
-        () {
+    test('keeps an existing top-order item behind earlier top-order items', () {
       final queue = [
         _createItem('curr'),
         _createItem('songA'),
@@ -230,11 +229,11 @@ void main() {
 
       expect(plan.isMove, isTrue);
       expect(plan.from, 2);
-      expect(plan.to, 1);
+      expect(plan.to, 2);
 
       final q = applyPlan(queue, plan);
       expect(q.map((i) => i.queueId).toList(),
-          ['curr', 'songB', 'songA', 'songRest']);
+          ['curr', 'songA', 'songB', 'songRest']);
     });
 
     test(
@@ -256,7 +255,7 @@ void main() {
         sessionTopOrder: topOrder,
       );
 
-      // Played song is duplicated into upcoming section rather than moved out of history
+      // Played song is duplicated after the current top-order items.
       expect(plan.isMove, isFalse);
       expect(plan.to, 3);
 
@@ -287,7 +286,7 @@ void main() {
         sessionTopOrder: topOrder,
       );
 
-      // songB is at index 2 (> currentIndex 1). So target should be index 3 (after songB).
+      // songB is the last top-order entry, so the request stacks after it.
       expect(plan.to, 3);
 
       final q = applyPlan(queue, plan);

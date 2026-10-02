@@ -2908,9 +2908,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         allowDuplicate: allowDuplicate,
       );
 
-      final isOverride =
-          plan.isMove && _sessionTopOrder.contains(plan.item.queueId);
-
       if (plan.isMove) {
         final from = plan.from!;
         final item = _effectiveQueue.removeAt(from);
@@ -2936,7 +2933,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _sessionTopOrder = queue_ops.updateSessionTopOrder(
         _sessionTopOrder,
         plan.item.queueId,
-        isOverride: isOverride,
+        isOverride: false,
       );
       _sessionTopOrder = queue_ops.pruneSessionTopOrder(
         _effectiveQueue,

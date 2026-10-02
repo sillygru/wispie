@@ -624,19 +624,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       shuffleState.config.personality;
                                   final selectedValue =
                                       _pendingPersonality ?? current;
+                                  // One card per row under the compact seam:
+                                  // two 155px cards leave the subtitle no room.
+                                  final compact = WideLayout.isCompact(context);
                                   return Column(
                                     mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
                                       GridView.count(
-                                        crossAxisCount: 2,
+                                        crossAxisCount: compact ? 1 : 2,
                                         shrinkWrap: true,
                                         physics:
                                             const NeverScrollableScrollPhysics(),
                                         crossAxisSpacing: AppTokens.s3,
                                         mainAxisSpacing: AppTokens.s3,
-                                        childAspectRatio: 2.2,
+                                        childAspectRatio: compact ? 3.6 : 2.2,
                                         children: [
                                           _PersonalityCard(
                                             title: 'Default',

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Single seam for wide-window (tablet/desktop landscape) layouts.
@@ -10,6 +12,21 @@ class WideLayout {
 
   /// Minimum window width that earns the desktop arrangement.
   static const double breakpoint = 800;
+
+  /// Width below which the phone layout runs with compact affordances.
+  ///
+  /// The phone layout is the *fallback* for narrow desktop windows, but it
+  /// carries roomy desktop extras (volume slider, tall bar) that squeeze the
+  /// title and action rows once the window approaches phone width. Under this
+  /// seam those extras drop out and fixed sizes step down.
+  static const double compactBreakpoint = 480;
+
+  /// Ratio of window width the slide-in drawer occupies before clamping.
+  static const double drawerRatio = 0.48;
+
+  /// Narrowest readable drawer. The raw ratio lands at 172px on a 360px
+  /// window, which is too tight for the drawer's own text scale.
+  static const double minDrawerWidth = 240;
 
   /// Maximum content width for centered reading columns on wide windows.
   static const double maxContentWidth = 1100;
@@ -36,10 +53,26 @@ class WideLayout {
     return size.width >= breakpoint && size.width > size.height;
   }
 
+  static bool isPortrait(Size size) => size.height >= size.width;
+
+  static bool isCompact(BuildContext context) =>
+      isCompactSize(MediaQuery.sizeOf(context));
+
+  static bool isCompactSize(Size size) =>
+      size.width < compactBreakpoint || isPortrait(size);
+
+  /// Width of the slide-in drawer for a window of [windowWidth]. One formula
+  /// shared by the drawer panel, the slide animation and the edge-drag math so
+  /// they can never disagree about where the drawer's edge is.
+  static double drawerWidth(double windowWidth) {
+    final floor = math.min(minDrawerWidth, windowWidth * 0.8);
+    return (windowWidth * drawerRatio).clamp(floor, maxDrawerWidth);
+  }
+
   /// Grid columns that grow with width, clamped to a readable range.
   static int gridColumns(BuildContext context, {int base = 2}) {
+    if (!isWide(context)) return base;
     final width = MediaQuery.sizeOf(context).width;
-    if (width < breakpoint) return base;
     final extra = ((width - breakpoint) / 300).floor();
     return (base + extra).clamp(base, 5);
   }

@@ -19,6 +19,7 @@ import '../../dialogs/lyrics_search_sheet.dart';
 import '../../dialogs/lyrics_translation_sheet.dart';
 import '../../models/lyrics_gap_loader_state.dart';
 import '../../tokens/player_tokens.dart';
+import '../../utils/wide_layout.dart';
 import '../../widgets/lyrics_gap_loader.dart';
 import '../../widgets/lyrics_line.dart';
 import '../../widgets/lyrics_resume_button.dart';
@@ -1224,6 +1225,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     final showTranslateButton =
         _hasCachedTranslation || (hasContent && !_isSameLanguage);
 
+    // On a narrow window the timing slider plus every action overflows the
+    // pane, so the strip collapses to just the slider and its close toggle
+    // while the slider is open. The reserve at the top of the list is
+    // unchanged — only what sits inside it swaps.
+    final compact = WideLayout.isCompact(context);
+    final stripCollapsed = compact && _timingControlVisible;
+
     return Stack(
       children: [
         Positioned.fill(child: _buildContent(context)),
@@ -1237,7 +1245,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_richSyncAvailable)
+              if (!stripCollapsed && _richSyncAvailable)
                 Padding(
                   padding: const EdgeInsets.only(right: PlayerTokens.s1),
                   child: DecoratedBox(
@@ -1262,7 +1270,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                     ),
                   ),
                 ),
-              if (showTranslateButton)
+              if (!stripCollapsed && showTranslateButton)
                 IconButton(
                   icon: _translating
                       ? const SizedBox(
@@ -1348,12 +1356,14 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                   ),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.travel_explore_rounded),
-                color: Colors.white.withValues(alpha: PlayerTokens.aSecondary),
-                tooltip: 'Find lyrics online',
-                onPressed: _findLyricsOnline,
-              ),
+              if (!stripCollapsed)
+                IconButton(
+                  icon: const Icon(Icons.travel_explore_rounded),
+                  color:
+                      Colors.white.withValues(alpha: PlayerTokens.aSecondary),
+                  tooltip: 'Find lyrics online',
+                  onPressed: _findLyricsOnline,
+                ),
             ],
           ),
         ),

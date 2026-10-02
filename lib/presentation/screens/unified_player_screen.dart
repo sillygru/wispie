@@ -16,6 +16,7 @@ import '../../theme/app_theme.dart';
 import '../components/player_segmented_pill.dart';
 import '../components/pressable.dart';
 import '../components/song_actions.dart';
+import '../cover_gradient/full_bleed_player_screen.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/basic_progress_bar.dart';
@@ -401,6 +402,16 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Full-bleed variant: single flag check, old output untouched when off.
+    final bool useFullBleed = ref.watch(
+      settingsProvider.select((s) => s.fullBleedDesignEnabled),
+    );
+    if (useFullBleed) {
+      return FullBleedPlayerScreen(
+        initialPane: widget.initialPane,
+        queueShowsHistory: widget.queueShowsHistory,
+      );
+    }
     final themeState = ref.watch(themeProvider);
     // Lifted once here and passed down, so every pane shares one legible accent
     // rather than each deciding how to cope with a near-black cover palette.
@@ -792,13 +803,16 @@ class _TransportDock extends ConsumerWidget {
         ref.watch(settingsProvider.select((s) => s.progressBarType));
 
     // Deliberately sits directly on the backdrop — no card, no border. Nesting
-    // the controls inside another surface just stacks boxes on boxes.
+    // the controls inside another surface just stacks boxes on boxes. Narrow
+    // windows pull the gutters and the bottom slack in so the seek bar and
+    // controls keep their share of a short portrait window.
+    final compact = WideLayout.isCompact(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        PlayerTokens.s5,
+      padding: EdgeInsets.fromLTRB(
+        compact ? PlayerTokens.s3 : PlayerTokens.s5,
         PlayerTokens.s2,
-        PlayerTokens.s5,
-        PlayerTokens.s6,
+        compact ? PlayerTokens.s3 : PlayerTokens.s5,
+        compact ? PlayerTokens.s4 : PlayerTokens.s6,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -886,6 +900,12 @@ class _TransportDock extends ConsumerWidget {
     final canSkipPrevious = player.hasPrevious;
     final canSkipNext = player.hasNext;
     final disabled = Colors.white.withValues(alpha: PlayerTokens.aTertiary);
+    final compact = WideLayout.isCompact(context);
+    final skipSize =
+        compact ? PlayerTokens.skipIconSizeCompact : PlayerTokens.skipIconSize;
+    final playSize = compact
+        ? PlayerTokens.playControlSizeCompact
+        : PlayerTokens.playControlSize;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -917,7 +937,7 @@ class _TransportDock extends ConsumerWidget {
             padding: const EdgeInsets.all(PlayerTokens.s3),
             child: Icon(
               Icons.skip_previous_rounded,
-              size: 34,
+              size: skipSize,
               color: canSkipPrevious ? Colors.white : disabled,
             ),
           ),
@@ -935,8 +955,8 @@ class _TransportDock extends ConsumerWidget {
               onTap: audioManager.togglePlayPause,
               pressedScale: 0.9,
               child: Container(
-                width: 62,
-                height: 62,
+                width: playSize,
+                height: playSize,
                 decoration: BoxDecoration(
                   color: accent,
                   shape: BoxShape.circle,
@@ -985,7 +1005,7 @@ class _TransportDock extends ConsumerWidget {
                       isFastForward
                           ? Icons.fast_forward_rounded
                           : Icons.skip_next_rounded,
-                      size: 34,
+                      size: skipSize,
                       color: isFastForward
                           ? accent
                           : (canSkipNext ? Colors.white : disabled),

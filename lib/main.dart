@@ -89,7 +89,7 @@ Future<void> _initDesktopWindow(SharedPreferences prefs) async {
   if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
   try {
     await windowManager.ensureInitialized();
-    const minSize = Size(960, 600);
+    const minSize = Size(360, 540);
     const options = WindowOptions(
       minimumSize: minSize,
       size: minSize,

@@ -104,6 +104,14 @@ class PlayerTokens {
   static const double lyricsInactiveScale = 0.95;
   static const int lyricsLongWordThresholdMs = 1500;
 
+  // Transport dock. The compact rung is used below
+  // WideLayout.compactBreakpoint so the control row breathes in a narrow
+  // portrait window instead of spanning edge to edge.
+  static const double playControlSize = 62;
+  static const double playControlSizeCompact = 56;
+  static const double skipIconSize = 34;
+  static const double skipIconSizeCompact = 30;
+
   /// The accent colour for the whole screen: the palette extracted from the
   /// current cover, falling back to the theme primary.
   ///

@@ -48,6 +48,7 @@ class SettingsState {
   final double lyricsTimingOffsetSeconds;
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
+  final bool fullBleedDesignEnabled;
 
   SettingsState({
     this.visualizerMode = VisualizerMode.synced,
@@ -94,6 +95,7 @@ class SettingsState {
     this.lyricsTimingOffsetSeconds = 0,
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
+    this.fullBleedDesignEnabled = false,
   })  : progressBarType = progressBarType ??
             (showWaveform != null
                 ? (showWaveform
@@ -147,6 +149,7 @@ class SettingsState {
     double? lyricsTimingOffsetSeconds,
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
+    bool? fullBleedDesignEnabled,
   }) {
     return SettingsState(
       visualizerMode: visualizerMode ?? this.visualizerMode,
@@ -218,6 +221,8 @@ class SettingsState {
           lyricsTimingOffsetSeconds ?? this.lyricsTimingOffsetSeconds,
       autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
       syncSettingsEnabled: syncSettingsEnabled ?? this.syncSettingsEnabled,
+      fullBleedDesignEnabled:
+          fullBleedDesignEnabled ?? this.fullBleedDesignEnabled,
     );
   }
 }
@@ -271,6 +276,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyLyricsTimingOffsetSeconds = 'lyrics_timing_offset_seconds';
   static const String _keyAutoSyncEnabled = 'auto_sync_enabled';
   static const String _keySyncSettingsEnabled = 'sync_settings_enabled';
+  static const String _keyFullBleedDesignEnabled = 'full_bleed_design_enabled';
   static const double maxDelayDuration = 12.0;
   static const int minMotionLatencyMs = -200;
   static const int maxMotionLatencyMs = 500;
@@ -390,6 +396,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
               .clamp(-60.0, 60.0),
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
+      fullBleedDesignEnabled:
+          prefs.getBool(_keyFullBleedDesignEnabled) ?? false,
     );
   }
 
@@ -716,6 +724,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(syncSettingsEnabled: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keySyncSettingsEnabled, enabled);
+  }
+
+  Future<void> setFullBleedDesignEnabled(bool enabled) async {
+    state = state.copyWith(fullBleedDesignEnabled: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyFullBleedDesignEnabled, enabled);
   }
 }
 

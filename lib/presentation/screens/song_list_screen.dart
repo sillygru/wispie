@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,7 @@ import '../widgets/song_list_item.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
 import '../components/song_actions.dart';
+import '../cover_gradient/gradient_detail_screen.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/album_card_selector.dart';
 import 'select_songs_screen.dart';
@@ -124,6 +126,34 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Full-bleed variant: single flag check for artist/album/playlist only.
+    // Favorites, folders and other lists keep the legacy layout.
+    final bool useFullBleed = ref.watch(
+      settingsProvider.select((s) => s.fullBleedDesignEnabled),
+    );
+    if (useFullBleed) {
+      final bool looksArtist = isArtist || _looksLikeArtist(songs, title);
+      final String lowerTitle = title.toLowerCase();
+      final bool looksAlbum = isAlbum ||
+          (!looksArtist &&
+              songs.isNotEmpty &&
+              songs.any(
+                (s) =>
+                    s.album.toLowerCase().contains(lowerTitle) ||
+                    lowerTitle.contains(s.album.toLowerCase()),
+              ));
+      if (playlistId != null || looksArtist || looksAlbum) {
+        return GradientDetailScreen(
+          title: title,
+          songs: songs,
+          playlistId: playlistId,
+          isArtist: isArtist,
+          isAlbum: isAlbum,
+          artistName: artistName,
+          albumName: albumName,
+        );
+      }
+    }
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final selectionState = ref.watch(selectionProvider);
     final sortOrder = ref.watch(settingsProvider).sortOrder;
@@ -268,28 +298,34 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     }
 
     final isWide = WideLayout.isWide(context);
+    // Scales down on narrow windows so the header artwork stops eating the
+    // list's vertical room in a short portrait window.
+    final artSide = math.min(
+      220.0,
+      MediaQuery.sizeOf(context).width * 0.55,
+    );
 
     Widget buildArtwork() {
       return GestureDetector(
         onTap: canFetchCover ? handleFetchCover : null,
         onLongPress: canFetchCover ? handleFetchCover : null,
         child: SizedBox(
-          width: 220,
-          height: 220,
+          width: artSide,
+          height: artSide,
           child: ClipRRect(
             borderRadius: AppTokens.brMd,
             child: hasCustomArtwork
                 ? Image.file(
                     File(artworkPath),
-                    width: 220,
-                    height: 220,
+                    width: artSide,
+                    height: artSide,
                     cacheWidth: 550,
                     cacheHeight: 550,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        FolderGridImage(songs: sortedSongs, size: 220),
+                        FolderGridImage(songs: sortedSongs, size: artSide),
                   )
-                : FolderGridImage(songs: sortedSongs, size: 220),
+                : FolderGridImage(songs: sortedSongs, size: artSide),
           ),
         ),
       );

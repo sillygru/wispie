@@ -9,6 +9,7 @@ import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../routes/player_route.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 import 'audio_visualizer.dart';
 import '../components/app_icon.dart';
 import '../components/pressable.dart';
@@ -76,6 +77,9 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
         Platform.isMacOS || Platform.isWindows || Platform.isLinux;
     final isIPad =
         Platform.isIOS && MediaQuery.of(context).size.shortestSide >= 600;
+    final isWide = WideLayout.isWide(context);
+    final roomy =
+        isWide && (isDesktop || isIPad) && !WideLayout.isCompact(context);
 
     return StreamBuilder<SequenceState?>(
       stream: player.sequenceStateStream,
@@ -108,7 +112,7 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
               isBarVisible: isBarVisible,
               appActive: _appActive,
               theme: theme,
-              isDesktopOrTablet: isDesktop || isIPad,
+              roomy: roomy,
               compact: widget.compact,
               embedded: widget.embedded,
               coverVersion: song?.mtime,
@@ -127,7 +131,7 @@ class _NowPlayingContent extends ConsumerWidget {
   final bool isBarVisible;
   final bool appActive;
   final ThemeData theme;
-  final bool isDesktopOrTablet;
+  final bool roomy;
   final bool compact;
   final bool embedded;
   final Object? coverVersion;
@@ -139,7 +143,7 @@ class _NowPlayingContent extends ConsumerWidget {
     required this.isBarVisible,
     required this.appActive,
     required this.theme,
-    required this.isDesktopOrTablet,
+    required this.roomy,
     required this.compact,
     required this.embedded,
     this.coverVersion,
@@ -147,8 +151,7 @@ class _NowPlayingContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final double barHeight =
-        compact ? (isDesktopOrTablet ? 72 : 60) : (isDesktopOrTablet ? 78 : 64);
+    final double barHeight = compact ? (roomy ? 72 : 60) : (roomy ? 78 : 64);
     final double imageSize = compact ? 40 : 44;
     final double titleSize = compact ? 14 : 15;
     final double artistSize = compact ? 11 : 12;
@@ -239,7 +242,7 @@ class _NowPlayingContent extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (!compact && isDesktopOrTablet) ...[
+                if (!compact && roomy) ...[
                   AppIcon(AppIcons.volumeDown,
                       size: 18, color: AppTokens.fgTertiary),
                   SizedBox(

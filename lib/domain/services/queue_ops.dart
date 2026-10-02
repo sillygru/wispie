@@ -130,8 +130,8 @@ QueuePlan? planMoveUpcomingToTop(
   );
 }
 
-/// Plans "play this next": the entry lands after any previously added top items,
-/// or at [currentIndex + 1] if none exist or if overriding an existing top item.
+/// Plans "play this next": the entry lands after existing top-order entries,
+/// or immediately after the current item when there are none.
 ///
 /// An entry already in the upcoming queue is *moved* rather than duplicated.
 /// Pass [allowDuplicate] to force a second copy anyway.
@@ -158,41 +158,25 @@ QueuePlan planPlayNext(
         .indexWhere((item) => item.song.filename == candidate.song.filename);
   }
 
-  if (existingIdx > currentIndex) {
-    final existingItem = queue[existingIdx];
-    final isOverride = sessionTopOrder.contains(existingItem.queueId);
-    final int targetIndex;
-
-    if (isOverride) {
-      targetIndex = (currentIndex + 1).clamp(0, queue.length);
-    } else {
-      var lastTopIndex = currentIndex;
-      for (final topId in sessionTopOrder) {
-        if (topId == existingItem.queueId) continue;
-        final idx = queue.indexWhere((item) => item.queueId == topId);
-        if (idx > currentIndex && idx > lastTopIndex) {
-          lastTopIndex = idx;
-        }
-      }
-      targetIndex = (lastTopIndex + 1).clamp(0, queue.length);
-    }
-
-    final adjusted = existingIdx >= targetIndex ? targetIndex : targetIndex - 1;
-    return QueuePlan(
-      from: existingIdx,
-      to: adjusted,
-      item: existingItem,
-    );
-  }
-
   var lastTopIndex = currentIndex;
   for (final topId in sessionTopOrder) {
+    if (existingIdx > currentIndex && queue[existingIdx].queueId == topId) {
+      continue;
+    }
     final idx = queue.indexWhere((item) => item.queueId == topId);
     if (idx > currentIndex && idx > lastTopIndex) {
       lastTopIndex = idx;
     }
   }
   final targetIndex = (lastTopIndex + 1).clamp(0, queue.length);
+
+  if (existingIdx > currentIndex) {
+    return QueuePlan(
+      from: existingIdx,
+      to: existingIdx >= targetIndex ? targetIndex : targetIndex - 1,
+      item: queue[existingIdx],
+    );
+  }
 
   return QueuePlan(to: targetIndex, item: candidate);
 }

@@ -98,9 +98,9 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     // background is always opaque and there is no gray-flash before the panel.
     final animationValue = widget.drawerPosition;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    // Capped on wide windows so the panel never covers half a desktop window.
-    final drawerWidth =
-        (screenWidth * 0.48).clamp(0.0, WideLayout.maxDrawerWidth);
+    // One formula with the slide animation and the edge-drag math, capped on
+    // wide windows and floored on narrow ones.
+    final drawerWidth = WideLayout.drawerWidth(screenWidth);
     final slideInOffset = (1.0 - animationValue) * -drawerWidth;
 
     return Align(

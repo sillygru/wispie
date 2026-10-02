@@ -363,6 +363,24 @@ final List<SettingsDestination> settingsRegistry = [
         const AppearanceSettingsScreen(highlightId: 'appearance.cover_sizing'),
   ),
   SettingsDestination(
+    anchorId: 'appearance.full_bleed_design',
+    icon: AppIcons.autoAwesome,
+    title: 'New player & detail design',
+    subtitle: 'Full-bleed player cover and gradient detail screens',
+    breadcrumb: 'Settings › Appearance › Display',
+    keywords: const [
+      'full bleed',
+      'player',
+      'detail',
+      'gradient',
+      'cover',
+      'design'
+    ],
+    open: () => const AppearanceSettingsScreen(
+      highlightId: 'appearance.full_bleed_design',
+    ),
+  ),
+  SettingsDestination(
     anchorId: 'appearance.beat_cover',
     icon: AppIcons.album,
     title: 'Beat-reactive cover',
