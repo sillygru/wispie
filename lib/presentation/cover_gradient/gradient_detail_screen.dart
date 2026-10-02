@@ -122,14 +122,15 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   }
 
   Future<void> _ensurePalette(String? artworkPath, List<Song> songs) async {
-    final String key = artworkPath ?? songs.firstOrNull?.filename ?? '';
+    final coverSong = LibraryLogic.pickCoverSong(songs);
+    final String key = artworkPath ?? coverSong?.filename ?? '';
     if (key.isEmpty || key == _paletteKey) return;
     _paletteKey = key;
-    // Prefer the header artwork; fall back to the first song cover.
-    String? path = artworkPath;
-    if (path == null || path.isEmpty) {
-      path = songs.firstOrNull?.coverUrl;
-    }
+    // Prefer the header artwork; fall back to the collection's most-listened
+    // cover.
+    final String? path = (artworkPath == null || artworkPath.isEmpty)
+        ? coverSong?.coverUrl
+        : artworkPath;
     if (path == null || path.isEmpty) return;
     try {
       final palette = await ColorExtractionService.extractPalette(path);
@@ -296,7 +297,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     // Immersive background: blurred header artwork so the whole page feels
     // tinted like the iOS reference, still clamped dark for white text.
     // Falls back to the flat gradient when no cover resolves.
-    final Song? firstSong = sortedSongs.isNotEmpty ? sortedSongs.first : null;
+    final Song? firstSong = LibraryLogic.pickCoverSong(sortedSongs);
     final String? customArt = artworkPath;
     String bgUrl = firstSong?.coverUrl ?? '';
     String bgKey = firstSong?.filename ?? widget.title;
@@ -335,6 +336,30 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                       ),
                     ),
             ),
+            // Near-black fade behind the content's top region: the joint
+            // where the cover's opaque black bottom meets the background
+            // lands inside it, so both sides read the same and no line can
+            // draw. Static and screen-sized; scrolling rows simply travel
+            // through it. Detail-only.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        Colors.black.withValues(alpha: 0.78),
+                        Colors.black.withValues(alpha: 0.78),
+                        Colors.black.withValues(alpha: 0.0),
+                      ],
+                      stops: const <double>[0.0, 0.52, 0.72],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
             WideContentCenter(
               child: CustomScrollView(
                 controller: _scroll,
@@ -407,26 +432,12 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
                           final Song song = visibleSongs[index];
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _GradientSongRow(
-                                song: song,
-                                accent: baseAccent,
-                                playlistId: widget.playlistId,
-                                heroTagPrefix: 'gradient_${widget.title}',
-                                visibleSongs: visibleSongs,
-                              ),
-                              // Hairline inset aligned with text, not artwork.
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                    left: 76, right: AppTokens.s4),
-                                child: Container(
-                                  height: 0.5,
-                                  color: Colors.white.withValues(alpha: 0.14),
-                                ),
-                              ),
-                            ],
+                          return _GradientSongRow(
+                            song: song,
+                            accent: baseAccent,
+                            playlistId: widget.playlistId,
+                            heroTagPrefix: 'gradient_${widget.title}',
+                            visibleSongs: visibleSongs,
                           );
                         },
                         childCount: visibleSongs.length,
@@ -823,7 +834,7 @@ class _Header extends StatelessWidget {
     final double screenH = MediaQuery.sizeOf(context).height;
     final double coverH = (screenH * 0.44).clamp(260.0, 460.0);
     final String? customArt = artworkPath;
-    final Song? firstSong = sortedSongs.isNotEmpty ? sortedSongs.first : null;
+    final Song? firstSong = LibraryLogic.pickCoverSong(sortedSongs);
     final String firstCover = firstSong?.coverUrl ?? '';
 
     Widget art;
@@ -865,21 +876,27 @@ class _Header extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                ShaderMask(
-                  shaderCallback: (Rect bounds) {
-                    return const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: <Color>[
-                        Colors.white,
-                        Colors.white,
-                        Colors.transparent,
-                      ],
-                      stops: <double>[0.0, 0.66, 1.0],
-                    ).createShader(bounds);
-                  },
-                  blendMode: BlendMode.dstIn,
-                  child: art,
+                art,
+                // Dissolve the photo into opaque black: the bottom lands on
+                // the same near-black as the page background, so the joint
+                // below the title cannot draw an edge the way a transparency
+                // fade over mottled blur did.
+                const Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          Colors.transparent,
+                          Colors.transparent,
+                          Color(0xCC000000),
+                          Color(0xF2000000),
+                        ],
+                        stops: <double>[0.0, 0.4, 0.72, 1.0],
+                      ),
+                    ),
+                  ),
                 ),
                 // Title + count overlap the lower edge with a wash for
                 // legibility, mirroring the player info block hierarchy.
@@ -888,14 +905,14 @@ class _Header extends StatelessWidget {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.fromLTRB(20, 36, 20, 16),
+                    padding: const EdgeInsets.fromLTRB(20, 48, 20, 18),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: <Color>[
                           Colors.transparent,
-                          Color(0xB3000000),
+                          Color(0x66000000),
                         ],
                       ),
                     ),
@@ -931,7 +948,19 @@ class _Header extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: AppTokens.s2),
+        // Fade tail: continues the cover's black dissolve past its edge so
+        // the photo meets the page with no cutoff line.
+        Container(
+          height: 56,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[Color(0xF2000000), Colors.transparent],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTokens.s1),
       ],
     );
   }
@@ -953,51 +982,52 @@ class _Actions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
+    final Color accent = AppTokens.accentOf(context, ref);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool enabled = visibleSongs.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
           AppTokens.s4, AppTokens.s2, AppTokens.s4, AppTokens.s2),
       child: Column(
         children: [
+          // Circular actions instead of pills: big accent Play beside a
+          // smaller tonal Shuffle, centered. Same icons, same callbacks,
+          // flat with no glow.
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                flex: 2,
-                child: FilledButton.tonalIcon(
-                  onPressed: visibleSongs.isNotEmpty
-                      ? () {
-                          audioManager.shuffleAndPlay(
-                            visibleSongs,
-                            isRestricted: true,
-                          );
-                        }
-                      : null,
-                  icon: const AppIcon(AppIcons.shuffle),
-                  label: const Text('Shuffle'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+              _CircleAction(
+                size: 52,
+                iconSize: 24,
+                tooltip: 'Shuffle',
+                background: scheme.secondaryContainer,
+                foreground: scheme.onSecondaryContainer,
+                icon: AppIcons.shuffle,
+                enabled: enabled,
+                onTap: () {
+                  audioManager.shuffleAndPlay(
+                    visibleSongs,
+                    isRestricted: true,
+                  );
+                },
               ),
-              const SizedBox(width: AppTokens.s3),
-              Expanded(
-                flex: 3,
-                child: FilledButton.icon(
-                  onPressed: visibleSongs.isNotEmpty
-                      ? () {
-                          audioManager.replaceQueue(
-                            visibleSongs,
-                            playlistId: playlistId,
-                            forceLinear: true,
-                            clearCurrentSong: true,
-                          );
-                        }
-                      : null,
-                  icon: const AppIcon(AppIcons.play),
-                  label: const Text('Play'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
+              const SizedBox(width: AppTokens.s4),
+              _CircleAction(
+                size: 72,
+                iconSize: 32,
+                tooltip: 'Play',
+                background: accent,
+                foreground: AppTokens.onAccent(accent),
+                icon: AppIcons.play,
+                enabled: enabled,
+                onTap: () {
+                  audioManager.replaceQueue(
+                    visibleSongs,
+                    playlistId: playlistId,
+                    forceLinear: true,
+                    clearCurrentSong: true,
+                  );
+                },
               ),
             ],
           ),
@@ -1012,6 +1042,52 @@ class _Actions extends ConsumerWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Circular tap target for the detail actions. Detail-only variant reusing
+/// the app's own icon set; callbacks match the legacy pills exactly.
+class _CircleAction extends StatelessWidget {
+  final double size;
+  final double iconSize;
+  final String tooltip;
+  final Color background;
+  final Color foreground;
+  final AppIconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _CircleAction({
+    required this.size,
+    required this.iconSize,
+    required this.tooltip,
+    required this.background,
+    required this.foreground,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg =
+        enabled ? background : Colors.white.withValues(alpha: 0.08);
+    final Color fg =
+        enabled ? foreground : Colors.white.withValues(alpha: 0.35);
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+          alignment: Alignment.center,
+          child: AppIcon(icon, color: fg, size: iconSize),
+        ),
       ),
     );
   }
@@ -1328,95 +1404,92 @@ class _FloatingTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // No full-width blur here on purpose: blurring the cover underneath
+    // smeared it into ghost faces across the status area. The scrim alone
+    // keeps the buttons legible; only the small circular buttons blur.
     final double topPad = MediaQuery.paddingOf(context).top;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-              AppTokens.s3, topPad + AppTokens.s2, AppTokens.s3, AppTokens.s2),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Colors.black.withValues(alpha: 0.45),
-                Colors.black.withValues(alpha: 0.0),
-              ],
-            ),
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          AppTokens.s3, topPad + AppTokens.s2, AppTokens.s3, AppTokens.s2),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: <Color>[
+            Colors.black.withValues(alpha: 0.55),
+            Colors.black.withValues(alpha: 0.0),
+          ],
+        ),
+      ),
+      child: Row(
+        children: [
+          GlassCircleButton(
+            icon: const AppIcon(AppIcons.arrowBack, color: Colors.white),
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).maybePop(),
           ),
-          child: Row(
-            children: [
-              GlassCircleButton(
-                icon: const AppIcon(AppIcons.arrowBack, color: Colors.white),
-                tooltip: 'Back',
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              Expanded(
-                child: AnimatedOpacity(
-                  duration: AppTokens.dFast,
-                  opacity: showTitle ? 1.0 : 0.0,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: AppTokens.s3),
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: AppTokens.rowTitle(context).copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
+          Expanded(
+            child: AnimatedOpacity(
+              duration: AppTokens.dFast,
+              opacity: showTitle ? 1.0 : 0.0,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTokens.rowTitle(context).copyWith(
+                    color: Colors.white,
                   ),
                 ),
               ),
-              _GlassWrap(
-                child: showAlbumGroups
-                    ? SortMenu(
-                        sortOrder: effectiveSortOrder,
-                        onSelected: onLocalSort,
-                      )
-                    : const SortMenu(),
-              ),
-              if (isUnknown)
-                GlassCircleButton(
-                  icon: const AppIcon(AppIcons.manageSearch,
-                      color: Colors.white, size: 20),
-                  tooltip: 'Fetch Missing Metadata',
-                  onPressed: onFetchMissing,
-                )
-              else if (canFetchCover)
-                GlassCircleButton(
-                  icon: const AppIcon(AppIcons.imageSearch,
-                      color: Colors.white, size: 20),
-                  tooltip: effectiveIsArtist
-                      ? 'Fetch Artist Cover Online'
-                      : (effectiveIsAlbum
-                          ? 'Fetch Album Cover Online'
-                          : 'Fetch Cover Online'),
-                  onPressed: onFetchCover,
-                ),
-              if (playlistId != null)
-                GlassCircleButton(
-                  icon: const AppIcon(AppIcons.moreVert,
-                      color: Colors.white, size: 20),
-                  tooltip: 'Playlist Options',
-                  onPressed: onPlaylistOptions,
-                ),
-              if (playlistId == null &&
-                  !effectiveIsArtist &&
-                  !effectiveIsAlbum &&
-                  sortedSongs.length >= 2)
-                GlassCircleButton(
-                  icon: const AppIcon(AppIcons.merge,
-                      color: Colors.white, size: 20),
-                  tooltip: 'Merge Songs',
-                  onPressed: onMerge,
-                ),
-            ],
+            ),
           ),
-        ),
+          _GlassWrap(
+            child: showAlbumGroups
+                ? SortMenu(
+                    sortOrder: effectiveSortOrder,
+                    onSelected: onLocalSort,
+                  )
+                : const SortMenu(),
+          ),
+          if (isUnknown)
+            GlassCircleButton(
+              icon: const AppIcon(AppIcons.manageSearch,
+                  color: Colors.white, size: 20),
+              tooltip: 'Fetch Missing Metadata',
+              onPressed: onFetchMissing,
+            )
+          else if (canFetchCover)
+            GlassCircleButton(
+              icon: const AppIcon(AppIcons.imageSearch,
+                  color: Colors.white, size: 20),
+              tooltip: effectiveIsArtist
+                  ? 'Fetch Artist Cover Online'
+                  : (effectiveIsAlbum
+                      ? 'Fetch Album Cover Online'
+                      : 'Fetch Cover Online'),
+              onPressed: onFetchCover,
+            ),
+          if (playlistId != null)
+            GlassCircleButton(
+              icon: const AppIcon(AppIcons.moreVert,
+                  color: Colors.white, size: 20),
+              tooltip: 'Playlist Options',
+              onPressed: onPlaylistOptions,
+            ),
+          if (playlistId == null &&
+              !effectiveIsArtist &&
+              !effectiveIsAlbum &&
+              sortedSongs.length >= 2)
+            GlassCircleButton(
+              icon:
+                  const AppIcon(AppIcons.merge, color: Colors.white, size: 20),
+              tooltip: 'Merge Songs',
+              onPressed: onMerge,
+            ),
+        ],
       ),
     );
   }

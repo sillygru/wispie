@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
+import '../../domain/services/cover_path.dart';
 import '../../models/song.dart';
 import '../tokens/player_tokens.dart';
 import '../widgets/album_art_image.dart' show StaticAlbumArtImage;
@@ -35,22 +36,17 @@ class QueueCoverMosaic extends StatelessWidget {
   /// Returns null if the file doesn't exist or the URL isn't a local path.
   /// Single stat call per file: existence + size in one syscall.
   static ({String path, int size})? _resolveCover(String? url) {
-    if (url == null || url.trim().isEmpty) return null;
-    final trimmed = url.trim();
-    if (!trimmed.startsWith('/') &&
-        !trimmed.startsWith('file://') &&
-        !trimmed.startsWith('C:\\')) {
-      return null;
-    }
+    final path = CoverPath.toLocalPath(url);
+    if (path == null) return null;
     try {
-      final path = trimmed.startsWith('file://')
-          ? Uri.parse(trimmed).toFilePath()
-          : trimmed;
-      final file = File(path);
-      final stat = file.statSync();
+      final stat = File(path).statSync();
       if (stat.type == FileSystemEntityType.notFound) return null;
       return (path: path, size: stat.size);
-    } catch (_) {
+    } on FileSystemException {
+      return null;
+    } on ArgumentError {
+      // A stored path the platform rejects outright (embedded NUL, bad
+      // encoding) is a missing cover, not a crash.
       return null;
     }
   }

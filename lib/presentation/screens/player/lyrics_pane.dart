@@ -15,6 +15,7 @@ import '../../../services/display_refresh_service.dart';
 import '../../../services/lingva_translate_service.dart';
 import '../../../services/lrclib_service.dart';
 import '../../components/app_feedback.dart';
+import '../../components/progressive_bottom_blur.dart';
 import '../../dialogs/lyrics_search_sheet.dart';
 import '../../dialogs/lyrics_translation_sheet.dart';
 import '../../models/lyrics_gap_loader_state.dart';
@@ -1234,7 +1235,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
     return Stack(
       children: [
-        Positioned.fill(child: _buildContent(context)),
+        Positioned.fill(
+          child: ProgressiveBottomBlur(child: _buildContent(context)),
+        ),
         // Kept inside the pane rather than in the shell header: the shell owns
         // the chrome, and this action belongs to the lyrics view alone. The
         // list reserves [_actionStripHeight] at the top so no lyric ever passes

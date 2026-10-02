@@ -8,7 +8,7 @@ import '../../providers/artist_album_art_provider.dart';
 import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
 import 'album_art_image.dart';
-import 'folder_grid_image.dart';
+import 'collection_cover.dart';
 import 'lyrics_match_widget.dart';
 import 'song_options_menu.dart';
 import '../tokens/app_tokens.dart';
@@ -297,10 +297,9 @@ class ArtistSearchResultItem extends ConsumerWidget {
               height: 56,
             ),
           )
-        : FolderGridImage(
+        : CollectionCover(
             songs: songs,
             size: 56,
-            isGridItem: true,
           );
 
     return Container(
@@ -402,32 +401,7 @@ class AlbumSearchResultItem extends StatelessWidget {
               children: [
                 Hero(
                   tag: 'album_${albumName}_$artistName',
-                  child: ClipRRect(
-                    borderRadius: AppTokens.brSm,
-                    child: songs.isNotEmpty
-                        ? AlbumArtImage(
-                            url: songs.first.coverUrl ?? '',
-                            filename: songs.first.filename,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            memCacheWidth: 112,
-                            memCacheHeight: 112,
-                          )
-                        : Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.secondaryContainer,
-                              borderRadius: AppTokens.brSm,
-                            ),
-                            child: AppIcon(
-                              AppIcons.album,
-                              size: 32,
-                              color: theme.colorScheme.onSecondaryContainer,
-                            ),
-                          ),
-                  ),
+                  child: CollectionCover(songs: songs, size: 56),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

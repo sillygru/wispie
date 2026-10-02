@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../providers/providers.dart';
 import '../../services/library_logic.dart';
-import 'folder_grid_image.dart';
+import 'collection_cover.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -182,7 +182,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                                 final folderSongs =
                                     content.subFolderSongs[folderName] ?? [];
                                 return ListTile(
-                                  leading: FolderGridImage(
+                                  leading: CollectionCover(
                                       songs: folderSongs, size: 40),
                                   title: Text(folderName),
                                   onTap: () {

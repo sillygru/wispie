@@ -22,7 +22,7 @@ import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../widgets/duration_display.dart';
-import '../widgets/folder_grid_image.dart';
+import '../widgets/collection_cover.dart';
 import '../widgets/song_list_item.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
@@ -323,9 +323,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     cacheHeight: 550,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) =>
-                        FolderGridImage(songs: sortedSongs, size: artSide),
+                        CollectionCover(songs: sortedSongs, size: artSide),
                   )
-                : FolderGridImage(songs: sortedSongs, size: artSide),
+                : CollectionCover(songs: sortedSongs, size: artSide),
           ),
         ),
       );

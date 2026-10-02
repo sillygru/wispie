@@ -12,7 +12,7 @@ import '../../providers/user_data_provider.dart';
 import '../../services/audio_player_manager.dart';
 import '../../services/library_logic.dart';
 import '../widgets/folder_options_menu.dart';
-import '../widgets/folder_grid_image.dart';
+import '../widgets/collection_cover.dart';
 import '../widgets/header_shuffle_button.dart';
 import '../widgets/song_list_item.dart';
 import '../widgets/sort_menu.dart';
@@ -407,7 +407,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             onSecondaryTap: showPlaylistOptions,
             child: AppListRow(
               leading: AppRowArt(
-                child: FolderGridImage(songs: playlistSongs),
+                child: CollectionCover(songs: playlistSongs),
               ),
               title: playlist.name,
               subtitleWidget: CollectionDurationDisplay(
@@ -451,7 +451,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         return _desktopRow(
           onSecondaryTap: showFolderOptions,
           child: AppListRow(
-            leading: AppRowArt(child: FolderGridImage(songs: folderSongs)),
+            leading: AppRowArt(child: CollectionCover(songs: folderSongs)),
             title: folderName,
             subtitleWidget: CollectionDurationDisplay(
               songs: folderSongs,
@@ -1036,13 +1036,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   height: double.infinity,
                   cacheWidth: 350,
                   cacheHeight: 350,
-                  errorBuilder: (_, __, ___) => FolderGridImage(
-                    songs: entry.songs,
-                    isGridItem: true,
-                  ),
+                  errorBuilder: (_, __, ___) =>
+                      CollectionCover(songs: entry.songs),
                 ),
               )
-            : FolderGridImage(songs: entry.songs, isGridItem: true);
+            : CollectionCover(songs: entry.songs);
 
         return AppMediaCard(
           expand: true,

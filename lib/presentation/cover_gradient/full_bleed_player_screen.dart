@@ -472,7 +472,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     Color accent,
     double coverH,
   ) {
-    final double chromeHeight = MediaQuery.paddingOf(context).top + 108;
+    final double chromeHeight = MediaQuery.paddingOf(context).top + 100;
     return Stack(
       children: [
         Positioned.fill(
@@ -498,6 +498,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                       coverKey: _coverKey,
                       paneVisible: _nowPlayingVisible,
                       audioManager: _manager,
+                      pagePosition: _pagePosition,
                     ),
                     Padding(
                       padding: EdgeInsets.only(top: chromeHeight),
@@ -517,6 +518,29 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
           top: 0,
           left: 0,
           right: 0,
+          height: chromeHeight + 28,
+          child: const IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    Color(0x59000000),
+                    Color(0x40000000),
+                    Color(0x1F000000),
+                    Color(0x00000000),
+                  ],
+                  stops: <double>[0.0, 0.4, 0.75, 1.0],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -526,14 +550,12 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                   horizontal: WideLayoutGutter.of(context),
                   vertical: PlayerTokens.s1,
                 ),
-                child: Opacity(
-                  opacity: 0.94,
-                  child: PlayerSegmentedPill(
-                    labels: const <String>['Lyrics', 'Player', 'Queue'],
-                    position: _pagePosition,
-                    onSelected: _goToPane,
-                    accent: accent,
-                  ),
+                child: PlayerSegmentedPill(
+                  labels: const <String>['Lyrics', 'Player', 'Queue'],
+                  position: _pagePosition,
+                  onSelected: _goToPane,
+                  accent: accent,
+                  overCover: true,
                 ),
               ),
             ],
@@ -648,16 +670,16 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
           Padding(
             padding: EdgeInsets.fromLTRB(
               WideLayoutGutter.of(context),
-              topPad + PlayerTokens.s2,
+              topPad + PlayerTokens.s1,
               PlayerTokens.s3,
-              PlayerTokens.s1,
+              2,
             ),
             child: Column(
               children: [
                 Container(
                   width: 38,
                   height: 4,
-                  margin: const EdgeInsets.only(bottom: PlayerTokens.s2),
+                  margin: const EdgeInsets.only(bottom: PlayerTokens.s1),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.38),
                     borderRadius: PlayerTokens.brPill,
@@ -703,6 +725,11 @@ class _FullBleedPlayerPane extends ConsumerWidget {
   final ValueListenable<bool> paneVisible;
   final AudioPlayerManager audioManager;
 
+  /// Page position in pane units (1.0 = this pane). When given, the cover
+  /// dissolves into the shell's blurred backdrop while swiping away instead
+  /// of sliding off sharp. Null in the wide layout, where nothing swipes.
+  final ValueListenable<double>? pagePosition;
+
   const _FullBleedPlayerPane({
     required this.song,
     required this.accent,
@@ -710,41 +737,92 @@ class _FullBleedPlayerPane extends ConsumerWidget {
     required this.coverKey,
     required this.paneVisible,
     required this.audioManager,
+    this.pagePosition,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SingleChildScrollView(
-      physics: const ClampingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildCover(context),
-          ContentGutter(
-            child: _FullBleedInfoBlock(song: song, accent: accent),
-          ),
-          const SizedBox(height: PlayerTokens.s2),
-          ContentGutter(
-            child: NowPlayingLyricPeek(
-              song: song,
-              accent: accent,
-              paneVisible: paneVisible,
+    // Flex cover: the artwork takes exactly the leftover viewport space, so
+    // no slack can pool anywhere - no mid-screen void, no top seam. Falls
+    // back to a fixed small cover with scroll on tiny windows and video
+    // tracks (whose toggle would overflow the tight column).
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double viewportH =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 640;
+        if (viewportH < 380 || song.hasVideo) {
+          return SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildCover(context, 240),
+                ContentGutter(
+                  child: _FullBleedInfoBlock(song: song, accent: accent),
+                ),
+                const SizedBox(height: PlayerTokens.s1),
+                SizedBox(
+                  height: 24,
+                  child: ContentGutter(
+                    child: Transform.translate(
+                      offset: const Offset(-PlayerTokens.s5, 0),
+                      child: NowPlayingLyricPeek(
+                        song: song,
+                        accent: accent,
+                        paneVisible: paneVisible,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: PlayerTokens.s1),
+                if (song.hasVideo)
+                  Center(
+                    child: _FullBleedVideoToggle(
+                      accent: accent,
+                      audioManager: audioManager,
+                    ),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(height: PlayerTokens.s2),
-          if (song.hasVideo)
-            Center(
-              child: _FullBleedVideoToggle(
-                accent: accent,
-                audioManager: audioManager,
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _SwipeFade(
+                position: pagePosition,
+                child: LayoutBuilder(
+                  builder: (context, coverConstraints) =>
+                      _buildCover(context, coverConstraints.maxHeight),
+                ),
               ),
             ),
-        ],
-      ),
+            ContentGutter(
+              child: _FullBleedInfoBlock(song: song, accent: accent),
+            ),
+            const SizedBox(height: PlayerTokens.s1),
+            SizedBox(
+              height: 24,
+              child: ContentGutter(
+                child: Transform.translate(
+                  offset: const Offset(-PlayerTokens.s5, 0),
+                  child: NowPlayingLyricPeek(
+                    song: song,
+                    accent: accent,
+                    paneVisible: paneVisible,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: PlayerTokens.s1),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildCover(BuildContext context) {
+  Widget _buildCover(BuildContext context, double height) {
     return ValueListenableBuilder<PlaybackMediaMode>(
       valueListenable: audioManager.effectiveMediaModeNotifier,
       builder: (context, mode, _) {
@@ -752,12 +830,12 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         if (isVideo) {
           return SizedBox(
             width: double.infinity,
-            height: coverHeight,
+            height: height,
             child: _FullBleedVideoSurface(
               song: song,
               audioManager: audioManager,
               paneVisible: paneVisible,
-              placeholderHeight: coverHeight,
+              placeholderHeight: height,
             ),
           );
         }
@@ -769,14 +847,14 @@ class _FullBleedPlayerPane extends ConsumerWidget {
           child: Container(
             key: coverKey,
             width: double.infinity,
-            height: coverHeight,
+            height: height,
             color: Colors.black,
             child: AlbumArtImage(
               url: song.coverUrl ?? '',
               filename: song.filename,
               cacheVersion: song.mtime,
               width: MediaQuery.sizeOf(context).width,
-              height: coverHeight,
+              height: height,
               memCacheWidth: (MediaQuery.sizeOf(context).width *
                       MediaQuery.devicePixelRatioOf(context))
                   .round(),
@@ -786,7 +864,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         );
         return SizedBox(
           width: double.infinity,
-          height: coverHeight,
+          height: height,
           child: ShaderMask(
             shaderCallback: (Rect bounds) {
               return const LinearGradient(
@@ -795,14 +873,43 @@ class _FullBleedPlayerPane extends ConsumerWidget {
                 colors: <Color>[
                   Colors.white,
                   Colors.white,
+                  Color(0xD7FFFFFF),
+                  Color(0x80FFFFFF),
+                  Color(0x28FFFFFF),
                   Colors.transparent,
                 ],
-                stops: <double>[0.0, 0.66, 1.0],
+                stops: <double>[0.0, 0.55, 0.6625, 0.775, 0.8875, 1.0],
               ).createShader(bounds);
             },
             blendMode: BlendMode.dstIn,
             child: art,
           ),
+        );
+      },
+    );
+  }
+}
+
+/// Fades its child out as [position] moves away from the Player page (1.0).
+/// At rest the opacity is 1.0, so it costs nothing outside a swipe.
+class _SwipeFade extends StatelessWidget {
+  final ValueListenable<double>? position;
+  final Widget child;
+
+  const _SwipeFade({required this.position, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final ValueListenable<double>? p = position;
+    if (p == null) return child;
+    return ValueListenableBuilder<double>(
+      valueListenable: p,
+      child: child,
+      builder: (context, value, child) {
+        final double away = (value - 1.0).abs().clamp(0.0, 1.0);
+        return Opacity(
+          opacity: 1.0 - Curves.easeInOut.transform(away),
+          child: child,
         );
       },
     );
@@ -854,7 +961,13 @@ class _FullBleedInfoBlock extends ConsumerWidget {
           ),
         ),
         const SizedBox(width: PlayerTokens.s3),
-        _FullBleedFavoriteButton(song: song, accent: accent),
+        // The 48pt hit box leaves the 28pt heart inset by 10pt; pull it back
+        // so the icon's edge lines up with the seek bar. Hit-testing follows
+        // the transform.
+        Transform.translate(
+          offset: const Offset(10, 0),
+          child: _FullBleedFavoriteButton(song: song, accent: accent),
+        ),
       ],
     );
   }
@@ -1421,6 +1534,9 @@ class _FullBleedControlRow extends StatelessWidget {
     final bool canSkipNext = player.hasNext;
     final Color disabled =
         Colors.white.withValues(alpha: PlayerTokens.aTertiary);
+    // Tappable-but-inactive controls (repeat off, share) get the secondary
+    // alpha so they don't read as disabled next to prev/next.
+    final Color idle = Colors.white.withValues(alpha: PlayerTokens.aSecondary);
     final bool compact = WideLayout.isCompact(context);
     final double skipSize =
         compact ? PlayerTokens.skipIconSizeCompact : PlayerTokens.skipIconSize;
@@ -1441,7 +1557,7 @@ class _FullBleedControlRow extends StatelessWidget {
             loopMode == LoopMode.one
                 ? Icons.repeat_one_rounded
                 : Icons.repeat_rounded,
-            color: loopMode == LoopMode.off ? disabled : accent,
+            color: loopMode == LoopMode.off ? idle : accent,
           ),
           onPressed: () {
             HapticFeedback.selectionClick();
@@ -1568,7 +1684,7 @@ class _FullBleedControlRow extends StatelessWidget {
         ),
         IconButton(
           tooltip: 'Share',
-          icon: Icon(Icons.ios_share_rounded, color: disabled),
+          icon: Icon(Icons.ios_share_rounded, color: idle),
           onPressed: () {
             HapticFeedback.selectionClick();
             songActionShare(song);

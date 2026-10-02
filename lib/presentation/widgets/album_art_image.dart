@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
+import '../../domain/services/cover_path.dart';
 import '../../services/cover_refresh_service.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -103,10 +104,7 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     }
 
     final imageUrl = _resolvedUrl ?? widget.url;
-    final bool isLocal = imageUrl.startsWith('/') ||
-        imageUrl.startsWith('C:\\') ||
-        imageUrl.startsWith('file://') ||
-        imageUrl.startsWith('content://');
+    final bool isLocal = CoverPath.isLocal(imageUrl);
 
     int? effectiveMemCacheWidth = widget.memCacheWidth;
     int? effectiveMemCacheHeight = widget.memCacheHeight;
@@ -134,17 +132,7 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     Widget content;
 
     if (isLocal) {
-      String path;
-      try {
-        final uri = Uri.parse(imageUrl);
-        if (uri.isScheme('file')) {
-          path = uri.toFilePath();
-        } else {
-          path = imageUrl;
-        }
-      } catch (_) {
-        path = imageUrl;
-      }
+      final String path = CoverPath.normalize(imageUrl);
 
       // No existsSync() pre-check: it ran synchronously on the UI thread for
       // every build of every tile, and errorBuilder below already handles a
@@ -263,18 +251,8 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
   }
 
   String? _localPath(String value) {
-    final isLocal = value.startsWith('/') ||
-        value.startsWith('C:\\\\') ||
-        value.startsWith('file://') ||
-        value.startsWith('content://');
-    if (!isLocal) return null;
-
-    try {
-      final uri = Uri.parse(value);
-      return uri.isScheme('file') ? uri.toFilePath() : value;
-    } catch (_) {
-      return value;
-    }
+    if (!CoverPath.isLocal(value)) return null;
+    return CoverPath.normalize(value);
   }
 
   Widget _buildPlaceholder() {
@@ -340,10 +318,7 @@ class StaticAlbumArtImage extends StatelessWidget {
       return _buildErrorWidget();
     }
 
-    final bool isLocal = url.startsWith('/') ||
-        url.startsWith('C:\\') ||
-        url.startsWith('file://') ||
-        url.startsWith('content://');
+    final bool isLocal = CoverPath.isLocal(url);
 
     Widget content;
 
@@ -352,17 +327,7 @@ class StaticAlbumArtImage extends StatelessWidget {
     final h = height;
 
     if (isLocal) {
-      String path;
-      try {
-        final uri = Uri.parse(url);
-        if (uri.isScheme('file')) {
-          path = uri.toFilePath();
-        } else {
-          path = url;
-        }
-      } catch (_) {
-        path = url;
-      }
+      final String path = CoverPath.normalize(url);
 
       content = Image.file(
         File(path),

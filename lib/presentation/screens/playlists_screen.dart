@@ -3,7 +3,7 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
-import '../widgets/folder_grid_image.dart';
+import '../widgets/collection_cover.dart';
 import '../widgets/duration_display.dart';
 import 'song_list_screen.dart';
 import 'select_songs_screen.dart';
@@ -138,7 +138,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                           child: SizedBox(
                             width: 72,
                             height: 72,
-                            child: FolderGridImage(songs: playlistSongs),
+                            child: CollectionCover(songs: playlistSongs),
                           ),
                         ),
                         const SizedBox(width: 16),

@@ -20,6 +20,15 @@ class PlayerSegmentedPill extends StatelessWidget {
   final Color accent;
   final bool compact;
 
+  /// Set when the labels sit directly on artwork rather than the dark
+  /// backdrop: inactive labels get more weight plus a soft shadow.
+  final bool overCover;
+
+  static const List<Shadow> _legibilityShadows = [
+    Shadow(color: Color(0x99000000), blurRadius: 8),
+    Shadow(color: Color(0x66000000), blurRadius: 2, offset: Offset(0, 1)),
+  ];
+
   const PlayerSegmentedPill({
     super.key,
     required this.labels,
@@ -27,6 +36,7 @@ class PlayerSegmentedPill extends StatelessWidget {
     required this.onSelected,
     required this.accent,
     this.compact = false,
+    this.overCover = false,
   });
 
   @override
@@ -74,10 +84,13 @@ class PlayerSegmentedPill extends StatelessWidget {
                                 ),
                                 color: Color.lerp(
                                   Colors.white.withValues(
-                                      alpha: PlayerTokens.aTertiary),
+                                      alpha: overCover
+                                          ? PlayerTokens.aSecondary
+                                          : PlayerTokens.aTertiary),
                                   accent,
                                   emphasis,
                                 ),
+                                shadows: overCover ? _legibilityShadows : null,
                               ),
                             ),
                           ),

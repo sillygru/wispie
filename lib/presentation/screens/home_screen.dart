@@ -13,7 +13,7 @@ import '../../providers/queue_history_provider.dart';
 import '../../providers/mixed_playlists_provider.dart';
 import '../../models/playlist.dart';
 import 'song_list_screen.dart';
-import '../widgets/folder_grid_image.dart';
+import '../widgets/collection_cover.dart';
 import '../widgets/sort_menu.dart';
 import 'search_screen.dart';
 import 'unified_player_screen.dart';
@@ -22,6 +22,7 @@ import '../routes/player_route.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_media_card.dart';
+import '../components/queue_cover_mosaic.dart';
 import '../components/app_screen_header.dart';
 import '../components/scroll_chrome.dart';
 import '../components/app_section_header.dart';
@@ -176,10 +177,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         size: _cardSize,
         title: playlist.name,
         subtitle: playlist.description,
-        artwork: FolderGridImage(
+        artwork: CollectionCover(
           songs: playlistSongs,
           size: _cardSize,
-          isGridItem: true,
         ),
         badge: isPinned
             ? AppIcon(
@@ -224,9 +224,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: snapshot.timestampLabel,
         subtitle:
             '${snapshot.displayDate} · $trackCount ${trackCount == 1 ? 'track' : 'tracks'}',
-        artwork: _HomeQueueArtwork(
-          snapshot: snapshot,
-          songsAsync: songsAsync,
+        artwork: QueueCoverMosaic(
+          songs: _queueSnapshotSongs(songsAsync, snapshot),
+          accent: AppTokens.accentOf(context, ref),
+          seed: snapshot.id,
           size: _queueCardSize,
         ),
         onTap: () => _showQueueApplySheet(context, ref, snapshot, audioManager),
@@ -689,74 +690,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 }
 
-/// Four-up collage of the covers in a saved queue.
-class _HomeQueueArtwork extends StatelessWidget {
-  final QueueSnapshot snapshot;
-  final AsyncValue<List<Song>> songsAsync;
-  final double size;
-
-  const _HomeQueueArtwork({
-    required this.snapshot,
-    required this.songsAsync,
-    required this.size,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final songs = songsAsync.maybeWhen(
-      data: (allSongs) {
-        final songMap = {for (final song in allSongs) song.filename: song};
-        return snapshot.songFilenames
-            .map((filename) => songMap[filename])
-            .whereType<Song>()
-            .take(4)
-            .toList();
-      },
-      orElse: () => const <Song>[],
-    );
-
-    final tileSize = (size - 3) / 2;
-    final fallback = AppTokens.surface(2);
-
-    return Container(
-      width: size,
-      height: size,
-      color: AppTokens.surface(1),
-      child: songs.isEmpty
-          ? Center(
-              child: AppIcon(
-                AppIcons.queue,
-                size: 40,
-                color: AppTokens.fgTertiary,
-              ),
-            )
-          : Wrap(
-              spacing: 1,
-              runSpacing: 1,
-              children: List.generate(4, (index) {
-                final song = index < songs.length ? songs[index] : null;
-                return SizedBox(
-                  width: tileSize,
-                  height: tileSize,
-                  child: song == null
-                      ? ColoredBox(color: fallback)
-                      : AlbumArtImage(
-                          url: song.coverUrl ?? '',
-                          width: tileSize,
-                          height: tileSize,
-                          fit: BoxFit.cover,
-                          errorWidget: ColoredBox(
-                            color: fallback,
-                            child: AppIcon(
-                              AppIcons.musicNote,
-                              color: AppTokens.fgTertiary,
-                              size: 18,
-                            ),
-                          ),
-                        ),
-                );
-              }),
-            ),
-    );
-  }
+/// Resolves a saved queue's filenames back to songs, in queue order. Deleted
+/// tracks drop out; the mosaic caps how many tiles it actually draws.
+List<Song> _queueSnapshotSongs(
+  AsyncValue<List<Song>> songsAsync,
+  QueueSnapshot snapshot,
+) {
+  return songsAsync.maybeWhen(
+    data: (allSongs) {
+      final songMap = {for (final song in allSongs) song.filename: song};
+      return snapshot.songFilenames
+          .map((filename) => songMap[filename])
+          .whereType<Song>()
+          .toList();
+    },
+    orElse: () => const <Song>[],
+  );
 }

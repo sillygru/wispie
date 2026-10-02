@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../tokens/app_tokens.dart';
-import 'folder_grid_image.dart';
+import 'collection_cover.dart';
 
 /// Album picker for the grouped artist view: a horizontal carousel of cover
 /// cards, always starting with "All songs", then one card per album.
@@ -62,9 +62,8 @@ class AlbumCardSelector extends ConsumerWidget {
             return _AlbumCard(
               title: 'All songs',
               subtitle: _trackCount(allSongs.length),
-              cover: FolderGridImage(
+              cover: CollectionCover(
                 songs: allSongs,
-                isGridItem: true,
               ),
               isSelected: selected == null,
               accent: accent,
@@ -85,12 +84,11 @@ class AlbumCardSelector extends ConsumerWidget {
                   height: _cardWidth,
                   cacheWidth: 310,
                   cacheHeight: 310,
-                  errorBuilder: (_, __, ___) => FolderGridImage(
+                  errorBuilder: (_, __, ___) => CollectionCover(
                     songs: albumSongs,
-                    isGridItem: true,
                   ),
                 )
-              : FolderGridImage(songs: albumSongs, isGridItem: true);
+              : CollectionCover(songs: albumSongs);
           return _AlbumCard(
             title: album,
             subtitle: _trackCount(albumSongs.length),

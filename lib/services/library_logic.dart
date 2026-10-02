@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import '../models/song.dart';
 import '../models/shuffle_config.dart';
+import '../domain/services/cover_path.dart';
 import '../domain/services/shuffle_selector.dart';
 import '../domain/services/song_affinity_service.dart';
 import '../providers/user_data_provider.dart';
@@ -507,5 +508,22 @@ class LibraryLogic {
       return a.title.toLowerCase().compareTo(b.title.toLowerCase());
     });
     return sorted;
+  }
+
+  /// The song whose cover represents a whole collection — an album, an artist,
+  /// a playlist or a folder. Picks the most-listened track, falling back to the
+  /// title tiebreak in [sortSongsByPlayCount] when nothing has been played.
+  ///
+  /// Songs without a readable cover are skipped rather than winning and then
+  /// rendering blank, so an album still shows art when only its top track is
+  /// missing one. Returns null when no song has a cover at all.
+  static Song? pickCoverSong(
+    List<Song> songs, {
+    Map<String, int>? playCounts,
+  }) {
+    for (final song in sortSongsByPlayCount(songs, playCounts: playCounts)) {
+      if (CoverPath.isLocal(song.coverUrl)) return song;
+    }
+    return null;
   }
 }

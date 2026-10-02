@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wispie/models/song.dart';
 import 'package:wispie/presentation/widgets/album_art_image.dart';
-import 'package:wispie/presentation/widgets/folder_grid_image.dart';
+import 'package:wispie/presentation/widgets/collection_cover.dart';
 
 Song _song(String name, String cover) {
   return Song(
@@ -52,8 +52,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('FolderGridImage collage at detail size does not throw',
-      (tester) async {
+  testWidgets('CollectionCover at detail size does not throw', (tester) async {
     final songs = [
       _song('s1', '/tmp/cover-1.jpg'),
       _song('s2', '/tmp/cover-2.jpg'),
@@ -63,9 +62,26 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          // Same shape as SongListScreen header: finite size, tiles laid out
-          // with infinite constraints inside.
-          body: FolderGridImage(songs: songs, size: 220),
+          // Same shape as SongListScreen header: finite size inside a bounded
+          // box, so memCache dimensions can be derived.
+          body: CollectionCover(songs: songs, size: 220),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CollectionCover in an unbounded box does not throw',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: CollectionCover(songs: [_song('s1', '/tmp/cover-1.jpg')]),
+          ),
         ),
       ),
     );
