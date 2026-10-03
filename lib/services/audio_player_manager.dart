@@ -12,7 +12,7 @@ import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
 import '../models/shuffle_config.dart';
 import '../domain/services/shuffle_selector.dart';
-import '../domain/services/song_affinity_service.dart';
+import '../domain/services/song_affinity.dart';
 import '../domain/services/queue_ops.dart' as queue_ops;
 import 'stats_service.dart';
 import 'storage_service.dart';

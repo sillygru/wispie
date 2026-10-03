@@ -15,7 +15,7 @@ import '../routes/app_page_route.dart';
 import '../screens/edit_metadata_screen.dart';
 import '../screens/song_list_screen.dart';
 import '../widgets/folder_picker.dart';
-import '../widgets/playlist_selector_screen.dart';
+import '../widgets/playlist_selector_dialog.dart';
 
 /// Shared song actions, used by two surfaces: the full options menu
 /// (`song_options_menu.dart`) and the player's configurable quick action bar

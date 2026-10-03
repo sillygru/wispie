@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../tokens/player_tokens.dart';
 import '../widgets/album_art_image.dart';
 import 'cover_gradient_palette.dart';
 
@@ -126,53 +125,5 @@ class _BlurLayer extends StatelessWidget {
           ),
       ],
     );
-  }
-}
-
-/// Translucent floating bar background for headers over scrolling content.
-///
-/// A solid fill rather than a live blur, on the same reasoning as the player
-/// glass: the backdrop is already blurred, so a BackdropFilter only added a
-/// saveLayer.
-///
-/// Kept separate from the player tokens glass recipe on purpose: the legacy
-/// screens must not change, so this variant carries its own small helper.
-class TranslucentBar extends StatelessWidget {
-  final Widget child;
-
-  const TranslucentBar({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black.withValues(alpha: 0.35),
-      child: child,
-    );
-  }
-}
-
-/// Horizontal padding shared by the info block and controls.
-class ContentGutter extends StatelessWidget {
-  final Widget child;
-
-  const ContentGutter({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final double side = WideLayoutGutter.of(context);
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: side),
-      child: child,
-    );
-  }
-}
-
-class WideLayoutGutter {
-  static double of(BuildContext context) {
-    final double width = MediaQuery.sizeOf(context).width;
-    // Narrow phones get tighter gutters; desktop keeps breathing room.
-    if (width < 380) return PlayerTokens.s3;
-    if (width < 600) return PlayerTokens.s5;
-    return PlayerTokens.s6;
   }
 }

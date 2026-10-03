@@ -80,12 +80,11 @@ class PlayerTokens {
   static const Curve cLyricsLine = Curves.ease;
   static const Curve cLyricsHighlight = Curves.ease;
 
-  // Glass recipe — one fill, one border, used by every raised surface.
+  // Glass recipe — one fill, used by every raised surface.
   // Previously a BackdropFilter blur on top; removed because the backdrop
   // behind these surfaces is already a pre-blurred image, so the live blur
   // paid a saveLayer for no visible frost. The fill carries the material.
   static const double glassFillAlpha = 0.20;
-  static const double glassBorderAlpha = 0.10;
   static const double glassFillAlphaStrong = 0.32;
 
   // Shared opacity ladder for foreground text and icons

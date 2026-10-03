@@ -1,5 +1,5 @@
 /// Picks and orders songs for shuffle from the taste scores produced by
-/// `song_affinity_service.dart`.
+/// `song_affinity.dart`.
 ///
 /// Two ideas shape this file:
 ///
@@ -18,7 +18,7 @@ library;
 import 'dart:math';
 
 import '../../models/shuffle_config.dart';
-import 'song_affinity_service.dart';
+import 'song_affinity.dart';
 
 /// A song (or a merged group of songs, from the caller's perspective) that
 /// shuffle may choose. Generic over [T] so the caller keeps its own payload

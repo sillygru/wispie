@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/providers.dart';
 import '../../models/playlist.dart';
-import 'playlist_selector_screen.dart';
+import 'playlist_selector_dialog.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 

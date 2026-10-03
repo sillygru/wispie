@@ -18,7 +18,7 @@ import '../../providers/settings_provider.dart';
 import '../../services/telemetry_service.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../widgets/external_open_banner.dart';
-import '../widgets/immersive_background.dart';
+import '../widgets/ambient_background.dart';
 import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../tokens/player_tokens.dart';
+
 /// Single seam for wide-window (tablet/desktop landscape) layouts.
 ///
 /// Phones stay portrait-locked at the OS level, so this intentionally keys off
@@ -100,5 +102,35 @@ class WideContentCenter extends StatelessWidget {
         child: child,
       ),
     );
+  }
+}
+
+/// Horizontal padding shared by a screen's info block and its controls.
+class ContentGutter extends StatelessWidget {
+  final Widget child;
+
+  const ContentGutter({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final double side = WideLayoutGutter.of(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: side),
+      child: child,
+    );
+  }
+}
+
+/// Content side padding by window width.
+///
+/// Separate from [WideLayout]'s breakpoints: this keys on how much room text
+/// needs (380/600), not on the phone-vs-desktop chrome seam (480/800).
+class WideLayoutGutter {
+  static double of(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    // Narrow phones get tighter gutters; desktop keeps breathing room.
+    if (width < 380) return PlayerTokens.s3;
+    if (width < 600) return PlayerTokens.s5;
+    return PlayerTokens.s6;
   }
 }

@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wispie/domain/services/shuffle_selector.dart';
-import 'package:wispie/domain/services/song_affinity_service.dart';
+import 'package:wispie/domain/services/song_affinity.dart';
 import 'package:wispie/models/shuffle_config.dart';
 
 /// End-to-end distribution checks over a synthetic library shaped like a real

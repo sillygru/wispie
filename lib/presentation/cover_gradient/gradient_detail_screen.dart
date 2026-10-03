@@ -25,7 +25,7 @@ import '../components/app_icon.dart';
 import '../components/app_sheet.dart';
 import '../components/pop_icon.dart';
 import '../components/pressable.dart';
-import '../components/progressive_bottom_blur.dart';
+import '../components/progressive_edge_fade.dart';
 import '../components/song_actions.dart';
 import '../routes/app_page_route.dart';
 import '../screens/select_songs_screen.dart';
@@ -426,7 +426,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             WideContentCenter(
               // Rows ease out under the floating mini player and under the
               // top bar instead of hard-cutting.
-              child: ProgressiveBottomBlur(
+              child: ProgressiveEdgeFade(
                 height: 140,
                 topHeight: 64,
                 child: CustomScrollView(

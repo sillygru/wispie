@@ -3,7 +3,7 @@ import '../models/song.dart';
 import '../models/shuffle_config.dart';
 import '../domain/services/cover_path.dart';
 import '../domain/services/shuffle_selector.dart';
-import '../domain/services/song_affinity_service.dart';
+import '../domain/services/song_affinity.dart';
 import '../providers/user_data_provider.dart';
 
 class LibraryFolderContent {

@@ -6,8 +6,8 @@ import 'package:flutter/scheduler.dart';
 /// Position-based near the scroll extents, and direction-aware: scrolling
 /// down fades the effect out, scrolling up fades it back in. Driven directly
 /// by scroll delta, so it is always in sync with your finger.
-class ProgressiveBottomBlur extends StatefulWidget {
-  const ProgressiveBottomBlur({
+class ProgressiveEdgeFade extends StatefulWidget {
+  const ProgressiveEdgeFade({
     super.key,
     required this.child,
     this.height = defaultHeight,
@@ -30,10 +30,10 @@ class ProgressiveBottomBlur extends StatefulWidget {
   final double minStrength;
 
   @override
-  State<ProgressiveBottomBlur> createState() => _ProgressiveBottomBlurState();
+  State<ProgressiveEdgeFade> createState() => _ProgressiveEdgeFadeState();
 }
 
-class _ProgressiveBottomBlurState extends State<ProgressiveBottomBlur> {
+class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
   final ValueNotifier<double> _top = ValueNotifier<double>(0);
   final ValueNotifier<double> _bottom = ValueNotifier<double>(0);
 

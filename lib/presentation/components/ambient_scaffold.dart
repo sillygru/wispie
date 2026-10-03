@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../widgets/immersive_background.dart';
+import '../widgets/ambient_background.dart';
 
 /// A [Scaffold] that sits over the app-wide [AmbientLayer].
 ///

@@ -41,7 +41,7 @@ Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `me
 
 ### Shuffle
 
-`lib/domain/services/shuffle_weight_service.dart` — pure `calculateWeight(...)` with personalities (`consistent`, `explorer`, `custom`, etc.) as multiplicative penalties/boosts. Tested directly in `test/shuffle_logic_test.dart`, `test/shuffle_weight_distribution_test.dart`, `test/personality_logic_test.dart`.
+`lib/domain/services/shuffle_selector.dart` — pure `scoreCandidate(...)` with personalities (`consistent`, `explorer`, `custom`, etc.) resolved into `ShuffleWeights` and applied as multiplicative penalties/boosts. Tested directly in `test/shuffle_logic_test.dart`, `test/shuffle_weight_distribution_test.dart`, `test/personality_logic_test.dart`.
 
 ### State management
 

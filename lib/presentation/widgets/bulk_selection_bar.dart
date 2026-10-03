@@ -8,7 +8,7 @@ import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../screens/edit_metadata_screen.dart';
-import 'playlist_selector_screen.dart';
+import 'playlist_selector_dialog.dart';
 import 'folder_picker.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_dialog.dart';

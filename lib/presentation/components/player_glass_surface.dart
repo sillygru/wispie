@@ -2,21 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../tokens/player_tokens.dart';
 
-/// The single raised container used across the unified player.
+/// The raised translucent container used by the unified player.
 ///
 /// A solid translucent fill rather than a live blur: the backdrop behind these
 /// surfaces is already a pre-blurred image, so a BackdropFilter paid a full
 /// saveLayer + backdrop readback for no visible frost. Nothing else in the
-/// player may build its own BackdropFilter box — routing every raised surface
-/// through here is what keeps the pill, the cards and the transport dock
-/// reading as the same material.
+/// player may build its own BackdropFilter box — routing raised surfaces
+/// through here is what keeps them reading as the same material.
+///
+/// Built today only by the queue pane's undo bar, which floats over the
+/// scrolling list and needs its own backing to stay readable.
 class PlayerGlassSurface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final BorderRadius? borderRadius;
   final bool strong;
-  final bool bordered;
-  final Color? tint;
 
   const PlayerGlassSurface({
     super.key,
@@ -24,8 +24,6 @@ class PlayerGlassSurface extends StatelessWidget {
     this.padding = const EdgeInsets.all(PlayerTokens.s4),
     this.borderRadius,
     this.strong = false,
-    this.bordered = true,
-    this.tint,
   });
 
   @override
@@ -35,16 +33,10 @@ class PlayerGlassSurface extends StatelessWidget {
         ? PlayerTokens.glassFillAlphaStrong
         : PlayerTokens.glassFillAlpha;
 
-    final baseFill = Colors.white.withValues(alpha: fillAlpha * 0.12);
-    final fill = tint != null
-        ? Color.alphaBlend(tint!.withValues(alpha: 0.10), baseFill)
-        : baseFill;
-
     // The fill is the material: a solid translucent block over the
     // pre-blurred backdrop, so no BackdropFilter is needed. Kept inside a
     // RepaintBoundary so the overlay composites without repainting the list
-    // underneath. Only used for the undo bar today, but keeping the boundary
-    // here protects any future callers.
+    // underneath.
     return ClipRRect(
       borderRadius: radius,
       child: RepaintBoundary(
@@ -53,16 +45,9 @@ class PlayerGlassSurface extends StatelessWidget {
           decoration: BoxDecoration(
             color: Color.alphaBlend(
               Colors.black.withValues(alpha: fillAlpha),
-              fill,
+              Colors.white.withValues(alpha: fillAlpha * 0.12),
             ),
             borderRadius: radius,
-            border: bordered
-                ? Border.all(
-                    color: Colors.white
-                        .withValues(alpha: PlayerTokens.glassBorderAlpha),
-                    width: 0.8,
-                  )
-                : null,
           ),
           child: child,
         ),

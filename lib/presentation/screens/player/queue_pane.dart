@@ -19,7 +19,7 @@ import '../../components/player_glass_surface.dart';
 import '../../components/player_section_header.dart';
 import '../../components/player_segmented_pill.dart';
 import '../../components/player_track_row.dart';
-import '../../components/progressive_bottom_blur.dart';
+import '../../components/progressive_edge_fade.dart';
 import '../../components/queue_cover_mosaic.dart';
 import '../../tokens/player_tokens.dart';
 import '../../utils/wide_layout.dart';
@@ -183,7 +183,7 @@ class _QueuePaneState extends ConsumerState<QueuePane>
             child: AnimatedSwitcher(
               duration: PlayerTokens.dFast,
               child: _showHistory
-                  ? ProgressiveBottomBlur(
+                  ? ProgressiveEdgeFade(
                       key: const ValueKey('history'),
                       child: _HistoryList(accent: widget.accent),
                     )
@@ -561,7 +561,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                 Expanded(
                   child: Stack(
                     children: [
-                      ProgressiveBottomBlur(
+                      ProgressiveEdgeFade(
                         child: CustomScrollView(
                           controller: _scrollController,
                           physics: const ClampingScrollPhysics(),
@@ -651,7 +651,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                             ],
                             const SliverToBoxAdapter(
                               child: SizedBox(
-                                height: ProgressiveBottomBlur.defaultHeight,
+                                height: ProgressiveEdgeFade.defaultHeight,
                               ),
                             ),
                           ],
@@ -1059,10 +1059,9 @@ class _UndoBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The one remaining glass surface: it floats over the scrolling list, so it
-    // needs its own backing to stay readable. Borderless to match the rest.
+    // needs its own backing to stay readable.
     return PlayerGlassSurface(
       strong: true,
-      bordered: false,
       padding: const EdgeInsets.fromLTRB(
         PlayerTokens.s4,
         PlayerTokens.s2,
@@ -1210,7 +1209,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
         return ListView.builder(
           physics: const ClampingScrollPhysics(),
           padding: const EdgeInsets.only(
-            bottom: ProgressiveBottomBlur.defaultHeight,
+            bottom: ProgressiveEdgeFade.defaultHeight,
           ),
           itemCount: rows.length,
           itemBuilder: (context, index) {

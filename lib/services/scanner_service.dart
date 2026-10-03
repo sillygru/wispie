@@ -25,7 +25,8 @@ import 'media_store_service.dart';
 ///
 /// The distinction matters because an empty song list is ambiguous: it can mean
 /// "the folder really is empty" or "we could not look inside it". Only the
-/// former may replace an existing library — see [shouldReplaceLibrary].
+/// former may replace an existing library — every listing/read failure is
+/// reported as [ScanStatus.folderUnavailable] instead.
 enum ScanStatus {
   /// Every requested folder was listed successfully.
   ok,

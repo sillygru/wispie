@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wispie/domain/services/song_affinity_service.dart';
+import 'package:wispie/domain/services/song_affinity.dart';
 
 /// Fixed reference point so decay maths is deterministic.
 final _now = DateTime.utc(2026, 1, 1);

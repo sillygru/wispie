@@ -21,7 +21,7 @@ import '../services/update_service.dart';
 import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
 import '../domain/services/search_service.dart';
-import '../domain/services/song_affinity_service.dart';
+import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
 import 'search_provider.dart';
 import '../presentation/widgets/spectrum_controller.dart';
