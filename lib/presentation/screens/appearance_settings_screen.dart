@@ -147,14 +147,6 @@ class _AppearanceSettingsScreenState
               value: settings.autoHideBottomBarOnScroll,
               onChanged: notifier.setAutoHideBottomBarOnScroll,
             ),
-            AppSettingsSwitch(
-              icon: AppIcons.blur,
-              searchId: 'appearance.lyrics_blur',
-              title: 'Lyrics blur overlay',
-              subtitle: 'Progressive blur on the lyrics',
-              value: settings.lyricsBlurOverlayEnabled,
-              onChanged: notifier.setLyricsBlurOverlayEnabled,
-            ),
             AppSettingsAnchor(
               id: 'appearance.cover_sizing',
               child: AppListRow(

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../tokens/player_tokens.dart';
@@ -8,9 +6,12 @@ import 'cover_gradient_palette.dart';
 
 /// Heavily blurred, darkened cover-art background for cover-gradient screens.
 ///
-/// Same cover as the foreground art, blurred at sigma ~70, darkened and
-/// saturated via a dominant-color wash. The wash is clamped dark so light
-/// covers cannot reduce contrast. Track changes crossfade over ~500ms.
+/// The cover is decoded tiny (48px) and upscaled with low filter quality, so
+/// the upscale itself is the blur — no ImageFiltered kernel runs at all. The
+/// previous sigma-70 ImageFiltered ran a ~140px kernel over the full screen on
+/// every frame it composited, the most expensive single blur in the app. Under
+/// the dark wash below, the upscale is visually identical. Track changes
+/// crossfade over ~500ms.
 class CoverBlurBackground extends StatelessWidget {
   final String coverUrl;
   final String filename;
@@ -70,18 +71,16 @@ class _BlurLayer extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Saturated, heavily blurred cover.
+        // Cover decoded tiny and upscaled: the upscale is the blur, at the
+        // cost of one small decode rather than a full-screen 140px kernel.
         Positioned.fill(
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
-            child: AlbumArtImage(
-              url: coverUrl,
-              filename: filename,
-              fit: BoxFit.cover,
-              memCacheWidth: 160,
-              memCacheHeight: 160,
-              filterQuality: FilterQuality.low,
-            ),
+          child: AlbumArtImage(
+            url: coverUrl,
+            filename: filename,
+            fit: BoxFit.cover,
+            memCacheWidth: 48,
+            memCacheHeight: 48,
+            filterQuality: FilterQuality.low,
           ),
         ),
         // Darken + saturate with the dominant color. Two stops keep it
@@ -132,6 +131,10 @@ class _BlurLayer extends StatelessWidget {
 
 /// Translucent floating bar background for headers over scrolling content.
 ///
+/// A solid fill rather than a live blur, on the same reasoning as the player
+/// glass: the backdrop is already blurred, so a BackdropFilter only added a
+/// saveLayer.
+///
 /// Kept separate from the player tokens glass recipe on purpose: the legacy
 /// screens must not change, so this variant carries its own small helper.
 class TranslucentBar extends StatelessWidget {
@@ -141,14 +144,9 @@ class TranslucentBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.35),
-          child: child,
-        ),
-      ),
+    return Container(
+      color: Colors.black.withValues(alpha: 0.35),
+      child: child,
     );
   }
 }

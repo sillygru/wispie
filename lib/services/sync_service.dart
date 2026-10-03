@@ -44,7 +44,6 @@ class SyncService {
     'pause_fade_duration',
     'keep_screen_awake_on_lyrics',
     'cover_sizing_mode',
-    'lyrics_blur_overlay_enabled',
     'beat_reactive_cover_enabled',
     'beat_reactive_particles_enabled',
     'cover_motion_intensity',

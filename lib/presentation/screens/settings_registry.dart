@@ -343,16 +343,6 @@ final List<SettingsDestination> settingsRegistry = [
     ),
   ),
   SettingsDestination(
-    anchorId: 'appearance.lyrics_blur',
-    icon: AppIcons.blur,
-    title: 'Lyrics blur overlay',
-    subtitle: 'Progressive blur on the lyrics top and bottom edges',
-    breadcrumb: 'Settings › Appearance › Display',
-    keywords: const ['blur', 'lyrics', 'fade'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.lyrics_blur'),
-  ),
-  SettingsDestination(
     anchorId: 'appearance.cover_sizing',
     icon: AppIcons.photoSize,
     title: 'Player Cover Sizing',

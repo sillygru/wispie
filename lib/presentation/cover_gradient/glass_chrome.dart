@@ -1,8 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
-/// Glass helpers for the cover-gradient screens.
+/// Solid helpers for the cover-gradient screens.
+///
+/// Same shape and fill as the old frosted variants, without the live blur:
+/// the backdrop behind them is already a blurred image, so each BackdropFilter
+/// paid a saveLayer plus backdrop readback for no visible difference.
 ///
 /// New variants only — the existing mini player, nav bar and glass surfaces
 /// are untouched so the legacy design cannot drift.
@@ -20,23 +22,18 @@ class GlassCircleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget button = ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withValues(alpha: 0.38),
-          ),
-          child: IconButton(
-            onPressed: onPressed,
-            icon: icon,
-            padding: EdgeInsets.zero,
-            color: Colors.white,
-          ),
-        ),
+    final Widget button = Container(
+      width: 40,
+      height: 40,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0x61000000),
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        icon: icon,
+        padding: EdgeInsets.zero,
+        color: Colors.white,
       ),
     );
     if (tooltip == null || tooltip!.isEmpty) return button;
@@ -60,18 +57,12 @@ class GlassPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: margin,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: Colors.black.withValues(alpha: 0.42),
-            ),
-            child: child,
-          ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: Colors.black.withValues(alpha: 0.42),
         ),
+        child: child,
       ),
     );
   }

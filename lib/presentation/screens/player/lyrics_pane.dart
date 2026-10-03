@@ -1407,9 +1407,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     if (lyrics.isEmpty) return _buildEmptyState(context);
 
     final settings = ref.watch(settingsProvider);
-    final blurEnabled = settings.lyricsBlurOverlayEnabled;
     final simulateEnabled = settings.lyricsSimulatedRichSyncEnabled;
-    final hasSynced = _hasSynced;
 
     // Rebuilds when the singing moves on or a gap opens — not on every tick of
     // the playhead.
@@ -1460,11 +1458,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               isActive: index == active,
               isPlayed: active >= 0 && index <= active,
               hasTime: line.isSynced,
-              blurSigma: _blurFor(
-                index: index,
-                active: active,
-                enabled: blurEnabled && hasSynced,
-              ),
               activeColor: widget.accent,
               glowIntensity: index == active ? 1.0 : 0.0,
               playbackPosition: _playbackPosition.value,
@@ -1486,7 +1479,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                         isActive: true,
                         isPlayed: true,
                         hasTime: line.isSynced,
-                        blurSigma: 0,
                         activeColor: widget.accent,
                         glowIntensity: 1.0,
                         playbackPosition: position,
@@ -1532,18 +1524,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         );
       },
     );
-  }
-
-  /// Unfocused lines blur out with distance from the active line, so the eye
-  /// lands on the line being sung.
-  double _blurFor({
-    required int index,
-    required int active,
-    required bool enabled,
-  }) {
-    if (!enabled || active < 0 || index == active) return 0;
-    final distance = (index - active).abs();
-    return (distance * 0.9).clamp(0.0, 3.2);
   }
 
   Widget _buildEmptyState(BuildContext context) {

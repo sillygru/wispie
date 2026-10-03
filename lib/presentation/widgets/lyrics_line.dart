@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -21,7 +20,6 @@ class LyricsLine extends StatelessWidget {
   final String? translationMode;
   final bool isActive;
   final bool isPlayed;
-  final double blurSigma;
   final bool hasTime;
   final Color activeColor;
   final double glowIntensity;
@@ -36,7 +34,6 @@ class LyricsLine extends StatelessWidget {
     this.translationMode,
     required this.isActive,
     required this.isPlayed,
-    required this.blurSigma,
     required this.hasTime,
     required this.activeColor,
     required this.glowIntensity,
@@ -66,7 +63,6 @@ class LyricsLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedBlurSigma = blurSigma.clamp(0.0, 2.0);
     final translation = translatedText?.trim();
     final showSubtext = translationMode == 'subtext' &&
         translation != null &&
@@ -98,13 +94,9 @@ class LyricsLine extends StatelessWidget {
       LyricsVoiceAlignment.duet => Alignment.center,
     };
 
-    // Removed per-line RepaintBoundary: 40 boundaries (~1.2MB layer cache)
-    // isolated blur but cost more than they saved. Single boundary around the
-    // list in LyricsPane is enough; blur layers now composite directly.
-    // Sigma capped at 1.4: sigma 2 at 32px text is a subtle focus cue, but
-    // kernel size scales with sigma. Capping halves taps per blurring line.
-    // Bypass raised to 0.6: only the two nearest off-screen lines keep blur,
-    // farther ones use opacity alone — same focus cue, 3x fewer saveLayers.
+    // Focus is carried by the opacity ladder alone (active 1.0, played 0.6,
+    // inactive 0.3): blurring unfocused lines cost a saveLayer per line inside
+    // a scrolling list for a cue opacity already gives.
     return AnimatedSlide(
       offset: isActive ? const Offset(0, -0.04) : Offset.zero,
       duration: PlayerTokens.dLyricsLine,
@@ -126,66 +118,54 @@ class LyricsLine extends StatelessWidget {
           child: InkWell(
             onTap: hasTime ? onTap : null,
             borderRadius: PlayerTokens.brMd,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(end: resolvedBlurSigma.clamp(0.0, 1.4)),
-              duration: PlayerTokens.dBase,
-              curve: PlayerTokens.cStandard,
-              builder: (context, sigma, child) {
-                if (sigma <= 0.60) return child ?? const SizedBox.shrink();
-                return ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                  child: child,
-                );
-              },
-              child: AnimatedDefaultTextStyle(
-                duration: PlayerTokens.dLyricsLine,
-                curve: PlayerTokens.cLyricsLine,
-                style: TextStyle(
-                  fontSize: PlayerTokens.lyricsFontSize,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white.withValues(alpha: lineOpacity),
-                  height: 1.28,
-                  letterSpacing: -0.4,
-                  shadows: isActive
-                      ? [
-                          Shadow(
-                            color: activeColor.withValues(
-                              alpha: 0.30 * glowIntensity,
-                            ),
-                            blurRadius: 16 * glowIntensity,
-                            offset: const Offset(0, 1),
+            child: AnimatedDefaultTextStyle(
+              duration: PlayerTokens.dLyricsLine,
+              curve: PlayerTokens.cLyricsLine,
+              style: TextStyle(
+                fontSize: PlayerTokens.lyricsFontSize,
+                fontWeight: FontWeight.w800,
+                color: Colors.white.withValues(alpha: lineOpacity),
+                height: 1.28,
+                letterSpacing: -0.4,
+                shadows: isActive
+                    ? [
+                        Shadow(
+                          color: activeColor.withValues(
+                            alpha: 0.30 * glowIntensity,
                           ),
-                        ]
-                      : null,
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Column(
-                    crossAxisAlignment: crossAxisAlignment,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ..._buildLyricLines(primaryText, lineOpacity, textAlign),
-                      if (showSubtext) ...[
-                        const SizedBox(height: PlayerTokens.s1),
-                        Text(
-                          translation,
-                          textAlign: textAlign,
-                          style: TextStyle(
-                            fontSize: PlayerTokens.lyricsFontSize *
-                                PlayerTokens.lyricsTranslationScale,
-                            fontWeight: FontWeight.w500,
-                            color: isActive
-                                ? activeColor.withValues(alpha: 0.88)
-                                : Colors.white.withValues(
-                                    alpha: isPlayed ? 0.50 : 0.30,
-                                  ),
-                            height: 1.22,
-                            letterSpacing: -0.2,
-                          ),
+                          blurRadius: 16 * glowIntensity,
+                          offset: const Offset(0, 1),
                         ),
-                      ],
+                      ]
+                    : null,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: crossAxisAlignment,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ..._buildLyricLines(primaryText, lineOpacity, textAlign),
+                    if (showSubtext) ...[
+                      const SizedBox(height: PlayerTokens.s1),
+                      Text(
+                        translation,
+                        textAlign: textAlign,
+                        style: TextStyle(
+                          fontSize: PlayerTokens.lyricsFontSize *
+                              PlayerTokens.lyricsTranslationScale,
+                          fontWeight: FontWeight.w500,
+                          color: isActive
+                              ? activeColor.withValues(alpha: 0.88)
+                              : Colors.white.withValues(
+                                  alpha: isPlayed ? 0.50 : 0.30,
+                                ),
+                          height: 1.22,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
