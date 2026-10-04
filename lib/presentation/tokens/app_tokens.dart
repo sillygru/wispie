@@ -275,6 +275,50 @@ class AppTokens {
         color: Colors.white,
       );
 
+  /// The one number a screen is *about* — the listening total, the streak, the
+  /// length of the current queue. Sits above [stat] the way a hero figure sits
+  /// above a caption, and is used exactly once per screen.
+  static TextStyle display(BuildContext context) => const TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: 40,
+        letterSpacing: -1,
+        height: 1.05,
+        color: Colors.white,
+      );
+
+  /// Axis and tick labels under a chart.
+  ///
+  /// A rung below [meta] rather than a smaller copy of it: at 11px the tighter
+  /// tracking and lighter weight are what keep a 24-tick axis from shouting.
+  /// No letter-spacing — these are numerals, and the wide caps tracking of
+  /// [sectionLabel] turns a column of hours into a caterpillar.
+  static TextStyle axisLabel(BuildContext context) => TextStyle(
+        fontWeight: FontWeight.w500,
+        fontSize: 11,
+        letterSpacing: 0.1,
+        color: Colors.white.withValues(alpha: aTertiary),
+      );
+
+  /// Geometry for the charts on the stats screen. Charts are the one place
+  /// where a number is a measurement rather than a token, so they get their
+  /// own named values instead of literals scattered across painters.
+  static const double chartBarHeight = 6;
+  static const double chartPlotGap = AppTokens.s1;
+  static const double chartStroke = 2;
+  static const double chartMarkerRadius = 4;
+  static const double chartMarkerHalo = 9;
+
+  /// Solid fill for a chart's area under the line.
+  ///
+  /// A flat wash, not a fade — the depth cue in a chart is the line above it,
+  /// and a gradient under data reads as decoration.
+  static const double chartAreaAlpha = 0.18;
+  static const double chartBarAlpha = 1.0;
+
+  /// Opacity ladder inside a chart: baseline rule, average rule, series fill.
+  static const double chartBaselineAlpha = 0.10;
+  static const double chartAverageAlpha = 0.28;
+
   /// Title under a media card in a carousel or grid.
   static TextStyle cardTitle(BuildContext context) => const TextStyle(
         fontWeight: FontWeight.w600,

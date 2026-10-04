@@ -110,15 +110,4 @@ class StatsService {
   void dispose() {
     flush(); // Final flush on dispose
   }
-
-  Future<Map<String, dynamic>> getFunStats() async {
-    // Get stats from local database
-    try {
-      await DatabaseService.instance.init();
-      return await DatabaseService.instance.getFunStats();
-    } catch (e) {
-      debugPrint('Error getting fun stats: $e');
-      return {};
-    }
-  }
 }

@@ -104,6 +104,30 @@ class AndroidStorageService {
     });
   }
 
+  /// Whether a file already exists at [relativePath] inside [treeUri].
+  ///
+  /// `dart:io` cannot answer this for a SAF-backed tree, so a caller checking
+  /// for a name collision with `File.exists()` gets `false` on a device that
+  /// holds only a tree grant. Returns false off Android.
+  static Future<bool> fileExists({
+    required String treeUri,
+    required String relativePath,
+  }) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('fileExists', {
+            'treeUri': treeUri,
+            'relativePath': relativePath,
+          }) ??
+          false;
+    } on PlatformException catch (e) {
+      // A revoked grant surfaces here. Report "free" and let the rename fail on
+      // its own terms, rather than refusing every name in the batch.
+      debugPrint('fileExists failed for $relativePath: ${e.message}');
+      return false;
+    }
+  }
+
   static Future<void> writeFileFromPath({
     required String treeUri,
     required String sourceRelativePath,

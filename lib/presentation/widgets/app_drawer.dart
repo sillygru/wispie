@@ -12,6 +12,7 @@ import '../screens/session_history_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/sleep_timer_screen.dart';
 import '../screens/song_list_screen.dart';
+import '../screens/stats_screen.dart';
 import '../screens/unified_player_screen.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
@@ -202,6 +203,13 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                                   AppTokens.s2,
                                   0,
                                 ),
+                              ),
+                              _buildNavItem(
+                                icon: AppIcons.analytics,
+                                label: 'Listening',
+                                iconSize: iconSize,
+                                fontSize: textFontSize,
+                                onTap: () => _navigateTo(const StatsScreen()),
                               ),
                               _buildNavItem(
                                 icon: AppIcons.clock,

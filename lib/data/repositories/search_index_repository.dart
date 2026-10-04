@@ -278,6 +278,45 @@ class SearchIndexRepository {
     );
   }
 
+  /// Points index rows at new filenames without re-deriving anything.
+  ///
+  /// A rename changes the key and nothing else — not the title, artist, album,
+  /// nor the lyrics we already extracted and stored. So the row is moved as-is
+  /// rather than passed back through [upsertSong], which looks the lyrics up by
+  /// the *new* filename, finds nothing, and shells out to ffprobe to re-read
+  /// them from the file. Over a large batch that was one process per song.
+  ///
+  /// A target that already has its own row is dropped in favour of the
+  /// incoming one, matching the merge [DatabaseService.renameFile] applies to
+  /// the song row itself.
+  Future<void> renameFiles(List<({String from, String to})> renames) async {
+    await init();
+    if (_database == null || !_database!.isOpen || renames.isEmpty) return;
+
+    await _database!.transaction((txn) async {
+      for (final entry in renames) {
+        if (entry.from == entry.to) continue;
+        final taken = await txn.query(
+          _tableName,
+          columns: ['filename'],
+          where: 'filename = ?',
+          whereArgs: [entry.to],
+          limit: 1,
+        );
+        if (taken.isNotEmpty) {
+          await txn
+              .delete(_tableName, where: 'filename = ?', whereArgs: [entry.to]);
+        }
+        await txn.update(
+          _tableName,
+          {'filename': entry.to},
+          where: 'filename = ?',
+          whereArgs: [entry.from],
+        );
+      }
+    });
+  }
+
   /// Searches for songs matching the query in specified fields
   ///
   /// Returns a list of filenames that match the search criteria

@@ -7,6 +7,9 @@ import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../data/migrations.dart';
+import '../domain/models/listening_insights.dart';
+import '../domain/services/fun_stats_export.dart';
+import '../domain/services/insights_builder.dart';
 import '../domain/services/lyrics_timing_offset.dart';
 import '../models/playlist.dart';
 import '../models/queue_snapshot.dart';
@@ -59,6 +62,7 @@ class DatabaseService {
         onUpgrade: (db, oldV, newV) async {
           if (oldV < 2) await upgradeUserDataFrom1To2(db);
           if (oldV < 3) await upgradeUserDataFrom2To3(db);
+          if (oldV < 4) await upgradeUserDataFrom3To4(db);
         },
       );
     } catch (e) {
@@ -1189,148 +1193,237 @@ class DatabaseService {
 
   /// Renames a file in all database tables.
   /// If the target filename already exists, stats are merged.
-  ///
-  /// Every table that names a song has to move with it, in both databases. A
-  /// table left behind does not merely lose data — it becomes unreachable
-  /// garbage keyed to a filename nothing will ever ask about again.
   Future<void> renameFile(String oldFilename, String newFilename) async {
     await _ensureInitialized();
     if (_statsDatabase == null || _userDataDatabase == null) return;
 
-    // 1. Update User Data DB (Songs, Favorites, SuggestLess, Hidden, Merged Songs)
+    await _userDataDatabase!
+        .transaction((txn) => _renameInUserData(txn, oldFilename, newFilename));
+    await _renameInStats(_statsDatabase!, oldFilename, newFilename);
+
+    debugPrint('Renamed DB entries from $oldFilename to $newFilename');
+  }
+
+  /// Moves many songs onto new filenames in one pass.
+  ///
+  /// Same per-song rules as [renameFile] — literally the same code — but opened
+  /// as two transactions instead of two per song. Every commit is an fsync on
+  /// Android's default `synchronous = FULL`, so a 500-song rename paid 1,000 of
+  /// them and spent more time syncing the WAL than renaming files. Statement
+  /// count inside a transaction is cheap; the commit is the cost.
+  Future<void> renameFiles(List<({String from, String to})> renames) async {
+    await _ensureInitialized();
+    if (_statsDatabase == null || _userDataDatabase == null) return;
+    if (renames.isEmpty) return;
+
     await _userDataDatabase!.transaction((txn) async {
-      // Update Song table
-      await txn.update('song', {'filename': newFilename},
-          where: 'filename = ?', whereArgs: [oldFilename]);
-      final existingOffset = await txn.query(
-        'lyrics_timing_offset',
+      for (final entry in renames) {
+        await _renameInUserData(txn, entry.from, entry.to);
+      }
+    });
+    await _renameManyInStats(_statsDatabase!, renames);
+
+    debugPrint('Renamed DB entries for ${renames.length} songs');
+  }
+
+  /// Every table that names a song has to move with it, in both databases. A
+  /// table left behind does not merely lose data — it becomes unreachable
+  /// garbage keyed to a filename nothing will ever ask about again.
+  ///
+  /// Takes the transaction rather than opening one so that [renameFile] and
+  /// [renameFiles] cannot drift apart: there is one copy of these rules.
+  Future<void> _renameInUserData(
+    DatabaseExecutor txn,
+    String oldFilename,
+    String newFilename,
+  ) async {
+    // Whether there is a row at the old name decides whether this is a rename or
+    // a replay, and the two must not look the same to the code below.
+    //
+    // Replays are real: a bulk rename journals its intent so that an interrupted
+    // sweep can be finished on the next launch, and the launch cannot tell
+    // whether the rows it is about to move were already moved by the run that
+    // died. So this gets called a second time over a pair that is already done.
+    //
+    // The ghost delete is only safe when a row at the old name is moving into the
+    // new one. Without that condition a replay finds nothing at the old name,
+    // deletes whatever is sitting at the new name — which is the very row the
+    // first run just moved there — and leaves the song's favourites, playlists
+    // and stats orphaned under a filename nothing will ask about again.
+    final sourceSong = await txn.query(
+      'song',
+      columns: ['url'],
+      where: 'filename = ?',
+      whereArgs: [oldFilename],
+      limit: 1,
+    );
+
+    if (sourceSong.isNotEmpty) {
+      final sourceUrl = sourceSong.first['url'] as String?;
+
+      // A stale row already sitting at the new name would trip the primary key.
+      // The source row is the one that describes the file actually being renamed —
+      // its cover and date-added belong to it — so the ghost goes, not the real
+      // row. That is the opposite of the merge the tables below do, and
+      // deliberately so: they carry a single user-flag, whereas here the two rows
+      // describe different files.
+      await txn.delete(
+        'song',
         where: 'filename = ?',
         whereArgs: [newFilename],
       );
-      if (existingOffset.isNotEmpty) {
-        await txn.delete('lyrics_timing_offset',
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      } else {
-        await txn.update('lyrics_timing_offset', {'filename': newFilename},
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      }
 
-      // For favorites/suggestless/hidden, if target exists, we just delete the old one
-      // (effectively "merging" the fact that it is a favorite/suggestless/hidden)
+      // The url moves in the same statement. Recovery has nothing but this call
+      // to work with, and a row renamed but still pointing at the old path is
+      // exactly the broken link the sweep is repairing.
+      await txn.update(
+        'song',
+        {
+          'filename': newFilename,
+          if (sourceUrl != null) 'url': join(dirname(sourceUrl), newFilename),
+        },
+        where: 'filename = ?',
+        whereArgs: [oldFilename],
+      );
+    }
 
-      // Check if new exists in favorite
-      final newFav = await txn
-          .query('favorite', where: 'filename = ?', whereArgs: [newFilename]);
-      if (newFav.isNotEmpty) {
-        await txn.delete('favorite',
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      } else {
-        await txn.update('favorite', {'filename': newFilename},
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      }
-
-      // Check if new exists in suggestless
-      final newSL = await txn.query('suggestless',
-          where: 'filename = ?', whereArgs: [newFilename]);
-      if (newSL.isNotEmpty) {
-        await txn.delete('suggestless',
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      } else {
-        await txn.update('suggestless', {'filename': newFilename},
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      }
-
-      // Check if new exists in hidden
-      final newHidden = await txn
-          .query('hidden', where: 'filename = ?', whereArgs: [newFilename]);
-      if (newHidden.isNotEmpty) {
-        await txn
-            .delete('hidden', where: 'filename = ?', whereArgs: [oldFilename]);
-      } else {
-        await txn.update('hidden', {'filename': newFilename},
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      }
-
-      // The negative cover cache is keyed by filename, so leaving it behind
-      // would suppress a cover lookup for the renamed song forever.
-      final newCoverMiss = await txn
-          .query('cover_miss', where: 'filename = ?', whereArgs: [newFilename]);
-      if (newCoverMiss.isNotEmpty) {
-        await txn.delete('cover_miss',
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      } else {
-        await txn.update('cover_miss', {'filename': newFilename},
-            where: 'filename = ?', whereArgs: [oldFilename]);
-      }
-
-      // Translated lyrics are keyed by (filename, language). Only the row the
-      // new name already holds for that same language is redundant — dropping
-      // every language would lose the ones the new name is missing.
-      final oldTranslations = await txn.query('translated_lyrics',
+    final existingOffset = await txn.query(
+      'lyrics_timing_offset',
+      where: 'filename = ?',
+      whereArgs: [newFilename],
+    );
+    if (existingOffset.isNotEmpty) {
+      await txn.delete('lyrics_timing_offset',
           where: 'filename = ?', whereArgs: [oldFilename]);
-      for (final translation in oldTranslations) {
-        final targetLang = translation['target_lang'] as String?;
-        if (targetLang == null) continue;
-        final existingTranslation = await txn.query(
-          'translated_lyrics',
-          where: 'filename = ? AND target_lang = ?',
-          whereArgs: [newFilename, targetLang],
-        );
-        if (existingTranslation.isNotEmpty) {
-          await txn.delete('translated_lyrics',
-              where: 'filename = ? AND target_lang = ?',
-              whereArgs: [oldFilename, targetLang]);
-        } else {
-          await txn.update('translated_lyrics', {'filename': newFilename},
-              where: 'filename = ? AND target_lang = ?',
-              whereArgs: [oldFilename, targetLang]);
-        }
-      }
-
-      // Update Merged Songs - if old filename is in a merge group, update it
-      await txn.update('merged_song', {'filename': newFilename},
+    } else {
+      await txn.update('lyrics_timing_offset', {'filename': newFilename},
           where: 'filename = ?', whereArgs: [oldFilename]);
-      // Update merged_song_group priority_filename if it matches old filename
-      await txn.update('merged_song_group', {'priority_filename': newFilename},
-          where: 'priority_filename = ?', whereArgs: [oldFilename]);
+    }
 
-      // Saved queues name the song by filename. The primary key is
-      // (snapshot_id, position), so there is nothing to collide with.
-      await txn.update('queue_snapshot_song', {'song_filename': newFilename},
-          where: 'song_filename = ?', whereArgs: [oldFilename]);
+    // For favorites/suggestless/hidden, if target exists, we just delete the old
+    // one (effectively "merging" the fact that it is a favorite/suggestless/hidden)
 
-      // Update Playlist Songs
-      // Get all playlist entries for old filename
-      final plSongs = await txn.query('playlist_song',
-          where: 'song_filename = ?', whereArgs: [oldFilename]);
-      for (final plSong in plSongs) {
-        final playlistId = plSong['playlist_id'] as String;
-        // Check if new filename already in this playlist
-        final existing = await txn.query('playlist_song',
-            where: 'playlist_id = ? AND song_filename = ?',
-            whereArgs: [playlistId, newFilename]);
+    // Check if new exists in favorite
+    final newFav = await txn
+        .query('favorite', where: 'filename = ?', whereArgs: [newFilename]);
+    if (newFav.isNotEmpty) {
+      await txn
+          .delete('favorite', where: 'filename = ?', whereArgs: [oldFilename]);
+    } else {
+      await txn.update('favorite', {'filename': newFilename},
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    }
 
-        if (existing.isNotEmpty) {
-          // Delete old (merge)
-          await txn.delete('playlist_song',
-              where: 'id = ?', whereArgs: [plSong['id']]);
-        } else {
-          // Rename
-          await txn.update('playlist_song', {'song_filename': newFilename},
-              where: 'id = ?', whereArgs: [plSong['id']]);
-        }
+    // Check if new exists in suggestless
+    final newSL = await txn
+        .query('suggestless', where: 'filename = ?', whereArgs: [newFilename]);
+    if (newSL.isNotEmpty) {
+      await txn.delete('suggestless',
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    } else {
+      await txn.update('suggestless', {'filename': newFilename},
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    }
+
+    // Check if new exists in hidden
+    final newHidden = await txn
+        .query('hidden', where: 'filename = ?', whereArgs: [newFilename]);
+    if (newHidden.isNotEmpty) {
+      await txn
+          .delete('hidden', where: 'filename = ?', whereArgs: [oldFilename]);
+    } else {
+      await txn.update('hidden', {'filename': newFilename},
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    }
+
+    // The negative cover cache is keyed by filename, so leaving it behind
+    // would suppress a cover lookup for the renamed song forever.
+    final newCoverMiss = await txn
+        .query('cover_miss', where: 'filename = ?', whereArgs: [newFilename]);
+    if (newCoverMiss.isNotEmpty) {
+      await txn.delete('cover_miss',
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    } else {
+      await txn.update('cover_miss', {'filename': newFilename},
+          where: 'filename = ?', whereArgs: [oldFilename]);
+    }
+
+    // Translated lyrics are keyed by (filename, language). Only the row the
+    // new name already holds for that same language is redundant — dropping
+    // every language would lose the ones the new name is missing.
+    final oldTranslations = await txn.query('translated_lyrics',
+        where: 'filename = ?', whereArgs: [oldFilename]);
+    for (final translation in oldTranslations) {
+      final targetLang = translation['target_lang'] as String?;
+      if (targetLang == null) continue;
+      final existingTranslation = await txn.query(
+        'translated_lyrics',
+        where: 'filename = ? AND target_lang = ?',
+        whereArgs: [newFilename, targetLang],
+      );
+      if (existingTranslation.isNotEmpty) {
+        await txn.delete('translated_lyrics',
+            where: 'filename = ? AND target_lang = ?',
+            whereArgs: [oldFilename, targetLang]);
+      } else {
+        await txn.update('translated_lyrics', {'filename': newFilename},
+            where: 'filename = ? AND target_lang = ?',
+            whereArgs: [oldFilename, targetLang]);
       }
-    });
+    }
 
-    // 2. Update Stats DB (PlayEvents)
-    await _statsDatabase!.transaction((txn) async {
-      // We always update the filename in playevent.
-      // This effectively merges stats because play count queries group by song_filename.
-      await txn.update('playevent', {'song_filename': newFilename},
+    // Update Merged Songs - if old filename is in a merge group, update it
+    await txn.update('merged_song', {'filename': newFilename},
+        where: 'filename = ?', whereArgs: [oldFilename]);
+    // Update merged_song_group priority_filename if it matches old filename
+    await txn.update('merged_song_group', {'priority_filename': newFilename},
+        where: 'priority_filename = ?', whereArgs: [oldFilename]);
+
+    // Saved queues name the song by filename. The primary key is
+    // (snapshot_id, position), so there is nothing to collide with.
+    await txn.update('queue_snapshot_song', {'song_filename': newFilename},
+        where: 'song_filename = ?', whereArgs: [oldFilename]);
+
+    // Update Playlist Songs
+    // Get all playlist entries for old filename
+    final plSongs = await txn.query('playlist_song',
+        where: 'song_filename = ?', whereArgs: [oldFilename]);
+    for (final plSong in plSongs) {
+      final playlistId = plSong['playlist_id'] as String;
+      // Check if new filename already in this playlist
+      final existing = await txn.query('playlist_song',
+          where: 'playlist_id = ? AND song_filename = ?',
+          whereArgs: [playlistId, newFilename]);
+
+      if (existing.isNotEmpty) {
+        // Delete old (merge)
+        await txn.delete('playlist_song',
+            where: 'id = ?', whereArgs: [plSong['id']]);
+      } else {
+        // Rename
+        await txn.update('playlist_song', {'song_filename': newFilename},
+            where: 'id = ?', whereArgs: [plSong['id']]);
+      }
+    }
+  }
+
+  /// We always update the filename in playevent. This effectively merges stats
+  /// because play count queries group by song_filename.
+  Future<void> _renameInStats(
+    DatabaseExecutor txn,
+    String oldFilename,
+    String newFilename,
+  ) =>
+      txn.update('playevent', {'song_filename': newFilename},
           where: 'song_filename = ?', whereArgs: [oldFilename]);
-    });
 
-    debugPrint('Renamed DB entries from $oldFilename to $newFilename');
+  Future<void> _renameManyInStats(
+    DatabaseExecutor txn,
+    List<({String from, String to})> renames,
+  ) async {
+    for (final entry in renames) {
+      await _renameInStats(txn, entry.from, entry.to);
+    }
   }
 
   /// Deletes a file from user data tables only.
@@ -2210,6 +2303,10 @@ class DatabaseService {
     return repairedCount;
   }
 
+  /// The lifetime stats payload backups carry, in the shape older builds wrote.
+  ///
+  /// The aggregation itself lives in the domain layer (`buildInsights`), shared
+  /// with the stats screen; this only moves rows in and shapes the result out.
   Future<Map<String, dynamic>> getFunStats() async {
     await _ensureInitialized();
 
@@ -2219,306 +2316,33 @@ class DatabaseService {
 
     try {
       await repairCorruptedPlayStats();
-      final events =
-          await _statsDatabase!.query('playevent', orderBy: 'timestamp ASC');
-
-      if (events.isEmpty) return {"stats": []};
-
-      // Load metadata from song cache
+      final rows = await _statsDatabase!.query(
+        'playevent',
+        columns: const [
+          'song_filename',
+          'timestamp',
+          'duration_played',
+          'total_length',
+          'play_ratio',
+        ],
+        orderBy: 'timestamp ASC',
+      );
+      if (rows.isEmpty) return {"stats": []};
 
       final songs = await getAllSongs();
-
-      final metadataMap = {for (var s in songs) s.filename: s};
-
-      final favorites = Set<String>.from(await getFavorites());
-
-      double totalTimeSeconds = 0;
-
-      final songCounts = <String, int>{};
-
-      final artistCounts = <String, int>{};
-
-      int totalSkips = 0;
-
-      final playDates = <DateTime>{};
-
-      final hourCounts = <int, int>{};
-
-      final dayCounts = <String, int>{};
-
-      final uniquePlayedSongs = <String>{};
-
-      int favoritesPlayCount = 0;
-
-      int totalMeaningfulPlays = 0;
-
-      for (final event in events) {
-        final duration = (event['duration_played'] as num).toDouble();
-
-        final ratio = (event['play_ratio'] as num?)?.toDouble() ??
-            (duration > 0 && (event['total_length'] as num?)?.toDouble() != null
-                ? duration / (event['total_length'] as num).toDouble()
-                : 0.0);
-
-        final filename = event['song_filename'] as String;
-
-        final timestamp = (event['timestamp'] as num).toDouble();
-
-        totalTimeSeconds += duration;
-
-        final dt =
-            DateTime.fromMillisecondsSinceEpoch((timestamp * 1000).toInt());
-
-        playDates.add(DateTime(dt.year, dt.month, dt.day));
-
-        hourCounts[dt.hour] = (hourCounts[dt.hour] ?? 0) + 1;
-
-        final dayName = _getDayName(dt.weekday);
-
-        dayCounts[dayName] = (dayCounts[dayName] ?? 0) + 1;
-
-        if (duration > 10 || ratio > 0.25) {
-          totalMeaningfulPlays++;
-
-          uniquePlayedSongs.add(filename);
-
-          songCounts[filename] = (songCounts[filename] ?? 0) + 1;
-
-          final meta = metadataMap[filename];
-
-          if (meta != null && meta.artist != 'Unknown Artist') {
-            artistCounts[meta.artist] = (artistCounts[meta.artist] ?? 0) + 1;
-          }
-
-          if (favorites.contains(filename)) {
-            favoritesPlayCount++;
-          }
-        }
-
-        if (duration < 10 && ratio < 0.25) {
-          totalSkips++;
-        }
-      }
-
-      final List<Map<String, dynamic>> stats = [];
-
-      // 1. Total Time
-
-      final hours = totalTimeSeconds ~/ 3600;
-
-      final minutes = (totalTimeSeconds % 3600) ~/ 60;
-
-      stats.add({
-        "id": "total_time",
-        "label": "Total Listening Time",
-        "value": "${hours}h ${minutes}m",
-        "subtitle":
-            "You've listened for ${(totalTimeSeconds / 86400).toStringAsFixed(1)} days total!"
-      });
-
-      // 2. Most Played Artist
-
-      if (artistCounts.isNotEmpty) {
-        final topArtist =
-            artistCounts.entries.reduce((a, b) => a.value > b.value ? a : b);
-
-        stats.add({
-          "id": "top_artist",
-          "label": "Most Played Artist",
-          "value": topArtist.key,
-          "subtitle": "${topArtist.value} plays. You clearly love them."
-        });
-      }
-
-      // 3. Most Played Song
-
-      if (songCounts.isNotEmpty) {
-        final topSong =
-            songCounts.entries.reduce((a, b) => a.value > b.value ? a : b);
-
-        final meta = metadataMap[topSong.key];
-
-        stats.add({
-          "id": "top_song",
-          "label": "Most Played Song",
-          "value": meta?.title ?? _getFileNameWithoutExt(topSong.key),
-          "subtitle": "Played ${topSong.value} times."
-        });
-      }
-
-      // 4. Streak
-
-      final sortedDates = playDates.toList()..sort();
-
-      int longestStreak = 0;
-
-      int currentStreak = 0;
-
-      if (sortedDates.isNotEmpty) {
-        int tempStreak = 1;
-
-        for (int i = 1; i < sortedDates.length; i++) {
-          if (sortedDates[i].difference(sortedDates[i - 1]).inDays == 1) {
-            tempStreak++;
-          } else {
-            longestStreak = max(longestStreak, tempStreak);
-
-            tempStreak = 1;
-          }
-        }
-
-        longestStreak = max(longestStreak, tempStreak);
-
-        final today = DateTime.now();
-
-        final lastPlay = sortedDates.last;
-
-        final diff = DateTime(today.year, today.month, today.day)
-            .difference(lastPlay)
-            .inDays;
-
-        if (diff <= 1) {
-          currentStreak = 1;
-
-          for (int i = sortedDates.length - 2; i >= 0; i--) {
-            if (sortedDates[i + 1].difference(sortedDates[i]).inDays == 1) {
-              currentStreak++;
-            } else {
-              break;
-            }
-          }
-        }
-      }
-
-      stats.add({
-        "id": "streak",
-        "label": "Longest Streak",
-        "value": "$longestStreak Days",
-        "subtitle": currentStreak > 0
-            ? "Current streak: $currentStreak days"
-            : "Start a new streak today!"
-      });
-
-      // 5. Active Hour
-
-      if (hourCounts.isNotEmpty) {
-        final topHour =
-            hourCounts.entries.reduce((a, b) => a.value > b.value ? a : b);
-
-        final hourLabel = topHour.key == 0
-            ? "12 AM"
-            : (topHour.key < 12
-                ? "${topHour.key} AM"
-                : (topHour.key == 12 ? "12 PM" : "${topHour.key - 12} PM"));
-
-        stats.add({
-          "id": "active_hour",
-          "label": "Most Active Hour",
-          "value": hourLabel,
-          "subtitle": "You listen most at this time."
-        });
-      }
-
-      // 6. Active Day
-
-      if (dayCounts.isNotEmpty) {
-        final topDay =
-            dayCounts.entries.reduce((a, b) => a.value > b.value ? a : b);
-
-        stats.add({
-          "id": "active_day",
-          "label": "Most Active Day",
-          "value": topDay.key,
-          "subtitle": "Your favorite day to jam."
-        });
-      }
-
-      // 7. Skips (calculated from duration: listened < 10s and ratio < 0.25)
-      stats.add({
-        "id": "skips",
-        "label": "Quick Skips",
-        "value": totalSkips.toString(),
-        "subtitle": "Songs skipped quickly."
-      });
-
-      // 8. Unique Songs
-
-      stats.add({
-        "id": "unique_songs",
-        "label": "Unique Songs Played",
-        "value": uniquePlayedSongs.length.toString(),
-        "subtitle": "Distinct tracks you've heard."
-      });
-
-      // 9. Total Songs Played
-
-      stats.add({
-        "id": "total_songs_played",
-        "label": "Total Songs Played",
-        "value": totalMeaningfulPlays.toString(),
-        "subtitle": "Total times you've jammed out."
-      });
-
-      // 10. Explorer Score
-
-      if (songs.isNotEmpty) {
-        final exploredPct =
-            ((uniquePlayedSongs.length / songs.length) * 100).toInt();
-
-        stats.add({
-          "id": "explorer_score",
-          "label": "Explorer Score",
-          "value": "$exploredPct%",
-          "subtitle": "Of your library explored."
-        });
-      }
-
-      // 10. Consistency Score
-
-      if (totalMeaningfulPlays > 0) {
-        final consistency =
-            ((favoritesPlayCount / totalMeaningfulPlays) * 100).toInt();
-
-        stats.add({
-          "id": "consistency",
-          "label": "Consistency Score",
-          "value": "$consistency%",
-          "subtitle": "Plays that were Favorites."
-        });
-      }
-
-      return {"stats": stats};
-    } catch (e) {
+      final insights = buildInsights(
+        events: rows.map(PlayEventSample.fromRow).toList(growable: false),
+        library: {for (final song in songs) song.filename: song},
+        favorites: (await getFavorites()).toSet(),
+        range: StatsRange.allTime,
+        now: DateTime.now(),
+      );
+
+      return buildFunStatsPayload(insights, librarySize: songs.length);
+    } on DatabaseException catch (e) {
       debugPrint("Error calculating local fun stats: $e");
-
       return {"stats": []};
     }
-  }
-
-  String _getDayName(int weekday) {
-    switch (weekday) {
-      case 1:
-        return "Monday";
-      case 2:
-        return "Tuesday";
-      case 3:
-        return "Wednesday";
-      case 4:
-        return "Thursday";
-      case 5:
-        return "Friday";
-      case 6:
-        return "Saturday";
-      case 7:
-        return "Sunday";
-      default:
-        return "";
-    }
-  }
-
-  String _getFileNameWithoutExt(String filename) {
-    final idx = filename.lastIndexOf('.');
-    return idx == -1 ? filename : filename.substring(0, idx);
   }
 
   Future<void> importData({

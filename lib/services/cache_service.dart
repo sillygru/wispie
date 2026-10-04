@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'wispie_paths.dart';
 
 import '../models/song.dart';
+import '../domain/models/cover_key.dart';
 import 'color_extraction_service.dart';
 import 'database_service.dart';
 
@@ -382,6 +383,121 @@ class CacheService {
 
   static String _cacheKey(String value) =>
       sha1.convert(utf8.encode(value)).toString();
+
+  /// Moves every filename-keyed cache entry from [before]'s identity to
+  /// [after]'s, and returns the cover path [after] should carry when the cover
+  /// file itself had to move.
+  ///
+  /// A rename does not invalidate these caches, it orphans them: waveform,
+  /// beat map and blurred background are all keyed on
+  /// `sha1(filename)`, and the lyrics cache on `sha1(url)`. Left behind they
+  /// are deleted by the next prune, which means paying for a full re-decode and
+  /// FFT to arrive back where the file already was.
+  ///
+  /// Content-addressed covers (`c_<sha1(bytes)>.jpg`) are deliberately left
+  /// alone — their name has nothing to do with the song, which is exactly why
+  /// the primary cover path survives a rename for free.
+  ///
+  /// Callers must have already renamed the audio file: this only republishes
+  /// what used to hang off the old name.
+  Future<String?> transferSongCaches({
+    required Song before,
+    required Song after,
+  }) async {
+    await init();
+    if (before.filename == after.filename) return null;
+
+    final oldKey = CoverKey(before.filename);
+    final newKey = CoverKey(after.filename);
+
+    await _moveCacheFile(
+      File(p.join(_v3Dir.path, oldKey.waveformCacheName())),
+      File(p.join(_v3Dir.path, newKey.waveformCacheName())),
+    );
+    await _moveCacheFile(
+      File(p.join(_v3Dir.path, oldKey.beatMapCacheName())),
+      File(p.join(_v3Dir.path, newKey.beatMapCacheName())),
+    );
+    await _moveCacheFile(
+      File(p.join(_v3Dir.path, 'blurred_cache', oldKey.blurredCacheName())),
+      File(p.join(_v3Dir.path, 'blurred_cache', newKey.blurredCacheName())),
+    );
+
+    final coverUrl =
+        await _transferFfmpegCover(oldKey.hash, newKey.hash, before);
+
+    // The lyrics cache is keyed on the full path, so it followed the file into
+    // its folder and would need re-extracting otherwise. The rename path used
+    // to delete it outright.
+    await _moveCacheFile(
+      File(
+          p.join(_v3Dir.path, 'lyrics_cache', '${_cacheKey(before.url)}.json')),
+      File(p.join(_v3Dir.path, 'lyrics_cache', '${_cacheKey(after.url)}.json')),
+    );
+
+    if (coverUrl != null) {
+      await _refreshNotificationCoverKeys(before, coverUrl);
+    }
+    return coverUrl;
+  }
+
+  /// The video/FFmpeg cover is the one cover file named after the song, so it
+  /// moves and [after] has to be told where it went.
+  ///
+  /// Only `_ffmpeg.jpg` is keyed this way; the content-addressed covers share
+  /// nothing with the filename.
+  Future<String?> _transferFfmpegCover(
+    String oldHash,
+    String newHash,
+    Song before,
+  ) async {
+    final coversDir =
+        Directory(p.join(_appSupportDir.path, 'extracted_covers'));
+    final oldCover = File(p.join(coversDir.path, '${oldHash}_ffmpeg.jpg'));
+
+    if (before.coverUrl != oldCover.path) return null;
+    if (!await oldCover.exists()) return null;
+
+    final newCover = File(p.join(coversDir.path, '${newHash}_ffmpeg.jpg'));
+    await _moveCacheFile(oldCover, newCover);
+    return newCover.path;
+  }
+
+  /// A cached notification cover is keyed on the *cover* file's name, so it
+  /// only goes stale when the cover moved. Invalidate both ends: the old entry
+  /// is unreachable, and the new one may be a leftover from a previous cover
+  /// that happened to land on the same name.
+  Future<void> _refreshNotificationCoverKeys(
+    Song before,
+    String movedCoverUrl,
+  ) async {
+    final oldKey = before.coverUrl;
+    if (oldKey == null) return;
+    for (final key in {
+      CoverKey.notificationKeyForCoverPath(oldKey),
+      CoverKey.notificationKeyForCoverPath(movedCoverUrl),
+    }) {
+      await invalidateNotificationCover(key);
+    }
+  }
+
+  /// Moves a cache file, treating both "nothing to move" and "already
+  /// populated" as success: a cache is disposable by definition, so refusing to
+  /// clobber is always preferable to throwing.
+  Future<void> _moveCacheFile(File from, File to) async {
+    try {
+      if (!await from.exists()) return;
+      if (await to.exists()) {
+        await from.delete();
+        return;
+      }
+      await to.parent.create(recursive: true);
+      await from.rename(to.path);
+    } catch (e) {
+      // Worst case the entry is regenerated. Never fail a rename over it.
+      debugPrint('Cache transfer skipped for ${from.path}: $e');
+    }
+  }
 }
 
 Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {

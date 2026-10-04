@@ -143,7 +143,10 @@ class MainActivity : AudioServiceActivity() {
                     // activity and is completed from onActivityResult.
                     "pickTree" -> handlePickTree(result)
                     "createFolder" -> handleCreateFolder(call.arguments as Map<*, *>, result)
-                    "renameFile" -> handleRenameFile(call.arguments as Map<*, *>, result)
+                    // DocumentFile work is blocking I/O. Harmless for one file,
+                    // but a bulk rename runs it once per song.
+                    "renameFile" -> onIoThread(result) { handleRenameFile(call.arguments as Map<*, *>, it) }
+                    "fileExists" -> onIoThread(result) { handleFileExists(call.arguments as Map<*, *>, it) }
                     "deleteFile" -> handleDeleteFile(call.arguments as Map<*, *>, result)
                     // The rest copy file contents, so they go to the IO thread.
                     "moveFile" -> onIoThread(result) { handleMoveFile(call.arguments as Map<*, *>, it) }
@@ -590,6 +593,37 @@ class MainActivity : AudioServiceActivity() {
         } else {
             result.success(true)
         }
+    }
+
+    /**
+     * Answers "is there already a file at this path" through the same document
+     * tree the rename will use.
+     *
+     * Dart cannot ask this on its own: a tree granted through SAF is opaque to
+     * java.io, so `File.exists()` reports false for a file that is plainly
+     * there. That made the bulk-rename collision check silently useless on any
+     * device holding only a tree grant — and [handleRenameFile] does not check
+     * either, so a stale check meant an overwrite.
+     */
+    private fun handleFileExists(args: Map<*, *>, result: MethodChannel.Result) {
+        val treeUri = args["treeUri"] as? String
+        val relativePath = args["relativePath"] as? String
+
+        if (treeUri.isNullOrBlank() || relativePath.isNullOrBlank()) {
+            result.error("invalid_args", "treeUri/relativePath required", null)
+            return
+        }
+
+        val root = DocumentFile.fromTreeUri(this, Uri.parse(treeUri))
+        if (root == null) {
+            // The grant is gone. Report "free" rather than "taken": the rename
+            // will fail loudly on its own if it was not actually free.
+            result.success(false)
+            return
+        }
+
+        val document = findDocument(root, relativePath)
+        result.success(document != null && document.isFile)
     }
 
     private fun handleDeleteFile(args: Map<*, *>, result: MethodChannel.Result) {

@@ -207,6 +207,16 @@ class SearchService {
     await _indexRepository.removeSong(filename);
   }
 
+  /// Moves index rows onto new filenames, keeping their indexed content.
+  ///
+  /// Preferred over removeSong + updateSong for a batch: the row already holds
+  /// everything worth indexing, and re-upserting it under a new key would
+  /// re-extract lyrics from disk for no reason.
+  Future<void> renameFiles(List<({String from, String to})> renames) async {
+    await init();
+    await _indexRepository.renameFiles(renames);
+  }
+
   /// Clears the search index
   Future<void> clearIndex() async {
     await init();

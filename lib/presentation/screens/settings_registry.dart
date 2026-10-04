@@ -508,6 +508,24 @@ final List<SettingsDestination> settingsRegistry = [
     open: () => const DataManagementSettingsScreen(highlightId: 'data.backups'),
   ),
   SettingsDestination(
+    anchorId: 'data.bulk_rename',
+    icon: AppIcons.edit,
+    title: 'Bulk Rename Files',
+    subtitle: 'Rename the whole library from a format',
+    breadcrumb: 'Settings › Data Management › Library Maintenance',
+    keywords: const [
+      'rename',
+      'filenames',
+      'batch',
+      'bulk',
+      'format',
+      'naming'
+    ],
+    open: () => const DataManagementSettingsScreen(
+      highlightId: 'data.bulk_rename',
+    ),
+  ),
+  SettingsDestination(
     anchorId: 'data.storage',
     icon: AppIcons.storage,
     title: 'Manage Storage',

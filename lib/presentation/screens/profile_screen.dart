@@ -6,7 +6,6 @@ import '../../providers/providers.dart';
 import '../../providers/user_data_provider.dart';
 import '../../services/audio_player_manager.dart';
 import '../../models/shuffle_config.dart';
-import '../widgets/fun_stats_view.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_list_row.dart';
@@ -22,6 +21,7 @@ import 'custom_shuffle_settings_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
+import '../widgets/stats/insights_summary_row.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
@@ -185,7 +185,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                 ),
 
-                // Fun stats
+                // Listening insights — the entry point to the stats screen.
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -194,31 +194,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       AppTokens.s4,
                       0,
                     ),
-                    child: AppSurface(
-                      padding: EdgeInsets.zero,
-                      child: ClipRRect(
-                        borderRadius: AppTokens.brMd,
-                        child: ExpansionTile(
-                          leading: AppIcon(AppIcons.analytics, color: accent),
-                          title: const Text('Fun Stats'),
-                          subtitle:
-                              const Text('Your listening habits analyzed'),
-                          shape: const Border(),
-                          collapsedShape: const Border(),
-                          children: const [
-                            Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                AppTokens.s4,
-                                0,
-                                AppTokens.s4,
-                                AppTokens.s4,
-                              ),
-                              child: FunStatsView(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    child: const InsightsSummaryRow(),
                   ),
                 ),
 
@@ -585,33 +561,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             children: [
                               AppSurface(
                                 padding: EdgeInsets.zero,
-                                child: ClipRRect(
-                                  borderRadius: AppTokens.brMd,
-                                  child: ExpansionTile(
-                                    initiallyExpanded: true,
-                                    leading: AppIcon(
-                                      AppIcons.analytics,
-                                      color: accent,
-                                    ),
-                                    title: const Text('Fun Stats'),
-                                    subtitle: const Text(
-                                      'Your listening habits analyzed',
-                                    ),
-                                    shape: const Border(),
-                                    collapsedShape: const Border(),
-                                    children: const [
-                                      Padding(
-                                        padding: EdgeInsets.fromLTRB(
-                                          AppTokens.s4,
-                                          0,
-                                          AppTokens.s4,
-                                          AppTokens.s4,
-                                        ),
-                                        child: FunStatsView(),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                child: const InsightsSummaryRow(),
                               ),
                               const AppSectionHeader(
                                 label: 'Shuffle Personality',

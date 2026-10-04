@@ -7,6 +7,7 @@ import '../../services/import_options.dart';
 import '../../presentation/widgets/import_options_dialog.dart';
 import '../../presentation/widgets/import_progress_dialog.dart';
 import 'backup_management_screen.dart';
+import 'bulk_rename_screen.dart';
 import 'storage_management_screen.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
@@ -72,6 +73,19 @@ class _DataManagementSettingsScreenState
               title: 'Manage Backups',
               subtitle: 'Create, restore, and manage app backups',
               onTap: () => context.pushApp(const BackupManagementScreen()),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Library Maintenance',
+          icon: AppIcons.edit,
+          children: [
+            AppSettingsTile(
+              searchId: 'data.bulk_rename',
+              icon: AppIcons.edit,
+              title: 'Bulk Rename Files',
+              subtitle: 'Rename the whole library from a format',
+              onTap: () => context.pushApp(const BulkRenameScreen()),
             ),
           ],
         ),

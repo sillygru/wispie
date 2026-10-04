@@ -11,6 +11,7 @@ import '../services/storage_service.dart';
 import '../services/scanner_service.dart';
 import '../services/database_service.dart';
 import '../services/file_manager_service.dart';
+import '../services/bulk_rename_journal.dart';
 import '../services/beat_analysis_service.dart';
 import '../services/waveform_service.dart';
 import '../services/cache_service.dart';
@@ -23,6 +24,7 @@ import '../services/lrclib_service.dart';
 import '../domain/services/search_service.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
+import '../domain/services/bulk_rename_planner.dart';
 import 'search_provider.dart';
 import '../presentation/widgets/spectrum_controller.dart';
 import '../data/repositories/song_repository.dart';
@@ -471,6 +473,13 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   static const String _startupMaintenancePendingKey =
       'startup_cache_maintenance_pending';
 
+  /// How many files may be renamed before their rows are moved to match.
+  ///
+  /// Small enough that closing the app mid-sweep costs a visible handful of songs
+  /// and their repair is automatic; large enough that the per-commit fsync is not
+  /// the bulk of the work.
+  static const int _commitSlice = 25;
+
   @override
   Future<List<Song>> build() async {
     ref.onDispose(() {
@@ -483,6 +492,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     // build — meaning another full getAllSongs() on the UI thread.
     ref.watch(userDataProvider.select((s) => s.hidden.join('\x00')));
     final userData = ref.read(userDataProvider);
+
+    // Before anything reads the library. A sweep that was killed mid-flight has
+    // files on disk under names the rows do not have yet, and this is the last
+    // point at which the repair can happen without a scan racing it.
+    await recoverPendingRenames();
 
     CoverRefreshService.instance.onCoverResolved = (song) {
       if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
@@ -1121,6 +1135,251 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       notifier.error('Failed to rename song');
       debugPrint('Failed to rename song: $e');
       rethrow;
+    }
+  }
+
+  /// Finishes the database half of a bulk rename that was interrupted.
+  ///
+  /// A rename is two writes — the file moves, then the filename-keyed rows follow
+  /// — and only the second one is recoverable in principle. The journal closes
+  /// that gap, but it is written *before* the file is touched, so it also lists
+  /// renames that never happened. Each entry is therefore confirmed against the
+  /// filesystem first: applying one whose file is still sitting under the old name
+  /// would point the library at a name that does not exist.
+  ///
+  /// Returns how many songs were put back together.
+  Future<int> recoverPendingRenames() async {
+    final journal = BulkRenameJournal.instance;
+    await journal.load();
+    if (journal.isEmpty) return 0;
+
+    final fileManager = ref.read(fileManagerServiceProvider);
+    final confirmed = <({String from, String to})>[];
+    for (final entry in journal.entries) {
+      if (await fileManager.fileExistsAt(entry.url)) {
+        confirmed.add((from: entry.from, to: entry.to));
+      } else {
+        debugPrint('Bulk rename recovery skipped ${entry.from}: '
+            '${entry.url} was never written');
+      }
+    }
+
+    if (confirmed.isNotEmpty) {
+      await DatabaseService.instance.renameFiles(confirmed);
+      await _reindexRenames({for (final e in confirmed) e.from: e.to});
+      debugPrint('Recovered ${confirmed.length} interrupted renames');
+    }
+
+    // Either way the journal has served its purpose: the entries are now either
+    // in the database or known never to have landed.
+    await journal.clear();
+    return confirmed.length;
+  }
+
+  /// Renames a batch of files and moves every filename-keyed row and cache file
+  /// onto the new names.
+  ///
+  /// Files go first, then the rows, and the rows go in slices rather than one
+  /// write at the very end. That is what lets a sweep survive the app being
+  /// closed: whatever slice was in flight is the only thing a crash can cost, and
+  /// [BulkRenameJournal] is what makes even that slice recoverable. Holding the
+  /// whole batch back until the end — which is what one big transaction is
+  /// cheaper at — would mean the library spent the entire sweep pointing at names
+  /// that did not exist yet.
+  ///
+  /// Within a slice the work is still batched: at a few hundred songs the
+  /// per-song overhead dominates the actual renaming, and re-indexing a song under
+  /// its new name re-extracts its lyrics from disk, once per song.
+  ///
+  /// [onProgress] carries a phase label, because "340 of 500" means nothing on
+  /// its own once the operation is a sequence of differently-sized steps.
+  ///
+  /// [isCancelled] stops the file loop, and nothing else. The database write and
+  /// the state publish always run for the files that *were* renamed: bailing out
+  /// before them would leave the library pointing at names that no longer exist,
+  /// which is the one outcome worse than a slow rename.
+  ///
+  /// [plans] must come from [BulkRenamePlanner.plan] and be passed through
+  /// [BulkRenamePlanner.excludeExistingTargets]; anything marked skipped there
+  /// is left alone and reported back in the result.
+  Future<BulkRenameResult> bulkRenameSongs(
+    List<BulkRenamePlan> plans, {
+    void Function(String label, int done, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final actionable = plans.where((entry) => entry.willRename).toList();
+    if (actionable.isEmpty) return const BulkRenameResult.empty();
+
+    final notifier = ref.read(metadataSaveProvider.notifier);
+    notifier.start();
+
+    final fileManager = ref.read(fileManagerServiceProvider);
+    final cache = CacheService.instance;
+    final journal = BulkRenameJournal.instance;
+    final cancelled = isCancelled ?? () => false;
+
+    /// Old filename paired with the song under its new identity. Everything
+    /// downstream is derived from this rather than kept in parallel maps, which
+    /// is how the two drift out of step.
+    final applied = <({String previousFilename, Song updated})>[];
+    final failures = <BulkRenameFailure>[];
+    var stoppedEarly = false;
+
+    /// How far into [applied] the database has been brought. The gap between it
+    /// and [applied].length is the slice a crash would cost.
+    var committed = 0;
+
+    /// Moves the rows for everything renamed since the last call, then forgets it
+    /// in the journal.
+    Future<void> commit() async {
+      if (applied.length == committed) return;
+      final slice = applied.sublist(committed);
+      final remaps = {
+        for (final item in slice) item.previousFilename: item.updated.filename,
+      };
+
+      await DatabaseService.instance.renameFiles([
+        for (final item in slice)
+          (from: item.previousFilename, to: item.updated.filename),
+      ]);
+
+      final current = state.value ?? const <Song>[];
+      state = AsyncValue.data(
+        BulkRenamePlanner.applyRenames(
+          current,
+          {for (final item in slice) item.previousFilename: item.updated},
+        ),
+      );
+
+      ref
+          .read(audioPlayerManagerProvider)
+          .refreshSongs(state.value!, filenameRemaps: remaps);
+
+      // Covers can move with the file, so the library rows are rewritten rather
+      // than left describing the song as it was before its artwork did.
+      await DatabaseService.instance.insertSongsBatch([
+        for (final item in slice) item.updated,
+      ]);
+
+      await _reindexRenames(remaps);
+
+      committed = applied.length;
+      await journal.clear();
+    }
+
+    onProgress?.call('Renaming files', 0, actionable.length);
+
+    for (var i = 0; i < actionable.length; i++) {
+      if (cancelled()) {
+        stoppedEarly = true;
+        onProgress?.call('Renaming files', i, actionable.length);
+        break;
+      }
+
+      final entry = actionable[i];
+      final before = entry.song;
+      final intent = PendingRename(
+        from: before.filename,
+        to: entry.newFilename,
+        url: entry.newUrl,
+      );
+
+      try {
+        // Written before the rename, not after: only an entry that pre-dates the
+        // write can cover the process dying during it.
+        await journal.record(intent);
+
+        var updated = before.copyWith(
+          filename: entry.newFilename,
+          url: entry.newUrl,
+        );
+
+        // Disk only. The rows move once the file is known to be there.
+        await fileManager.renameFileOnDisk(before, entry.newFilename);
+
+        // Waveform, beat map, blurred art, lyrics and the one filename-keyed
+        // cover file all have to follow, and the video/FFmpeg cover is the only
+        // cover that is named after the song — so this is also the one case
+        // where the song has to be told where its cover went.
+        final movedCover = await cache.transferSongCaches(
+          before: before,
+          after: updated,
+        );
+        if (movedCover != null) {
+          updated = updated.copyWith(coverUrl: movedCover);
+        }
+
+        applied.add((previousFilename: before.filename, updated: updated));
+      } on FileSystemException catch (e) {
+        failures.add(BulkRenameFailure(before.filename, e.message));
+        await journal.discard(intent);
+      } catch (e) {
+        failures.add(BulkRenameFailure(before.filename, '$e'));
+        await journal.discard(intent);
+      }
+
+      if (applied.length - committed >= _commitSlice) await commit();
+
+      onProgress?.call('Renaming files', i + 1, actionable.length);
+    }
+
+    if (applied.isEmpty) {
+      await journal.clear();
+      notifier.error('Rename failed');
+      return BulkRenameResult(
+        renamed: const [],
+        remaps: const {},
+        failures: failures,
+      );
+    }
+
+    onProgress?.call('Updating library', 0, 1);
+    await commit();
+    onProgress?.call('Updating library', 1, 1);
+
+    // Once, not per slice: a refresh rebuilds the recommendation playlists, and
+    // nobody is looking at the library from behind a full-screen rename.
+    ref.read(userDataProvider.notifier).refresh();
+
+    if (stoppedEarly) {
+      notifier.success('Stopped after ${applied.length} songs');
+    } else {
+      notifier.success(
+        failures.isEmpty
+            ? 'Renamed ${applied.length} songs'
+            : 'Renamed ${applied.length}, ${failures.length} failed',
+      );
+    }
+
+    return BulkRenameResult(
+      renamed: [for (final item in applied) item.updated],
+      remaps: {
+        for (final item in applied)
+          item.previousFilename: item.updated.filename,
+      },
+      failures: failures,
+      stoppedEarly: stoppedEarly,
+    );
+  }
+
+  /// Points the search index at the new filenames.
+  ///
+  /// Moves the existing rows rather than re-upserting them: a rename changes
+  /// the key and none of the indexed content, so re-inserting would make every
+  /// song with lyrics re-extract them from disk — one ffprobe process each,
+  /// which on a large batch dominated the whole operation.
+  Future<void> _reindexRenames(Map<String, String> remaps) async {
+    if (remaps.isEmpty) return;
+    try {
+      final searchService = ref.read(searchServiceProvider);
+      await searchService.init();
+      await searchService.renameFiles([
+        for (final entry in remaps.entries) (from: entry.key, to: entry.value),
+      ]);
+    } catch (e) {
+      // The index is rebuilt on the next scan, so a failed reindex costs a stale
+      // search result rather than any data.
+      debugPrint('Search index rename failed for ${remaps.length} songs: $e');
     }
   }
 

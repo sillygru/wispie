@@ -17,6 +17,12 @@ import 'android_storage_service.dart';
 import 'ffmpeg_service.dart';
 import 'cache_service.dart';
 
+/// An Android document tree a media folder was granted as.
+///
+/// [rootPath] is the real path the tree resolves to, which is what lets a
+/// normal filesystem path be expressed as the tree-relative one SAF wants.
+typedef _SafTree = ({String treeUri, String rootPath});
+
 class FileManagerService {
   /// Serializes every tag-writing operation across the whole app.
   ///
@@ -838,49 +844,152 @@ class FileManagerService {
   }
 
   /// Renames a song file locally.
-  Future<void> renameSong(Song song, String newTitle) async {
-    final oldPath = song.url;
-    final directory = p.dirname(oldPath);
-    final extension = p.extension(oldPath);
-    final newFilename = "$newTitle$extension";
-    final newPath = p.join(directory, newFilename);
+  ///
+  /// [newTitle] is a filename *stem*: the extension is re-appended, so passing
+  /// a full name produces `name.mp3.mp3`.
+  Future<void> renameSong(Song song, String newTitle) =>
+      renameSongToFilename(song, '$newTitle${p.extension(song.url)}');
 
-    if (await File(newPath).exists()) {
-      throw Exception("A file with that name already exists in this folder.");
-    }
+  /// Renames a song file to [newFilename], extension included, and carries
+  /// every filename-keyed database row onto it.
+  ///
+  /// The bulk path renames straight to a filename rather than to a stem, so
+  /// that the same string the planner produced is the string that lands on
+  /// disk. Re-appending the extension by hand at the call site is how the
+  /// doubled `.mp3.mp3` bug happened.
+  Future<void> renameSongToFilename(Song song, String newFilename) async {
+    await renameFileOnDisk(song, newFilename);
 
-    // 1. Rename physical file
-    try {
-      if (Platform.isAndroid) {
-        final matchingFolder = await _getMatchingMusicFolder(oldPath);
-        final treeUri = matchingFolder?['treeUri'];
-        final rootPath = matchingFolder?['path'];
-        if (treeUri != null && treeUri.isNotEmpty && rootPath != null) {
-          if (!p.isWithin(rootPath, oldPath) &&
-              !p.equals(rootPath, p.dirname(oldPath))) {
-            throw Exception('Source file is outside the music folder.');
-          }
-          final sourceRelativePath = p.relative(oldPath, from: rootPath);
-          await AndroidStorageService.renameFile(
-            treeUri: treeUri,
-            sourceRelativePath: sourceRelativePath,
-            newName: newFilename,
-          );
-        } else {
-          await File(oldPath).rename(newPath);
-        }
-      } else {
-        await File(oldPath).rename(newPath);
-      }
-    } catch (e) {
-      throw Exception("Failed to rename file on filesystem: $e");
-    }
-
-    // 2. Update local DB
+    // DatabaseService.renameFile has already migrated the dependent rows.
     await DatabaseService.instance.renameFile(song.filename, newFilename);
 
     debugPrint("Successfully renamed ${song.filename} to $newFilename");
   }
+
+  /// Renames the file only, leaving the database alone.
+  ///
+  /// A batch renames every file first and then migrates every row in two
+  /// transactions, rather than paying a commit per song. Splitting the two is
+  /// only safe if the caller always follows up with
+  /// [DatabaseService.renameFiles] for exactly the files it renamed here —
+  /// including after a cancellation, or the library points at names that no
+  /// longer exist on disk.
+  Future<void> renameFileOnDisk(Song song, String newFilename) async {
+    final oldPath = song.url;
+    final newPath = p.join(p.dirname(oldPath), newFilename);
+
+    // The existence check has to skip the case-only case: on a case-insensitive
+    // volume `Song.mp3` and `song.mp3` are the same file, so this reports a
+    // collision against the file we are renaming.
+    if (newPath.toLowerCase() != oldPath.toLowerCase() &&
+        await fileExistsAt(newPath)) {
+      throw Exception("A file with that name already exists in this folder.");
+    }
+
+    await _renameOnDisk(oldPath, newFilename);
+  }
+
+  /// Performs the actual filesystem rename, going through SAF when the folder
+  /// was granted as a document tree.
+  Future<void> _renameOnDisk(String oldPath, String newFilename) async {
+    final tree = await _safTreeFor(oldPath);
+
+    try {
+      await _renameEntry(tree, oldPath, newFilename);
+    } on Object catch (e) {
+      if (!_isCaseOnlyChange(oldPath, newFilename)) rethrow;
+      // SAF's DocumentFile.renameTo rejects a change that only swaps case, and
+      // so does any case-insensitive volume. Hopping through a temp name is the
+      // only way to land on one.
+      debugPrint('Retrying case-only rename via temp name: $e');
+      await _renameViaTempName(tree, oldPath, newFilename);
+    }
+  }
+
+  /// Whether something already occupies [path].
+  ///
+  /// Exists because the two ways of addressing a media file disagree about who
+  /// can see it. A folder granted through SAF is a document tree, and
+  /// `dart:io` reports "absent" for files in it on a device holding no storage
+  /// permission — so a collision check built on `File.exists` is a silent
+  /// no-op there, while the rename that follows goes through
+  /// `DocumentFile.renameTo` and will happily replace whatever was in the way.
+  ///
+  /// Asking the same layer that performs the write is the only way for the
+  /// check and the write to agree.
+  Future<bool> fileExistsAt(String path) async {
+    final tree = await _safTreeFor(path);
+    if (tree != null) {
+      return AndroidStorageService.fileExists(
+        treeUri: tree.treeUri,
+        relativePath: p.relative(path, from: tree.rootPath),
+      );
+    }
+    return File(path).exists();
+  }
+
+  /// The SAF tree holding [oldPath], or null when the folder has a real path we
+  /// can address directly.
+  ///
+  /// A file outside every tracked folder, or one in a folder granted before SAF
+  /// was required, is simply addressed with [dart:io] like any other platform.
+  Future<_SafTree?> _safTreeFor(String oldPath) async {
+    if (!Platform.isAndroid) return null;
+
+    final matchingFolder = await _getMatchingMusicFolder(oldPath);
+    final treeUri = matchingFolder?['treeUri'];
+    final rootPath = matchingFolder?['path'];
+    if (treeUri == null || treeUri.isEmpty || rootPath == null) return null;
+
+    if (!p.isWithin(rootPath, oldPath) &&
+        !p.equals(rootPath, p.dirname(oldPath))) {
+      throw Exception('Source file is outside the music folder.');
+    }
+    return (treeUri: treeUri, rootPath: rootPath);
+  }
+
+  Future<void> _renameViaTempName(
+    _SafTree? tree,
+    String oldPath,
+    String newFilename,
+  ) async {
+    final tempName = '.wispie_rename_${DateTime.now().microsecondsSinceEpoch}';
+    final tempPath = p.join(p.dirname(oldPath), tempName);
+
+    await _renameEntry(tree, oldPath, tempName);
+    try {
+      await _renameEntry(tree, tempPath, newFilename);
+    } on Object {
+      // Put the file back rather than leaving temp litter behind. The target
+      // name was never occupied, so the original is the safest resting place.
+      try {
+        await _renameEntry(tree, tempPath, p.basename(oldPath));
+      } catch (_) {
+        debugPrint('Could not restore $oldPath from $tempPath after failure');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _renameEntry(
+    _SafTree? tree,
+    String path,
+    String newName,
+  ) async {
+    if (tree != null) {
+      await AndroidStorageService.renameFile(
+        treeUri: tree.treeUri,
+        sourceRelativePath: p.relative(path, from: tree.rootPath),
+        newName: newName,
+      );
+      return;
+    }
+    await File(path).rename(p.join(p.dirname(path), newName));
+  }
+
+  static bool _isCaseOnlyChange(String oldPath, String newFilename) =>
+      oldPath.toLowerCase() ==
+      p.join(p.dirname(oldPath), newFilename).toLowerCase();
 
   /// Copies [sourcePath] to [destinationPath], which must sit inside one of the
   /// tracked music folders.

@@ -1648,7 +1648,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _updateEffectivePlaybackMode();
   }
 
-  void refreshSongs(List<Song> newSongs, {String? previousFilename}) {
+  void refreshSongs(
+    List<Song> newSongs, {
+    String? previousFilename,
+    Map<String, String>? filenameRemaps,
+  }) {
     final oldSongMapKeys = _songMap.keys.toSet();
     _allSongs = newSongs.where((s) => !_isHidden(s.filename)).toList();
     _songMap = {for (var s in _allSongs) s.filename: s};
@@ -1666,31 +1670,41 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           .firstOrNull;
     }
 
-    _effectiveQueue = _effectiveQueue.map((item) {
-      final lookupFilename = (previousFilename != null &&
-              item.song.filename == previousFilename &&
-              renamedSong != null)
-          ? renamedSong.filename
-          : item.song.filename;
-      final updatedSong = _lookupSong(lookupFilename);
-      return updatedSong != null ? item.copyWith(song: updatedSong) : item;
-    }).toList();
+    // A batch rename knows exactly which old name became which new one, so it
+    // hands the mapping over rather than making each entry infer its own
+    // successor. Inferring cannot work past one song: the "key that wasn't here
+    // before" test has already been consumed by the first rename.
+    String? remapped(String filename) => filenameRemaps?[filename];
 
-    _originalQueue = _originalQueue.map((item) {
-      final lookupFilename = (previousFilename != null &&
-              item.song.filename == previousFilename &&
-              renamedSong != null)
-          ? renamedSong.filename
-          : item.song.filename;
-      final updatedSong = _lookupSong(lookupFilename);
-      return updatedSong != null ? item.copyWith(song: updatedSong) : item;
-    }).toList();
+    Song resolve(Song song) {
+      final mapped = remapped(song.filename);
+      if (mapped != null && mapped != song.filename) {
+        return _lookupSong(mapped) ?? _lookupSong(song.filename) ?? song;
+      }
+      if (previousFilename != null &&
+          song.filename == previousFilename &&
+          renamedSong != null) {
+        return _lookupSong(renamedSong.filename) ?? song;
+      }
+      return _lookupSong(song.filename) ?? song;
+    }
+
+    _effectiveQueue = _effectiveQueue
+        .map((item) => item.copyWith(song: resolve(item.song)))
+        .toList();
+    _originalQueue = _originalQueue
+        .map((item) => item.copyWith(song: resolve(item.song)))
+        .toList();
 
     _updateQueueNotifier();
     _savePlaybackState();
     _updateEffectivePlaybackMode();
 
-    if (previousFilename != null &&
+    final remappedCurrent =
+        _currentSongFilename == null ? null : remapped(_currentSongFilename!);
+    if (remappedCurrent != null && remappedCurrent != _currentSongFilename) {
+      _currentSongFilename = remappedCurrent;
+    } else if (previousFilename != null &&
         _currentSongFilename == previousFilename &&
         renamedSong != null) {
       _currentSongFilename = renamedSong.filename;
@@ -1706,7 +1720,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     if (currentIdx != null &&
         currentItemBefore != null &&
-        previousFilename != null) {
+        (filenameRemaps?.isNotEmpty ?? false || previousFilename != null)) {
       _rebuildQueue(initialIndex: currentIdx, startPlaying: _player.playing);
     }
   }

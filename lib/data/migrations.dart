@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 const int kStatsDbVersion = 1;
-const int kUserDataDbVersion = 3;
+const int kUserDataDbVersion = 4;
 
 const List<String> _statsTableStmts = [
   '''
@@ -182,6 +182,23 @@ Future<void> upgradeUserDataFrom2To3(Database db) async {
     )''');
 }
 
+Future<void> upgradeUserDataFrom3To4(Database db) async {
+  await _createMembershipIndexes(db);
+}
+
+/// Indexes for the two tables that name a song from a second column.
+///
+/// `playlist_song` is keyed on its own `id`, so anything that resolves a song
+/// to its playlists — including every batch rename and every bulk delete —
+/// scanned the whole table. `queue_snapshot_song` is keyed on
+/// (snapshot_id, position), so the same held for saved queues.
+Future<void> _createMembershipIndexes(Database db) async {
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_playlist_song_song_filename ON playlist_song(song_filename)');
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_queue_snapshot_song_song_filename ON queue_snapshot_song(song_filename)');
+}
+
 Future<void> _ensureSongMissingColumns(Database db) async {
   final cols = await db.rawQuery('PRAGMA table_info(song)');
   final names = {for (final c in cols) c['name'] as String};
@@ -208,6 +225,7 @@ Future<void> _createUserDataIndexes(Database db) async {
       'CREATE INDEX IF NOT EXISTS idx_queue_snapshot_created_at ON queue_snapshot(created_at)');
   await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_queue_snapshot_song_snapshot_id ON queue_snapshot_song(snapshot_id)');
+  await _createMembershipIndexes(db);
 }
 
 Future<void> _ensureTranslatedLyricsSourceHash(Database db) async {
