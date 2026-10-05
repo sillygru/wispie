@@ -9,20 +9,18 @@ import 'package:path/path.dart' as p;
 
 import '../domain/models/online_search_result.dart';
 import '../domain/services/cover_optimizer.dart';
+import '../domain/services/embedded_cover_bytes.dart';
 import '../models/song.dart';
 import 'music_utils_api_client.dart';
 import 'scanner_service.dart';
+import 'shared_http_client.dart';
 
 /// Client for Deezer & iTunes keyless search APIs.
 ///
 /// Deezer API: ~50 requests per 5s.
 /// iTunes API: ~20 requests per minute (soft-cap).
 /// music-utils API: ~200 requests per second (supports burst prefetch).
-enum CoverLookupOutcome {
-  found,
-  notFound,
-  transient,
-}
+enum CoverLookupOutcome { found, notFound, transient }
 
 class CoverLookupResult {
   final List<Map<String, String>> candidates;
@@ -435,8 +433,10 @@ class OnlineMetadataService {
       return unifiedUrl;
     }
 
-    final directUrl =
-        await _searchDirectAlbumImage(cleanAlbum, artistName: cleanArtist);
+    final directUrl = await _searchDirectAlbumImage(
+      cleanAlbum,
+      artistName: cleanArtist,
+    );
     if (directUrl != null) {
       if (_albumImageCache.length > 200) _albumImageCache.clear();
       _albumImageCache[cacheKey] = directUrl;
@@ -636,9 +636,8 @@ class OnlineMetadataService {
     final cleanArtist = cleanTag(artistName);
     if (cleanArtist == null) return null;
     final encodedAlbum = Uri.encodeComponent(cleanAlbum).replaceAll('%20', '+');
-    final encodedArtist = Uri.encodeComponent(
-      cleanArtist,
-    ).replaceAll('%20', '+');
+    final encodedArtist =
+        Uri.encodeComponent(cleanArtist).replaceAll('%20', '+');
     final mainResult = await _searchLastfmPage(
       '/music/$encodedArtist/$encodedAlbum',
     );
@@ -808,7 +807,7 @@ class OnlineMetadataService {
     }
     _lastLastfmRequest = DateTime.now();
 
-    final client = HttpClient();
+    final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(_lastfmHost, path);
       final request = await client.getUrl(uri);
@@ -828,8 +827,6 @@ class OnlineMetadataService {
     } catch (e) {
       debugPrint('Last.fm scrape error for $path: $e');
       return null;
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -876,7 +873,7 @@ class OnlineMetadataService {
 
   /// Downloads cover art from [imageUrl] and saves it locally in extracted covers directory.
   Future<String?> downloadAndCacheCover(String imageUrl, String keyName) async {
-    final client = HttpClient();
+    final client = SharedHttpClient.instance;
     try {
       final uri = Uri.parse(imageUrl);
       final request = await client.getUrl(uri);
@@ -898,6 +895,18 @@ class OnlineMetadataService {
       final bytes = bytesBuilder.takeBytes();
       if (bytes.isEmpty) return null;
 
+      // A CDN that answers 200 with a placeholder, a rate-limit notice or an
+      // HTML error page would otherwise be cached as a cover: the path gets
+      // saved, the tile shows nothing, and the key is treated as done. Anything
+      // without an image signature is a failure worth reporting as one, so the
+      // caller can try the next candidate.
+      if (!hasImageSignature(bytes)) {
+        debugPrint(
+          'Rejected non-image cover payload from $imageUrl (${bytes.length} bytes)',
+        );
+        return null;
+      }
+
       final coversDir = await ScannerService.coversDirectory();
       return await CoverOptimizer.saveOptimizedCover(
         bytes,
@@ -907,8 +916,6 @@ class OnlineMetadataService {
     } catch (e) {
       debugPrint('Error downloading cover from $imageUrl: $e');
       return null;
-    } finally {
-      client.close(force: true);
     }
   }
 
@@ -917,7 +924,7 @@ class OnlineMetadataService {
     String path,
     Map<String, String> params,
   ) async {
-    final client = HttpClient();
+    final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(host, path, params);
       final request = await client.getUrl(uri);
@@ -938,8 +945,6 @@ class OnlineMetadataService {
     } catch (e) {
       debugPrint('OnlineMetadataService GET $path error: $e');
       return null;
-    } finally {
-      client.close(force: true);
     }
   }
 

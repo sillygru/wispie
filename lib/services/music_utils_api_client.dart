@@ -4,14 +4,12 @@ import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'shared_http_client.dart';
+
 /// Outcome of a music-utils request, so callers can tell a definitive
 /// "no results" (404) apart from a transient failure (timeout, 5xx, offline)
 /// that should be retried on the next app open.
-enum MusicUtilsStatus {
-  ok,
-  notFound,
-  transient,
-}
+enum MusicUtilsStatus { ok, notFound, transient }
 
 class MusicUtilsResult {
   final Object? json;
@@ -34,14 +32,12 @@ class MusicUtilsApiClient {
 
   static String? _userAgent;
 
-  String get baseUrl =>
-      const String.fromEnvironment('WISPIE_MUSIC_UTILS_BASE_URL',
-          defaultValue: _defaultBaseUrl);
+  String get baseUrl => const String.fromEnvironment(
+        'WISPIE_MUSIC_UTILS_BASE_URL',
+        defaultValue: _defaultBaseUrl,
+      );
 
-  Future<Object?> getJson(
-    String endpoint,
-    Map<String, String> params,
-  ) async {
+  Future<Object?> getJson(String endpoint, Map<String, String> params) async {
     final result = await getJsonResult(endpoint, params);
     return result.status == MusicUtilsStatus.ok ? result.json : null;
   }
@@ -50,7 +46,7 @@ class MusicUtilsApiClient {
     String endpoint,
     Map<String, String> params,
   ) async {
-    final client = HttpClient();
+    final client = SharedHttpClient.instance;
     try {
       final base = Uri.parse(baseUrl);
       final uri = base.replace(
@@ -85,8 +81,6 @@ class MusicUtilsApiClient {
       return const MusicUtilsResult(null, MusicUtilsStatus.transient);
     } on FormatException catch (_) {
       return const MusicUtilsResult(null, MusicUtilsStatus.transient);
-    } finally {
-      client.close(force: true);
     }
   }
 

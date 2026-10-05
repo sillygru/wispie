@@ -13,12 +13,7 @@ import 'music_utils_api_client.dart';
 import 'online_metadata_service.dart';
 
 /// Outcome of resolving artwork for one artist/album key.
-enum _FetchOutcome {
-  success,
-  notFound,
-  transient,
-  abandoned,
-}
+enum _FetchOutcome { success, notFound, transient, abandoned }
 
 /// A downloaded cover waiting to be saved through the provider.
 typedef _ArtistSave = ({
@@ -38,10 +33,7 @@ typedef _AlbumSave = ({
 });
 
 /// Artists/albums still missing art, most-tracks-first.
-typedef MissingArt = ({
-  List<String> artists,
-  List<Map<String, String>> albums,
-});
+typedef MissingArt = ({List<String> artists, List<Map<String, String>> albums});
 
 /// Progress callback: [done] of [total] keys resolved.
 typedef ArtFetchProgress = void Function(int done, int total);
@@ -66,7 +58,8 @@ typedef ArtBurstResult = ({
 /// Each key gets up to 3 attempts with a 5 second gap, and no network request
 /// fires while the app is backgrounded. A definitive "no results"
 /// (404/empty) is persisted with a timestamp and skipped by automatic
-/// fetching afterwards; transient failures (timeout, 5xx, offline, download
+/// fetching afterwards until it expires (see [_noResultTtl]); transient
+/// failures (timeout, 5xx, offline, download
 /// errors) are only remembered for the current launch and retried on the
 /// next app open. Manual artwork search bypasses the skip list entirely.
 ///
@@ -104,6 +97,19 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
 
   static const int _maxAttempts = 3;
   static const Duration _retryDelay = Duration(seconds: 5);
+
+  /// How long a recorded 404 keeps suppressing automatic fetching.
+  ///
+  /// A 404 describes the service's index at that moment, not the artist
+  /// forever: obscure releases get added later, queries get normalised, and an
+  /// empty result caused by a bad lookup can look identical to a real one.
+  /// Without an expiry one unlucky record silently blocks that artist or album
+  /// for the rest of the install.
+  static const Duration _noResultTtl = Duration(days: 30);
+
+  /// Cover URLs tried per lookup before the key is called a failure. More than
+  /// one because a single dead CDN link should not cost the whole key.
+  static const int _maxCandidateDownloads = 3;
 
   /// After this many consecutive transient failures the sweep probes the
   /// API host before deciding it is offline. The probe (a raw socket
@@ -161,7 +167,27 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('PassiveArtFetcher: no-result cache load failed: $e');
     }
+    _pruneExpiredNoResults();
     start();
+  }
+
+  /// Drops skip records older than [_noResultTtl] so those keys are treated as
+  /// unfetched again. Runs after loading and at the top of every pass, which
+  /// covers both the sweep and the priority queues.
+  void _pruneExpiredNoResults() {
+    final cutoff = DateTime.now().subtract(_noResultTtl);
+    var changed = _pruneExpired(_noResultArtists, cutoff);
+    changed = _pruneExpired(_noResultAlbums, cutoff) || changed;
+    if (changed) _schedulePersist();
+  }
+
+  static bool _pruneExpired(Map<String, DateTime> records, DateTime cutoff) {
+    final expired =
+        records.keys.where((key) => records[key]!.isBefore(cutoff)).toList();
+    for (final key in expired) {
+      records.remove(key);
+    }
+    return expired.isNotEmpty;
   }
 
   void dispose() {
@@ -268,6 +294,9 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
 
   @visibleForTesting
   Future<void> flushPersistForTest() => _flushPersist();
+
+  @visibleForTesting
+  void pruneExpiredNoResultsForTest() => _pruneExpiredNoResults();
 
   @visibleForTesting
   void setOfflineBackoffForTest(DateTime? until) {
@@ -410,6 +439,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
         final ref = _containerRef;
         if (ref == null) break;
 
+        _pruneExpiredNoResults();
         await _drainPriorityQueues();
         if (_isRunning && _isForegrounded) {
           await _sweepLibraryBurst();
@@ -759,9 +789,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
               albumSaves.add(resolved.albumSave!);
             } else {
               if (resolved.outcome == _FetchOutcome.transient) {
-                failedItems.add(
-                  artist.isEmpty ? album : '$album ($artist)',
-                );
+                failedItems.add(artist.isEmpty ? album : '$album ($artist)');
               }
               await _applyAlbumResolution(album, artist, resolved);
             }
@@ -991,10 +1019,9 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
         final ref = _containerRef;
         if (ref == null) return;
         try {
-          final existing = ref.read(artistAlbumArtProvider).getAlbumArt(
-                album,
-                artistName: artist.isEmpty ? null : artist,
-              );
+          final existing = ref
+              .read(artistAlbumArtProvider)
+              .getAlbumArt(album, artistName: artist.isEmpty ? null : artist);
           if (existing != null) return;
           await ref.read(artistAlbumArtProvider.notifier).setAlbumArt(
                 albumKey: artist.isEmpty ? album : '$artist|$album',
@@ -1065,11 +1092,16 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       }
 
       if (lookup.outcome == CoverLookupOutcome.found) {
-        for (final candidate in lookup.candidates.take(2)) {
+        for (final candidate in lookup.candidates.take(
+          _maxCandidateDownloads,
+        )) {
           final imageUrl = candidate['url'];
           if (imageUrl == null || imageUrl.isEmpty) continue;
-          final localPath =
-              await _downloadCover(imageUrl, 'artist_$artist', cont);
+          final localPath = await _downloadCover(
+            imageUrl,
+            'artist_$artist',
+            cont,
+          );
           if (localPath == null || localPath.isEmpty) continue;
           if (ref.read(artistAlbumArtProvider).getArtistArt(artist) != null) {
             return (outcome: _FetchOutcome.success, artistSave: null);
@@ -1157,11 +1189,16 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       }
 
       if (lookup.outcome == CoverLookupOutcome.found) {
-        for (final candidate in lookup.candidates.take(2)) {
+        for (final candidate in lookup.candidates.take(
+          _maxCandidateDownloads,
+        )) {
           final imageUrl = candidate['url'];
           if (imageUrl == null || imageUrl.isEmpty) continue;
-          final localPath =
-              await _downloadCover(imageUrl, 'album_$saveKey', cont);
+          final localPath = await _downloadCover(
+            imageUrl,
+            'album_$saveKey',
+            cont,
+          );
           if (localPath == null || localPath.isEmpty) continue;
           if (ref
                   .read(artistAlbumArtProvider)

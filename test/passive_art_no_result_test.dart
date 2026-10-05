@@ -25,10 +25,8 @@ void main() {
   test('artist 404 skip is recorded, persisted and forgettable', () async {
     expect(fetcher.isArtistSkipped('Some Artist'), isFalse);
 
-    fetcher.recordArtistNoResultForTest(
-      'Some Artist',
-      DateTime.utc(2026, 1, 2, 3, 4, 5),
-    );
+    final recordedAt = DateTime.now().toUtc();
+    fetcher.recordArtistNoResultForTest('Some Artist', recordedAt);
     expect(fetcher.isArtistSkipped('some artist'), isTrue);
 
     await fetcher.flushPersistForTest();
@@ -36,15 +34,38 @@ void main() {
     final raw = prefs.getString('art_fetch_noresult_artists_v2');
     expect(raw, isNotNull);
     expect(raw, contains('some artist'));
-    expect(raw, contains('2026-01-02'));
 
     fetcher.forgetArtistAttempt('SOME ARTIST');
     expect(fetcher.isArtistSkipped('some artist'), isFalse);
     await fetcher.flushPersistForTest();
-    final after = (await SharedPreferences.getInstance())
-        .getString('art_fetch_noresult_artists_v2');
+    final after = (await SharedPreferences.getInstance()).getString(
+      'art_fetch_noresult_artists_v2',
+    );
     expect(after == null || !after.contains('some artist'), isTrue);
   });
+
+  test(
+    '404 skips expire so later additions to the service are picked up',
+    () async {
+      final longAgo = DateTime.now().toUtc().subtract(const Duration(days: 45));
+      fetcher.recordArtistNoResultForTest('Old Artist', longAgo);
+      fetcher.recordAlbumNoResultForTest('Old Album', 'Old Artist', longAgo);
+
+      expect(fetcher.isArtistSkipped('Old Artist'), isTrue);
+      expect(fetcher.isAlbumSkipped('Old Album', 'Old Artist'), isTrue);
+
+      // The prune the passive loop runs before it fetches anything.
+      fetcher.pruneExpiredNoResultsForTest();
+
+      expect(fetcher.isArtistSkipped('Old Artist'), isFalse);
+      expect(fetcher.isAlbumSkipped('Old Album', 'Old Artist'), isFalse);
+
+      await fetcher.flushPersistForTest();
+      final prefs = await SharedPreferences.getInstance();
+      final artists = prefs.getString('art_fetch_noresult_artists_v2');
+      expect(artists == null || !artists.contains('old artist'), isTrue);
+    },
+  );
 
   test('album 404 skip uses composite key and persists timestamp', () async {
     expect(fetcher.isAlbumSkipped('Album', 'Artist'), isFalse);
@@ -52,21 +73,23 @@ void main() {
     fetcher.recordAlbumNoResultForTest(
       'Album',
       'Artist',
-      DateTime.utc(2026, 5, 6),
+      DateTime.now().toUtc(),
     );
     expect(fetcher.isAlbumSkipped('album', 'artist'), isTrue);
     expect(fetcher.isAlbumSkipped('album', 'other'), isFalse);
 
     await fetcher.flushPersistForTest();
-    final raw = (await SharedPreferences.getInstance())
-        .getString('art_fetch_noresult_albums_v2');
+    final raw = (await SharedPreferences.getInstance()).getString(
+      'art_fetch_noresult_albums_v2',
+    );
     expect(raw, contains('artist|album'));
 
     await fetcher.clearAttempted();
     expect(fetcher.isAlbumSkipped('album', 'artist'), isFalse);
     expect(
-      (await SharedPreferences.getInstance())
-          .getString('art_fetch_noresult_albums_v2'),
+      (await SharedPreferences.getInstance()).getString(
+        'art_fetch_noresult_albums_v2',
+      ),
       isNull,
     );
   });
