@@ -13,6 +13,8 @@ import '../utils/wide_layout.dart';
 import 'audio_visualizer.dart';
 import '../components/app_icon.dart';
 import '../components/pressable.dart';
+import '../components/track_swipe_switcher.dart';
+import '../components/transport_controls.dart';
 import '../tokens/app_icons.dart';
 
 class NowPlayingBar extends ConsumerStatefulWidget {
@@ -165,80 +167,99 @@ class _NowPlayingContent extends ConsumerWidget {
             padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 14),
             child: Row(
               children: [
-                Hero(
-                  tag: 'now_playing_art_${metadata.id}',
-                  child: SizedBox(
-                    width: imageSize,
-                    height: imageSize,
-                    child: ClipRRect(
-                      borderRadius: AppTokens.brSm,
-                      child: Stack(
+                Expanded(
+                  child: ClipRect(
+                    child: TrackSwipeSwitcher<(MediaItem, Object?)>(
+                      item: (metadata, coverVersion),
+                      idOf: (m) => m.$1.id,
+                      audioManager: ref.read(audioPlayerManagerProvider),
+                      travel: 0.6,
+                      fade: 1,
+                      builder: (context, m, _) => Row(
                         children: [
-                          AlbumArtImage(
-                            key: ValueKey('now_playing_art_${metadata.id}'),
-                            url: metadata.artUri?.toString() ?? '',
-                            filename: metadata.id,
-                            cacheVersion: coverVersion,
-                            width: imageSize,
-                            height: imageSize,
-                            fit: BoxFit.cover,
-                          ),
-                          StreamBuilder<PlayerState>(
-                            stream: player.playerStateStream,
-                            builder: (context, snapshot) {
-                              final playing = snapshot.data?.playing ?? false;
-                              if (!playing || !isBarVisible) {
-                                return const SizedBox.shrink();
-                              }
+                          Hero(
+                            tag: 'now_playing_art_${m.$1.id}',
+                            child: SizedBox(
+                              width: imageSize,
+                              height: imageSize,
+                              child: ClipRRect(
+                                borderRadius: AppTokens.brSm,
+                                child: Stack(
+                                  children: [
+                                    AlbumArtImage(
+                                      key: ValueKey(
+                                          'now_playing_art_${m.$1.id}'),
+                                      url: m.$1.artUri?.toString() ?? '',
+                                      filename: m.$1.id,
+                                      cacheVersion: m.$2,
+                                      width: imageSize,
+                                      height: imageSize,
+                                      fit: BoxFit.cover,
+                                    ),
+                                    StreamBuilder<PlayerState>(
+                                      stream: player.playerStateStream,
+                                      builder: (context, snapshot) {
+                                        final playing =
+                                            snapshot.data?.playing ?? false;
+                                        if (!playing || !isBarVisible) {
+                                          return const SizedBox.shrink();
+                                        }
 
-                              return Positioned.fill(
-                                child: Container(
-                                  color: Colors.black.withValues(alpha: 0.28),
-                                  child: Center(
-                                    child: visualizerMode != VisualizerMode.off
-                                        ? AudioVisualizer(
-                                            width: compact ? 18 : 22,
-                                            height: compact ? 18 : 22,
-                                            color: Colors.white,
-                                            isPlaying: true,
-                                            mode: visualizerMode,
-                                          )
-                                        : AppIcon(
-                                            AppIcons.graphicEq,
-                                            color: Colors.white,
-                                            size: compact ? 17 : 19,
+                                        return Positioned.fill(
+                                          child: Container(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.28),
+                                            child: Center(
+                                              child: visualizerMode !=
+                                                      VisualizerMode.off
+                                                  ? AudioVisualizer(
+                                                      width: compact ? 18 : 22,
+                                                      height: compact ? 18 : 22,
+                                                      color: Colors.white,
+                                                      isPlaying: true,
+                                                      mode: visualizerMode,
+                                                    )
+                                                  : AppIcon(
+                                                      AppIcons.graphicEq,
+                                                      color: Colors.white,
+                                                      size: compact ? 17 : 19,
+                                                    ),
+                                            ),
                                           ),
-                                  ),
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: compact ? 10 : 12),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  m.$1.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTokens.rowTitle(context)
+                                      .copyWith(fontSize: titleSize),
+                                ),
+                                Text(
+                                  m.$1.artist ?? 'Unknown Artist',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTokens.rowSubtitle(context)
+                                      .copyWith(fontSize: artistSize),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-                SizedBox(width: compact ? 10 : 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        metadata.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTokens.rowTitle(context)
-                            .copyWith(fontSize: titleSize),
-                      ),
-                      Text(
-                        metadata.artist ?? 'Unknown Artist',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTokens.rowSubtitle(context)
-                            .copyWith(fontSize: artistSize),
-                      ),
-                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -265,40 +286,45 @@ class _NowPlayingContent extends ConsumerWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    StreamBuilder<PlayerState>(
-                      stream: player.playerStateStream,
-                      builder: (context, snapshot) {
-                        final playerState = snapshot.data;
-                        final playing = playerState?.playing ?? false;
-                        final processingState = playerState?.processingState;
+                    ValueListenableBuilder<bool>(
+                      valueListenable:
+                          ref.read(audioPlayerManagerProvider).playingNotifier,
+                      builder: (context, playing, _) =>
+                          StreamBuilder<PlayerState>(
+                        stream: player.playerStateStream,
+                        builder: (context, snapshot) {
+                          final playerState = snapshot.data;
+                          final processingState = playerState?.processingState;
 
-                        if (processingState == ProcessingState.buffering) {
-                          return const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                          if (processingState == ProcessingState.buffering) {
+                            return const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                          );
-                        }
+                            );
+                          }
 
-                        return IconButton(
-                          constraints: const BoxConstraints(),
-                          padding: const EdgeInsets.all(8),
-                          icon: AppIcon(
-                            playing ? AppIcons.pause : AppIcons.play,
-                            size: compact ? 28 : 30,
-                            color: Colors.white,
-                          ),
-                          onPressed: () => ref
-                              .read(audioPlayerManagerProvider)
-                              .togglePlayPause(),
-                        );
-                      },
+                          return IconButton(
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.all(8),
+                            tooltip: playing ? 'Pause' : 'Play',
+                            icon: PlayPauseMorphIcon(
+                              playing: playing,
+                              size: compact ? 28 : 30,
+                              color: Colors.white,
+                            ),
+                            onPressed: () => ref
+                                .read(audioPlayerManagerProvider)
+                                .togglePlayPause(),
+                          );
+                        },
+                      ),
                     ),
                     Pressable(
                       onTap: player.hasNext ? player.seekToNext : null,

@@ -50,6 +50,9 @@ class AppListRow extends StatelessWidget {
   /// Tighter vertical rhythm, for dense settings lists.
   final bool dense;
 
+  /// Roomier rhythm for song rows that carry a third (meta) line.
+  final bool tall;
+
   const AppListRow({
     super.key,
     this.leading,
@@ -65,6 +68,7 @@ class AppListRow extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.dense = false,
+    this.tall = false,
     this.titleMaxLines,
     this.subtitleMaxLines,
   });
@@ -80,11 +84,13 @@ class AppListRow extends StatelessWidget {
 
     final row = Container(
       constraints: BoxConstraints(
-        minHeight: dense ? 56 : AppTokens.rowHeight,
+        minHeight:
+            dense ? 56 : (tall ? AppTokens.rowHeightTall : AppTokens.rowHeight),
       ),
       padding: EdgeInsets.symmetric(
         horizontal: AppTokens.s3,
-        vertical: dense ? AppTokens.s2 : AppTokens.s2 + 2,
+        vertical:
+            dense ? AppTokens.s2 : (tall ? AppTokens.s3 : AppTokens.s2 + 2),
       ),
       decoration: isActive
           ? BoxDecoration(
@@ -97,7 +103,7 @@ class AppListRow extends StatelessWidget {
         children: [
           if (leading != null) ...[
             leading!,
-            const SizedBox(width: AppTokens.s3),
+            SizedBox(width: tall ? AppTokens.s4 : AppTokens.s3),
           ],
           Expanded(
             child: Column(
@@ -112,6 +118,7 @@ class AppListRow extends StatelessWidget {
                       overflow:
                           titleMaxLines == null ? null : TextOverflow.ellipsis,
                       style: AppTokens.rowTitle(context).copyWith(
+                        fontSize: tall ? 16.5 : null,
                         color: titleColor,
                         decoration:
                             strikeThrough ? TextDecoration.lineThrough : null,
@@ -119,7 +126,7 @@ class AppListRow extends StatelessWidget {
                       ),
                     ),
                 if (hasSubtitle) ...[
-                  const SizedBox(height: 2),
+                  SizedBox(height: tall ? AppTokens.s1 : 2),
                   DefaultTextStyle(
                     style: AppTokens.rowSubtitle(context).copyWith(
                       color: AppTokens.fg(

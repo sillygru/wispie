@@ -47,6 +47,9 @@ class AppTokens {
   static const Duration dSlow = PlayerTokens.dSlow; // 420ms
   static const Curve cStandard = PlayerTokens.cStandard;
   static const Curve cEmphasized = PlayerTokens.cEmphasized;
+  static const Curve cSpring = PlayerTokens.cSpring;
+  static const Curve cEmphasizedDecel = PlayerTokens.cEmphasizedDecel;
+  static const Curve cEmphasizedAccel = PlayerTokens.cEmphasizedAccel;
 
   // ----------------------------------------------------------------- springs
   // The one thing the app was missing next to the player: a shared physical
@@ -329,6 +332,8 @@ class AppTokens {
 
   // ---------------------------------------------------------------- layout
   static const double rowHeight = PlayerTokens.rowHeight; // 68
+  static const double rowHeightTall = PlayerTokens.rowHeightTall; // 80
+  static const double artSizeLarge = 56;
   static const double artSize = PlayerTokens.artSize; // 48
 
   /// Bottom padding for scroll views so content clears the now-playing bar

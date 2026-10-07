@@ -34,6 +34,7 @@ import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
 import '../components/wide_track_table.dart';
+import '../components/animated_removal.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   final String? relativePath;
@@ -393,9 +394,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 isDanger: true,
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  ref
-                      .read(userDataProvider.notifier)
-                      .deletePlaylist(playlist.id);
+                  final notifier = ref.read(userDataProvider.notifier);
+                  AnimatedRemoval.run(
+                    playlist.id,
+                    () => notifier.deletePlaylist(playlist.id),
+                  );
                 },
               ),
             );
@@ -403,32 +406,36 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
           // The playlist used to be marked by a 2px accent ring; the
           // collage now stands on its own.
-          return _desktopRow(
-            onSecondaryTap: showPlaylistOptions,
-            child: AppListRow(
-              leading: AppRowArt(
-                child: CollectionCover(songs: playlistSongs),
+          return RemovableEntry(
+            key: ValueKey<String>('playlist_${playlist.id}'),
+            id: playlist.id,
+            child: _desktopRow(
+              onSecondaryTap: showPlaylistOptions,
+              child: AppListRow(
+                leading: AppRowArt(
+                  child: CollectionCover(songs: playlistSongs),
+                ),
+                title: playlist.name,
+                subtitleWidget: CollectionDurationDisplay(
+                  songs: playlistSongs,
+                  showSongCount: true,
+                  compact: true,
+                ),
+                trailing: IconButton(
+                  icon: const AppIcon(AppIcons.moreVert),
+                  tooltip: 'Playlist options',
+                  onPressed: showPlaylistOptions,
+                ),
+                onTap: () {
+                  context.pushApp(
+                    SongListScreen(
+                      title: playlist.name,
+                      songs: playlistSongs,
+                      playlistId: playlist.id,
+                    ),
+                  );
+                },
               ),
-              title: playlist.name,
-              subtitleWidget: CollectionDurationDisplay(
-                songs: playlistSongs,
-                showSongCount: true,
-                compact: true,
-              ),
-              trailing: IconButton(
-                icon: const AppIcon(AppIcons.moreVert),
-                tooltip: 'Playlist options',
-                onPressed: showPlaylistOptions,
-              ),
-              onTap: () {
-                context.pushApp(
-                  SongListScreen(
-                    title: playlist.name,
-                    songs: playlistSongs,
-                    playlistId: playlist.id,
-                  ),
-                );
-              },
             ),
           );
         }

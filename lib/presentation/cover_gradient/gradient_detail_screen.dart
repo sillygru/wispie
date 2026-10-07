@@ -40,10 +40,12 @@ import '../widgets/clickable_artist_text.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
+import '../components/transport_controls.dart';
 import 'cover_blur_background.dart';
 import 'cover_gradient_palette.dart';
 import 'floating_mini_player.dart';
 import 'glass_chrome.dart';
+import '../components/animated_removal.dart';
 
 /// Shared artist/album/playlist layout over a continuous cover gradient.
 ///
@@ -313,13 +315,11 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final double dpr = mq.devicePixelRatio;
     final double topPad = mq.padding.top;
 
-    // Layout: any artist or album with a cover gets the full-bleed hero.
-    // Playlists and coverless entries keep the cover card, since a square
-    // cover stretched edge to edge just looks soft.
+    // Layout: anything with a cover, playlists included, gets the full-bleed
+    // hero. Only coverless entries fall back to the cover card.
     final bool hasAnyCover =
         hasCustomArtwork || (firstSong?.coverUrl ?? '').isNotEmpty;
-    final bool photoHero =
-        (effectiveIsArtist || effectiveIsAlbum) && hasAnyCover;
+    final bool photoHero = hasAnyCover;
     final double photoH = (mq.size.height * 0.5).clamp(320.0, 520.0);
     final double cardSide = (mq.size.width * 0.62).clamp(180.0, 300.0);
     final double cardTop = topPad + 68;
@@ -623,8 +623,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       isDanger: true,
     );
     if (confirmed == true && context.mounted) {
-      ref.read(userDataProvider.notifier).deletePlaylist(widget.playlistId!);
+      final notifier = ref.read(userDataProvider.notifier);
+      final String id = widget.playlistId!;
       Navigator.pop(context);
+      AnimatedRemoval.run(id, () => notifier.deletePlaylist(id));
     }
   }
 
@@ -913,20 +915,21 @@ class _PhotoHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget photo = ShaderMask(
       blendMode: BlendMode.dstIn,
-      // Eased falloff ending at zero alpha: no visible start or end line.
-      shaderCallback: (Rect bounds) => const LinearGradient(
+      // Smoothstep falloff ending at zero alpha: no visible start or end line.
+      shaderCallback: (Rect bounds) => LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: <Color>[
-          Color(0xFFFFFFFF),
-          Color(0xFFFFFFFF),
-          Color(0xE5FFFFFF),
-          Color(0xA5FFFFFF),
-          Color(0x5AFFFFFF),
-          Color(0x1AFFFFFF),
-          Color(0x00FFFFFF),
+          Colors.white,
+          for (var i = 0; i <= 8; i++)
+            Colors.white.withValues(
+              alpha: 1 - (i / 8) * (i / 8) * (3 - 2 * i / 8),
+            ),
         ],
-        stops: <double>[0.0, 0.42, 0.536, 0.652, 0.768, 0.884, 1.0],
+        stops: <double>[
+          0.0,
+          for (var i = 0; i <= 8; i++) 0.4 + 0.6 * i / 8,
+        ],
       ).createShader(bounds),
       child: art,
     );
@@ -981,7 +984,22 @@ class _PhotoHero extends StatelessWidget {
                     stops: <double>[0.0, 0.35, 0.6, 0.85, 1.0],
                   ),
                 ),
-                child: _TitleText(title, fontSize: 36, shadow: true),
+                // The title drifts up and dissolves faster than the photo
+                // parallax, so it clears before sliding under the top bar.
+                child: ValueListenableBuilder<double>(
+                  valueListenable: scroll,
+                  child: _TitleText(title, fontSize: 36, shadow: true),
+                  builder: (context, offset, child) {
+                    final double t = (offset / (height * 0.45)).clamp(0.0, 1.0);
+                    return Opacity(
+                      opacity: 1 - Curves.easeIn.transform(t),
+                      child: Transform.translate(
+                        offset: Offset(0, -AppTokens.s5 * t),
+                        child: child,
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -1117,7 +1135,6 @@ class _DetailInfo extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool enabled = visibleSongs.isNotEmpty;
     final String? artist = artistLine;
 
@@ -1173,8 +1190,10 @@ class _DetailInfo extends ConsumerWidget {
                 size: 48,
                 iconSize: 22,
                 tooltip: 'Shuffle',
-                background: scheme.secondaryContainer,
-                foreground: scheme.onSecondaryContainer,
+                // Tinted from the cover accent so both actions belong to the
+                // page's palette rather than the global scheme.
+                background: accent.withValues(alpha: 0.22),
+                foreground: Color.lerp(accent, Colors.white, 0.45)!,
                 icon: AppIcons.shuffle,
                 enabled: enabled,
                 onTap: () {
@@ -1185,22 +1204,35 @@ class _DetailInfo extends ConsumerWidget {
                 },
               ),
               const SizedBox(width: 12),
-              _RoundAction(
-                size: 64,
-                iconSize: 30,
-                tooltip: 'Play',
-                background: accent,
-                foreground: AppTokens.onAccent(accent),
-                icon: AppIcons.play,
-                enabled: enabled,
-                onTap: () {
-                  audioManager.replaceQueue(
-                    visibleSongs,
-                    playlistId: playlistId,
-                    forceLinear: true,
-                    clearCurrentSong: true,
-                  );
-                },
+              CollectionPlaybackBuilder(
+                audioManager: audioManager,
+                songs: visibleSongs,
+                builder: (context, isCurrent, playing) => _RoundAction(
+                  size: 64,
+                  iconSize: 30,
+                  tooltip: isCurrent && playing ? 'Pause' : 'Play',
+                  background: accent,
+                  foreground: AppTokens.onAccent(accent),
+                  icon: AppIcons.play,
+                  enabled: enabled,
+                  glyphBuilder: (fg) => PlayPauseMorphIcon(
+                    playing: isCurrent && playing,
+                    size: 30,
+                    color: fg,
+                  ),
+                  onTap: () {
+                    if (isCurrent) {
+                      audioManager.togglePlayPause();
+                      return;
+                    }
+                    audioManager.replaceQueue(
+                      visibleSongs,
+                      playlistId: playlistId,
+                      forceLinear: true,
+                      clearCurrentSong: true,
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -1232,6 +1264,9 @@ class _RoundAction extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
 
+  /// Replaces the static [icon] glyph, e.g. with an animated one.
+  final Widget Function(Color fg)? glyphBuilder;
+
   const _RoundAction({
     required this.size,
     required this.iconSize,
@@ -1241,6 +1276,7 @@ class _RoundAction extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.onTap,
+    this.glyphBuilder,
   });
 
   @override
@@ -1259,7 +1295,8 @@ class _RoundAction extends StatelessWidget {
           height: size,
           decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
           alignment: Alignment.center,
-          child: AppIcon(icon, color: fg, size: iconSize),
+          child: glyphBuilder?.call(fg) ??
+              AppIcon(icon, color: fg, size: iconSize),
         ),
       ),
     );
@@ -1280,8 +1317,10 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final Widget? end = trailing;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           Expanded(
             child: Text(
@@ -1289,9 +1328,9 @@ class _SectionHeader extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-                letterSpacing: -0.2,
+                fontWeight: FontWeight.w800,
+                fontSize: 20,
+                letterSpacing: -0.4,
                 color: Colors.white,
               ),
             ),

@@ -21,6 +21,8 @@ import '../../components/player_segmented_pill.dart';
 import '../../components/player_track_row.dart';
 import '../../components/progressive_edge_fade.dart';
 import '../../components/queue_cover_mosaic.dart';
+import '../../components/swipe_action_row.dart';
+import '../../tokens/app_tokens.dart';
 import '../../tokens/player_tokens.dart';
 import '../../utils/wide_layout.dart';
 import '../../widgets/duration_display.dart' show DurationFormatter;
@@ -706,21 +708,17 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
         ),
       );
     }
-    return Dismissible(
+    return SwipeActionRow(
       key: ValueKey('upnext_${item.queueId}'),
-      direction: DismissDirection.horizontal,
-      background: _buildSwipeBackground(
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: PlayerTokens.s4),
-        message: 'Add to top',
+      dismissKey: ValueKey('upnext_dismiss_${item.queueId}'),
+      startAction: SwipeAction(
+        label: 'Add to top',
         icon: Icons.vertical_align_top_rounded,
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+        color: Theme.of(context).colorScheme.primary,
       ),
-      secondaryBackground: _buildSwipeBackground(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: PlayerTokens.s4),
-        message: 'Remove',
-        color: Colors.redAccent,
+      endAction: const SwipeAction(
+        label: 'Remove',
+        color: AppTokens.danger,
         icon: Icons.delete_outline_rounded,
       ),
       onDismissed: (direction) {
@@ -733,54 +731,18 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
           _remove(audioManager, item, absolute);
         }
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s3),
-        child: PlayerTrackRow(
-          song: item.song,
-          accent: widget.accent,
-          onTap: () => _jumpTo(audioManager, item),
-          trailing: ReorderableDragStartListener(
-            index: index,
-            child: Icon(
-              Icons.drag_handle_rounded,
-              color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
-            ),
+      padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s3),
+      child: PlayerTrackRow(
+        song: item.song,
+        accent: widget.accent,
+        onTap: () => _jumpTo(audioManager, item),
+        trailing: ReorderableDragStartListener(
+          index: index,
+          child: Icon(
+            Icons.drag_handle_rounded,
+            color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
           ),
         ),
-      ),
-    );
-  }
-
-  /// Shared background for the swipe affordance: a full-height tinted slab with
-  /// the label and icon anchored to the side the finger is heading towards.
-  Widget _buildSwipeBackground({
-    required Alignment alignment,
-    required EdgeInsets padding,
-    required String message,
-    required IconData icon,
-    Color? color,
-  }) {
-    return Container(
-      alignment: alignment,
-      padding: padding,
-      decoration: BoxDecoration(
-        borderRadius: PlayerTokens.brMd,
-        color: color ?? Colors.white.withValues(alpha: 0.1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: Colors.white),
-          const SizedBox(width: PlayerTokens.s1),
-          Text(
-            message,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-        ],
       ),
     );
   }

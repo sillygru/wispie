@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -14,8 +13,8 @@ import '../../services/power_state_service.dart';
 import '../../services/screen_wake_lock_service.dart';
 import '../../theme/app_theme.dart';
 import '../components/player_segmented_pill.dart';
-import '../components/pressable.dart';
 import '../components/song_actions.dart';
+import '../components/transport_controls.dart';
 import '../cover_gradient/full_bleed_player_screen.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
@@ -910,149 +909,37 @@ class _TransportDock extends ConsumerWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        IconButton(
-          tooltip: switch (loopMode) {
-            LoopMode.off => 'Repeat off',
-            LoopMode.all => 'Repeat all',
-            LoopMode.one => 'Repeat one',
-          },
-          icon: Icon(
-            loopMode == LoopMode.one
-                ? Icons.repeat_one_rounded
-                : Icons.repeat_rounded,
-            color: loopMode == LoopMode.off ? disabled : accent,
-          ),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            player.setLoopMode(switch (loopMode) {
-              LoopMode.off => LoopMode.all,
-              LoopMode.all => LoopMode.one,
-              LoopMode.one => LoopMode.off,
-            });
-          },
+        RepeatToggleButton(
+          loopMode: loopMode,
+          accent: accent,
+          idleColor: disabled,
+          onChanged: player.setLoopMode,
         ),
-        Pressable(
+        SkipButton(
+          icon: Icons.skip_previous_rounded,
+          size: skipSize,
+          color: canSkipPrevious ? Colors.white : disabled,
+          direction: -1,
           onTap: canSkipPrevious ? player.seekToPrevious : null,
-          child: Padding(
-            padding: const EdgeInsets.all(PlayerTokens.s3),
-            child: Icon(
-              Icons.skip_previous_rounded,
-              size: skipSize,
-              color: canSkipPrevious ? Colors.white : disabled,
-            ),
-          ),
         ),
-        StreamBuilder<PlayerState>(
-          stream: player.playerStateStream,
-          initialData: player.playerState,
-          builder: (context, snapshot) {
-            final state = snapshot.data;
-            final playing = state?.playing ?? false;
-            final buffering =
-                state?.processingState == ProcessingState.buffering;
-
-            return Pressable(
-              onTap: audioManager.togglePlayPause,
-              pressedScale: 0.9,
-              child: Container(
-                width: playSize,
-                height: playSize,
-                decoration: BoxDecoration(
-                  color: accent,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.45),
-                      blurRadius: 22,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: buffering
-                    ? Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: PlayerTokens.onAccent(accent),
-                        ),
-                      )
-                    : Icon(
-                        playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 36,
-                        color: PlayerTokens.onAccent(accent),
-                      ),
-              ),
-            );
-          },
+        PlayPauseDisc(
+          audioManager: audioManager,
+          accent: accent,
+          size: playSize,
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: audioManager.fastForwardNotifier,
-          builder: (context, isFastForward, child) {
-            return Pressable(
-              onTap: canSkipNext ? player.seekToNext : null,
-              onLongPressStart: (_) => audioManager.startFastForward(),
-              onLongPressEnd: (_) => audioManager.stopFastForward(),
-              onLongPressCancel: () => audioManager.stopFastForward(),
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(PlayerTokens.s3),
-                    child: Icon(
-                      isFastForward
-                          ? Icons.fast_forward_rounded
-                          : Icons.skip_next_rounded,
-                      size: skipSize,
-                      color: isFastForward
-                          ? accent
-                          : (canSkipNext ? Colors.white : disabled),
-                    ),
-                  ),
-                  if (isFastForward)
-                    Positioned(
-                      top: -6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: accent,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accent.withValues(alpha: 0.5),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          '2x',
-                          style: TextStyle(
-                            color: PlayerTokens.onAccent(accent),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
+        NextFastForwardButton(
+          audioManager: audioManager,
+          canSkipNext: canSkipNext,
+          size: skipSize,
+          color: Colors.white,
+          disabledColor: disabled,
+          accent: accent,
         ),
-        IconButton(
+        HopIconButton(
+          icon: Icons.ios_share_rounded,
+          color: disabled,
           tooltip: 'Share',
-          icon: Icon(Icons.ios_share_rounded, color: disabled),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            songActionShare(song);
-          },
+          onPressed: () => songActionShare(song),
         ),
       ],
     );

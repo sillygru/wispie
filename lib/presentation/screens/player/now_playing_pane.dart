@@ -17,6 +17,7 @@ import '../../../providers/settings_provider.dart';
 import '../../../services/audio_player_manager.dart';
 import '../../components/pressable.dart';
 import '../../components/song_actions.dart';
+import '../../components/track_swipe_switcher.dart';
 import '../../tokens/player_tokens.dart';
 import '../../widgets/album_art_image.dart';
 import '../../widgets/beat_reactive_cover.dart';
@@ -386,7 +387,19 @@ class _CoverStage extends ConsumerWidget {
                   : SizedBox(
                       width: size,
                       height: size,
-                      child: _buildCover(context, beatReactive),
+                      child: TrackSwipeSwitcher<Song>(
+                        item: song,
+                        idOf: (s) => s.filename,
+                        audioManager: audioManager,
+                        travel: 1.25,
+                        fade: 0.6,
+                        builder: (context, s, current) => _buildCover(
+                          context,
+                          beatReactive,
+                          forSong: s,
+                          current: current,
+                        ),
+                      ),
                     ),
             ),
           ),
@@ -395,7 +408,13 @@ class _CoverStage extends ConsumerWidget {
     );
   }
 
-  Widget _buildCover(BuildContext context, bool beatReactive) {
+  Widget _buildCover(
+    BuildContext context,
+    bool beatReactive, {
+    required Song forSong,
+    required bool current,
+  }) {
+    final Song song = forSong;
     // Tag must match NowPlayingBar's so the artwork flies between the mini bar
     // and this pane.
     //
@@ -406,12 +425,12 @@ class _CoverStage extends ConsumerWidget {
       tag: PlayerTokens.coverHeroTag(song.filename),
       child: BeatReactiveCover(
         controller: motion,
-        enabled: beatReactive,
+        enabled: beatReactive && current,
         child: Container(
           // The shell's glow layer reads this box's on-screen rect every frame.
           // It sits inside the beat transform on purpose, so the glow tracks the
           // pulse — and the page swipe — without being told about either.
-          key: coverKey,
+          key: current ? coverKey : null,
           decoration: BoxDecoration(
             borderRadius: PlayerTokens.brLg,
             boxShadow: [

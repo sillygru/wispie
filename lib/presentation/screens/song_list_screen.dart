@@ -29,10 +29,12 @@ import '../widgets/song_list_item.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
 import '../components/song_actions.dart';
+import '../components/transport_controls.dart';
 import '../cover_gradient/gradient_detail_screen.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/album_card_selector.dart';
 import 'select_songs_screen.dart';
+import '../components/animated_removal.dart';
 
 class SongListScreen extends ConsumerStatefulWidget {
   final String title;
@@ -387,25 +389,47 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               ),
             ),
           ),
-          FilledButton.icon(
-            onPressed: visibleSongs.isNotEmpty
-                ? () {
-                    audioManager.replaceQueue(
-                      visibleSongs,
-                      playlistId: playlistId,
-                      forceLinear: true,
-                      clearCurrentSong: true,
-                    );
-                  }
-                : null,
-            icon: const AppIcon(AppIcons.play),
-            label: const Text('Play'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 32,
-                vertical: 14,
-              ),
-            ),
+          CollectionPlaybackBuilder(
+            audioManager: audioManager,
+            songs: visibleSongs,
+            builder: (context, isCurrent, playing) {
+              final bool showPause = isCurrent && playing;
+              return FilledButton.icon(
+                onPressed: visibleSongs.isNotEmpty
+                    ? () {
+                        if (isCurrent) {
+                          audioManager.togglePlayPause();
+                          return;
+                        }
+                        audioManager.replaceQueue(
+                          visibleSongs,
+                          playlistId: playlistId,
+                          forceLinear: true,
+                          clearCurrentSong: true,
+                        );
+                      }
+                    : null,
+                icon: PlayPauseMorphIcon(
+                  playing: showPause,
+                  size: AppTokens.iconMd,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+                label: AnimatedSwitcher(
+                  duration: AppTokens.dFast,
+                  child: Text(
+                    showPause ? 'Pause' : (isCurrent ? 'Resume' : 'Play'),
+                    key: ValueKey<String>(
+                        showPause ? 'p' : (isCurrent ? 'r' : 'pl')),
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 14,
+                  ),
+                ),
+              );
+            },
           ),
           if (isUnknownArtistOrAlbum)
             OutlinedButton.icon(
@@ -691,8 +715,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       isDanger: true,
     );
     if (confirmed == true && context.mounted) {
-      ref.read(userDataProvider.notifier).deletePlaylist(playlistId!);
+      final notifier = ref.read(userDataProvider.notifier);
+      final String id = playlistId!;
       Navigator.pop(context);
+      AnimatedRemoval.run(id, () => notifier.deletePlaylist(id));
     }
   }
 

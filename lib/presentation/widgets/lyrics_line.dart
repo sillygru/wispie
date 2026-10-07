@@ -5,6 +5,12 @@ import 'package:flutter/material.dart';
 import '../../domain/models/rich_lyrics.dart';
 import '../tokens/player_tokens.dart';
 
+/// Lyric ink is tinted from the cover accent so the text belongs to the
+/// cover-derived theme: lit text is the accent lifted toward white for
+/// legibility, resting text a pale wash of it.
+Color lyricsLitInk(Color accent) => Color.lerp(accent, Colors.white, 0.35)!;
+Color lyricsDimInk(Color accent) => Color.lerp(Colors.white, accent, 0.5)!;
+
 /// Vocal voice alignment for lead, backing, or multi-singer lines.
 enum LyricsVoiceAlignment {
   lead,
@@ -27,6 +33,9 @@ class LyricsLine extends StatelessWidget {
   final RichLyricLine? wordLine;
   final VoidCallback? onTap;
 
+  /// Signed line distance from the active line; drives the opacity falloff.
+  final int distance;
+
   const LyricsLine({
     super.key,
     required this.text,
@@ -40,6 +49,7 @@ class LyricsLine extends StatelessWidget {
     this.playbackPosition = Duration.zero,
     this.wordLine,
     this.onTap,
+    this.distance = 0,
   });
 
   static LyricsVoiceAlignment detectAlignment(String text) {
@@ -71,11 +81,15 @@ class LyricsLine extends StatelessWidget {
         translation != null &&
         translation.isNotEmpty;
     final primaryText = isReplace ? translation : text;
-    final lineOpacity = isActive
+    final double baseOpacity = isPlayed
+        ? PlayerTokens.lyricsPlayedOpacity
+        : PlayerTokens.lyricsInactiveOpacity;
+    final double targetOpacity = isActive
         ? PlayerTokens.lyricsActiveOpacity
-        : (isPlayed
-            ? PlayerTokens.lyricsPlayedOpacity
-            : PlayerTokens.lyricsInactiveOpacity);
+        : (baseOpacity -
+                PlayerTokens.lyricsDistanceFalloff *
+                    math.max(0, distance.abs() - 1))
+            .clamp(PlayerTokens.lyricsMinOpacity, 1.0);
 
     final alignment = detectAlignment(primaryText);
     final textAlign = switch (alignment) {
@@ -94,78 +108,88 @@ class LyricsLine extends StatelessWidget {
       LyricsVoiceAlignment.duet => Alignment.center,
     };
 
-    // Focus is carried by the opacity ladder alone (active 1.0, played 0.6,
-    // inactive 0.3): blurring unfocused lines cost a saveLayer per line inside
-    // a scrolling list for a cue opacity already gives.
-    return AnimatedSlide(
-      offset: isActive ? const Offset(0, -0.04) : Offset.zero,
-      duration: PlayerTokens.dLyricsLine,
+    // Focus is carried by the opacity ladder alone: blurring unfocused lines
+    // cost a saveLayer per line inside a scrolling list for a cue opacity
+    // already gives. The opacity is tweened rather than a layer so word spans,
+    // which bake it into their colours, ease along with plain text.
+    // Farther lines settle a beat later, so a line change ripples outward
+    // from the active line instead of every row snapping in unison.
+    final Duration ripple = PlayerTokens.dLyricsLine +
+        PlayerTokens.dLyricsLineRipple * math.min(distance.abs(), 6);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: targetOpacity),
+      duration: ripple,
       curve: PlayerTokens.cLyricsLine,
-      child: AnimatedScale(
-        scale: isActive
-            ? PlayerTokens.lyricsActiveScale
-            : PlayerTokens.lyricsInactiveScale,
-        alignment: scaleAlignment,
-        duration: PlayerTokens.dLyricsLine,
+      builder: (context, lineOpacity, _) => AnimatedSlide(
+        offset: isActive ? const Offset(0, -0.04) : Offset.zero,
+        duration: ripple,
         curve: PlayerTokens.cLyricsLine,
-        child: AnimatedContainer(
-          duration: PlayerTokens.dLyricsLine,
+        child: AnimatedScale(
+          scale: isActive
+              ? PlayerTokens.lyricsActiveScale
+              : PlayerTokens.lyricsInactiveScale,
+          alignment: scaleAlignment,
+          duration: ripple,
           curve: PlayerTokens.cLyricsLine,
-          padding: const EdgeInsets.symmetric(
-            horizontal: PlayerTokens.s4,
-            vertical: PlayerTokens.s3,
-          ),
-          child: InkWell(
-            onTap: hasTime ? onTap : null,
-            borderRadius: PlayerTokens.brMd,
-            child: AnimatedDefaultTextStyle(
-              duration: PlayerTokens.dLyricsLine,
-              curve: PlayerTokens.cLyricsLine,
-              style: TextStyle(
-                fontSize: PlayerTokens.lyricsFontSize,
-                fontWeight: FontWeight.w800,
-                color: Colors.white.withValues(alpha: lineOpacity),
-                height: 1.28,
-                letterSpacing: -0.4,
-                shadows: isActive
-                    ? [
-                        Shadow(
-                          color: activeColor.withValues(
-                            alpha: 0.30 * glowIntensity,
-                          ),
-                          blurRadius: 16 * glowIntensity,
-                          offset: const Offset(0, 1),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: crossAxisAlignment,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ..._buildLyricLines(primaryText, lineOpacity, textAlign),
-                    if (showSubtext) ...[
-                      const SizedBox(height: PlayerTokens.s1),
-                      Text(
-                        translation,
-                        textAlign: textAlign,
-                        style: TextStyle(
-                          fontSize: PlayerTokens.lyricsFontSize *
-                              PlayerTokens.lyricsTranslationScale,
-                          fontWeight: FontWeight.w500,
-                          color: isActive
-                              ? activeColor.withValues(alpha: 0.88)
-                              : Colors.white.withValues(
-                                  alpha: isPlayed ? 0.50 : 0.30,
-                                ),
-                          height: 1.22,
-                          letterSpacing: -0.2,
-                        ),
+          child: AnimatedContainer(
+            duration: PlayerTokens.dLyricsLine,
+            curve: PlayerTokens.cLyricsLine,
+            padding: const EdgeInsets.symmetric(
+              horizontal: PlayerTokens.s4,
+              vertical: PlayerTokens.s3,
+            ),
+            child: InkWell(
+              onTap: hasTime ? onTap : null,
+              borderRadius: PlayerTokens.brMd,
+              child: AnimatedDefaultTextStyle(
+                duration: ripple,
+                curve: PlayerTokens.cLyricsLine,
+                style: TextStyle(
+                  fontSize: PlayerTokens.lyricsFontSize,
+                  fontWeight: FontWeight.w800,
+                  color: (isActive
+                          ? lyricsLitInk(activeColor)
+                          : lyricsDimInk(activeColor))
+                      .withValues(alpha: lineOpacity),
+                  height: 1.28,
+                  letterSpacing: -0.4,
+                  shadows: [
+                    Shadow(
+                      color: activeColor.withValues(
+                        alpha: 0.35 * glowIntensity,
                       ),
-                    ],
+                      blurRadius: 18 * glowIntensity,
+                    ),
                   ],
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: crossAxisAlignment,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ..._buildLyricLines(primaryText, lineOpacity, textAlign),
+                      if (showSubtext) ...[
+                        const SizedBox(height: PlayerTokens.s1),
+                        Text(
+                          translation,
+                          textAlign: textAlign,
+                          style: TextStyle(
+                            fontSize: PlayerTokens.lyricsFontSize *
+                                PlayerTokens.lyricsTranslationScale,
+                            fontWeight: FontWeight.w500,
+                            color: isActive
+                                ? activeColor.withValues(alpha: 0.88)
+                                : lyricsDimInk(activeColor).withValues(
+                                    alpha: isPlayed ? 0.50 : 0.30,
+                                  ),
+                            height: 1.22,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -249,7 +273,8 @@ class LyricsLine extends StatelessWidget {
         final backingStyle = TextStyle(
           fontSize: PlayerTokens.lyricsFontSize * 0.72,
           fontWeight: FontWeight.w600,
-          color: Colors.white.withValues(alpha: lineOpacity * 0.88),
+          color:
+              lyricsDimInk(activeColor).withValues(alpha: lineOpacity * 0.88),
           height: 1.25,
           letterSpacing: -0.2,
         );
@@ -285,52 +310,59 @@ class LyricsLine extends StatelessWidget {
             fontWeight: FontWeight.w600,
             height: 1.25,
             letterSpacing: -0.2,
-            color: Colors.white.withValues(alpha: lineOpacity),
+            color: lyricsDimInk(activeColor).withValues(alpha: lineOpacity),
           )
         : TextStyle(
             fontSize: PlayerTokens.lyricsFontSize,
             fontWeight: FontWeight.w800,
             height: 1.28,
             letterSpacing: -0.4,
-            color: Colors.white.withValues(alpha: lineOpacity),
+            color: lyricsDimInk(activeColor).withValues(alpha: lineOpacity),
           );
 
+    // Focus eases the lit layer out when the line hands off, so sung words
+    // fade back into the resting ink instead of snapping off.
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: playbackPosition.inMicroseconds.toDouble()),
-      duration: PlayerTokens.dLyricsWordProgress,
-      curve: Curves.linear,
-      builder: (context, animatedMicros, _) {
-        final position = Duration(microseconds: animatedMicros.round());
-        final spans = <InlineSpan>[];
+      tween: Tween<double>(end: isActive ? 1.0 : 0.0),
+      duration: PlayerTokens.dLyricsLine,
+      curve: PlayerTokens.cLyricsLine,
+      builder: (context, focus, _) => TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: playbackPosition.inMicroseconds.toDouble()),
+        duration: PlayerTokens.dLyricsWordProgress,
+        curve: Curves.linear,
+        builder: (context, animatedMicros, _) {
+          final position = Duration(microseconds: animatedMicros.round());
+          final spans = <InlineSpan>[];
 
-        for (var index = 0; index < words.length; index++) {
-          final word = words[index];
-          final wordSuffix = index < words.length - 1
-              ? (word.text.endsWith('-') ? '' : ' ')
-              : '';
+          for (var index = 0; index < words.length; index++) {
+            final word = words[index];
+            final wordSuffix = index < words.length - 1
+                ? (word.text.endsWith('-') ? '' : ' ')
+                : '';
 
-          spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: _LyricWordWidget(
-                word: word,
-                position: position,
-                activeColor: activeColor,
-                lineOpacity: lineOpacity,
-                isActive: isActive,
-                wordSuffix: wordSuffix,
-                textStyle: style,
+            spans.add(
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: _LyricWordWidget(
+                  word: word,
+                  position: position,
+                  activeColor: activeColor,
+                  lineOpacity: lineOpacity,
+                  focus: focus,
+                  wordSuffix: wordSuffix,
+                  textStyle: style,
+                ),
               ),
-            ),
-          );
-        }
+            );
+          }
 
-        return Text.rich(
-          TextSpan(children: spans),
-          textAlign: textAlign,
-        );
-      },
+          return Text.rich(
+            TextSpan(children: spans),
+            textAlign: textAlign,
+          );
+        },
+      ),
     );
   }
 }
@@ -340,7 +372,7 @@ class _LyricWordWidget extends StatelessWidget {
   final Duration position;
   final Color activeColor;
   final double lineOpacity;
-  final bool isActive;
+  final double focus;
   final String wordSuffix;
   final TextStyle textStyle;
 
@@ -349,7 +381,7 @@ class _LyricWordWidget extends StatelessWidget {
     required this.position,
     required this.activeColor,
     required this.lineOpacity,
-    required this.isActive,
+    required this.focus,
     required this.wordSuffix,
     required this.textStyle,
   });
@@ -366,70 +398,79 @@ class _LyricWordWidget extends StatelessWidget {
       progress = position >= word.start ? 1.0 : 0.0;
     }
 
-    final baseInactiveColor = Colors.white.withValues(
-      alpha:
-          lineOpacity * (isActive ? 0.35 : PlayerTokens.lyricsInactiveOpacity),
-    );
-    final fullActiveColor = activeColor.withValues(
-      alpha: lineOpacity,
-    );
-
     final displayText = '${word.text}$wordSuffix';
+    final double fontSize = textStyle.fontSize ?? PlayerTokens.lyricsFontSize;
+    final Color activeTextColor =
+        lyricsLitInk(activeColor).withValues(alpha: lineOpacity);
 
-    // Base dimmed layer
-    Widget child = Text(
+    final Widget base = Text(
       displayText,
       style: textStyle.copyWith(
-        color: baseInactiveColor,
+        color: lyricsDimInk(activeColor).withValues(
+          alpha: lineOpacity * (1.0 - 0.68 * focus),
+        ),
         shadows: null,
       ),
     );
+    if (focus <= 0.0 || progress <= 0.0) return base;
 
-    // Active wipe: ClipRect avoids ShaderMask saveLayer per word. The
-    // luminous crest is preserved as a solid active color wipe; the wobble
-    // lift remains. Saves one saveLayer per animating word (~5-8 concurrent).
-    if (isActive && progress > 0.0) {
-      Widget activeText;
-      if (progress >= 1.0) {
-        activeText = Text(
-          displayText,
-          style: textStyle.copyWith(
-            color: fullActiveColor,
-            shadows: null,
-          ),
-        );
-      } else {
-        final clipped = ClipRect(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            widthFactor: progress.clamp(0.0, 1.0),
-            child: Text(
-              displayText,
-              style: textStyle.copyWith(
-                color: fullActiveColor,
-                shadows: null,
+    // Glow blooms while the word is sung and decays shortly after, so the
+    // light travels with the voice instead of piling up across the line.
+    final double sinceEnd = (position - word.end).inMicroseconds /
+        PlayerTokens.dLyricsWordGlowDecay.inMicroseconds;
+    final double glow = progress < 1.0
+        ? Curves.easeOut.transform(progress)
+        : (1.0 - sinceEnd).clamp(0.0, 1.0);
+    final TextStyle litStyle = textStyle.copyWith(
+      color: activeTextColor.withValues(alpha: activeTextColor.a * focus),
+      shadows: glow * focus > 0.01
+          ? [
+              Shadow(
+                color: activeColor.withValues(alpha: 0.75 * glow * focus),
+                blurRadius: PlayerTokens.lyricsWordGlowBlur * glow,
               ),
-              overflow: TextOverflow.clip,
-              softWrap: false,
-              maxLines: 1,
-            ),
-          ),
-        );
-        final lift = -2.2 * math.sin(progress * math.pi);
-        activeText = Transform.translate(
-          offset: Offset(0, lift),
-          child: clipped,
-        );
-      }
+            ]
+          : null,
+    );
 
-      child = Stack(
-        children: [
-          child,
-          activeText,
-        ],
+    Widget lit = Text(displayText, style: litStyle);
+    if (progress < 1.0) {
+      // Feathered wipe edge: one ShaderMask, and only on the word currently
+      // being sung, keeps the saveLayer count at about one per frame.
+      lit = ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) {
+          final double feather = bounds.width <= 0
+              ? 0.0
+              : (fontSize * 0.6 / bounds.width).clamp(0.0, 0.5);
+          final double edge = progress * (1 + 2 * feather) - feather;
+          return LinearGradient(
+            colors: const [Colors.white, Colors.transparent],
+            stops: [
+              (edge - feather).clamp(0.0, 1.0),
+              (edge + feather).clamp(0.0, 1.0),
+            ],
+          ).createShader(bounds);
+        },
+        child: lit,
       );
     }
 
-    return child;
+    // Sung words rise and stay risen; long held words also swell gently.
+    final double eased = Curves.easeOutCubic.transform(progress);
+    final double lift =
+        -fontSize * PlayerTokens.lyricsWordWobbleShiftEm * 1.2 * eased * focus;
+    final bool isLong =
+        word.duration.inMilliseconds >= PlayerTokens.lyricsLongWordThresholdMs;
+    final double swell = isLong
+        ? 1 + PlayerTokens.lyricsWordWobbleScale * math.sin(progress * math.pi)
+        : 1.0;
+
+    return Transform(
+      alignment: Alignment.bottomCenter,
+      transform: Matrix4.translationValues(0, lift, 0)
+        ..scaleByDouble(swell, swell, 1, 1),
+      child: Stack(children: [base, lit]),
+    );
   }
 }

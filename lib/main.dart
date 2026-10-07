@@ -9,6 +9,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart'
     show createDatabaseFactoryFfi, sqfliteFfiInit;
 import 'dart:async';
 import 'dart:io';
+import 'presentation/components/popup_scroll_dismiss.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 import 'presentation/widgets/orientation_policy.dart';
@@ -280,6 +281,9 @@ class _WispieAppState extends ConsumerState<WispieApp>
       title: 'Wispie',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
+      navigatorObservers: [PopupScrollDismiss.observer],
+      builder: (context, child) =>
+          PopupScrollDismiss(child: child ?? const SizedBox.shrink()),
       theme: AppTheme.getTheme(themeState),
       home: OrientationPolicy(
         child: AnimatedTheme(

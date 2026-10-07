@@ -12,6 +12,7 @@ import '../tokens/app_tokens.dart';
 import '../components/app_sheet.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../components/animated_removal.dart';
 
 class PlaylistsScreen extends ConsumerStatefulWidget {
   const PlaylistsScreen({super.key});
@@ -112,76 +113,80 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                       playlist.songs.any((ps) => ps.songFilename == s.filename))
                   .toList();
 
-              return AppSurface(
-                padding: EdgeInsets.zero,
-                margin: const EdgeInsets.only(bottom: 12),
-                child: InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SongListScreen(
-                          title: playlist.name,
-                          songs: playlistSongs,
-                          playlistId: playlist.id,
+              return RemovableEntry(
+                key: ValueKey<String>('playlist_${playlist.id}'),
+                id: playlist.id,
+                child: AppSurface(
+                  padding: EdgeInsets.zero,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SongListScreen(
+                            title: playlist.name,
+                            songs: playlistSongs,
+                            playlistId: playlist.id,
+                          ),
                         ),
+                      );
+                    },
+                    borderRadius: AppTokens.brMd,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: AppTokens.brSm,
+                            child: SizedBox(
+                              width: 72,
+                              height: 72,
+                              child: CollectionCover(songs: playlistSongs),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  playlist.name,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                CollectionDurationDisplay(
+                                  songs: playlistSongs,
+                                  showSongCount: true,
+                                  compact: true,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Created ${_formatDate(playlist.createdAt)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => _showPlaylistOptions(
+                              context,
+                              ref,
+                              playlist.id,
+                              playlist.name,
+                            ),
+                            icon: const AppIcon(AppIcons.moreVert),
+                          ),
+                        ],
                       ),
-                    );
-                  },
-                  borderRadius: AppTokens.brMd,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: AppTokens.brSm,
-                          child: SizedBox(
-                            width: 72,
-                            height: 72,
-                            child: CollectionCover(songs: playlistSongs),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                playlist.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              CollectionDurationDisplay(
-                                songs: playlistSongs,
-                                showSongCount: true,
-                                compact: true,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Created ${_formatDate(playlist.createdAt)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _showPlaylistOptions(
-                            context,
-                            ref,
-                            playlist.id,
-                            playlist.name,
-                          ),
-                          icon: const AppIcon(AppIcons.moreVert),
-                        ),
-                      ],
                     ),
                   ),
                 ),
@@ -328,7 +333,11 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
             isDanger: true,
             onTap: () {
               Navigator.pop(context);
-              ref.read(userDataProvider.notifier).deletePlaylist(playlistId);
+              final notifier = ref.read(userDataProvider.notifier);
+              AnimatedRemoval.run(
+                playlistId,
+                () => notifier.deletePlaylist(playlistId),
+              );
             },
           ),
         ],

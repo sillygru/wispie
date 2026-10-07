@@ -36,7 +36,8 @@ class PlayerTokens {
   static const Duration dFast = Duration(milliseconds: 180);
   static const Duration dBase = Duration(milliseconds: 260);
   static const Duration dSlow = Duration(milliseconds: 420);
-  static const Duration dLyricsLine = Duration(milliseconds: 166);
+  static const Duration dLyricsLine = Duration(milliseconds: 520);
+  static const Duration dLyricsLineRipple = Duration(milliseconds: 55);
   static const Duration dLyricsHighlightIn = Duration(milliseconds: 330);
   static const Duration dLyricsHighlightOut = Duration(milliseconds: 500);
   static const Duration dLyricsWordWobble = Duration(seconds: 1);
@@ -72,13 +73,37 @@ class PlayerTokens {
   static const double lyricsInactiveOpacity = 0.30;
   static const double lyricsPlayedOpacity = 0.60;
 
+  /// Opacity lost per line of distance from the active line, floored at
+  /// [lyricsMinOpacity], so focus falls off with depth instead of in one step.
+  static const double lyricsDistanceFalloff = 0.07;
+  static const double lyricsMinOpacity = 0.14;
+
+  /// How long a sung word keeps its glow before settling to plain colour.
+  static const Duration dLyricsWordGlowDecay = Duration(milliseconds: 700);
+
   static const Curve cStandard = Curves.easeOutCubic;
   static const Curve cEmphasized = Curves.easeOutQuart;
   static const Curve cLyricsScroll = Cubic(0.86, 0.0, 0.2, 1.0);
   static const Curve cLyricsLoader = Cubic(0.22, 1.0, 0.36, 1.0);
   static const Curve cLyricsResumeSlide = Cubic(0.5, 1.0, 0.89, 1.0);
-  static const Curve cLyricsLine = Curves.ease;
+  static const Curve cLyricsLine = Cubic(0.22, 1.0, 0.36, 1.0);
   static const Curve cLyricsHighlight = Curves.ease;
+
+  /// Overshoot-and-settle, for small glyphs and badges that should feel sprung.
+  static const Curve cSpring = Cubic(0.34, 1.42, 0.64, 1.0);
+
+  /// Material 3 emphasized decelerate: quick launch, long soft landing.
+  static const Curve cEmphasizedDecel = Cubic(0.05, 0.7, 0.1, 1.0);
+  static const Curve cEmphasizedAccel = Cubic(0.3, 0.0, 0.8, 0.15);
+
+  static const Duration dRouteIn = Duration(milliseconds: 460);
+  static const Duration dRouteOut = Duration(milliseconds: 300);
+
+  /// Height of the scroll-reactive fades at the top/bottom of player lists.
+  static const double edgeFadeExtent = 56;
+
+  /// Song row height when the row carries title, artist and a meta line.
+  static const double rowHeightTall = 80;
 
   // Glass recipe — one fill, used by every raised surface.
   // Previously a BackdropFilter blur on top; removed because the backdrop
@@ -107,7 +132,7 @@ class PlayerTokens {
   static const double lyricsFontSize = 32;
   static const double lyricsTranslationScale = 0.68;
   static const double lyricsActiveScale = 1.0;
-  static const double lyricsInactiveScale = 0.95;
+  static const double lyricsInactiveScale = 0.93;
   static const int lyricsLongWordThresholdMs = 1500;
 
   // Transport dock. The compact rung is used below

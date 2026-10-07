@@ -4,6 +4,7 @@ import '../../providers/providers.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
+import '../components/pressable.dart';
 import '../tokens/app_icons.dart';
 
 void showPlaylistSelector(
@@ -114,15 +115,13 @@ class _PlaylistSelectorDialogState
                 },
               ),
               const Divider(),
-              CheckboxListTile(
-                title: const Text('Favorites'),
-                secondary:
+              _PickRow(
+                title: 'Favorites',
+                leading:
                     const AppIcon(AppIcons.favorite, color: AppTokens.danger),
-                tristate: true,
                 value: _isFavorite,
-                onChanged: (val) {
-                  setState(() => _isFavorite = val);
-                },
+                onTap: () =>
+                    setState(() => _isFavorite = !(_isFavorite ?? false)),
               ),
               const Divider(),
               ...playlists.map((playlist) {
@@ -138,25 +137,20 @@ class _PlaylistSelectorDialogState
                   }
                 }
 
-                return CheckboxListTile(
-                  title: Text(playlist.name),
-                  subtitle: Text('${playlist.songs.length} songs'),
-                  secondary: const AppIcon(AppIcons.queue),
-                  tristate: widget.songFilenames.length > 1,
+                return _PickRow(
+                  title: playlist.name,
+                  subtitle: '${playlist.songs.length} songs',
+                  leading: const AppIcon(AppIcons.queue),
                   value: widget.songFilenames.length > 1
                       ? (allIn && isSelected
                           ? true
                           : (anyIn || isSelected ? null : false))
                       : isSelected,
-                  onChanged: (val) {
+                  onTap: () {
                     setState(() {
-                      if (val == true) {
-                        _selectedPlaylistIds.add(playlist.id);
-                      } else if (val == false) {
+                      if (isSelected) {
                         _selectedPlaylistIds.remove(playlist.id);
                       } else {
-                        // For tri-state, if it becomes null, we keep it as "any" or something
-                        // But usually we just toggle between true and false in bulk if user clicks
                         _selectedPlaylistIds.add(playlist.id);
                       }
                     });
@@ -303,5 +297,105 @@ class _PlaylistSelectorDialogState
     if (context.mounted) {
       appSnack(context, 'Created playlist "$name"');
     }
+  }
+}
+
+/// Selectable row whose check springs in and whose wash fades, so toggling a
+/// playlist feels like a response rather than a checkbox repaint. A null
+/// [value] is the bulk "some songs already here" state.
+class _PickRow extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget leading;
+  final bool? value;
+  final VoidCallback onTap;
+
+  const _PickRow({
+    required this.title,
+    this.subtitle,
+    required this.leading,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent = Theme.of(context).colorScheme.primary;
+    final bool on = value ?? false;
+    final bool partial = value == null;
+    return Pressable(
+      haptic: PressHaptic.selection,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppTokens.dBase,
+        curve: AppTokens.cStandard,
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s3,
+          vertical: AppTokens.s3,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: AppTokens.brMd,
+          color: on || partial
+              ? accent.withValues(alpha: AppTokens.accentWashAlpha)
+              : Colors.transparent,
+        ),
+        child: Row(
+          children: [
+            leading,
+            const SizedBox(width: AppTokens.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTokens.rowTitle(context),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      style: AppTokens.rowSubtitle(context),
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: AppTokens.iconLg,
+              height: AppTokens.iconLg,
+              child: AnimatedSwitcher(
+                duration: AppTokens.dBase,
+                switchInCurve: AppTokens.cSpring,
+                switchOutCurve: AppTokens.cStandard,
+                transitionBuilder: (child, anim) => ScaleTransition(
+                  scale: anim,
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+                child: Container(
+                  key: ValueKey<bool?>(value),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: on || partial
+                        ? accent
+                        : AppTokens.fg(AppTokens.surface2Alpha),
+                  ),
+                  child: on || partial
+                      ? Icon(
+                          partial ? Icons.remove_rounded : Icons.check_rounded,
+                          size: AppTokens.iconSm,
+                          color: AppTokens.onAccent(accent),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ import '../../theme/app_theme.dart';
 import '../components/player_segmented_pill.dart';
 import '../components/pressable.dart';
 import '../components/song_actions.dart';
+import '../components/track_swipe_switcher.dart';
+import '../components/transport_controls.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/album_art_image.dart';
@@ -531,19 +534,20 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
           left: 0,
           right: 0,
           height: chromeHeight + 28,
-          child: const IgnorePointer(
+          // Eased legibility scrim: a smooth ramp instead of four linear
+          // stops, so no band shows where the chrome sits over bright art.
+          child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    Color(0x59000000),
-                    Color(0x40000000),
-                    Color(0x1F000000),
-                    Color(0x00000000),
+                    for (var i = 0; i <= 6; i++)
+                      Colors.black.withValues(
+                        alpha: 0.32 * (1 - Curves.easeOut.transform(i / 6)),
+                      ),
                   ],
-                  stops: <double>[0.0, 0.4, 0.75, 1.0],
                 ),
               ),
             ),
@@ -556,7 +560,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildFloatingHeader(context, song, accent),
+              _buildFloatingHeader(context, song, accent, scrim: false),
               Padding(
                 padding: EdgeInsets.symmetric(
                   horizontal: WideLayoutGutter.of(context),
@@ -660,7 +664,12 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   /// Chevron + menu floating over the cover with a top scrim. The centered
   /// title/artist text is intentionally omitted here because the info block
   /// below the cover already carries it.
-  Widget _buildFloatingHeader(BuildContext context, Song song, Color accent) {
+  Widget _buildFloatingHeader(
+    BuildContext context,
+    Song song,
+    Color accent, {
+    bool scrim = true,
+  }) {
     final double topPad = MediaQuery.paddingOf(context).top;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -668,17 +677,20 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       onVerticalDragEnd: _onDismissDragEnd,
       child: Stack(
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: CoverGradientPalette.topScrim(),
+          // The narrow layout lays its own eased scrim under the whole chrome
+          // block; stacking this one on top read as a dark band over the art.
+          if (scrim)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: CoverGradientPalette.topScrim(),
+                  ),
                 ),
               ),
             ),
-          ),
           Padding(
             padding: EdgeInsets.fromLTRB(
               WideLayoutGutter.of(context),
@@ -806,22 +818,56 @@ class _FullBleedPlayerPane extends ConsumerWidget {
                 position: pagePosition,
                 child: LayoutBuilder(
                   builder: (context, c) {
-                    final double cap = MediaQuery.sizeOf(context).width * 1.12;
+                    // Tall windows: the sharp art stops at a mild crop so it is
+                    // never zoomed far, and the space above is filled by a
+                    // heavily blurred copy of the same art. The sharp cover's
+                    // top edge feathers into it, so the artwork still reads
+                    // as reaching the top with no band or seam.
+                    final double cap = MediaQuery.sizeOf(context).width * 1.2;
                     final bool capped = c.maxHeight > cap;
-                    return Align(
-                      alignment: Alignment.bottomCenter,
-                      child: _buildCover(
-                        context,
-                        capped ? cap : c.maxHeight,
-                        fadeTop: capped,
-                      ),
+                    final double h = capped ? cap : c.maxHeight;
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (capped)
+                          _CoverExtension(song: song, height: c.maxHeight),
+                        _CoverPrefetch(
+                          audioManager: audioManager,
+                          song: song,
+                          height: h,
+                        ),
+                        TrackSwipeSwitcher<Song>(
+                          item: song,
+                          idOf: (s) => s.filename,
+                          audioManager: audioManager,
+                          fade: 0.3,
+                          builder: (context, s, current) => Align(
+                            alignment: Alignment.bottomCenter,
+                            child: _buildCover(
+                              context,
+                              h,
+                              fadeTop: capped,
+                              forSong: s,
+                              current: current,
+                            ),
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
               ),
             ),
             ContentGutter(
-              child: _FullBleedInfoBlock(song: song, accent: accent),
+              child: TrackSwipeSwitcher<Song>(
+                item: song,
+                idOf: (s) => s.filename,
+                audioManager: audioManager,
+                travel: 0.35,
+                fade: 1,
+                builder: (context, s, _) =>
+                    _FullBleedInfoBlock(song: s, accent: accent),
+              ),
             ),
             const SizedBox(height: PlayerTokens.s1),
             SizedBox(
@@ -845,12 +891,14 @@ class _FullBleedPlayerPane extends ConsumerWidget {
   }
 
   Widget _buildCover(BuildContext context, double height,
-      {bool fadeTop = false}) {
+      {bool fadeTop = false, Song? forSong, bool current = true}) {
+    final Song song = forSong ?? this.song;
     return ValueListenableBuilder<PlaybackMediaMode>(
       valueListenable: audioManager.effectiveMediaModeNotifier,
       builder: (context, mode, _) {
         final bool isVideo = mode == PlaybackMediaMode.video;
         if (isVideo) {
+          if (!current) return SizedBox(height: height);
           return SizedBox(
             width: double.infinity,
             height: height,
@@ -867,8 +915,33 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         // behind shows through with no edge to color-match.
         final Widget art = Hero(
           tag: PlayerTokens.coverHeroTag(song.filename),
+          flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
+            final Hero hero = (direction == HeroFlightDirection.push
+                ? toCtx.widget
+                : fromCtx.widget) as Hero;
+            // The landed cover carries a bottom fade. Growing that fade in
+            // with the flight (instead of applying it on landing) keeps the
+            // darkening from popping in after the route settles.
+            return AnimatedBuilder(
+              animation: animation,
+              child: hero.child,
+              builder: (context, child) {
+                final double t = animation.value.clamp(0.0, 1.0);
+                return ClipRRect(
+                  borderRadius:
+                      BorderRadius.circular((1 - t) * PlayerTokens.rSm),
+                  child: ShaderMask(
+                    shaderCallback: (bounds) =>
+                        _coverFadeShader(bounds, fadeTop, t),
+                    blendMode: BlendMode.dstIn,
+                    child: child,
+                  ),
+                );
+              },
+            );
+          },
           child: Container(
-            key: coverKey,
+            key: current ? coverKey : null,
             width: double.infinity,
             height: height,
             color: Colors.black,
@@ -889,37 +962,148 @@ class _FullBleedPlayerPane extends ConsumerWidget {
           width: double.infinity,
           height: height,
           child: ShaderMask(
-            shaderCallback: (Rect bounds) {
-              return LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  if (fadeTop) ...const <Color>[
-                    Colors.transparent,
-                    Color(0x80FFFFFF),
-                  ],
-                  Colors.white,
-                  Colors.white,
-                  const Color(0xD7FFFFFF),
-                  const Color(0x80FFFFFF),
-                  const Color(0x28FFFFFF),
-                  Colors.transparent,
-                ],
-                stops: <double>[
-                  if (fadeTop) ...const <double>[0.0, 0.07, 0.14] else 0.0,
-                  0.55,
-                  0.6625,
-                  0.775,
-                  0.8875,
-                  1.0,
-                ],
-              ).createShader(bounds);
-            },
+            shaderCallback: (Rect bounds) =>
+                _coverFadeShader(bounds, fadeTop, 1),
             blendMode: BlendMode.dstIn,
             child: art,
           ),
         );
       },
+    );
+  }
+
+  /// Fades the lower part of the cover (and the top edge when capped) into
+  /// the blurred backdrop. [strength] 0 is an unmasked cover, 1 the full fade.
+  /// The ramp follows a smoothstep rather than linear segments, so there is no
+  /// visible knee where the art starts to dissolve.
+  static Shader _coverFadeShader(Rect bounds, bool fadeTop, double strength) {
+    Color c(double alpha) => Color.lerp(
+          Colors.white,
+          Colors.white.withValues(alpha: alpha),
+          strength,
+        )!;
+    final colors = <Color>[];
+    final stops = <double>[];
+    if (fadeTop) {
+      for (var i = 0; i <= 4; i++) {
+        final double t = i / 4;
+        colors.add(c(Curves.easeInOut.transform(t)));
+        stops.add(0.24 * t);
+      }
+    } else {
+      colors.add(Colors.white);
+      stops.add(0.0);
+    }
+    const double fadeStart = 0.5;
+    for (var i = 0; i <= 8; i++) {
+      final double t = i / 8;
+      final double smooth = t * t * (3 - 2 * t);
+      colors.add(c(1 - smooth));
+      stops.add(fadeStart + (1 - fadeStart) * t);
+    }
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: colors,
+      stops: stops,
+    ).createShader(bounds);
+  }
+}
+
+/// Blurred, full-height copy of the cover that fills the area above a capped
+/// sharp cover on tall windows. Static, so it is cached behind a repaint
+/// boundary and crossfades on track change.
+class _CoverExtension extends StatelessWidget {
+  final Song song;
+  final double height;
+
+  const _CoverExtension({required this.song, required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    final double width = MediaQuery.sizeOf(context).width;
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[
+              for (var i = 0; i <= 6; i++)
+                Colors.white.withValues(
+                  alpha: 1 - Curves.easeIn.transform(i / 6),
+                ),
+            ],
+            stops: const <double>[0.0, 0.2, 0.35, 0.5, 0.62, 0.72, 0.8],
+          ).createShader(bounds),
+          child: AnimatedSwitcher(
+            duration: PlayerTokens.dSlow,
+            switchInCurve: PlayerTokens.cStandard,
+            child: ClipRect(
+              key: ValueKey(song.filename),
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(
+                  sigmaX: 28,
+                  sigmaY: 28,
+                  tileMode: TileMode.mirror,
+                ),
+                child: AlbumArtImage(
+                  url: song.coverUrl ?? '',
+                  filename: song.filename,
+                  cacheVersion: song.mtime,
+                  width: width,
+                  height: height,
+                  // The blur discards detail, so decode small.
+                  memCacheWidth: 256,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Decodes the neighbouring tracks' covers off-screen at the exact size the
+/// player draws them, so a skip slides in a ready image instead of fading
+/// one in after the slide.
+class _CoverPrefetch extends StatelessWidget {
+  final AudioPlayerManager audioManager;
+  final Song song;
+  final double height;
+
+  const _CoverPrefetch({
+    required this.audioManager,
+    required this.song,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final queue = audioManager.queueNotifier.value;
+    final int i = queue.indexWhere((q) => q.song.filename == song.filename);
+    if (i < 0) return const SizedBox.shrink();
+    final double w = MediaQuery.sizeOf(context).width;
+    final int memW = (w * MediaQuery.devicePixelRatioOf(context)).round();
+    return Offstage(
+      child: Column(
+        children: [
+          for (final int j in <int>[i - 1, i + 1])
+            if (j >= 0 && j < queue.length)
+              AlbumArtImage(
+                url: queue[j].song.coverUrl ?? '',
+                filename: queue[j].song.filename,
+                cacheVersion: queue[j].song.mtime,
+                width: w,
+                height: height,
+                memCacheWidth: memW,
+                fit: BoxFit.cover,
+              ),
+        ],
+      ),
     );
   }
 }
@@ -946,11 +1130,16 @@ class _PaneTransition extends StatelessWidget {
       builder: (context, pos, child) {
         final double signed = pos - index;
         final double d = signed.abs().clamp(0.0, 1.0);
+        // Eased fade plus a slight recede, so the outgoing pane sinks back
+        // into the backdrop rather than sliding off flat.
         return Opacity(
-          opacity: 1.0 - d,
+          opacity: 1.0 - Curves.easeOut.transform(d),
           child: FractionalTranslation(
             translation: Offset(signed * 0.2, 0),
-            child: child,
+            child: Transform.scale(
+              scale: 1.0 - 0.04 * Curves.easeOut.transform(d),
+              child: child,
+            ),
           ),
         );
       },
@@ -974,10 +1163,17 @@ class _SwipeFade extends StatelessWidget {
       valueListenable: p,
       child: child,
       builder: (context, value, child) {
-        final double away = (value - 1.0).abs().clamp(0.0, 1.0);
-        return Opacity(
-          opacity: 1.0 - Curves.easeInOut.transform(away),
-          child: child,
+        final double signed = (value - 1.0).clamp(-1.0, 1.0);
+        final double away = (signed.abs() * 1.6).clamp(0.0, 1.0);
+        // Cancel the page's horizontal travel (PageView slide minus the
+        // _PaneTransition parallax) so the edge-to-edge cover dissolves in
+        // place instead of dragging its hard side edges across the screen.
+        return FractionalTranslation(
+          translation: Offset(signed * 0.8, 0),
+          child: Opacity(
+            opacity: 1.0 - Curves.easeOut.transform(away),
+            child: child,
+          ),
         );
       },
     );
@@ -1615,148 +1811,37 @@ class _FullBleedControlRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        IconButton(
-          tooltip: switch (loopMode) {
-            LoopMode.off => 'Repeat off',
-            LoopMode.all => 'Repeat all',
-            LoopMode.one => 'Repeat one',
-          },
-          icon: Icon(
-            loopMode == LoopMode.one
-                ? Icons.repeat_one_rounded
-                : Icons.repeat_rounded,
-            color: loopMode == LoopMode.off ? idle : accent,
-          ),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            player.setLoopMode(switch (loopMode) {
-              LoopMode.off => LoopMode.all,
-              LoopMode.all => LoopMode.one,
-              LoopMode.one => LoopMode.off,
-            });
-          },
+        RepeatToggleButton(
+          loopMode: loopMode,
+          accent: accent,
+          idleColor: idle,
+          onChanged: player.setLoopMode,
         ),
-        Pressable(
+        SkipButton(
+          icon: Icons.skip_previous_rounded,
+          size: skipSize,
+          color: canSkipPrevious ? Colors.white : disabled,
+          direction: -1,
           onTap: canSkipPrevious ? player.seekToPrevious : null,
-          child: Padding(
-            padding: const EdgeInsets.all(PlayerTokens.s3),
-            child: Icon(
-              Icons.skip_previous_rounded,
-              size: skipSize,
-              color: canSkipPrevious ? Colors.white : disabled,
-            ),
-          ),
         ),
-        StreamBuilder<PlayerState>(
-          stream: player.playerStateStream,
-          initialData: player.playerState,
-          builder: (context, snapshot) {
-            final PlayerState? state = snapshot.data;
-            final bool playing = state?.playing ?? false;
-            final bool buffering =
-                state?.processingState == ProcessingState.buffering;
-            return Pressable(
-              onTap: audioManager.togglePlayPause,
-              pressedScale: 0.9,
-              child: Container(
-                width: playSize,
-                height: playSize,
-                decoration: BoxDecoration(
-                  color: accent,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.45),
-                      blurRadius: 22,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: buffering
-                    ? Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: PlayerTokens.onAccent(accent),
-                        ),
-                      )
-                    : Icon(
-                        playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 36,
-                        color: PlayerTokens.onAccent(accent),
-                      ),
-              ),
-            );
-          },
+        PlayPauseDisc(
+          audioManager: audioManager,
+          accent: accent,
+          size: playSize,
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: audioManager.fastForwardNotifier,
-          builder: (context, isFastForward, child) {
-            return Pressable(
-              onTap: canSkipNext ? player.seekToNext : null,
-              onLongPressStart: (_) => audioManager.startFastForward(),
-              onLongPressEnd: (_) => audioManager.stopFastForward(),
-              onLongPressCancel: () => audioManager.stopFastForward(),
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(PlayerTokens.s3),
-                    child: Icon(
-                      isFastForward
-                          ? Icons.fast_forward_rounded
-                          : Icons.skip_next_rounded,
-                      size: skipSize,
-                      color: isFastForward
-                          ? accent
-                          : (canSkipNext ? Colors.white : disabled),
-                    ),
-                  ),
-                  if (isFastForward)
-                    Positioned(
-                      top: -6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: accent,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accent.withValues(alpha: 0.5),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          '2x',
-                          style: TextStyle(
-                            color: PlayerTokens.onAccent(accent),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
+        NextFastForwardButton(
+          audioManager: audioManager,
+          canSkipNext: canSkipNext,
+          size: skipSize,
+          color: Colors.white,
+          disabledColor: disabled,
+          accent: accent,
         ),
-        IconButton(
+        HopIconButton(
+          icon: Icons.ios_share_rounded,
+          color: idle,
           tooltip: 'Share',
-          icon: Icon(Icons.ios_share_rounded, color: idle),
-          onPressed: () {
-            HapticFeedback.selectionClick();
-            songActionShare(song);
-          },
+          onPressed: () => songActionShare(song),
         ),
       ],
     );

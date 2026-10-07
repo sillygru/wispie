@@ -674,7 +674,7 @@ class ReactiveWaveformPainter extends CustomPainter {
     final isPlayingNow = controller?.isSynced ?? false || beatEnergy > 0.1;
 
     final paint = Paint()..style = PaintingStyle.fill;
-    final radius = const Radius.circular(1.2);
+    const radius = Radius.circular(barWidth / 2);
 
     final isScrubbing = dragPositionNotifier.value != null;
 
@@ -759,15 +759,37 @@ class ReactiveWaveformPainter extends CustomPainter {
         final leadIn = proximity * proximity * 0.06 * bass;
         dynamicScale = 1.0 + 0.08 * beatEnergy + 0.04 * bass + leadIn;
       }
+      // Scrubbing magnifies the bars under the finger so the seek point is
+      // easy to read without a separate thumb.
+      // Spill-over: bars flanking the cursor cluster pick up a falloff of
+      // the nearest band (bass on the played side, air on the unplayed
+      // side), so the cursor's motion bleeds softly into the waveform.
+      double spill = 0.0;
+      if (isPlayingNow && !isScrubbing) {
+        final double edgeGap = isActive
+            ? (clusterLeft - xRight) / step
+            : (x - clusterRight) / step;
+        final double falloff = math.exp(-(edgeGap * edgeGap) / 6.0);
+        spill = falloff * (isActive ? bass : air).clamp(0.0, 1.0);
+        dynamicScale += 0.45 * spill;
+      }
+      if (isScrubbing) {
+        final lens =
+            math.exp(-(distanceFromPlayhead * distanceFromPlayhead) / 40);
+        dynamicScale *= 1.0 + 0.5 * lens;
+      }
 
       final finalHeight = (baseHeight * dynamicScale)
           .clamp(compressedBarHeight, size.height * 0.94);
 
+      // Played bars warm into the accent as they approach the playhead, a
+      // short trail behind the cursor rather than a hard colour step.
       final Color barColor;
       if (isActive) {
-        barColor = primaryColor;
+        final trail = (1.0 - distanceFromPlayhead / 14.0).clamp(0.0, 1.0);
+        barColor = Color.lerp(primaryColor, accentColor, trail * trail * 0.9)!;
       } else {
-        barColor = inactiveColor;
+        barColor = Color.lerp(inactiveColor, accentColor, 0.5 * spill)!;
       }
 
       final double alphaScale = ui.lerpDouble(0.65, 1.0, revealFactor)!;
@@ -813,7 +835,30 @@ class ReactiveWaveformPainter extends CustomPainter {
     const clusterGap = 1.4;
 
     final paint = Paint()..color = accentColor;
-    const barRadius = Radius.circular(1.4);
+    const barRadius = Radius.circular(clusterBarWidth / 2);
+
+    // Soft bloom behind the cursor that breathes with the music.
+    final energy = isScrubbing
+        ? 0.6
+        : (levels[0] * 0.45 +
+                levels[1] * 0.3 +
+                levels[2] * 0.15 +
+                levels[3] * 0.1)
+            .clamp(0.0, 1.0);
+    const clusterWidth = 4 * clusterBarWidth + 3 * clusterGap;
+    final glowH = size.height * (0.35 + 0.55 * energy);
+    canvas.drawRRect(
+      RRect.fromLTRBR(
+        startX - 3,
+        (size.height - glowH) / 2,
+        startX + clusterWidth + 3,
+        (size.height + glowH) / 2,
+        const Radius.circular(6),
+      ),
+      Paint()
+        ..color = accentColor.withValues(alpha: 0.18 + 0.32 * energy)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5 + 5 * energy),
+    );
 
     for (var b = 0; b < 4; b++) {
       final level = levels[b].clamp(SpectrumBars.floor, 1.0);

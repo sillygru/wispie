@@ -23,6 +23,7 @@ import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_nav_bar.dart';
+import '../components/tab_switch_transition.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
@@ -84,6 +85,7 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
+  int _tabDirection = 1;
   bool _isDrawerOpen = false;
 
   late AnimationController _drawerController;
@@ -134,6 +136,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       }
     } else {
       setState(() {
+        _tabDirection = index > _selectedIndex ? 1 : -1;
         _selectedIndex = index;
         _builtScreens.add(index);
       });
@@ -287,6 +290,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       // Library is bottom-nav index 1.
       if (_selectedIndex != 1 || !_builtScreens.contains(1)) {
         setState(() {
+          _tabDirection = 1 > _selectedIndex ? 1 : -1;
           _selectedIndex = 1;
           _builtScreens.add(1);
         });
@@ -311,12 +315,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   // Only build if this screen has been selected before
                   return const SizedBox.shrink();
                 }
-                return Offstage(
-                  offstage: index != _selectedIndex,
-                  child: TickerMode(
-                    enabled: index == _selectedIndex,
-                    child: screen,
-                  ),
+                return TabSwitchTransition(
+                  active: index == _selectedIndex,
+                  direction: _tabDirection,
+                  child: screen,
                 );
               }).toList(),
             ),

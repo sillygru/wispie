@@ -99,26 +99,10 @@ class SongListItem extends ConsumerWidget {
               audioManager: audioManager,
               visualizerMode: settings.visualizerMode,
             ),
-            subtitleWidget: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    song.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (settings.showSongDuration &&
-                    song.duration != null &&
-                    song.duration!.inSeconds > 0) ...[
-                  const SizedBox(width: AppTokens.s2),
-                  DurationBadge(
-                    duration: song.duration,
-                    isSubtle: true,
-                    showIcon: false,
-                  ),
-                ],
-              ],
+            tall: true,
+            subtitleWidget: _SongMeta(
+              song: song,
+              showDuration: settings.showSongDuration,
             ),
             trailing: showMenu && !selectionState.isSelectionMode
                 ? _Actions(
@@ -131,6 +115,48 @@ class SongListItem extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Artist on its own line, then a quieter year / duration line, so each
+/// fact gets room instead of competing on one row.
+class _SongMeta extends StatelessWidget {
+  final Song song;
+  final bool showDuration;
+
+  const _SongMeta({required this.song, required this.showDuration});
+
+  @override
+  Widget build(BuildContext context) {
+    final double? epoch = song.songDateEpochSec;
+    final int? year = epoch == null || epoch <= 0
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch((epoch * 1000).round()).year;
+    final Duration? d = song.duration;
+    final bool hasDuration = showDuration && d != null && d.inSeconds > 0;
+    final List<String> meta = [
+      if (year != null) '$year',
+      if (hasDuration) DurationFormatter.format(d),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+        if (meta.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            meta.join('  \u00b7  '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTokens.meta(context).copyWith(
+              color: AppTokens.fgTertiary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -166,14 +192,15 @@ class _Artwork extends StatelessWidget {
             duration: AppTokens.dBase,
             scale: isSelected ? 0.85 : 1.0,
             child: AppRowArt(
+              size: AppTokens.artSizeLarge,
               child: AlbumArtImage(
                 url: song.coverUrl ?? '',
                 filename: song.filename,
-                width: AppTokens.artSize,
-                height: AppTokens.artSize,
+                width: AppTokens.artSizeLarge,
+                height: AppTokens.artSizeLarge,
                 fit: BoxFit.cover,
-                memCacheWidth: 104,
-                memCacheHeight: 104,
+                memCacheWidth: 140,
+                memCacheHeight: 140,
               ),
             ),
           ),

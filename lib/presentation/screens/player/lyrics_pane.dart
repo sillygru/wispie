@@ -1460,6 +1460,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               hasTime: line.isSynced,
               activeColor: widget.accent,
               glowIntensity: index == active ? 1.0 : 0.0,
+              distance: active < 0 ? 0 : index - active,
               playbackPosition: _playbackPosition.value,
               wordLine: wordLine,
               onTap: () => _seekToLyric(line.time),

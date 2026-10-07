@@ -3,17 +3,18 @@ import 'package:flutter/scheduler.dart';
 
 /// Edge fade for scrolling panes.
 ///
-/// Position-based near the scroll extents, and direction-aware: scrolling
-/// down fades the effect out, scrolling up fades it back in. Driven directly
-/// by scroll delta, so it is always in sync with your finger.
+/// Each edge fades in only while content is actually hidden past it, so the
+/// first and last rows sit crisp at the extents. While the list is moving the
+/// fades reach a little deeper, proportional to scroll speed, and relax back
+/// once it settles. The fade never switches off mid-scroll, so content (and
+/// auto-scrolled lyrics) never hard-cuts at an edge.
 class ProgressiveEdgeFade extends StatefulWidget {
   const ProgressiveEdgeFade({
     super.key,
     required this.child,
     this.height = defaultHeight,
     this.topHeight = defaultTopHeight,
-    this.travel = 80,
-    this.minStrength = 0,
+    this.motionStretch = 0.6,
   });
 
   static const double defaultHeight = 96;
@@ -23,22 +24,21 @@ class ProgressiveEdgeFade extends StatefulWidget {
   final double height;
   final double topHeight;
 
-  /// Pixels of scrolling to go from fully shown to fully hidden.
-  final double travel;
-
-  /// Lowest strength the effect fades to (0 = gone, 1 = never hides).
-  final double minStrength;
+  /// How much deeper (as a fraction of the base height) the fades reach at
+  /// full scroll speed.
+  final double motionStretch;
 
   @override
   State<ProgressiveEdgeFade> createState() => _ProgressiveEdgeFadeState();
 }
 
-class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
+class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade>
+    with SingleTickerProviderStateMixin {
   final ValueNotifier<double> _top = ValueNotifier<double>(0);
   final ValueNotifier<double> _bottom = ValueNotifier<double>(0);
 
-  /// 1 = effect shown, 0 = hidden.
-  final ValueNotifier<double> _vis = ValueNotifier<double>(1);
+  /// 0 = at rest, 1 = scrolling fast.
+  late final AnimationController _motion = AnimationController(vsync: this);
 
   static const List<double> _ease = [0.0, 0.156, 0.5, 0.844, 1.0];
 
@@ -46,7 +46,7 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
   void dispose() {
     _top.dispose();
     _bottom.dispose();
-    _vis.dispose();
+    _motion.dispose();
     super.dispose();
   }
 
@@ -67,15 +67,22 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
     }
   }
 
-  void _trackDirection(ScrollUpdateNotification n, ScrollMetrics m) {
-    final dy = n.scrollDelta ?? 0;
-    final overscrolled =
-        m.pixels < m.minScrollExtent || m.pixels > m.maxScrollExtent;
-    if (dy == 0 || overscrolled) return;
+  void _trackMotion(ScrollUpdateNotification n) {
+    final double speed = ((n.scrollDelta ?? 0).abs() / 24).clamp(0.0, 1.0);
+    final double next = _motion.value + (speed - _motion.value) * 0.3;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      return;
+    }
+    _motion.value = next;
+  }
 
-    var v = _vis.value - dy / widget.travel;
-    if (m.pixels - m.minScrollExtent < 1) v = 1; // fully shown at the top
-    _set(_vis, v.clamp(0.0, 1.0));
+  void _settle() {
+    _motion.animateTo(
+      0,
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   bool _onNotification(Notification n) {
@@ -86,7 +93,8 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
             : null;
     if (m == null || m.axis != Axis.vertical) return false;
 
-    if (n is ScrollUpdateNotification) _trackDirection(n, m);
+    if (n is ScrollUpdateNotification) _trackMotion(n);
+    if (n is ScrollEndNotification) _settle();
 
     _set(_top, _strength(m.pixels - m.minScrollExtent, widget.topHeight));
     _set(_bottom, _strength(m.maxScrollExtent - m.pixels, widget.height));
@@ -94,10 +102,10 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
   }
 
   Shader _mask(Rect rect) {
-    final v = widget.minStrength + (1 - widget.minStrength) * _vis.value;
-    final t = _top.value * v, b = _bottom.value * v;
-    final topFrac = (widget.topHeight / rect.height).clamp(0.0, 0.5);
-    final botFrac = (widget.height / rect.height).clamp(0.0, 0.5);
+    final double stretch = 1 + widget.motionStretch * _motion.value;
+    final t = _top.value, b = _bottom.value;
+    final topFrac = (widget.topHeight * stretch / rect.height).clamp(0.0, 0.5);
+    final botFrac = (widget.height * stretch / rect.height).clamp(0.0, 0.5);
     final last = _ease.length - 1;
     final colors = <Color>[];
     final stops = <double>[];
@@ -122,7 +130,7 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade> {
     return NotificationListener<Notification>(
       onNotification: _onNotification,
       child: ListenableBuilder(
-        listenable: Listenable.merge([_top, _bottom, _vis]),
+        listenable: Listenable.merge([_top, _bottom, _motion]),
         child: widget.child,
         builder: (context, child) => ShaderMask(
           blendMode: BlendMode.dstIn,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/unified_player_screen.dart';
+import '../tokens/player_tokens.dart';
 
 class PlayerPageRoute extends PageRoute<void> {
   PlayerPageRoute({
@@ -33,10 +34,10 @@ class PlayerPageRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 280);
+  Duration get transitionDuration => PlayerTokens.dRouteIn;
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 220);
+  Duration get reverseTransitionDuration => PlayerTokens.dRouteOut;
 
   @override
   Widget buildPage(
@@ -57,39 +58,52 @@ class PlayerPageRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    // Rises from the mini player's edge rather than fading in place: the
+    // sheet travels most of the way fast and lands softly, so it reads as the
+    // bar expanding instead of a page swap.
     final primary = CurvedAnimation(
       parent: animation,
-      curve: Curves.easeOutQuart,
-      reverseCurve: Curves.easeInCubic,
+      curve: PlayerTokens.cEmphasizedDecel,
+      reverseCurve: PlayerTokens.cEmphasizedAccel,
     );
-    final backdrop = CurvedAnimation(
+    final fade = CurvedAnimation(
       parent: animation,
-      curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-      reverseCurve: const Interval(0.0, 0.75, curve: Curves.easeIn),
+      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+      reverseCurve: const Interval(0.35, 1.0, curve: Curves.easeIn),
     );
     final slide = Tween<Offset>(
-      begin: const Offset(0, 0.04),
+      begin: const Offset(0, 0.18),
       end: Offset.zero,
     ).animate(primary);
-    final scale = Tween<double>(begin: 0.992, end: 1.0).animate(primary);
 
     return Stack(
       children: [
         FadeTransition(
-          opacity: backdrop,
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.46),
-          ),
+          opacity: fade,
+          child: Container(color: Colors.black.withValues(alpha: 0.46)),
         ),
-        FadeTransition(
-          opacity: primary,
-          child: SlideTransition(
-            position: slide,
-            child: ScaleTransition(
-              scale: scale,
-              alignment: Alignment.bottomCenter,
-              child: child,
-            ),
+        SlideTransition(
+          position: slide,
+          child: AnimatedBuilder(
+            animation: primary,
+            child: FadeTransition(opacity: fade, child: child),
+            builder: (context, child) {
+              final double t = primary.value.clamp(0.0, 1.0);
+              final double radius = (1 - t) * PlayerTokens.rLg;
+              // Structure stays fixed (only clip mode changes) so the player
+              // subtree is never remounted when the animation settles.
+              return ClipRRect(
+                clipBehavior: radius < 0.5 ? Clip.none : Clip.antiAlias,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(radius),
+                ),
+                child: Transform.scale(
+                  scale: 0.94 + 0.06 * t,
+                  alignment: Alignment.bottomCenter,
+                  child: child,
+                ),
+              );
+            },
           ),
         ),
       ],
