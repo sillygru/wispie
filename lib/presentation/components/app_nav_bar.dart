@@ -45,24 +45,6 @@ class AppNavBar extends ConsumerWidget {
   /// paints beneath it.
   static const double _rowHeight = 64;
 
-  /// [AppTokens.shadowFloating], cast upward. A bar flush to the bottom edge
-  /// has nothing below it, so the token's downward offset would fall off-screen
-  /// and leave the bar sitting on the content with no separation at all.
-  static const List<BoxShadow> _liftShadow = [
-    BoxShadow(
-      color: Color(0x40000000),
-      blurRadius: 24,
-      offset: Offset(0, -12),
-      spreadRadius: -8,
-    ),
-    BoxShadow(
-      color: Color(0x26000000),
-      blurRadius: 8,
-      offset: Offset(0, -3),
-      spreadRadius: -3,
-    ),
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTokens.accentOf(context, ref);
@@ -74,31 +56,31 @@ class AppNavBar extends ConsumerWidget {
       Theme.of(context).colorScheme.surface,
     );
 
-    return DecoratedBox(
-      decoration: const BoxDecoration(boxShadow: _liftShadow),
-      child: ColoredBox(
-        color: dockColor,
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: _rowHeight,
-            child: Row(
-              children: [
-                for (var i = 0; i < items.length; i++)
-                  Expanded(
-                    child: Pressable(
-                      haptic: PressHaptic.selection,
-                      spring: AppTokens.springSnappy,
-                      onTap: () => onSelected(i),
-                      child: _NavDestination(
-                        item: items[i],
-                        selected: i == selectedIndex,
-                        accent: accent,
-                      ),
+    // No upward shadow: the floating mini player sits right above the bar,
+    // and the shadow pooled into a muddy band between the two. The accent
+    // wash matches the mini player so both read as one dock.
+    return ColoredBox(
+      color: Color.alphaBlend(accent.withValues(alpha: 0.06), dockColor),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: _rowHeight,
+          child: Row(
+            children: [
+              for (var i = 0; i < items.length; i++)
+                Expanded(
+                  child: Pressable(
+                    haptic: PressHaptic.selection,
+                    spring: AppTokens.springSnappy,
+                    onTap: () => onSelected(i),
+                    child: _NavDestination(
+                      item: items[i],
+                      selected: i == selectedIndex,
+                      accent: accent,
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),

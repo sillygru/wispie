@@ -23,6 +23,7 @@ import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_nav_bar.dart';
+import '../components/floating_dock.dart';
 import '../components/tab_switch_transition.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
@@ -86,6 +87,25 @@ class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   int _tabDirection = 1;
+  final GlobalKey<FloatingDockState> _dockKey = GlobalKey<FloatingDockState>();
+
+  static const List<AppNavItem> _navItems = [
+    AppNavItem(
+      icon: AppIcons.home,
+      selectedIcon: AppIcons.home,
+      label: 'Home',
+    ),
+    AppNavItem(
+      icon: AppIcons.library,
+      selectedIcon: AppIcons.library,
+      label: 'Library',
+    ),
+    AppNavItem(
+      icon: AppIcons.person,
+      selectedIcon: AppIcons.person,
+      label: 'Profile',
+    ),
+  ];
   bool _isDrawerOpen = false;
 
   late AnimationController _drawerController;
@@ -95,7 +115,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   /// The nav bar is 64 high plus whatever safe-area strip it paints itself, so
   /// this only needs a little slack above it — it used to carry the gap the
   /// floating dock left on either side of its inset.
-  static const double _bottomDockBaseHeight = 72.0;
 
   // Gesture detection for drawer
   static const double _edgeDragWidth = 60.0;
@@ -251,10 +270,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final bottomDockVisibility =
         settings.autoHideBottomBarOnScroll ? bottomDockState.visibility : 1.0;
     final isBottomDockHidden = bottomDockVisibility <= 0.001;
-    final bottomInsetReduced = Platform.isIOS
-        ? (androidSystemBottomInset > 0 ? 10.0 : 0.0)
-        : androidSystemBottomInset;
-    final bottomDockHeight = _bottomDockBaseHeight + bottomInsetReduced;
 
     final nowPlayingBottomPadding = settings.autoHideBottomBarOnScroll &&
             isBottomDockHidden &&
@@ -306,21 +321,27 @@ class _MainScreenState extends ConsumerState<MainScreen>
     Widget buildContentStack() {
       return Stack(
         children: [
-          AmbientBackground(
-            child: Stack(
-              children: _screens.asMap().entries.map((entry) {
-                final index = entry.key;
-                final screen = entry.value;
-                if (!_builtScreens.contains(index)) {
-                  // Only build if this screen has been selected before
-                  return const SizedBox.shrink();
-                }
-                return TabSwitchTransition(
-                  active: index == _selectedIndex,
-                  direction: _tabDirection,
-                  child: screen,
-                );
-              }).toList(),
+          NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              _dockKey.currentState?.handleScroll(n);
+              return false;
+            },
+            child: AmbientBackground(
+              child: Stack(
+                children: _screens.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final screen = entry.value;
+                  if (!_builtScreens.contains(index)) {
+                    // Only build if this screen has been selected before
+                    return const SizedBox.shrink();
+                  }
+                  return TabSwitchTransition(
+                    active: index == _selectedIndex,
+                    direction: _tabDirection,
+                    child: screen,
+                  );
+                }).toList(),
+              ),
             ),
           ),
           Positioned(
@@ -363,13 +384,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           ),
                         ),
                       )
-                    : NowPlayingBar(
-                        padding: EdgeInsets.fromLTRB(
-                          12,
-                          0,
-                          12,
-                          nowPlayingBottomPadding,
-                        ),
+                    : FloatingDock(
+                        selectedIndex: _selectedIndex,
+                        onSelected: _onTabSelected,
+                        items: _navItems,
+                        key: _dockKey,
+                        autoCollapse: settings.autoHideBottomBarOnScroll,
                       ),
           ),
         ],
@@ -444,55 +464,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       );
     }
 
-    Widget buildBottomDock() {
-      return TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 1, end: bottomDockVisibility),
-        duration: bottomDockState.isDragging
-            ? Duration.zero
-            : const Duration(milliseconds: 180),
-        curve: bottomDockState.isDragging ? Curves.linear : Curves.easeOutCubic,
-        builder: (context, value, child) {
-          return SizedBox(
-            height: bottomDockHeight * value,
-            child: ClipRect(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                heightFactor: value,
-                child: Transform.translate(
-                  offset: Offset(0, (1 - value) * 24),
-                  child: Opacity(
-                    opacity: value.clamp(0, 1).toDouble(),
-                    child: child,
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-        child: AppNavBar(
-          selectedIndex: _selectedIndex,
-          onSelected: _onTabSelected,
-          items: const [
-            AppNavItem(
-              icon: AppIcons.home,
-              selectedIcon: AppIcons.home,
-              label: 'Home',
-            ),
-            AppNavItem(
-              icon: AppIcons.library,
-              selectedIcon: AppIcons.library,
-              label: 'Library',
-            ),
-            AppNavItem(
-              icon: AppIcons.person,
-              selectedIcon: AppIcons.person,
-              label: 'Profile',
-            ),
-          ],
-        ),
-      );
-    }
-
     if (isWide && !isSelectionMode) {
       void openSearch() => context.pushApp(const SearchScreen());
       void openSettings() => context.pushApp(const SettingsScreen());
@@ -540,7 +511,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
         },
         child: buildShellBody(),
       ),
-      bottomNavigationBar: isSelectionMode ? null : buildBottomDock(),
+      // The floating dock is drawn inside the content stack so pages scroll
+      // underneath it; no Scaffold bottom bar.
     );
   }
 }

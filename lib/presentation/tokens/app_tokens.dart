@@ -338,5 +338,6 @@ class AppTokens {
 
   /// Bottom padding for scroll views so content clears the now-playing bar
   /// and the bottom dock.
-  static const double scrollBottomInset = 120;
+  // Clears the floating dock: nav pill plus the expanded mini player above it.
+  static const double scrollBottomInset = 180;
 }

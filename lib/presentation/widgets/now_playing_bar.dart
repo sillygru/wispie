@@ -154,10 +154,11 @@ class _NowPlayingContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final double barHeight = compact ? (roomy ? 72 : 60) : (roomy ? 78 : 64);
-    final double imageSize = compact ? 40 : 44;
+    final double imageSize = compact ? 38 : 44;
     final double titleSize = compact ? 14 : 15;
     final double artistSize = compact ? 11 : 12;
-    final BorderRadius borderRadius = AppTokens.brMd;
+    final BorderRadius borderRadius = AppTokens.brLg;
+    final Color accent = AppTokens.accentOf(context, ref);
 
     final Widget content = SizedBox(
       height: barHeight,
@@ -310,18 +311,30 @@ class _NowPlayingContent extends ConsumerWidget {
                             );
                           }
 
-                          return IconButton(
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.all(8),
-                            tooltip: playing ? 'Pause' : 'Play',
-                            icon: PlayPauseMorphIcon(
-                              playing: playing,
-                              size: compact ? 28 : 30,
-                              color: Colors.white,
+                          // Solid accent disc: the one primary action gets
+                          // the one strong colour block in the bar.
+                          final double disc = compact ? 34 : 42;
+                          return Tooltip(
+                            message: playing ? 'Pause' : 'Play',
+                            child: Pressable(
+                              onTap: () => ref
+                                  .read(audioPlayerManagerProvider)
+                                  .togglePlayPause(),
+                              child: Container(
+                                width: disc,
+                                height: disc,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: PlayPauseMorphIcon(
+                                  playing: playing,
+                                  size: compact ? 18 : 22,
+                                  color: AppTokens.onAccent(accent),
+                                ),
+                              ),
                             ),
-                            onPressed: () => ref
-                                .read(audioPlayerManagerProvider)
-                                .togglePlayPause(),
                           );
                         },
                       ),
@@ -341,7 +354,7 @@ class _NowPlayingContent extends ConsumerWidget {
                         padding: const EdgeInsets.all(8),
                         child: AppIcon(
                           AppIcons.skipNext,
-                          size: compact ? 24 : 28,
+                          size: compact ? 22 : 28,
                           color: Colors.white,
                         ),
                       ),
@@ -352,9 +365,13 @@ class _NowPlayingContent extends ConsumerWidget {
             ),
           ),
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
+            // Inset hairline track under the text instead of a full-width
+            // strip, so the rounded corners never crop it.
+            // Compact runs the line along the very bottom, inset past the
+            // corner radius, so it never crowds the artwork above it.
+            left: compact ? AppTokens.s5 : 14,
+            right: compact ? AppTokens.s5 : 14,
+            bottom: compact ? 3 : AppTokens.s1 + 2,
             // Boundaried: this repaints five times a second on every screen in
             // the app, and without a layer of its own each of those repaints
             // dirtied the whole bar — including the backdrop blur behind it.
@@ -369,12 +386,13 @@ class _NowPlayingContent extends ConsumerWidget {
                   final progress = duration.inMilliseconds > 0
                       ? position.inMilliseconds / duration.inMilliseconds
                       : 0.0;
-                  return LinearProgressIndicator(
-                    value: progress.clamp(0.0, 1.0),
-                    minHeight: compact ? 2.5 : 3,
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
+                  return ClipRRect(
+                    borderRadius: AppTokens.brPill,
+                    child: LinearProgressIndicator(
+                      value: progress.clamp(0.0, 1.0),
+                      minHeight: compact ? 2 : 3,
+                      backgroundColor: Colors.white.withValues(alpha: 0.10),
+                      valueColor: AlwaysStoppedAnimation<Color>(accent),
                     ),
                   );
                 },
@@ -395,9 +413,13 @@ class _NowPlayingContent extends ConsumerWidget {
     // The bar floats over scrolling content as an L2 slab. Opaque fill (never
     // glass — content must not show through) lifted one notch off the canvas,
     // and a soft floating shadow does the lifting.
+    // A light accent wash ties the bar to the current cover palette.
     final Color fill = Color.alphaBlend(
-      AppTokens.floatingFill,
-      Theme.of(context).colorScheme.surface,
+      accent.withValues(alpha: 0.10),
+      Color.alphaBlend(
+        AppTokens.floatingFill,
+        Theme.of(context).colorScheme.surface,
+      ),
     );
 
     final Widget bar = ClipRRect(

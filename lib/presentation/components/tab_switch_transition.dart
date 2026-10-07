@@ -44,7 +44,7 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
         SpringSimulation(TabSwitchTransition._spring, _c.value, 1, _c.velocity),
       );
     } else {
-      _c.animateTo(0, duration: AppTokens.dFast, curve: Curves.easeInCubic);
+      _c.animateTo(0, duration: AppTokens.dFast, curve: Curves.easeOutCubic);
     }
   }
 
@@ -64,6 +64,14 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
         final bool hidden = !widget.active && v <= 0.001;
         // Incoming enters from +dir; outgoing leaves toward -dir.
         final double side = widget.active ? _dir.toDouble() : -_dir.toDouble();
+        final double t = v.clamp(0.0, 1.0);
+        // Shared-axis handoff: the outgoing tab is gone by ~60% of its exit
+        // and the incoming one only starts to show after the first quarter,
+        // so the two pages never sit on top of each other as a muddy
+        // double exposure.
+        final double opacity = widget.active
+            ? Curves.easeOut.transform(((t - 0.25) / 0.75).clamp(0.0, 1.0))
+            : ((t - 0.4) / 0.6).clamp(0.0, 1.0);
         return Offstage(
           offstage: hidden,
           child: TickerMode(
@@ -71,11 +79,13 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
             child: IgnorePointer(
               ignoring: !widget.active,
               child: Opacity(
-                opacity: v.clamp(0.0, 1.0),
-                child: FractionalTranslation(
-                  translation: Offset((1 - v) * side * 0.08, 0),
+                opacity: opacity,
+                // Fixed travel rather than a fraction of the width, so wide
+                // windows do not throw the page a long way.
+                child: Transform.translate(
+                  offset: Offset((1 - v) * side * AppTokens.s6, 0),
                   child: Transform.scale(
-                    scale: 0.97 + 0.03 * v.clamp(0.0, 1.0),
+                    scale: 0.98 + 0.02 * t,
                     child: child,
                   ),
                 ),
