@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/song.dart';
 import '../tokens/app_icons.dart';
+import '../tokens/app_tokens.dart';
 import '../tokens/player_tokens.dart';
 import 'app_icon.dart';
 import '../widgets/album_art_image.dart' show StaticAlbumArtImage;
@@ -139,19 +140,33 @@ class PlayerTrackRow extends StatelessWidget {
                 child: Container(
                   color: Colors.black.withValues(alpha: 0.42),
                   child: Center(
-                    child: showAnimatedWave
-                        ? AudioVisualizer(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedOpacity(
+                          opacity: showAnimatedWave ? 1 : 0,
+                          duration: AppTokens.dBase,
+                          curve: AppTokens.cStandard,
+                          child: AudioVisualizer(
                             width: 18,
                             height: 18,
                             color: Colors.white,
-                            isPlaying: true,
+                            isPlaying: showAnimatedWave,
                             mode: visualizerMode,
-                          )
-                        : const AppIcon(
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          opacity: showAnimatedWave ? 0 : 1,
+                          duration: AppTokens.dBase,
+                          curve: AppTokens.cStandard,
+                          child: const AppIcon(
                             AppIcons.graphicEq,
                             size: 18,
                             color: Colors.white,
                           ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

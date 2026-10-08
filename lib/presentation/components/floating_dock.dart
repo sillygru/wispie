@@ -8,10 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/song.dart';
 import '../../providers/providers.dart';
+import '../../providers/settings_provider.dart';
 import '../routes/player_route.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/player_tokens.dart';
 import '../widgets/album_art_image.dart';
+import '../widgets/audio_visualizer.dart';
 import 'app_icon.dart';
 import 'app_nav_bar.dart';
 import 'pressable.dart';
@@ -47,12 +49,15 @@ class FloatingDock extends StatefulWidget {
   static const double barArtSize = 44;
   static const double ballArtInset = 4;
 
-  /// Scroll distance for a full morph. Expanding is deliberately quicker:
-  /// reaching back for the player should not take half a screen.
-  static const double collapseDistance = 140;
-  static const double expandDistance = 70;
+  /// Scroll distance that commits the morph. Scrolling is measured first and the
+  /// dock only moves once this much travel has built up in one direction, then
+  /// springs to the new end. Expanding is deliberately quicker: reaching back
+  /// for the player should not take much scrolling.
+  static const double collapseDistance = 56;
+  static const double expandDistance = 28;
 
-  static const Duration settleDelay = Duration(milliseconds: 140);
+  /// Quiet time after which a sub-threshold scroll is forgotten.
+  static const Duration settleDelay = Duration(milliseconds: 160);
 
   const FloatingDock({
     super.key,
@@ -63,7 +68,7 @@ class FloatingDock extends StatefulWidget {
   });
 
   static final SpringDescription _spring =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 260, ratio: 0.9);
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 300, ratio: 0.92);
 
   @override
   State<FloatingDock> createState() => FloatingDockState();
@@ -78,11 +83,15 @@ class FloatingDockState extends State<FloatingDock>
   /// Direction of the most recent scroll movement: true = downward.
   bool _down = false;
 
+  /// Travel accumulated in the current direction since the dock last moved.
+  double _pending = 0;
+
   void handleScroll(ScrollNotification n) {
     if (!widget.autoCollapse) return;
     if (n.metrics.axis != Axis.vertical) return;
 
     if (n.metrics.pixels <= n.metrics.minScrollExtent) {
+      _pending = 0;
       _springTo(0);
       return;
     }
@@ -92,26 +101,25 @@ class FloatingDockState extends State<FloatingDock>
     final double delta = n.scrollDelta ?? 0;
     if (delta == 0) return;
 
-    _down = delta > 0;
-    final double distance =
-        _down ? FloatingDock.collapseDistance : FloatingDock.expandDistance;
-    if (_c.isAnimating) _c.stop();
-    _c.value = (_c.value.clamp(0.0, 1.0) + delta / distance).clamp(0.0, 1.0);
+    final bool down = delta > 0;
+    if (down != _down) {
+      _down = down;
+      _pending = 0;
+    }
+    _pending += delta.abs();
 
     _settle?.cancel();
-    _settle = Timer(FloatingDock.settleDelay, _settleNow);
-  }
+    _settle = Timer(FloatingDock.settleDelay, () => _pending = 0);
 
-  void _settleNow() {
-    if (!mounted) return;
-    final double v = _c.value;
-    // Biased toward the way the user was heading: a quarter of the way is
-    // enough commitment to finish the move.
-    _springTo(_down ? (v > 0.25 ? 1 : 0) : (v < 0.75 ? 0 : 1));
+    final double threshold =
+        down ? FloatingDock.collapseDistance : FloatingDock.expandDistance;
+    if (_pending >= threshold) {
+      _pending = 0;
+      _springTo(down ? 1 : 0);
+    }
   }
 
   void _springTo(double target) {
-    _settle?.cancel();
     if (_c.value == target && !_c.isAnimating) return;
     _c.animateWith(
       SpringSimulation(FloatingDock._spring, _c.value, target, _c.velocity),
@@ -183,7 +191,7 @@ class _DockBody extends ConsumerWidget {
       valueListenable: manager.currentSongNotifier,
       builder: (context, song, _) {
         final bool hasSong = song != null;
-        final double c = hasSong ? collapse.clamp(0.0, 1.0) : 0.0;
+        final double c = hasSong ? collapse : 0.0;
         final double height = pillBottom +
             pillHeight +
             (hasSong ? (gap + miniHeight) * (1 - c) : 0);
@@ -191,13 +199,14 @@ class _DockBody extends ConsumerWidget {
         return LayoutBuilder(
           builder: (context, constraints) {
             final double w = constraints.maxWidth;
-            // Staggered axes give the morph an arc rather than a straight
-            // diagonal: the bar drops toward the pill row first, slides into
-            // the corner second, and the pill yields room last.
-            // The spring already supplies the easing; extra curves on top
-            // made the start feel laggy, so only the offsets differ.
+            // Every axis reads the same spring value. The spring already
+            // supplies the easing, and a second curve on one axis made the bar
+            // travel on a different clock than its own height and width, which
+            // is what read as wrong. The value is deliberately not clamped: the
+            // overshoot is what makes a spring feel physical, and clamping it
+            // stops the bar dead.
             final double cx = c;
-            final double cy = Curves.easeOut.transform(c);
+            final double cy = c;
             final double cp = ((c - 0.15) / 0.85).clamp(0.0, 1.0);
             final double pillWidth =
                 w - 2 * gutter - (hasSong ? (pillHeight + gap) * cp : 0);
@@ -226,7 +235,8 @@ class _DockBody extends ConsumerWidget {
             // never reads as a squashed ellipse.
             final double radius = math.min(
               mini.height / 2,
-              ui.lerpDouble(AppTokens.rLg, mini.height / 2, cy)!,
+              ui.lerpDouble(
+                  AppTokens.rLg, mini.height / 2, cy.clamp(0.0, 1.0))!,
             );
 
             return SizedBox(
@@ -451,6 +461,7 @@ class _MorphingMini extends ConsumerWidget {
       builder: (context, constraints) {
         final Size size = constraints.biggest;
         final double t = collapse;
+        final double tRadius = t.clamp(0.0, 1.0);
         final Rect barArt = Rect.fromLTWH(
           FloatingDock.barArtInset,
           (size.height - FloatingDock.barArtSize) / 2,
@@ -467,7 +478,7 @@ class _MorphingMini extends ConsumerWidget {
         );
         final Rect art = Rect.lerp(barArt, ballArt, t)!;
         final double artRadius =
-            ui.lerpDouble(AppTokens.rSm, art.shortestSide / 2, t)!;
+            ui.lerpDouble(AppTokens.rSm, art.shortestSide / 2, tRadius)!;
 
         return Pressable(
           onTap: collapse > 0.5
@@ -686,13 +697,35 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                           tag: PlayerTokens.coverHeroTag(song.filename),
                           child: ClipRRect(
                             borderRadius: AppTokens.brSm,
-                            child: AlbumArtImage(
-                              url: song.coverUrl ?? '',
-                              filename: song.filename,
-                              cacheVersion: song.mtime,
+                            child: SizedBox(
                               width: art,
                               height: art,
-                              fit: BoxFit.cover,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  AlbumArtImage(
+                                    url: song.coverUrl ?? '',
+                                    filename: song.filename,
+                                    cacheVersion: song.mtime,
+                                    width: art,
+                                    height: art,
+                                    fit: BoxFit.cover,
+                                  ),
+                                  ValueListenableBuilder<bool>(
+                                    valueListenable: manager.playingNotifier,
+                                    builder: (context, playing, _) =>
+                                        PlayingVisualizerOverlay(
+                                      playing: playing,
+                                      mode: ref.watch(
+                                        settingsProvider.select(
+                                          (s) => s.visualizerMode,
+                                        ),
+                                      ),
+                                      size: 18,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

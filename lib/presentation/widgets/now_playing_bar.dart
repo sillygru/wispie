@@ -202,30 +202,14 @@ class _NowPlayingContent extends ConsumerWidget {
                                       builder: (context, snapshot) {
                                         final playing =
                                             snapshot.data?.playing ?? false;
-                                        if (!playing || !isBarVisible) {
-                                          return const SizedBox.shrink();
-                                        }
 
                                         return Positioned.fill(
-                                          child: Container(
-                                            color: Colors.black
+                                          child: PlayingVisualizerOverlay(
+                                            playing: playing && isBarVisible,
+                                            mode: visualizerMode,
+                                            size: compact ? 18 : 22,
+                                            scrim: Colors.black
                                                 .withValues(alpha: 0.28),
-                                            child: Center(
-                                              child: visualizerMode !=
-                                                      VisualizerMode.off
-                                                  ? AudioVisualizer(
-                                                      width: compact ? 18 : 22,
-                                                      height: compact ? 18 : 22,
-                                                      color: Colors.white,
-                                                      isPlaying: true,
-                                                      mode: visualizerMode,
-                                                    )
-                                                  : AppIcon(
-                                                      AppIcons.graphicEq,
-                                                      color: Colors.white,
-                                                      size: compact ? 17 : 19,
-                                                    ),
-                                            ),
                                           ),
                                         );
                                       },

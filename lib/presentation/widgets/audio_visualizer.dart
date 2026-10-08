@@ -4,7 +4,57 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/services/spectrum_bars.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
+import '../components/app_icon.dart';
+import '../tokens/app_icons.dart';
+import '../tokens/app_tokens.dart';
 import 'spectrum_controller.dart';
+
+/// Scrim plus visualiser laid over cover art while its song plays.
+///
+/// Stays mounted through both edges and fades with [playing], so pausing or
+/// switching songs eases the bars out instead of cutting them. While faded out
+/// it is not subscribed to the controller, so it costs nothing when hidden.
+class PlayingVisualizerOverlay extends StatelessWidget {
+  final bool playing;
+  final VisualizerMode mode;
+  final Color color;
+  final Color scrim;
+  final double size;
+  final BorderRadius? radius;
+
+  const PlayingVisualizerOverlay({
+    super.key,
+    required this.playing,
+    required this.mode,
+    this.color = Colors.white,
+    this.scrim = const Color(0x6B000000),
+    required this.size,
+    this.radius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: playing ? 1 : 0,
+      duration: AppTokens.dBase,
+      curve: AppTokens.cStandard,
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: scrim, borderRadius: radius),
+        child: Center(
+          child: mode != VisualizerMode.off
+              ? AudioVisualizer(
+                  color: color,
+                  width: size,
+                  height: size,
+                  isPlaying: playing,
+                  mode: mode,
+                )
+              : AppIcon(AppIcons.graphicEq, color: color, size: size),
+        ),
+      ),
+    );
+  }
+}
 
 /// Four bars over the album art of whatever is playing.
 ///

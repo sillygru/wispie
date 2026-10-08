@@ -61,11 +61,12 @@ class AppSliverHeader extends ConsumerWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                scaffoldBg.withValues(alpha: 0.94),
-                scaffoldBg.withValues(alpha: 0.94),
+                scaffoldBg.withValues(alpha: 0.96),
+                scaffoldBg.withValues(alpha: 0.96),
+                scaffoldBg.withValues(alpha: 0.5),
                 scaffoldBg.withValues(alpha: 0.0),
               ],
-              stops: const [0.0, 0.82, 1.0],
+              stops: const [0.0, 0.6, 0.82, 1.0],
             ),
           ),
         ),
@@ -98,9 +99,21 @@ class AppSliverHeader extends ConsumerWidget {
         ...actions,
         const SizedBox(width: AppTokens.s2),
       ],
-      bottom: bottom,
+      bottom: bottom ?? const _FadeTail(),
     );
   }
+}
+
+/// Extends the scrim past the toolbar so content dissolves into the header
+/// instead of cutting off at a hard line.
+class _FadeTail extends StatelessWidget implements PreferredSizeWidget {
+  const _FadeTail();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(AppTokens.s5);
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: AppTokens.s5);
 }
 
 /// The header for pushed sub-screens — settings pages, detail views, pickers.

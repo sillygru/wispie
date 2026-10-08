@@ -225,27 +225,11 @@ class _Artwork extends StatelessWidget {
               stream: audioManager.player.playerStateStream,
               builder: (context, snapshot) {
                 final playing = snapshot.data?.playing ?? false;
-                if (!playing || currentSong?.filename != song.filename) {
-                  return const SizedBox.shrink();
-                }
-
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.42),
-                    borderRadius: AppTokens.brSm,
-                  ),
-                  child: Center(
-                    child: visualizerMode != VisualizerMode.off
-                        ? AudioVisualizer(
-                            color: Colors.white,
-                            width: 22,
-                            height: 22,
-                            isPlaying: true,
-                            mode: visualizerMode,
-                          )
-                        : const AppIcon(AppIcons.graphicEq,
-                            color: Colors.white, size: 22),
-                  ),
+                return PlayingVisualizerOverlay(
+                  playing: playing && currentSong?.filename == song.filename,
+                  mode: visualizerMode,
+                  size: 22,
+                  radius: AppTokens.brSm,
                 );
               },
             ),
