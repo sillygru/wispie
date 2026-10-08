@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'album_art_image.dart';
@@ -149,14 +150,32 @@ class _BlurredBackgroundState extends State<BlurredBackground> {
       children: [
         // Base layer: Low-res album art (always there as fallback)
         Positioned.fill(
-          child: AlbumArtImage(
-            url: widget.url,
-            filename: widget.filename,
-            fit: BoxFit.cover,
-            memCacheWidth: 80,
-            memCacheHeight: 80,
-            filterQuality: FilterQuality.low,
-          ),
+          child: _hasBlurredBackground
+              ? AlbumArtImage(
+                  url: widget.url,
+                  filename: widget.filename,
+                  fit: BoxFit.cover,
+                  memCacheWidth: 80,
+                  memCacheHeight: 80,
+                  filterQuality: FilterQuality.low,
+                )
+              // Upscaling 80px alone shows blocks, so smooth it until the real
+              // blur file exists.
+              : ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(
+                    sigmaX: 24,
+                    sigmaY: 24,
+                    tileMode: TileMode.mirror,
+                  ),
+                  child: AlbumArtImage(
+                    url: widget.url,
+                    filename: widget.filename,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 160,
+                    memCacheHeight: 160,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
         ),
 
         // Blurred layer: fades in once the cache file exists

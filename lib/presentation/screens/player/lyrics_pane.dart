@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/rich_lyrics.dart';
@@ -391,7 +392,7 @@ class LyricsPane extends ConsumerStatefulWidget {
 }
 
 class _LyricsPaneState extends ConsumerState<LyricsPane>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   /// How far down the viewport the active line sits while auto-scrolling.
   static const double _activeLineAnchor = PlayerTokens.lyricsScrollPosRatio;
 
@@ -424,6 +425,25 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   static const int _maxAlignAttempts = 5;
 
   final ScrollController _scrollController = ScrollController();
+
+  /// Apple-style line handoff: the viewport jumps to the new anchor at once and
+  /// each row eases from its old position, rows after the active line starting
+  /// a beat later so the list unspools downward instead of sliding as a block.
+  static const Duration _cascadeStagger = PlayerTokens.dLyricsCascadeStagger;
+  static final Duration _cascadeTotal = PlayerTokens.dLyricsCascade +
+      _cascadeStagger * PlayerTokens.lyricsCascadeMaxSteps;
+  late final AnimationController _cascade =
+      AnimationController(vsync: this, duration: _cascadeTotal, value: 1);
+  double _cascadeDelta = 0;
+  int _cascadeFrom = 0;
+
+  /// The player reports its position about five times a second, which makes a
+  /// word wipe advance in visible steps. Between samples a ticker extrapolates
+  /// from the last one so the wipe moves every frame.
+  late final Ticker _frameTicker = createTicker(_onFrame);
+  Duration _sampleAt = Duration.zero;
+  Duration _sampleElapsed = Duration.zero;
+
   final Map<int, GlobalKey> _lineKeys = {};
   final LyricsSession _lyricsSession = LyricsSession();
   final LrclibService _lrclibService = LrclibService();
@@ -520,6 +540,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _positionSubscriptionActive = wanted;
 
     if (!wanted) {
+      _frameTicker.stop();
+      _lastFrameElapsed = Duration.zero;
       _positionSub?.cancel();
       _positionSub = null;
       return;
@@ -529,8 +551,27 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         .read(audioPlayerManagerProvider)
         .player
         .positionStream
-        .listen(_onPosition);
-    _onPosition(ref.read(audioPlayerManagerProvider).player.position);
+        .listen(_onSample);
+    _onSample(ref.read(audioPlayerManagerProvider).player.position);
+    if (!_frameTicker.isActive) _frameTicker.start();
+  }
+
+  void _onSample(Duration position) {
+    _sampleAt = position;
+    _sampleElapsed = _lastFrameElapsed;
+    _onPosition(position);
+  }
+
+  Duration _lastFrameElapsed = Duration.zero;
+
+  void _onFrame(Duration elapsed) {
+    _lastFrameElapsed = elapsed;
+    final player = ref.read(audioPlayerManagerProvider).player;
+    if (!player.playing) return;
+    final dt = elapsed - _sampleElapsed;
+    final extrapolated = _sampleAt +
+        Duration(microseconds: (dt.inMicroseconds * player.speed).round());
+    _onPosition(extrapolated);
   }
 
   @override
@@ -541,6 +582,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _positionSub?.cancel();
     _scrollController.removeListener(_onUserScroll);
     _scrollController.dispose();
+    _cascade.dispose();
+    _frameTicker.dispose();
     _timing.dispose();
     _activeLine.dispose();
     _playbackPosition.dispose();
@@ -1176,7 +1219,20 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         .offset
         .clamp(position.minScrollExtent, position.maxScrollExtent);
 
-    if ((target - position.pixels).abs() < 1) return;
+    final delta = target - position.pixels;
+    if (delta.abs() < 1) return;
+
+    // Only short hops cascade; a long jump or one landing mid-cascade falls
+    // back to a plain animated scroll so rows never fight over their offsets.
+    if (!_cascade.isAnimating && delta.abs() <= position.viewportDimension) {
+      _cascadeFrom = index;
+      _cascadeDelta = delta;
+      _autoScrolling = true;
+      position.jumpTo(target);
+      _autoScrolling = false;
+      _cascade.forward(from: 0);
+      return;
+    }
 
     _autoScrolling = true;
     try {
@@ -1492,7 +1548,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
             // AnimatedSize on every row so opening/closing a gap grows and
             // shrinks the reserved space instead of popping the list.
-            return Column(
+            final row = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 AnimatedSize(
@@ -1520,6 +1576,25 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                 ),
                 lyricWidget,
               ],
+            );
+
+            return AnimatedBuilder(
+              animation: _cascade,
+              child: row,
+              builder: (context, child) {
+                final steps = (index - _cascadeFrom)
+                    .clamp(0, PlayerTokens.lyricsCascadeMaxSteps);
+                final total = _cascadeTotal.inMicroseconds;
+                final start = (_cascadeStagger * steps).inMicroseconds / total;
+                final span = PlayerTokens.dLyricsCascade.inMicroseconds / total;
+                final t = PlayerTokens.cLyricsCascade.transform(
+                  ((_cascade.value - start) / span).clamp(0.0, 1.0),
+                );
+                return Transform.translate(
+                  offset: Offset(0, _cascadeDelta * (1 - t)),
+                  child: child,
+                );
+              },
             );
           },
         );

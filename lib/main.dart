@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey, SystemNavigator;
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyEvent, LogicalKeyboardKey, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -130,6 +131,40 @@ Future<void> _initDesktopWindow(SharedPreferences prefs) async {
   } on Exception catch (e) {
     debugPrint('Desktop window init failed: $e');
   }
+}
+
+/// Wraps [inner] so it stops matching while a text field owns focus.
+///
+/// Characters reach a text field through the platform text input plugin, not
+/// through the framework key event, and the embedder forwards a key only when
+/// the framework left it unhandled. An app-wide shortcut therefore cannot be
+/// made harmless by doing nothing inside its callback: [CallbackShortcuts]
+/// reports every accepted key as handled, so a space matched by a playback
+/// shortcut never reaches the field being typed into. Declining in [accepts]
+/// leaves the event unhandled and lets the character through.
+class EditableAwareActivator extends ShortcutActivator {
+  const EditableAwareActivator(this.inner);
+
+  final ShortcutActivator inner;
+
+  static bool _editing() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null) return false;
+    return context.widget is EditableText ||
+        context.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  @override
+  Iterable<LogicalKeyboardKey>? get triggers => inner.triggers;
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    if (_editing()) return false;
+    return inner.accepts(event, state);
+  }
+
+  @override
+  String debugDescribeKeys() => inner.debugDescribeKeys();
 }
 
 class _WindowStateSaver with WindowListener {
@@ -362,15 +397,6 @@ class _WispieAppState extends ConsumerState<WispieApp>
 
   Map<ShortcutActivator, VoidCallback> _playbackShortcuts() {
     final player = ref.read(audioPlayerManagerProvider);
-    // Plain keys must not steal typing from text fields.
-    VoidCallback guarded(VoidCallback action) => () {
-          final focused = FocusManager.instance.primaryFocus?.context;
-          if (focused?.widget is EditableText ||
-              focused?.findAncestorWidgetOfExactType<EditableText>() != null) {
-            return;
-          }
-          action();
-        };
     void seekBy(Duration delta) {
       final target = player.player.position + delta;
       player.player.seek(target < Duration.zero ? Duration.zero : target);
@@ -382,27 +408,40 @@ class _WispieAppState extends ConsumerState<WispieApp>
     }
 
     final playPause = player.togglePlayPause;
-    return {
-      const SingleActivator(LogicalKeyboardKey.space): guarded(playPause),
+    // Media keys are hardware keys with no text representation, so they stay
+    // live even while a text field is focused.
+    final mediaKeys = <ShortcutActivator, VoidCallback>{
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause): playPause,
       const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
           player.player.seekToNext(),
       const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
           player.player.seekToPrevious(),
+    };
+    // Everything else is wrapped in [EditableAwareActivator]. Declining to
+    // match is the only fix: doing nothing inside the callback is not enough,
+    // because the embedder forwards a key to the text input plugin only when
+    // the framework left it unhandled.
+    final typingKeys = <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.space): playPause,
       for (final meta in [true, false]) ...{
         SingleActivator(LogicalKeyboardKey.arrowRight,
-            meta: meta, control: !meta): guarded(player.player.seekToNext),
+            meta: meta, control: !meta): player.player.seekToNext,
         SingleActivator(LogicalKeyboardKey.arrowLeft,
-            meta: meta, control: !meta): guarded(player.player.seekToPrevious),
+            meta: meta, control: !meta): player.player.seekToPrevious,
       },
-      const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true):
-          guarded(() => seekBy(const Duration(seconds: 10))),
-      const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true):
-          guarded(() => seekBy(const Duration(seconds: -10))),
+      const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true): () =>
+          seekBy(const Duration(seconds: 10)),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true): () =>
+          seekBy(const Duration(seconds: -10)),
       const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () =>
           adjustVolume(0.05),
       const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () =>
           adjustVolume(-0.05),
+    };
+    return {
+      ...mediaKeys,
+      for (final entry in typingKeys.entries)
+        EditableAwareActivator(entry.key): entry.value,
     };
   }
 

@@ -30,6 +30,8 @@ import '../utils/wide_layout.dart';
 import '../widgets/album_art_image.dart';
 import '../widgets/basic_progress_bar.dart';
 import '../widgets/beat_particle_field.dart';
+import '../widgets/blurred_background.dart';
+import '../widgets/smooth_color_builder.dart';
 import '../widgets/clickable_artist_text.dart';
 import '../widgets/heart_context_menu.dart';
 import '../widgets/now_playing_lyric_peek.dart';
@@ -443,6 +445,16 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                 isNeutral: isNeutral,
               ),
             ),
+            if (!isWide)
+              Positioned.fill(
+                child: _LyricsBackdrop(
+                  song: song,
+                  accent: accent,
+                  position: _pagePosition,
+                  playing: _manager.playingNotifier,
+                  allowSpin: !_reduceMotion,
+                ),
+              ),
             if (particlesAllowed)
               Positioned(
                 top: coverH,
@@ -1180,6 +1192,60 @@ class _CoverPrefetch extends StatelessWidget {
                 fit: BoxFit.cover,
               ),
         ],
+      ),
+    );
+  }
+}
+
+/// The classic blurred backdrop, faded in over the full-bleed one as the
+/// Lyrics page (0.0) comes into view. Lyrics read better on it than on a
+/// sharp-edged cover blur.
+class _LyricsBackdrop extends StatelessWidget {
+  final Song song;
+  final Color accent;
+  final ValueListenable<double> position;
+  final ValueListenable<bool> playing;
+  final bool allowSpin;
+
+  const _LyricsBackdrop({
+    required this.song,
+    required this.accent,
+    required this.position,
+    required this.playing,
+    required this.allowSpin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ValueListenableBuilder<double>(
+        valueListenable: position,
+        builder: (context, pos, _) {
+          final double opacity = (1.0 - pos).clamp(0.0, 1.0);
+          // Stays mounted while hidden so the blurred file is generated ahead
+          // of the first swipe; until it exists only an 80px fallback shows.
+          return Opacity(
+            opacity: Curves.easeOut.transform(opacity),
+            child: SmoothColorBuilder(
+              targetColor: accent,
+              builder: (context, color) => ValueListenableBuilder<bool>(
+                valueListenable: playing,
+                builder: (context, isPlaying, _) => BlurredBackground(
+                  url: song.coverUrl ?? '',
+                  filename: song.filename,
+                  slowSpin: isPlaying && allowSpin && opacity > 0,
+                  gradientColors: [
+                    Color.alphaBlend(
+                      color.withValues(alpha: 0.18),
+                      Colors.black.withValues(alpha: 0.68),
+                    ),
+                    Colors.black.withValues(alpha: 0.94),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

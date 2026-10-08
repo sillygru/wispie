@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui show Gradient;
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
@@ -324,45 +326,40 @@ class LyricsLine extends StatelessWidget {
     // fade back into the resting ink instead of snapping off.
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(end: isActive ? 1.0 : 0.0),
-      duration: PlayerTokens.dLyricsLine,
+      duration: isActive ? PlayerTokens.dFast : PlayerTokens.dLyricsLine,
       curve: PlayerTokens.cLyricsLine,
-      builder: (context, focus, _) => TweenAnimationBuilder<double>(
-        tween: Tween<double>(end: playbackPosition.inMicroseconds.toDouble()),
-        duration: PlayerTokens.dLyricsWordProgress,
-        curve: Curves.linear,
-        builder: (context, animatedMicros, _) {
-          final position = Duration(microseconds: animatedMicros.round());
-          final spans = <InlineSpan>[];
+      builder: (context, focus, _) {
+        final position = playbackPosition;
+        final spans = <InlineSpan>[];
 
-          for (var index = 0; index < words.length; index++) {
-            final word = words[index];
-            final wordSuffix = index < words.length - 1
-                ? (word.text.endsWith('-') ? '' : ' ')
-                : '';
+        for (var index = 0; index < words.length; index++) {
+          final word = words[index];
+          final wordSuffix = index < words.length - 1
+              ? (word.text.endsWith('-') ? '' : ' ')
+              : '';
 
-            spans.add(
-              WidgetSpan(
-                alignment: PlaceholderAlignment.baseline,
-                baseline: TextBaseline.alphabetic,
-                child: _LyricWordWidget(
-                  word: word,
-                  position: position,
-                  activeColor: activeColor,
-                  lineOpacity: lineOpacity,
-                  focus: focus,
-                  wordSuffix: wordSuffix,
-                  textStyle: style,
-                ),
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: _LyricWordWidget(
+                word: word,
+                position: position,
+                activeColor: activeColor,
+                lineOpacity: lineOpacity,
+                focus: focus,
+                wordSuffix: wordSuffix,
+                textStyle: style,
               ),
-            );
-          }
-
-          return Text.rich(
-            TextSpan(children: spans),
-            textAlign: textAlign,
+            ),
           );
-        },
-      ),
+        }
+
+        return Text.rich(
+          TextSpan(children: spans),
+          textAlign: textAlign,
+        );
+      },
     );
   }
 }
@@ -400,77 +397,190 @@ class _LyricWordWidget extends StatelessWidget {
 
     final displayText = '${word.text}$wordSuffix';
     final double fontSize = textStyle.fontSize ?? PlayerTokens.lyricsFontSize;
-    final Color activeTextColor =
-        lyricsLitInk(activeColor).withValues(alpha: lineOpacity);
 
+    // Unsung words in the focused line rest at a fixed dim level; the sung
+    // layer is drawn at full strength rather than faded in with the line, so
+    // the wipe reads as light travelling across the text, not a fade.
     final Widget base = Text(
       displayText,
       style: textStyle.copyWith(
         color: lyricsDimInk(activeColor).withValues(
-          alpha: lineOpacity * (1.0 - 0.68 * focus),
+          alpha:
+              lerpDouble(lineOpacity, PlayerTokens.lyricsUnsungOpacity, focus),
         ),
         shadows: null,
       ),
     );
     if (focus <= 0.0 || progress <= 0.0) return base;
 
-    // Glow blooms while the word is sung and decays shortly after, so the
-    // light travels with the voice instead of piling up across the line.
-    final double sinceEnd = (position - word.end).inMicroseconds /
-        PlayerTokens.dLyricsWordGlowDecay.inMicroseconds;
-    final double glow = progress < 1.0
-        ? Curves.easeOut.transform(progress)
-        : (1.0 - sinceEnd).clamp(0.0, 1.0);
-    final TextStyle litStyle = textStyle.copyWith(
-      color: activeTextColor.withValues(alpha: activeTextColor.a * focus),
-      shadows: glow * focus > 0.01
-          ? [
-              Shadow(
-                color: activeColor.withValues(alpha: 0.75 * glow * focus),
-                blurRadius: PlayerTokens.lyricsWordGlowBlur * glow,
-              ),
-            ]
-          : null,
+    if (word.duration >= PlayerTokens.dLyricsSustainThreshold &&
+        word.text.trim().characters.length > 1) {
+      return _buildSustained(progress, fontSize);
+    }
+
+    Widget lit = Text(
+      displayText,
+      style: textStyle.copyWith(
+        color: lyricsLitInk(activeColor).withValues(alpha: focus),
+        shadows: [
+          Shadow(
+            color: activeColor.withValues(alpha: 0.3 * focus),
+            blurRadius: PlayerTokens.lyricsWordGlowBlur * 0.7,
+          ),
+        ],
+      ),
     );
 
-    Widget lit = Text(displayText, style: litStyle);
     if (progress < 1.0) {
-      // Feathered wipe edge: one ShaderMask, and only on the word currently
-      // being sung, keeps the saveLayer count at about one per frame.
+      // The soft edge has a fixed pixel width and sweeps at a constant speed
+      // from fully off the word to fully past it, so a long word shows a real
+      // wipe instead of a whole-word fade. Only the word being sung pays for
+      // the mask.
+      final double feather = fontSize * PlayerTokens.lyricsWipeFeatherEm;
       lit = ShaderMask(
         blendMode: BlendMode.dstIn,
         shaderCallback: (bounds) {
-          final double feather = bounds.width <= 0
-              ? 0.0
-              : (fontSize * 0.6 / bounds.width).clamp(0.0, 0.5);
-          final double edge = progress * (1 + 2 * feather) - feather;
-          return LinearGradient(
-            colors: const [Colors.white, Colors.transparent],
-            stops: [
-              (edge - feather).clamp(0.0, 1.0),
-              (edge + feather).clamp(0.0, 1.0),
+          final double tail = progress * (bounds.width + feather) - feather;
+          return ui.Gradient.linear(
+            Offset(bounds.left + tail, 0),
+            Offset(bounds.left + tail + feather, 0),
+            const [
+              Color(0xFFFFFFFF),
+              Color(0xD6FFFFFF),
+              Color(0x80FFFFFF),
+              Color(0x29FFFFFF),
+              Color(0x00FFFFFF),
             ],
-          ).createShader(bounds);
+            const [0.0, 0.25, 0.5, 0.75, 1.0],
+          );
         },
         child: lit,
       );
     }
 
-    // Sung words rise and stay risen; long held words also swell gently.
-    final double eased = Curves.easeOutCubic.transform(progress);
-    final double lift =
-        -fontSize * PlayerTokens.lyricsWordWobbleShiftEm * 1.2 * eased * focus;
-    final bool isLong =
-        word.duration.inMilliseconds >= PlayerTokens.lyricsLongWordThresholdMs;
-    final double swell = isLong
-        ? 1 + PlayerTokens.lyricsWordWobbleScale * math.sin(progress * math.pi)
-        : 1.0;
+    // Slow, eased float that holds until the line hands off (focus then eases
+    // it back). Its length is independent of the word's, so quick words rise
+    // as gently as held ones instead of stepping up.
+    final double floatUs = math
+        .max(
+          PlayerTokens.dLyricsWordFloat.inMicroseconds,
+          word.duration.inMicroseconds,
+        )
+        .toDouble();
+    final double floatT =
+        ((position - word.start).inMicroseconds / floatUs).clamp(0.0, 1.0);
+    final double lift = -fontSize *
+        PlayerTokens.lyricsWordWobbleShiftEm *
+        Curves.easeOutCubic.transform(floatT) *
+        focus;
 
-    return Transform(
-      alignment: Alignment.bottomCenter,
-      transform: Matrix4.translationValues(0, lift, 0)
-        ..scaleByDouble(swell, swell, 1, 1),
+    return Transform.translate(
+      offset: Offset(0, lift),
       child: Stack(children: [base, lit]),
     );
+  }
+
+  /// Apple-style held word: letters light one after another, each swelling,
+  /// rising and blooming as the note carries, then the whole word settles
+  /// back together once the note is released.
+  Widget _buildSustained(double progress, double fontSize) {
+    final chars = word.text.characters.toList();
+    final n = chars.length;
+    const spread = PlayerTokens.lyricsSustainSpread;
+
+    final sinceEndUs = (position - word.end).inMicroseconds;
+    final releaseT = sinceEndUs <= 0
+        ? 0.0
+        : (sinceEndUs / PlayerTokens.dLyricsSustainRelease.inMicroseconds)
+            .clamp(0.0, 1.0);
+    final envelope = (1 - Curves.easeInOutCubic.transform(releaseT)) * focus;
+
+    final dim = lyricsDimInk(activeColor).withValues(
+      alpha: lerpDouble(lineOpacity, PlayerTokens.lyricsUnsungOpacity, focus),
+    );
+    final litInk = lyricsLitInk(activeColor).withValues(alpha: focus);
+    final glowInk = Color.lerp(activeColor, Colors.white, 0.55)!;
+
+    // The motion wave is several letters wide and shaped with smoothstep, so
+    // neighbouring letters travel together as one swell instead of each
+    // popping on its own. Colour is not per letter at all: a single feathered
+    // wipe runs across the whole word on top.
+    final waveWidth = math.max(spread, n * 0.45);
+    final front = progress * (n + waveWidth);
+    double swellAt(int i) {
+      final t = ((front - i) / waveWidth).clamp(0.0, 1.0);
+      return t * t * t * (t * (t * 6 - 15) + 10) * envelope;
+    }
+
+    Widget row(Color color, {required bool glow}) {
+      final children = <Widget>[];
+      for (var i = 0; i < n; i++) {
+        final swell = swellAt(i);
+        final scale = 1 + PlayerTokens.lyricsSustainScale * swell;
+        children.add(
+          Transform(
+            alignment: Alignment.bottomCenter,
+            transform: Matrix4.translationValues(
+              0,
+              -fontSize * PlayerTokens.lyricsSustainLiftEm * swell,
+              0,
+            )..scaleByDouble(scale, scale, 1, 1),
+            child: Text(
+              chars[i],
+              style: textStyle.copyWith(
+                color: color,
+                shadows: !glow || swell <= 0.01
+                    ? null
+                    : [
+                        Shadow(
+                          color: glowInk.withValues(alpha: 0.7 * swell),
+                          blurRadius:
+                              PlayerTokens.lyricsSustainGlowBlur * swell,
+                        ),
+                      ],
+              ),
+            ),
+          ),
+        );
+      }
+      if (wordSuffix.isNotEmpty) {
+        children.add(Text(wordSuffix, style: textStyle.copyWith(color: color)));
+      }
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: children,
+      );
+    }
+
+    final base = row(dim, glow: false);
+    if (progress >= 1.0) {
+      return Stack(children: [base, row(litInk, glow: true)]);
+    }
+
+    // Wider than the normal wipe so the lit front reads as light spilling
+    // across the held note rather than a hard edge stepping between letters.
+    final feather = fontSize * PlayerTokens.lyricsWipeFeatherEm * 2.4;
+    final lit = ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) {
+        final tail = progress * (bounds.width + feather) - feather;
+        return ui.Gradient.linear(
+          Offset(bounds.left + tail, 0),
+          Offset(bounds.left + tail + feather, 0),
+          const [
+            Color(0xFFFFFFFF),
+            Color(0xC0FFFFFF),
+            Color(0x70FFFFFF),
+            Color(0x24FFFFFF),
+            Color(0x00FFFFFF),
+          ],
+          const [0.0, 0.3, 0.55, 0.8, 1.0],
+        );
+      },
+      child: row(litInk, glow: true),
+    );
+    return Stack(children: [base, lit]);
   }
 }

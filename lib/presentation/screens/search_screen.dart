@@ -38,6 +38,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Timer? _debounceTimer;
 
   @override
+  void initState() {
+    super.initState();
+    // Opening search should be type-and-go, so focus the field and select what
+    // is in it; the next keystroke then replaces the query instead of appending.
+    // Deferred to the first frame because a route transition still owns focus
+    // here, and autofocus alone cannot express the select-all half.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _searchFocus.requestFocus();
+      _searchController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _searchController.text.length,
+      );
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
@@ -108,8 +125,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final filterState = ref.watch(searchFilterProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final selectionState = ref.watch(selectionProvider);
-    // Desktop keeps focus control explicit: no autofocus steal on push,
-    // Esc to clear/back, Enter to play the top hit.
+    // The field takes focus on open (see initState); Esc clears or backs out,
+    // Enter plays the top hit.
     final isWide = WideLayout.isWide(context);
 
     return PopScope(
@@ -135,7 +152,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 child: TextField(
                   controller: _searchController,
                   focusNode: _searchFocus,
-                  autofocus: !isWide,
                   textInputAction: TextInputAction.search,
                   onSubmitted: (_) => _playFirstResult(),
                   style: const TextStyle(fontSize: 18),
