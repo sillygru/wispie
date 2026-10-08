@@ -910,7 +910,10 @@ class _FullBleedPlayerPane extends ConsumerWidget {
             ),
           );
         }
-        // Static cover: no beat transform on purpose in this design.
+        // Static cover: no beat transform on purpose in this design. The
+        // artwork is edge-to-edge here, so a scale has nowhere to go but under
+        // the bottom fade, where it opens a gap above the transport dock.
+        //
         // ShaderMask fades the lower third into transparency so the blur
         // behind shows through with no edge to color-match.
         final Widget art = Hero(

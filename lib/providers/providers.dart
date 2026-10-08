@@ -426,6 +426,7 @@ final spectrumControllerProvider = Provider<SpectrumController>((ref) {
     player: manager.player,
     currentSong: manager.currentSongNotifier,
     beatAnalysis: ref.read(beatAnalysisServiceProvider),
+    playingIntent: manager.playingNotifier,
   );
 
   final settings = ref.read(settingsProvider);

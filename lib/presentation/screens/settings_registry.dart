@@ -355,10 +355,11 @@ final List<SettingsDestination> settingsRegistry = [
   SettingsDestination(
     anchorId: 'appearance.full_bleed_design',
     icon: AppIcons.autoAwesome,
-    title: 'New player & detail design',
+    title: 'Immersive design',
     subtitle: 'Full-bleed player cover and gradient detail screens',
     breadcrumb: 'Settings › Appearance › Display',
     keywords: const [
+      'immersive',
       'full bleed',
       'player',
       'detail',
@@ -374,7 +375,7 @@ final List<SettingsDestination> settingsRegistry = [
     anchorId: 'appearance.beat_cover',
     icon: AppIcons.album,
     title: 'Beat-reactive cover',
-    subtitle: 'Album art pulses with the beat',
+    subtitle: 'Album art pulses with the beat (classic player only)',
     breadcrumb: 'Settings › Appearance › Player motion',
     keywords: const ['pulse', 'beat', 'artwork', 'motion'],
     open: () =>

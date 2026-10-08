@@ -1,8 +1,8 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
@@ -20,7 +20,18 @@ import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
-import '../widgets/wispie_ghost_widget.dart';
+import '../widgets/beat_particle_field.dart';
+import '../widgets/player_motion.dart';
+
+const _stepCount = 4;
+
+/// Height of every live preview on the appearance step. One value so the five
+/// demos read as a set rather than as five separate decisions.
+const _demoHeight = 72.0;
+
+/// The immersive preview draws a phone-shaped screen, so it needs a strip wide
+/// and tall enough to hold one at a readable scale.
+const _layoutDemoHeight = 104.0;
 
 class SetupScreen extends ConsumerStatefulWidget {
   const SetupScreen({super.key});
@@ -34,11 +45,14 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
   final PageController _pageController = PageController();
   final TextEditingController _usernameController = TextEditingController();
 
-  late final AnimationController _introController; // one-shot entrance swoop
-  late final AnimationController _outroController; // one-shot fly-away
-  // Slow ambient drift for parallax dust. Coprime with the ghost's internal
-  // float so the scene never retraces.
-  late final AnimationController _ambientController;
+  late final AnimationController _introController;
+  late final AnimationController _outroController;
+
+  /// Shared loop for the progress bar demo, so swapping modes keeps the phase.
+  late final AnimationController _demoClock = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 6000),
+  )..value = 0.2;
 
   int _currentPage = 0;
   bool _isLoading = false;
@@ -54,22 +68,15 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     _loadInitialFolders();
     _checkPermissionStatus();
 
-    // Entrance swoop: anticipation -> swoop -> settle.
     _introController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1600),
     )..forward();
 
-    // Fly-away outro (driven on Finish).
     _outroController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1700),
+      duration: const Duration(milliseconds: 1400),
     );
-
-    _ambientController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 24),
-    )..repeat();
   }
 
   Future<void> _loadInitialFolders() async {
@@ -87,18 +94,26 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     }
   }
 
+  void _syncDemoClock() {
+    if (_currentPage == 1) {
+      if (!_demoClock.isAnimating) _demoClock.repeat();
+    } else {
+      _demoClock.stop();
+    }
+  }
+
   @override
   void dispose() {
+    _demoClock.dispose();
     _introController.dispose();
     _outroController.dispose();
-    _ambientController.dispose();
     _pageController.dispose();
     _usernameController.dispose();
     super.dispose();
   }
 
   void _nextPage() {
-    if (_currentPage < 3) {
+    if (_currentPage < _stepCount - 1) {
       _pageController.nextPage(
         duration: AppTokens.dSlow,
         curve: AppTokens.cEmphasized,
@@ -115,42 +130,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     }
   }
 
-  GhostExpression get _ghostExpression {
-    switch (_currentPage) {
-      case 0:
-        return _usernameController.text.trim().isNotEmpty
-            ? GhostExpression.excited
-            : GhostExpression.happy;
-      case 1:
-        return GhostExpression.appearance;
-      case 2:
-        return GhostExpression.searching;
-      case 3:
-        return GhostExpression.celebrate;
-      default:
-        return GhostExpression.happy;
-    }
-  }
-
-  String get _ghostSpeechText {
-    final name = _usernameController.text.trim();
-    switch (_currentPage) {
-      case 0:
-        if (name.isNotEmpty) {
-          return 'Awesome to meet you, $name! Let\'s customize Wispie for you.';
-        }
-        return 'What should I call you friend?';
-      case 1:
-        return 'Here are your appearance settings!';
-      case 2:
-        return 'Now, let\'s find your music! Select the folders where your audio files live.';
-      case 3:
-        return 'Everything is set up! Let\'s get started!';
-      default:
-        return 'Welcome to Wispie!';
-    }
-  }
-
   Future<void> _addFolder() async {
     final storage = StorageService();
     final Map<String, String>? selection;
@@ -160,7 +139,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
       if (mounted) appSnack(context, e.userFacingHint);
       return;
     }
-    // Null means the user cancelled the native dialog — stay silent.
     if (selection == null) return;
     final selectedPath = selection['path'] ?? '';
     if (selectedPath.isEmpty) {
@@ -267,7 +245,6 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
 
     setState(() => _isLoading = true);
 
-    // Play the fly-away before completing setup.
     await _outroController.forward();
 
     try {
@@ -280,7 +257,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     } catch (e) {
       if (mounted) {
         appSnack(context, 'Setup error: $e');
-        _outroController.reverse(); // Bring ghost back if it fails.
+        _outroController.reverse();
       }
     } finally {
       if (mounted) {
@@ -289,127 +266,109 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     }
   }
 
-  // ------------------------------------------------------------- INTRO SCREEN
-  Widget _buildFullscreenIntro() {
+  // ------------------------------------------------------------------- INTRO
+  Widget _buildIntro() {
     final accent = AppTokens.accentOf(context, ref);
+    final solids = _Solids.of(context);
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_introController, _ambientController]),
-      builder: (context, child) {
-        final intro = _introController.value;
-
-        // Entrance swoop arc.
-        final swoop = _SwoopCurve.transform(intro);
-        final ghostX = swoop.dx;
-        final ghostY = swoop.dy;
-
-        // Staggered title opacity & slide.
-        final titleP = const Interval(0.45, 0.9, curve: Curves.easeOutCubic)
-            .transform(intro);
-        final titleY = (1 - titleP) * 24.0;
-
-        // Staggered button opacity & slide.
-        final buttonP = const Interval(0.62, 1.0, curve: Curves.easeOutCubic)
-            .transform(intro);
-        final buttonY = (1 - buttonP) * 28.0;
+      animation: _introController,
+      builder: (context, _) {
+        final t = _introController.value;
+        final wipe = _at(t, 0.0, 0.5, Curves.easeInOutCubic);
+        final tagline = _at(t, 0.7, 1.0);
+        final button = _at(t, 0.8, 1.0);
 
         return Stack(
           children: [
-            // Parallax ambient dust.
+            // Solid colour block, wiped down from the top. It has to reach past
+            // the baseline of the wordmark on a window with no system insets,
+            // where the letter row lands exactly on 60% of the height.
             Positioned.fill(
-              child: CustomPaint(
-                painter: _AmbientDustPainter(
-                  t: _ambientController.value,
-                  accentColor: accent,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: FractionallySizedBox(
+                  heightFactor: 0.68 * wipe,
+                  widthFactor: 1,
+                  child: ColoredBox(color: accent),
                 ),
               ),
             ),
             SafeArea(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 2),
-                    Transform.translate(
-                      offset: Offset(ghostX, ghostY),
-                      child: Transform.scale(
-                        scale: swoop.scale.clamp(0.1, 1.0),
-                        child: WispieGhostWidget(
-                          speechText: 'Welcome to wispie!',
-                          expression: GhostExpression.excited,
-                          ghostSize: 135,
-                          idleFloat: _introController.isCompleted,
-                          showSpeechBubble: _introController.isCompleted,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Transform.translate(
-                      offset: Offset(0, titleY),
-                      child: Opacity(
-                        opacity: titleP.clamp(0.0, 1.0),
-                        child: Column(
-                          children: [
-                            Text(
-                              'WISPIE',
-                              style: TextStyle(
-                                fontSize: 42,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 8,
-                                color: AppTokens.fgPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Your Personal Music Companion',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                                color: AppTokens.fgSecondary,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Spacer(flex: 3),
-                    Transform.translate(
-                      offset: Offset(0, buttonY),
-                      child: Opacity(
-                        opacity: buttonP.clamp(0.0, 1.0),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: FilledButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _showIntroScreen = false;
-                              });
-                            },
-                            icon: const AppIcon(AppIcons.arrowForward),
-                            label: const Text(
-                              'Get Started',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: accent,
-                              foregroundColor: AppTokens.onAccent(accent),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: AppTokens.brPill,
-                              ),
-                            ),
+              child: Column(
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.bottomLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final (i, letter)
+                                  in 'wispie'.split('').indexed)
+                                _SpringLetter(
+                                  letter: letter,
+                                  color: AppTokens.onAccent(accent),
+                                  value: _at(
+                                    t,
+                                    0.1 + i * 0.07,
+                                    0.5 + i * 0.07,
+                                    Curves.easeOutBack,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTokens.s5,
+                        0,
+                        AppTokens.s5,
+                        AppTokens.s5,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Opacity(
+                            opacity: tagline,
+                            child: Text(
+                              'Your music stays on your device. Setting up '
+                              'takes about a minute.',
+                              style: TextStyle(
+                                fontSize: 17,
+                                height: 1.4,
+                                fontWeight: FontWeight.w500,
+                                color: AppTokens.fgSecondary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.s5),
+                          Opacity(
+                            opacity: button,
+                            child: _BlockButton(
+                              label: 'Get started',
+                              accent: accent,
+                              solids: solids,
+                              onPressed: () =>
+                                  setState(() => _showIntroScreen = false),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -418,63 +377,64 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     );
   }
 
+  // ------------------------------------------------------------------- SETUP
   Widget _buildMainSetupScreen() {
     final accent = AppTokens.accentOf(context, ref);
+    final solids = _Solids.of(context);
+    final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+    final canContinue =
+        _currentPage != 0 || _usernameController.text.trim().isNotEmpty;
 
     return SafeArea(
       child: Column(
         children: [
-          // Top header & step progress bar.
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 24, 0),
             child: Row(
               children: [
-                if (_currentPage > 0)
-                  IconButton(
-                    icon: const AppIcon(AppIcons.arrowBack),
-                    onPressed: _previousPage,
-                    tooltip: 'Previous step',
-                  )
-                else
-                  const SizedBox(width: 48),
+                SizedBox(
+                  width: 48,
+                  child: _currentPage > 0
+                      ? IconButton(
+                          icon: const AppIcon(AppIcons.arrowBack),
+                          onPressed: _previousPage,
+                          tooltip: 'Previous step',
+                        )
+                      : null,
+                ),
                 Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(4, (index) {
-                      final isActive = index == _currentPage;
-                      final isCompleted = index < _currentPage;
-
-                      return AnimatedContainer(
-                        duration: AppTokens.dSlow,
-                        curve: AppTokens.cEmphasized,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        height: 6,
-                        width: isActive ? 28 : 10,
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? accent
-                              : isCompleted
-                                  ? accent.withValues(alpha: 0.5)
-                                  : AppTokens.surface(2),
-                          borderRadius: AppTokens.brPill,
-                        ),
-                      );
-                    }),
+                  child: _ProgressBar(
+                    value: (_currentPage + 1) / _stepCount,
+                    accent: accent,
+                    solids: solids,
                   ),
                 ),
-                const SizedBox(width: 48),
+                SizedBox(
+                  width: 48,
+                  child: Text(
+                    '${_currentPage + 1}/$_stepCount',
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppTokens.fgTertiary,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-
-          // Animated mascot section.
-          SizedBox(
-            height: 215,
+          // The whole body is what launches on the last step. It used to be a
+          // fixed-height strip above the pages, which left a band of dead space
+          // and threw away half the flight.
+          Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return AnimatedBuilder(
                   animation: _outroController,
-                  builder: (context, child) {
+                  builder: (context, _) {
                     final v = _outroController.value;
                     double dy = 0;
                     double dx = 0;
@@ -482,94 +442,90 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                     double tilt = 0;
                     double opacity = 1;
 
-                    if (v == 0) {
-                      // Resting: ghost idles on its own.
-                    } else if (v < 0.16) {
-                      final c = v / 0.16;
-                      final arc = math.sin(c * math.pi);
+                    if (v > 0 && v < 0.16) {
+                      final arc = math.sin(v / 0.16 * math.pi);
                       dy = arc * 16.0;
-                      scale = 1.0 - arc * 0.07;
-                    } else {
+                      scale = 1.0 - arc * 0.05;
+                    } else if (v >= 0.16) {
                       final lt = (v - 0.16) / 0.84;
                       final launch = lt * lt;
-                      dy = -launch * constraints.maxHeight * 3.8;
-                      dx = math.sin(lt * math.pi) * 60.0;
-                      tilt = lt * 1.8;
-                      scale = (1.0 - launch * 0.45).clamp(0.1, 1.0);
+                      dy = -launch * constraints.maxHeight * 1.9;
+                      dx = math.sin(lt * math.pi) * 48.0;
+                      tilt = lt * 1.4;
+                      scale = (1.0 - launch * 0.35).clamp(0.1, 1.0);
                       opacity = (1.0 - ((lt - 0.55) / 0.45).clamp(0.0, 1.0))
                           .clamp(0.0, 1.0);
                     }
 
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        if (v > 0.16 && v < 0.98)
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: _FlyAwayTrailPainter(
-                                progress: v,
-                                dy: dy,
-                                dx: dx,
-                                tilt: tilt,
-                                scale: scale,
-                                accent: accent,
-                              ),
-                            ),
-                          ),
-                        Transform.translate(
-                          offset: Offset(dx, dy),
-                          child: Transform.rotate(
-                            angle: tilt,
-                            child: Transform.scale(
-                              scale: scale,
-                              child: Opacity(
-                                opacity: opacity,
-                                child: Align(
-                                  alignment: const Alignment(0, 0.52),
-                                  child: WispieGhostWidget(
-                                    speechText: _ghostSpeechText,
-                                    expression: _ghostExpression,
-                                    ghostSize: 110,
-                                    idleFloat: v == 0,
-                                    showSpeechBubble: v == 0,
+                    return Transform.translate(
+                      offset: Offset(dx, dy),
+                      child: Transform.rotate(
+                        angle: tilt,
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Opacity(
+                            opacity: opacity,
+                            child: PageView(
+                              controller: _pageController,
+                              physics: const NeverScrollableScrollPhysics(),
+                              onPageChanged: (page) {
+                                setState(() => _currentPage = page);
+                                _syncDemoClock();
+                              },
+                              children: [
+                                _StepBody(
+                                  active: _currentPage == 0,
+                                  builder: (context, t) =>
+                                      _buildNameStep(t, accent, solids),
+                                ),
+                                _StepBody(
+                                  active: _currentPage == 1,
+                                  builder: (context, t) => _buildAppearanceStep(
+                                    t,
+                                    settings,
+                                    notifier,
+                                    accent,
+                                    solids,
                                   ),
                                 ),
-                              ),
+                                _StepBody(
+                                  active: _currentPage == 2,
+                                  builder: (context, t) =>
+                                      _buildFoldersStep(t, accent, solids),
+                                ),
+                                _StepBody(
+                                  active: _currentPage == 3,
+                                  builder: (context, t) => _buildReadyStep(
+                                    t,
+                                    settings,
+                                    accent,
+                                    solids,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     );
                   },
                 );
               },
             ),
           ),
-
-          // Page view with staggered step screens.
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: (page) => setState(() => _currentPage = page),
-              children: [
-                _StaggeredStepWrapper(
-                  stepKey: const ValueKey('step_0'),
-                  child: _buildNameStep(),
-                ),
-                _StaggeredStepWrapper(
-                  stepKey: const ValueKey('step_1'),
-                  child: _buildAppearanceStep(),
-                ),
-                _StaggeredStepWrapper(
-                  stepKey: const ValueKey('step_2'),
-                  child: _buildFoldersStep(),
-                ),
-                _StaggeredStepWrapper(
-                  stepKey: const ValueKey('step_3'),
-                  child: _buildReadyStep(),
-                ),
-              ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+            child: _BlockButton(
+              label: _currentPage == _stepCount - 1
+                  ? (_isLoading ? 'Setting things up' : 'Start listening')
+                  : 'Continue',
+              accent: accent,
+              solids: solids,
+              onPressed: _isLoading || !canContinue
+                  ? null
+                  : (_currentPage == _stepCount - 1
+                      ? _executeFinishSetup
+                      : _nextPage),
             ),
           ),
         ],
@@ -579,461 +535,454 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_showIntroScreen) {
-      return AmbientScaffold(
-        body: _buildFullscreenIntro(),
-      );
-    }
-
     return AmbientScaffold(
-      body: _buildMainSetupScreen(),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 600),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        child: _showIntroScreen
+            ? KeyedSubtree(key: const ValueKey('intro'), child: _buildIntro())
+            : KeyedSubtree(
+                key: const ValueKey('setup'),
+                child: _buildMainSetupScreen(),
+              ),
+      ),
     );
   }
 
   // ------------------------------------------------------------- STEP 1: NAME
-  Widget _buildNameStep() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 80),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTokens.surface(1),
-                borderRadius: AppTokens.brLg,
-                boxShadow: AppTokens.shadowRaised,
+  Widget _buildNameStep(Animation<double> t, Color accent, _Solids solids) {
+    final name = _usernameController.text.trim();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+      children: [
+        _Headline(
+          t: t,
+          title: 'What should we call you?',
+          subtitle:
+              'Wispie uses your name to greet you and to sign your listening '
+              'history. Nothing leaves this device either way.',
+        ),
+        const SizedBox(height: AppTokens.s5),
+        _Rise(
+          t: t,
+          start: 0.25,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: solids.raised(),
+              borderRadius: AppTokens.brLg,
+            ),
+            child: TextField(
+              controller: _usernameController,
+              onChanged: (_) => setState(() {}),
+              enabled: !_isLoading,
+              cursorColor: accent,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1.0,
+                color: AppTokens.fgPrimary,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Display Name',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppTokens.fgPrimary,
-                        ),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                filled: false,
+                hintText: 'Your name',
+                hintStyle: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.0,
+                  color: AppTokens.fgTertiary,
+                ),
+                contentPadding: EdgeInsets.symmetric(vertical: 22),
+              ),
+              onSubmitted: (_) {
+                if (_usernameController.text.trim().isNotEmpty) {
+                  _nextPage();
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: AppTokens.s4),
+        _Rise(
+          t: t,
+          start: 0.4,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AnimatedOpacity(
+              duration: AppTokens.dBase,
+              opacity: name.isEmpty ? 0 : 1,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: AppTokens.brPill,
+                ),
+                child: Text(
+                  'Nice to meet you, $name.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppTokens.onAccent(accent),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'This is how Wispie will greet you in your music dashboard.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppTokens.fgSecondary,
-                        ),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _usernameController,
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'Your Name',
-                      hintText: 'Enter your name',
-                      prefixIcon: AppIcon(AppIcons.person),
-                      border: OutlineInputBorder(),
-                    ),
-                    enabled: !_isLoading,
-                    textInputAction: TextInputAction.next,
-                    onSubmitted: (_) {
-                      if (_usernameController.text.trim().isNotEmpty) {
-                        _nextPage();
-                      }
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 32),
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 220),
-            child: FilledButton.icon(
-              onPressed: _usernameController.text.trim().isEmpty
-                  ? null
-                  : () => _nextPage(),
-              icon: const AppIcon(AppIcons.arrowForward),
-              label: const Text('Continue to Appearance'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   // ------------------------------------------------------- STEP 2: APPEARANCE
-  Widget _buildAppearanceStep() {
-    final settings = ref.watch(settingsProvider);
-    final notifier = ref.read(settingsProvider.notifier);
-    final accent = AppTokens.accentOf(context, ref);
+  Widget _buildAppearanceStep(
+    Animation<double> t,
+    SettingsState settings,
+    SettingsNotifier notifier,
+    Color accent,
+    _Solids solids,
+  ) {
+    const intensities = [
+      (PlayerMotionIntensity.subtle, 'Subtle'),
+      (PlayerMotionIntensity.balanced, 'Balanced'),
+      (PlayerMotionIntensity.bold, 'Bold'),
+    ];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 80),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppTokens.surface(1),
-                borderRadius: AppTokens.brLg,
-                boxShadow: AppTokens.shadowRaised,
-              ),
-              // Ink canvas for the ListTiles below: without an intervening
-              // Material their splashes paint on this DecoratedBox and trip
-              // the "ink splashes may be invisible" assertion in debug.
-              child: Material(
-                type: MaterialType.transparency,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        AppRowIcon(
-                          icon: AppIcons.tune,
-                          color: accent,
-                          size: 36,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Motion & Display Settings',
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTokens.fgPrimary,
-                                  ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
+    // Previews only run while this page is the one on screen. The PageView
+    // keeps its children alive, so without this the other four steps would
+    // keep five tickers alive behind the one the user is reading.
+    final live = _currentPage == 1;
 
-                    // Visualizer Mode Dropdown
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Audio Visualizer'),
-                      subtitle: const Text('Playback visualizer effect'),
-                      trailing: DropdownButton<VisualizerMode>(
-                        value: settings.visualizerMode,
-                        underline: const SizedBox.shrink(),
-                        borderRadius: AppTokens.brMd,
-                        onChanged: (val) {
-                          if (val != null) notifier.setVisualizerMode(val);
-                        },
-                        items: const [
-                          DropdownMenuItem(
-                            value: VisualizerMode.off,
-                            child: Text('Off'),
-                          ),
-                          DropdownMenuItem(
-                            value: VisualizerMode.classic,
-                            child: Text('Classic'),
-                          ),
-                          DropdownMenuItem(
-                            value: VisualizerMode.synced,
-                            child: Text('Synced'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
+    Widget demo(_DemoKind kind, bool on,
+            {bool reactive = true,
+            double height = _demoHeight,
+            PlayerMotionIntensity intensity = PlayerMotionIntensity.balanced,
+            double customIntensity = 0.5}) =>
+        _DemoPreview(
+          kind: kind,
+          accent: accent,
+          solids: solids,
+          on: on,
+          reactive: reactive,
+          height: height,
+          intensity: intensity,
+          customIntensity: customIntensity,
+          live: live,
+        );
 
-                    // Beat-reactive cover toggle
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Beat-reactive Cover'),
-                      subtitle: const Text('Pulse album art to music beat'),
-                      value: settings.beatReactiveCoverEnabled,
-                      onChanged: notifier.setBeatReactiveCoverEnabled,
-                    ),
-                    if (settings.beatReactiveCoverEnabled)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Cover intensity'),
-                          subtitle: const Text('How strongly the cover reacts'),
-                          trailing: DropdownButton<PlayerMotionIntensity>(
-                            value: settings.coverMotionIntensity,
-                            underline: const SizedBox.shrink(),
-                            borderRadius: AppTokens.brMd,
-                            onChanged: (val) {
-                              if (val != null) {
-                                notifier.setCoverMotionIntensity(val);
-                              }
-                            },
-                            items: const [
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.subtle,
-                                child: Text('Subtle'),
-                              ),
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.balanced,
-                                child: Text('Balanced'),
-                              ),
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.bold,
-                                child: Text('Bold'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    // Beat-reactive particles toggle
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Beat-reactive Particles'),
-                      subtitle:
-                          const Text('Floating music particles in player'),
-                      value: settings.beatReactiveParticlesEnabled,
-                      onChanged: notifier.setBeatReactiveParticlesEnabled,
-                    ),
-                    if (settings.beatReactiveParticlesEnabled)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Particle density'),
-                          subtitle:
-                              const Text('How many particles and how lively'),
-                          trailing: DropdownButton<PlayerMotionIntensity>(
-                            value: settings.particleMotionIntensity,
-                            underline: const SizedBox.shrink(),
-                            borderRadius: AppTokens.brMd,
-                            onChanged: (val) {
-                              if (val != null) {
-                                notifier.setParticleMotionIntensity(val);
-                              }
-                            },
-                            items: const [
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.subtle,
-                                child: Text('Subtle'),
-                              ),
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.balanced,
-                                child: Text('Balanced'),
-                              ),
-                              DropdownMenuItem(
-                                value: PlayerMotionIntensity.bold,
-                                child: Text('Bold'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    // Waveform toggle
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Waveform Progress Bar'),
-                      subtitle: const Text('Show visual audio waveform'),
-                      value: settings.showWaveform,
-                      onChanged: notifier.setShowWaveform,
-                    ),
-                  ],
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+      children: [
+        _Headline(
+          t: t,
+          title: 'Make it look the way you like.',
+          subtitle:
+              'Everything on this page also lives in Settings, so you can '
+              'change it whenever you want.',
+        ),
+        const SizedBox(height: AppTokens.s5),
+        _Rise(
+          t: t,
+          start: 0.12,
+          child: _SettingBlock(
+            solids: solids,
+            title: 'Immersive design',
+            subtitle: 'A full-bleed cover player and gradient detail screens.',
+            preview: demo(
+              _DemoKind.immersive,
+              settings.fullBleedDesignEnabled,
+              height: _layoutDemoHeight,
+            ),
+            trailing: _Toggle(
+              accent: accent,
+              value: settings.fullBleedDesignEnabled,
+              onChanged: notifier.setFullBleedDesignEnabled,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Rise(
+          t: t,
+          start: 0.2,
+          child: _SettingBlock(
+            solids: solids,
+            title: 'Audio visualizer',
+            subtitle: 'Bars over the artwork while you listen. Synced follows '
+                'the song rather than a random pattern.',
+            preview: demo(_DemoKind.spectrum,
+                settings.visualizerMode != VisualizerMode.off),
+            child: _Choice<VisualizerMode>(
+              accent: accent,
+              solids: solids,
+              value: settings.visualizerMode,
+              onChanged: notifier.setVisualizerMode,
+              options: const [
+                (VisualizerMode.off, 'Off'),
+                (VisualizerMode.classic, 'Classic'),
+                (VisualizerMode.synced, 'Synced'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Rise(
+          t: t,
+          start: 0.28,
+          child: _SettingBlock(
+            solids: solids,
+            title: 'Beat-reactive cover',
+            subtitle: settings.fullBleedDesignEnabled
+                ? 'Unavailable while immersive design is on.'
+                : 'The album art breathes on every beat.',
+            preview: demo(
+              _DemoKind.cover,
+              settings.beatReactiveCoverEnabled &&
+                  !settings.fullBleedDesignEnabled,
+              intensity: settings.coverMotionIntensity,
+              customIntensity: settings.coverMotionCustomIntensity,
+            ),
+            trailing: _Toggle(
+              accent: accent,
+              value: settings.beatReactiveCoverEnabled &&
+                  !settings.fullBleedDesignEnabled,
+              onChanged: settings.fullBleedDesignEnabled
+                  ? null
+                  : notifier.setBeatReactiveCoverEnabled,
+            ),
+            child: settings.beatReactiveCoverEnabled &&
+                    !settings.fullBleedDesignEnabled
+                ? _Choice<PlayerMotionIntensity>(
+                    accent: accent,
+                    solids: solids,
+                    value: settings.coverMotionIntensity,
+                    onChanged: notifier.setCoverMotionIntensity,
+                    options: intensities,
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Rise(
+          t: t,
+          start: 0.36,
+          child: _SettingBlock(
+            solids: solids,
+            title: 'Beat-reactive particles',
+            subtitle: 'Motes drift across the player, and each beat carries '
+                'them further instead of just blinking them.',
+            preview: demo(
+              _DemoKind.particles,
+              settings.beatReactiveParticlesEnabled,
+              intensity: settings.particleMotionIntensity,
+              customIntensity: settings.particleMotionCustomIntensity,
+            ),
+            trailing: _Toggle(
+              accent: accent,
+              value: settings.beatReactiveParticlesEnabled,
+              onChanged: notifier.setBeatReactiveParticlesEnabled,
+            ),
+            child: settings.beatReactiveParticlesEnabled
+                ? _Choice<PlayerMotionIntensity>(
+                    accent: accent,
+                    solids: solids,
+                    value: settings.particleMotionIntensity,
+                    onChanged: notifier.setParticleMotionIntensity,
+                    options: intensities,
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _Rise(
+          t: t,
+          start: 0.44,
+          child: _SettingBlock(
+            solids: solids,
+            title: 'Progress bar',
+            subtitle: 'Draw the song itself as a waveform instead of a plain '
+                'line. Sound reactive makes it move as it plays.',
+            preview: AnimatedSwitcher(
+              duration: AppTokens.dBase,
+              switchInCurve: AppTokens.cStandard,
+              switchOutCurve: AppTokens.cStandard,
+              child: KeyedSubtree(
+                key: ValueKey(settings.progressBarType),
+                child: _DemoPreview(
+                  kind: _DemoKind.waveform,
+                  accent: accent,
+                  solids: solids,
+                  on: settings.progressBarType != ProgressBarType.basic,
+                  reactive:
+                      settings.progressBarType == ProgressBarType.reactive,
+                  height: _demoHeight,
+                  live: live,
+                  clock: _demoClock,
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 24),
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 220),
-            child: FilledButton.icon(
-              onPressed: _nextPage,
-              icon: const AppIcon(AppIcons.arrowForward),
-              label: const Text('Continue to Music Folders'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
+            child: _Choice<ProgressBarType>(
+              accent: accent,
+              solids: solids,
+              value: settings.progressBarType,
+              onChanged: notifier.setProgressBarType,
+              options: const [
+                (ProgressBarType.basic, 'Standard'),
+                (ProgressBarType.waveform, 'Waveform'),
+                (ProgressBarType.reactive, 'Sound reactive'),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   // ---------------------------------------------------------- STEP 3: FOLDERS
-  Widget _buildFoldersStep() {
-    final accent = AppTokens.accentOf(context, ref);
-
+  Widget _buildFoldersStep(
+    Animation<double> t,
+    Color accent,
+    _Solids solids,
+  ) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _Headline(
+            t: t,
+            title: 'Where is your music?',
+            subtitle: 'Point Wispie at the folders your songs live in. It only '
+                'reads them, and you can add as many as you like.',
+          ),
+          const SizedBox(height: AppTokens.s5),
           if (Platform.isAndroid && !_permissionGranted) ...[
-            _StaggeredItem(
-              delay: const Duration(milliseconds: 80),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTokens.surface(1),
-                  borderRadius: AppTokens.brLg,
-                ),
-                child: Column(
-                  children: [
-                    const AppIcon(AppIcons.storage, size: 40),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Storage Permission Needed',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Wispie needs permission to access audio files on your device.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTokens.fgSecondary,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _isLoading ? null : _requestPermission,
-                      icon: const AppIcon(AppIcons.folder),
-                      label: Text(_permissionDeniedOnce
-                          ? 'Open System Settings'
-                          : 'Grant Permission'),
-                    ),
-                  ],
+            _Rise(
+              t: t,
+              start: 0.2,
+              child: _SettingBlock(
+                solids: solids,
+                title: 'Storage permission',
+                subtitle: 'Wispie needs it to find audio files on this device.',
+                child: _BlockButton(
+                  label: _permissionDeniedOnce
+                      ? 'Open system settings'
+                      : 'Grant permission',
+                  accent: accent,
+                  solids: solids,
+                  onPressed: _isLoading ? null : _requestPermission,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
           ],
           Expanded(
-            child: _StaggeredItem(
-              delay: const Duration(milliseconds: 160),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTokens.surface(1),
-                  borderRadius: AppTokens.brLg,
-                  boxShadow: AppTokens.shadowRaised,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Music Folders (${_musicFolders.length})',
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTokens.fgPrimary,
-                                  ),
-                        ),
-                        TextButton.icon(
-                          onPressed: _addFolder,
-                          icon: const AppIcon(AppIcons.add, size: 18),
-                          label: const Text('Add Folder'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: _musicFolders.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  AppIcon(
-                                    AppIcons.folder,
-                                    size: 44,
-                                    color: accent.withValues(alpha: 0.6),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'No music folders added yet',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          color: AppTokens.fgSecondary,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Tap Add Folder above to choose where your songs are stored.',
-                                    textAlign: TextAlign.center,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: AppTokens.fgTertiary,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: _musicFolders.length,
-                              itemBuilder: (context, index) {
-                                final folder = _musicFolders[index];
-                                final path = folder['path'] ?? '';
-                                final name = p.basename(path);
+            child: _Rise(
+              t: t,
+              start: 0.3,
+              child: _musicFolders.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AppIcon(
+                            AppIcons.folder,
+                            size: 40,
+                            color: accent,
+                          ),
+                          const SizedBox(height: AppTokens.s3),
+                          const Text(
+                            'No folders yet',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: AppTokens.fgPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.s1),
+                          const Text(
+                            'Add the one that holds your songs.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppTokens.fgTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _musicFolders.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final folder = _musicFolders[index];
+                        final path = folder['path'] ?? '';
+                        final name = p.basename(path);
 
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  decoration: BoxDecoration(
-                                    color: AppTokens.surface(2),
-                                    borderRadius: AppTokens.brMd,
-                                  ),
-                                  // Ink canvas for the ListTile (see above).
-                                  child: Material(
-                                    type: MaterialType.transparency,
-                                    child: ListTile(
-                                      leading: AppRowIcon(
-                                        icon: AppIcons.folder,
-                                        color: accent,
-                                      ),
-                                      title: Text(
-                                        name.isEmpty ? path : name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        path,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                      trailing: IconButton(
-                                        icon: const AppIcon(AppIcons.delete,
-                                            size: 18),
-                                        onPressed: () => _removeFolder(folder),
+                        return Container(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+                          decoration: BoxDecoration(
+                            color: solids.raised(),
+                            borderRadius: AppTokens.brMd,
+                          ),
+                          child: Row(
+                            children: [
+                              AppRowIcon(
+                                icon: AppIcons.folder,
+                                color: accent,
+                              ),
+                              const SizedBox(width: AppTokens.s3),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name.isEmpty ? path : name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTokens.fgPrimary,
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
+                                    Text(
+                                      path,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTokens.fgTertiary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Remove folder',
+                                icon: const AppIcon(AppIcons.delete, size: 18),
+                                onPressed: () => _removeFolder(folder),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
-          const SizedBox(height: 16),
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 300),
-            child: FilledButton.icon(
-              onPressed: _nextPage,
-              icon: const AppIcon(AppIcons.arrowForward),
-              label: const Text('Continue to Final Step'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
+          const SizedBox(height: AppTokens.s3),
+          _Rise(
+            t: t,
+            start: 0.4,
+            child: _BlockButton(
+              label: 'Add a folder',
+              accent: accent,
+              solids: solids,
+              tonal: true,
+              onPressed: _addFolder,
             ),
           ),
         ],
@@ -1042,442 +991,1225 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
   }
 
   // ----------------------------------------------------------- STEP 4: READY
-  Widget _buildReadyStep() {
-    final settings = ref.watch(settingsProvider);
-    final accent = AppTokens.accentOf(context, ref);
+  Widget _buildReadyStep(
+    Animation<double> t,
+    SettingsState settings,
+    Color accent,
+    _Solids solids,
+  ) {
+    final name = _usernameController.text.trim();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 80),
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTokens.surface(1),
-                borderRadius: AppTokens.brLg,
-                boxShadow: AppTokens.shadowRaised,
-              ),
-              // Ink canvas for the SwitchListTile below (see appearance card).
-              child: Material(
-                type: MaterialType.transparency,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        AppRowIcon(
-                          icon: AppIcons.checkCircle,
-                          color: accent,
-                          size: 36,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Setup Summary',
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTokens.fgPrimary,
-                                  ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildSummaryRow(
-                      'User Profile',
-                      _usernameController.text.trim().isEmpty
-                          ? 'Guest'
-                          : _usernameController.text.trim(),
-                      AppIcons.person,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildSummaryRow(
-                      'Visualizer Mode',
-                      settings.visualizerMode.name.toUpperCase(),
-                      AppIcons.waves,
-                    ),
-                    const SizedBox(height: 10),
-                    _buildSummaryRow(
-                      'Music Folders',
-                      '${_musicFolders.length} selected',
-                      AppIcons.folder,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          _StaggeredItem(
-            delay: const Duration(milliseconds: 220),
-            child: FilledButton(
-              onPressed: _isLoading ? null : _executeFinishSetup,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                backgroundColor: accent,
-                foregroundColor: AppTokens.onAccent(accent),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2.5),
-                    )
-                  : const Text(
-                      'Start Listening',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+    // Full-width rows rather than a row of tiles: three columns this narrow
+    // cannot hold a value like "Sound reactive" or a label like "Music folders"
+    // without either truncating it or wrapping onto a second line, and a
+    // wrapped label shifts the tile's number out of line with its neighbours.
+    final summary = <(String, String)>[
+      ('Music folders', '${_musicFolders.length}'),
+      ('Immersive design', _yesNo(settings.fullBleedDesignEnabled)),
+      ('Audio visualizer', _visualizerLabel(settings.visualizerMode)),
+      ('Progress bar', _progressBarLabel(settings.progressBarType)),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+      children: [
+        _Headline(
+          t: t,
+          title: name.isEmpty ? 'You are all set.' : 'You are all set, $name.',
+          subtitle: 'Here is what we set up. You can change any of it later '
+              'from Settings.',
+        ),
+        const SizedBox(height: AppTokens.s5),
+        for (final (i, row) in summary.indexed) ...[
+          if (i > 0) const SizedBox(height: AppTokens.s2),
+          _Rise(
+            t: t,
+            start: 0.2 + i * 0.06,
+            child: _SummaryRow(
+              solids: solids,
+              accent: accent,
+              // The first row carries the one number that matters, so it is the
+              // one block that gets the accent fill.
+              highlight: i == 0,
+              label: row.$1,
+              value: row.$2,
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryRow(String label, String value, AppIconData icon) {
-    return Row(
-      children: [
-        AppIcon(icon, size: 18, color: AppTokens.fgSecondary),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppTokens.fgSecondary,
-            fontSize: 14,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-            color: AppTokens.fgPrimary,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
-        ),
       ],
     );
   }
 }
 
-/// A real three-phase entrance: anticipation (small dip + shrink back) -> swoop
-/// (arc forward, rising over the middle) -> settle (gentle ease-out with a
-/// single soft overshoot). Returns decorrelated x/y/scale so the path is an
-/// arc, not a straight diagonal.
-class _SwoopCurve {
-  const _SwoopCurve._();
+String _yesNo(bool value) => value ? 'On' : 'Off';
 
-  static _SwoopState transform(double t) {
-    const anticipEnd = 0.14;
-    const swoopEnd = 0.62;
+String _visualizerLabel(VisualizerMode mode) => switch (mode) {
+      VisualizerMode.off => 'Off',
+      VisualizerMode.classic => 'Classic',
+      VisualizerMode.synced => 'Synced',
+    };
 
-    const startX = -220.0;
-    const startY = 120.0;
+String _progressBarLabel(ProgressBarType type) => switch (type) {
+      ProgressBarType.basic => 'Standard',
+      ProgressBarType.waveform => 'Waveform',
+      ProgressBarType.reactive => 'Sound reactive',
+    };
 
-    double dx, dy, scale;
+// -------------------------------------------------------------- HELPERS
 
-    if (t < anticipEnd) {
-      // Anticipation: pull slightly backward and dip down.
-      final a = t / anticipEnd;
-      final e = Curves.easeOut.transform(a);
-      dx = startX - 15.0 * e;
-      dy = startY + 15.0 * e;
-      scale = 0.95 - 0.05 * e;
-    } else if (t < swoopEnd) {
-      // Swoop: arc forward and rise over the middle.
-      final a = (t - anticipEnd) / (swoopEnd - anticipEnd);
-      final eased = Curves.easeInOutCubic.transform(a);
-      dx = (startX - 15.0) + ((-12.0) - (startX - 15.0)) * eased;
-      dy = (startY + 15.0) - math.sin(a * math.pi) * 140.0 - eased * 147.0;
-      scale = 0.90 + 0.12 * Curves.easeOut.transform(a);
-    } else {
-      // Settle: ease into rest position (0, 0).
-      final a = (t - swoopEnd) / (1.0 - swoopEnd);
-      final eX = Curves.easeOutBack.transform(a);
-      final eY = Curves.easeOutCubic.transform(a);
-      dx = -12.0 + (0.0 - (-12.0)) * eX;
-      dy = -25.0 + (0.0 - (-25.0)) * eY;
-      scale = 1.02 - 0.02 * eY;
-    }
+/// The onboarding flow paints solid fills instead of the app's translucent
+/// tonal washes.
+///
+/// Behind this screen sits the ambient bloom, which is already a gradient, so a
+/// 4% white card laid over it reads as a smear rather than as a block.
+/// Blending the same values against the scaffold colour bakes them into one
+/// opaque colour, which is what lets the cards here carry weight the same way
+/// the app's do — with flat colour rather than with a glow.
+class _Solids {
+  const _Solids(this.canvas);
 
-    return _SwoopState(dx, dy, scale);
-  }
+  factory _Solids.of(BuildContext context) =>
+      _Solids(Theme.of(context).scaffoldBackgroundColor);
+
+  final Color canvas;
+
+  /// A block lifted off the page.
+  Color raised([double alpha = 0.05]) =>
+      Color.alphaBlend(Colors.white.withValues(alpha: alpha), canvas);
+
+  /// A block sunk into it.
+  Color well([double alpha = 0.16]) =>
+      Color.alphaBlend(Colors.black.withValues(alpha: alpha), canvas);
+
+  /// A block in the accent, quiet enough to sit behind text.
+  Color accentWash(Color accent, [double alpha = 0.12]) =>
+      Color.alphaBlend(accent.withValues(alpha: alpha), canvas);
 }
 
-class _SwoopState {
-  final double dx;
-  final double dy;
-  final double scale;
-  const _SwoopState(this.dx, this.dy, this.scale);
+double _at(double t, double begin, double end,
+    [Curve curve = Curves.easeOutCubic]) {
+  return Interval(begin, end, curve: curve).transform(t);
 }
 
-/// Fades + slides a child in with a short delay, used to cascade step content.
-class _StaggeredItem extends StatefulWidget {
-  final Duration delay;
+class _Pressable extends StatefulWidget {
+  const _Pressable({required this.child, this.onTap});
+
   final Widget child;
-
-  const _StaggeredItem({
-    required this.delay,
-    required this.child,
-  });
+  final VoidCallback? onTap;
 
   @override
-  State<_StaggeredItem> createState() => _StaggeredItemState();
+  State<_Pressable> createState() => _PressableState();
 }
 
-class _StaggeredItemState extends State<_StaggeredItem>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _opacity;
-  late final Animation<Offset> _slide;
-  Timer? _timer;
+class _PressableState extends State<_Pressable> {
+  bool _down = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    );
-    _opacity = CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
-    );
-    _slide = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
-      ),
-    );
-    _timer = Timer(widget.delay, () {
-      if (mounted) _controller.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    super.dispose();
+  void _set(bool value) {
+    if (_down != value) setState(() => _down = value);
   }
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(
-        position: _slide,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: widget.onTap == null ? null : (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.96 : 1,
+        duration: AppTokens.dFast,
+        curve: Curves.easeOut,
         child: widget.child,
       ),
     );
   }
 }
 
-class _StaggeredStepWrapper extends StatelessWidget {
-  final Key stepKey;
-  final Widget child;
+/// Fades and rises a child in on the step's timeline. The overshoot on the
+/// curve gives it a bit of spring rather than a flat ease.
+class _Rise extends StatelessWidget {
+  const _Rise({required this.t, required this.start, required this.child});
 
-  const _StaggeredStepWrapper({
-    required this.stepKey,
-    required this.child,
-  });
+  final Animation<double> t;
+  final double start;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: AppTokens.dSlow,
-      switchInCurve: AppTokens.cEmphasized,
-      switchOutCurve: AppTokens.cStandard,
-      transitionBuilder: (child, animation) {
-        final slide = Tween<Offset>(
-          begin: const Offset(0.08, 0.0),
-          end: Offset.zero,
-        ).animate(animation);
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: slide,
+    return AnimatedBuilder(
+      animation: t,
+      child: child,
+      builder: (context, child) {
+        final v = _at(
+          t.value,
+          start,
+          math.min(start + 0.4, 1.0),
+          Curves.easeOutBack,
+        );
+        return Opacity(
+          opacity: v.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, (1 - v) * 28),
             child: child,
           ),
         );
       },
-      child: KeyedSubtree(
-        key: stepKey,
-        child: child,
+    );
+  }
+}
+
+/// Each word of a headline rises out of its own clip, one after another.
+class _Headline extends StatelessWidget {
+  const _Headline({required this.t, required this.title, this.subtitle});
+
+  final Animation<double> t;
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      fontSize: 40,
+      height: 1.1,
+      fontWeight: FontWeight.w900,
+      letterSpacing: -1.4,
+      color: AppTokens.fgPrimary,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          children: [
+            for (final (i, word) in title.split(' ').indexed)
+              ClipRect(
+                child: AnimatedBuilder(
+                  animation: t,
+                  builder: (context, _) {
+                    final v = _at(
+                      t.value,
+                      i * 0.06,
+                      math.min(i * 0.06 + 0.45, 1.0),
+                      Curves.easeOutBack,
+                    );
+                    return Transform.translate(
+                      offset: Offset(0, (1 - v) * 48),
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: Text(word, style: style),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+        if (subtitle != null)
+          _Rise(
+            t: t,
+            start: 0.25,
+            child: Padding(
+              padding: const EdgeInsets.only(top: AppTokens.s3),
+              child: Text(
+                subtitle!,
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.4,
+                  color: AppTokens.fgSecondary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SpringLetter extends StatelessWidget {
+  const _SpringLetter({
+    required this.letter,
+    required this.color,
+    required this.value,
+  });
+
+  final String letter;
+  final Color color;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: value.clamp(0.0, 1.0),
+      child: Transform.translate(
+        offset: Offset(0, (1 - value) * 64),
+        child: Text(
+          letter,
+          style: TextStyle(
+            fontSize: 150,
+            height: 0.9,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -6,
+            color: color,
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Ambient dust with three parallax layers and per-particle twinkle. Particles
-/// are pre-seeded once (stable identities) and drift + shimmer over time, so
-/// the field reads as floating depth rather than a scrolling screensaver.
-class _AmbientDustPainter extends CustomPainter {
-  final double t; // 0..1 looping over a long period
-  final Color accentColor;
+/// Owns one step's entrance timeline. It plays again each time the step
+/// becomes the visible page.
+class _StepBody extends StatefulWidget {
+  const _StepBody({required this.active, required this.builder});
 
-  _AmbientDustPainter({required this.t, required this.accentColor});
+  final bool active;
+  final Widget Function(BuildContext context, Animation<double> t) builder;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final rand = math.Random(7);
-    final paint = Paint()..style = PaintingStyle.fill;
-    final phase = t * math.pi * 2;
+  State<_StepBody> createState() => _StepBodyState();
+}
 
-    // Far layer: tiny, slow, dim, drifts least (max parallax).
-    _drawLayer(
-      canvas,
-      size,
-      rand,
-      paint,
-      phase,
-      count: 26,
-      radiusMin: 0.8,
-      radiusRange: 1.8,
-      driftAmp: 6.0,
-      driftSpeed: 0.6,
-      twinkleAmp: 0.12,
-      twinkleSpeed: 1.0,
-      baseAlpha: 0.06,
-      color: Colors.white,
-    );
+class _StepBodyState extends State<_StepBody>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1000),
+  );
 
-    // Mid layer: medium, accent-tinted.
-    _drawLayer(
-      canvas,
-      size,
-      rand,
-      paint,
-      phase,
-      count: 16,
-      radiusMin: 1.6,
-      radiusRange: 3.0,
-      driftAmp: 14.0,
-      driftSpeed: 1.0,
-      twinkleAmp: 0.2,
-      twinkleSpeed: 1.6,
-      baseAlpha: 0.08,
-      color: accentColor,
-    );
-
-    // Near layer: largest, fastest drift, brightest twinkle, soft halo.
-    _drawLayer(
-      canvas,
-      size,
-      rand,
-      paint,
-      phase,
-      count: 9,
-      radiusMin: 2.2,
-      radiusRange: 3.5,
-      driftAmp: 26.0,
-      driftSpeed: 1.5,
-      twinkleAmp: 0.35,
-      twinkleSpeed: 2.4,
-      baseAlpha: 0.12,
-      color: accentColor,
-      halo: true,
-    );
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _controller.forward();
   }
 
-  void _drawLayer(
-    Canvas canvas,
-    Size size,
-    math.Random rand,
-    Paint paint,
-    double phase, {
-    required int count,
-    required double radiusMin,
-    required double radiusRange,
-    required double driftAmp,
-    required double driftSpeed,
-    required double twinkleAmp,
-    required double twinkleSpeed,
-    required double baseAlpha,
-    required Color color,
-    bool halo = false,
-  }) {
-    for (int i = 0; i < count; i++) {
-      final baseX = rand.nextDouble() * size.width;
-      final baseY = rand.nextDouble() * size.height;
-      final r = radiusMin + rand.nextDouble() * radiusRange;
-      final seed = rand.nextDouble() * math.pi * 2;
-
-      // Lissajous-ish drift (decorrelated axes) so each mote wanders uniquely.
-      final dx = baseX + math.sin(phase * driftSpeed + seed) * driftAmp;
-      final dy = baseY +
-          math.cos(phase * driftSpeed * 0.8 + seed * 1.3) * driftAmp * 0.6;
-
-      final twinkle = 0.5 + 0.5 * math.sin(phase * twinkleSpeed + seed * 2.0);
-      final alpha = (baseAlpha + twinkleAmp * twinkle).clamp(0.0, 0.6);
-
-      if (halo) {
-        final haloPaint = Paint()
-          ..color = color.withValues(alpha: alpha * 0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
-        canvas.drawCircle(Offset(dx, dy), r * 1.7, haloPaint);
-      }
-
-      paint.color = color.withValues(alpha: alpha);
-      canvas.drawCircle(Offset(dx, dy), r, paint);
+  @override
+  void didUpdateWidget(covariant _StepBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      _controller.forward(from: 0);
     }
   }
 
   @override
-  bool shouldRepaint(_AmbientDustPainter oldDelegate) =>
-      t != oldDelegate.t || accentColor != oldDelegate.accentColor;
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _controller);
 }
 
-/// Soft echoing orbs trailing the ghost as it flies away.
-class _FlyAwayTrailPainter extends CustomPainter {
-  final double progress;
-  final double dy;
-  final double dx;
-  final double tilt;
-  final double scale;
-  final Color accent;
-
-  _FlyAwayTrailPainter({
-    required this.progress,
-    required this.dy,
-    required this.dx,
-    required this.tilt,
-    required this.scale,
+class _ProgressBar extends StatelessWidget {
+  const _ProgressBar({
+    required this.value,
     required this.accent,
+    required this.solids,
   });
+
+  final double value;
+  final Color accent;
+  final _Solids solids;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: value),
+      duration: AppTokens.dSlow,
+      curve: Curves.easeOutCubic,
+      builder: (context, v, _) {
+        return Stack(
+          children: [
+            SizedBox(
+              height: 6,
+              width: double.infinity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: solids.well(),
+                  borderRadius: AppTokens.brPill,
+                ),
+              ),
+            ),
+            FractionallySizedBox(
+              widthFactor: v.clamp(0.0, 1.0),
+              alignment: Alignment.centerLeft,
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: AppTokens.brPill,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _BlockButton extends StatelessWidget {
+  const _BlockButton({
+    required this.label,
+    required this.accent,
+    required this.solids,
+    this.onPressed,
+    this.tonal = false,
+  });
+
+  final String label;
+  final Color accent;
+  final _Solids solids;
+  final VoidCallback? onPressed;
+  final bool tonal;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    final Color background;
+    final Color foreground;
+    if (!enabled) {
+      background = solids.raised(0.07);
+      foreground = AppTokens.fgTertiary;
+    } else if (tonal) {
+      background = solids.raised(0.09);
+      foreground = AppTokens.fgPrimary;
+    } else {
+      background = accent;
+      foreground = AppTokens.onAccent(accent);
+    }
+
+    return _Pressable(
+      onTap: onPressed == null
+          ? null
+          : () {
+              HapticFeedback.lightImpact();
+              onPressed!();
+            },
+      child: AnimatedContainer(
+        duration: AppTokens.dBase,
+        curve: AppTokens.cStandard,
+        width: double.infinity,
+        height: 60,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: AppTokens.brLg,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+            color: foreground,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingBlock extends StatelessWidget {
+  const _SettingBlock({
+    required this.solids,
+    required this.title,
+    required this.subtitle,
+    this.preview,
+    this.trailing,
+    this.child,
+  });
+
+  final _Solids solids;
+  final String title;
+  final String subtitle;
+
+  /// A live demo of whatever this block controls, shown above the control.
+  final Widget? preview;
+  final Widget? trailing;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: solids.raised(),
+        borderRadius: AppTokens.brLg,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTokens.fgPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.3,
+                        color: AppTokens.fgSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: AppTokens.s3),
+                trailing!,
+              ],
+            ],
+          ),
+          if (preview != null) ...[
+            const SizedBox(height: AppTokens.s4),
+            preview!,
+          ],
+          if (child != null) ...[
+            const SizedBox(height: AppTokens.s3),
+            child!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Toggle extends StatelessWidget {
+  const _Toggle({
+    required this.accent,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Color accent;
+  final bool value;
+
+  /// Null disables the switch — for a setting the current combination of other
+  /// settings makes unavailable.
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Switch(
+      value: value,
+      activeTrackColor: accent,
+      onChanged: onChanged == null
+          ? null
+          : (v) {
+              HapticFeedback.selectionClick();
+              onChanged!(v);
+            },
+    );
+  }
+}
+
+class _Choice<T> extends StatelessWidget {
+  const _Choice({
+    required this.accent,
+    required this.solids,
+    required this.value,
+    required this.onChanged,
+    required this.options,
+  });
+
+  final Color accent;
+  final _Solids solids;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final List<(T, String)> options;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final (i, option) in options.indexed)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(left: i == 0 ? 0 : AppTokens.s1),
+              child: _Pressable(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onChanged(option.$1);
+                },
+                child: AnimatedContainer(
+                  duration: AppTokens.dFast,
+                  curve: AppTokens.cStandard,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: option.$1 == value ? accent : solids.well(0.10),
+                    borderRadius: AppTokens.brPill,
+                  ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: AppTokens.s2),
+                      child: Text(
+                        option.$2,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: option.$1 == value
+                              ? AppTokens.onAccent(accent)
+                              : AppTokens.fgSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.solids,
+    required this.accent,
+    required this.highlight,
+    required this.label,
+    required this.value,
+  });
+
+  final _Solids solids;
+  final Color accent;
+  final bool highlight;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = highlight ? accent : solids.raised();
+    final foreground =
+        highlight ? AppTokens.onAccent(accent) : AppTokens.fgPrimary;
+    final caption =
+        highlight ? foreground.withValues(alpha: 0.78) : AppTokens.fgTertiary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: AppTokens.brLg,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: caption,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+              color: foreground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------- DEMOS
+
+/// Turns a looping [AnimationController] into a monotonic clock.
+///
+/// [ParticleSystem] is built on the assumption that time only moves forward:
+/// motes record a `bornAt`, live 14-40s, and are retired and respawned against
+/// `_now`. An animation's value is not that — it repeats, so it snaps from 1
+/// back to 0 and every age in the field goes negative at once, which
+/// [ParticleSystem.fadeOf] clamps to zero and the whole field blinks out.
+///
+/// So the wrapped value drives the *music* (the beat grid, the playhead, the
+/// cover pulse — all of which genuinely do loop) and this drives the
+/// *simulation*, which keeps living across loop points exactly as it does on a
+/// screen that has been playing for ten minutes.
+class _DemoClock {
+  _DemoClock(this._controller, this.secondsPerLoop) {
+    _controller.addListener(_tick);
+  }
+
+  final AnimationController _controller;
+
+  /// Real seconds one pass of the animation represents.
+  final double secondsPerLoop;
+
+  double _elapsed = 0;
+  double _lastValue = 0;
+
+  double get elapsed => _elapsed;
+
+  void _tick() {
+    final value = _controller.value;
+    var delta = value - _lastValue;
+    // Backwards means the animation looped rather than that time ran out.
+    if (delta < 0) delta += 1;
+    _elapsed += delta * secondsPerLoop;
+    _lastValue = value;
+  }
+
+  void dispose() => _controller.removeListener(_tick);
+}
+
+/// Which effect a [_DemoPreview] stands in for.
+enum _DemoKind { immersive, spectrum, particles, cover, waveform }
+
+/// A silent, looping stand-in for one effect, so a toggle can show its
+/// consequence while the user is still on the setup screen.
+///
+/// Deliberately not the real widgets: the player versions need a decoded file
+/// and a live audio session, and the one thing a preview has to be is something
+/// that can run before any of that exists. Switching the setting off freezes
+/// the demo rather than hiding it — the difference between the two states is
+/// the thing worth showing.
+class _DemoPreview extends StatefulWidget {
+  const _DemoPreview({
+    required this.kind,
+    required this.accent,
+    required this.solids,
+    required this.on,
+    required this.live,
+    this.reactive = true,
+    this.height = _demoHeight,
+    this.intensity = PlayerMotionIntensity.balanced,
+    this.customIntensity = 0.5,
+    this.clock,
+  });
+
+  /// When set, the demo reads its phase from this shared clock instead of its
+  /// own, so a demo swapped out mid-loop picks up where the last one left off.
+  final AnimationController? clock;
+
+  final _DemoKind kind;
+  final Color accent;
+  final _Solids solids;
+  final bool on;
+  final double height;
+
+  /// Whether the effect answers the beat, as opposed to only being present.
+  /// The progress bar has two settings that both draw a waveform and only one
+  /// of them moves, so [on] alone cannot tell the two apart.
+  final bool reactive;
+
+  /// The motion preset this preview should render at, so the intensity control
+  /// directly under it is previewed rather than merely labelled.
+  final PlayerMotionIntensity intensity;
+  final double customIntensity;
+
+  /// False while the appearance step is not the visible page.
+  final bool live;
+
+  @override
+  State<_DemoPreview> createState() => _DemoPreviewState();
+}
+
+class _DemoPreviewState extends State<_DemoPreview>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ownController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 6000),
+  );
+
+  AnimationController get _controller => widget.clock ?? _ownController;
+
+  /// Monotonic seconds for the simulation, deliberately not the animation's own
+  /// value.
+  ///
+  /// The controller repeats, so its value wraps from 1 back to 0. Handing that
+  /// to [ParticleSystem.update] is what made the field blink out a few seconds
+  /// in: every mote records a `bornAt` from the *previous* pass, so after the
+  /// wrap `age` comes back negative, [ParticleSystem.fadeOf] clamps it to zero
+  /// and the whole field is invisible until the clock climbs past the old spawn
+  /// times again. Motes live 14-40s here, so the field was never going to loop
+  /// in 6s anyway — the music loops, the field keeps living.
+  /// Lazily self-initialising rather than assigned in `initState`, so it also
+  /// resolves for instances that already existed when this field was added —
+  /// a hot reload does not re-run `initState`, and a plain `late final` would
+  /// throw on every frame of an already-mounted preview.
+  late final _DemoClock _clock = _DemoClock(_controller, 6);
+
+  /// The real simulation, not a lookalike. A hand-rolled loop of dots drifting
+  /// on a sine is what this preview used to be, and it could not match the
+  /// field because most of what the field *is* lives in [ParticleSystem] — the
+  /// curl flow field, per-mote depth and response, beat wavefronts that reach
+  /// each mote at a different time. Reusing it keeps the preview honest for as
+  /// long as the field is tuned.
+  final ParticleSystem _particles = ParticleSystem();
+
+  @override
+  void initState() {
+    super.initState();
+    _ownController.value = 0.2;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DemoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.on != widget.on || oldWidget.live != widget.live) _sync();
+  }
+
+  void _sync() {
+    if (widget.clock != null) return;
+    final running = widget.on && widget.live;
+    if (running && !_ownController.isAnimating) {
+      _ownController.repeat();
+    } else if (!running && _ownController.isAnimating) {
+      _ownController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    _ownController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: AppTokens.brMd,
+      child: ColoredBox(
+        color: widget.solids.well(0.22),
+        child: CustomPaint(
+          painter: _DemoPainter(
+            kind: widget.kind,
+            accent: widget.accent,
+            solids: widget.solids,
+            on: widget.on,
+            reactive: widget.reactive,
+            particles: _particles,
+            clock: _clock,
+            spec: widget.intensity == PlayerMotionIntensity.custom
+                ? MotionIntensitySpec.custom(widget.customIntensity)
+                : MotionIntensitySpec.of(widget.intensity),
+            t: _controller,
+          ),
+          size: Size(double.infinity, widget.height),
+        ),
+      ),
+    );
+  }
+}
+
+class _DemoPainter extends CustomPainter {
+  _DemoPainter({
+    required this.kind,
+    required this.accent,
+    required this.solids,
+    required this.on,
+    required this.reactive,
+    required this.particles,
+    required this.clock,
+    required this.spec,
+    required this.t,
+  }) : super(repaint: t);
+
+  final _DemoKind kind;
+  final Color accent;
+  final _Solids solids;
+  final bool on;
+  final bool reactive;
+
+  /// Owned by the preview's state so motes persist across frames. A painter
+  /// that built its own system would restart the field on every rebuild, which
+  /// looks like the motes blinking.
+  final ParticleSystem particles;
+
+  /// Monotonic simulation time, read live rather than captured — `paint` runs
+  /// off the repaint ticker without a rebuild.
+  final _DemoClock clock;
+
+  /// The motion preset being previewed. Passed in rather than computed in the
+  /// painter so the intensity control under the demo and the demo itself cannot
+  /// disagree.
+  final MotionIntensitySpec spec;
+
+  final Animation<double> t;
+
+  /// Seconds on the shared loop. This one *is* meant to wrap, so the music
+  /// stays in step with the waveform and cover previews beside it.
+  double get _seconds => t.value * 6;
+
+  /// Simulation time. Never wraps; see [_DemoClock].
+  double get _elapsed => clock.elapsed;
+
+  /// 0..1 on every beat: a hard attack and a slow tail, at a tempo the whole
+  /// set shares so the waveform and the particles agree with each other. Zero
+  /// when the effect is present but not beat-driven.
+  double get _beat {
+    if (!reactive) return 0;
+    final phase = _seconds * 2 * math.pi * 2; // 120 BPM
+    final impulse = math.max(0.0, math.sin(phase));
+    return math.pow(impulse, 8).toDouble();
+  }
+
+  /// The beat grid the real field would be fed, rebuilt for this frame.
+  ///
+  /// The preview has no audio and no analysis, so the grid is synthesised: a
+  /// fixed 120 BPM with a bar accent, and band energies that decay from each
+  /// hit. [ParticleSystem] needs a `BeatFrame` carrying a `beatIndex` so it can
+  /// tell one beat from the next and spawn a wavefront per beat — without it
+  /// the field would have band envelopes to drift on but nothing to surge on,
+  /// which is the half of the effect that reads.
+  BeatFrame get _beatFrame {
+    final period = 0.5; // 120 BPM
+    final index = (_seconds / period).floor();
+    final sinceBeat = _seconds - index * period;
+    final isDownbeat = index % 4 == 0;
+    final strength =
+        (isDownbeat ? 1.0 : 0.62) * (1.0 + 0.12 * math.sin(index * 1.7));
+
+    // Fast attack, exponential tail — the shape a real transient has.
+    final attack = math.min(1.0, sinceBeat / 0.012);
+    final decay = math.exp(-sinceBeat / 0.16);
+
+    if (!reactive) {
+      // Present but not driven: the field keeps its ambient life and simply
+      // never hears a beat, which is exactly what the setting does.
+      return BeatFrame(
+        air: 0.22 + 0.1 * math.sin(_seconds * 2.2),
+        breath: 0.30 + 0.22 * math.sin(_seconds * 1.4),
+        bass: 0.18,
+        mid: 0.22,
+      );
+    }
+
+    // `strength` is the raw landing force and must NOT carry the envelope.
+    // The field recruits motes with `wave.power >= particle.beatThreshold`
+    // (0.15-0.9), and `power` is `frame.strength` captured the instant the
+    // beat lands — where an enveloped value is ~0 by definition, so every
+    // wavefront would spawn at zero power and no mote would ever be kicked.
+    // `pulse` and the band energies are the enveloped ones.
+    return BeatFrame(
+      pulse: strength * attack * decay,
+      rebound: -0.16 * strength * attack * decay,
+      sway: math.sin(index * 2.39) * strength * attack * decay,
+      bass: strength * attack * decay,
+      mid: strength * attack * decay * 0.8,
+      air: 0.18 + 0.12 * math.sin(_seconds * 2.2),
+      breath: 0.28 + 0.2 * math.sin(_seconds * 1.4),
+      beatIndex: index,
+      isDownbeat: isDownbeat,
+      strength: strength,
+      hasBeat: true,
+    );
+  }
+
+  Color get _strong => on ? accent : solids.accentWash(accent, 0.34);
+
+  Color get _weak =>
+      on ? solids.accentWash(accent, 0.34) : solids.accentWash(accent, 0.16);
 
   @override
   void paint(Canvas canvas, Size size) {
-    const steps = 6;
-    for (int i = steps; i >= 1; i--) {
-      final f = i / steps;
-      // Trail lags behind the current position.
-      final ty = dy * (1 - f * 0.5);
-      final tx = dx * (1 - f * 0.3);
-      final s = (scale + f * 0.08).clamp(0.1, 1.2);
-      final alpha = (1.0 - f) * 0.22 * (1.0 - progress);
+    if (size.isEmpty) return;
 
-      final paint = Paint()
-        ..color =
-            const Color(0xFFD8B4F8).withValues(alpha: alpha.clamp(0.0, 0.25))
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
-      canvas.drawCircle(
-        Offset(size.width / 2 + tx, size.height / 2 + ty),
-        36 * s,
+    final paint = Paint()..style = PaintingStyle.fill;
+    switch (kind) {
+      case _DemoKind.spectrum:
+        _paintSpectrum(canvas, size, paint);
+      case _DemoKind.waveform:
+        _paintWaveform(canvas, size, paint);
+      case _DemoKind.particles:
+        _paintParticles(canvas, size, paint);
+      case _DemoKind.cover:
+        _paintCover(canvas, size, paint);
+      case _DemoKind.immersive:
+        _paintImmersive(canvas, size, paint);
+    }
+  }
+
+  void _paintSpectrum(Canvas canvas, Size size, Paint paint) {
+    const count = 22;
+    const gap = 3.0;
+    final barWidth = math.max(2.0, (size.width - gap * (count - 1)) / count);
+    final beat = _beat;
+
+    for (var i = 0; i < count; i++) {
+      final a = 0.5 + 0.5 * math.sin(_seconds * 4.1 + i * 0.55);
+      final b = 0.5 + 0.5 * math.sin(_seconds * 2.3 - i * 31 / 100);
+      final tilt = i / (count - 1);
+      final height = size.height *
+          (0.14 + 0.86 * (a * 0.65 + b * 0.35) * (a * 0.65 + b * 0.35)) *
+          (0.55 + 0.45 * beat) *
+          (1 - tilt * 0.35);
+      paint.color = _strong.withValues(alpha: 0.45 + 0.55 * (1 - tilt));
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+              i * (barWidth + gap), size.height - height, barWidth, height),
+          Radius.circular(barWidth / 2),
+        ),
         paint,
       );
     }
   }
 
+  void _paintWaveform(Canvas canvas, Size size, Paint paint) {
+    const count = 34;
+    // Inset so the first and last bars do not sit on the edge of the well.
+    const inset = 14.0;
+    const gap = 2.5;
+    final span = size.width - inset * 2;
+    final barWidth = math.max(2.0, (span - gap * (count - 1)) / count);
+    final maxHeight = size.height * 0.78;
+    final progress = (t.value * 0.35) % 1.0;
+    final beat = _beat;
+
+    for (var i = 0; i < count; i++) {
+      // A fixed silhouette rather than a rolling one: a demo that reshuffles
+      // itself reads as noise, and the shape of the song is the whole point.
+      final peak =
+          0.3 + 0.7 * (math.sin(i * 0.62) * math.cos(i * 0.21 + 1.1)).abs();
+      final at = (i + 0.5) / count;
+      final played = at <= progress;
+      // Bars under the playhead lift with the beat, which is the difference
+      // between a waveform and a sound-reactive one.
+      final near = math.max(0.0, 1 - (progress - at).abs() * 14);
+      final height =
+          maxHeight * peak * (0.72 + 0.28 * beat * near) * (played ? 1.0 : 0.6);
+      paint.color = played ? _strong : _weak;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(inset + i * (barWidth + gap),
+              (size.height - height) / 2, barWidth, height),
+          Radius.circular(barWidth / 2),
+        ),
+        paint,
+      );
+    }
+  }
+
+  /// Draws the real [ParticleSystem], so the preview and the player agree.
+  ///
+  /// The simulation is advanced first, then each mote is drawn with the same
+  /// terms the real painter uses: its own flare drives size and brightness,
+  /// its own birth/death and edge fades gate visibility, near motes get the
+  /// halo and the chromatic split. Anything hand-rolled here would drift out of
+  /// step with the field the next time it is retuned.
+  void _paintParticles(Canvas canvas, Size size, Paint paint) {
+    // Off means the field still lives but is dimmed, not empty — the same
+    // reading as the other previews, and it keeps the "what am I turning off"
+    // comparison honest.
+    if (!on) {
+      paint.color = _weak;
+      canvas.drawRect(Offset.zero & size, paint);
+    }
+
+    particles.update(
+      elapsedSeconds: _elapsed,
+      frame: _beatFrame,
+      spec: spec,
+      aspect: size.width / size.height,
+    );
+
+    if (spec.particleCount == 0 || spec.particleOpacity < 0.01) return;
+
+    final tint = on ? _strong : solids.accentWash(accent, 0.30);
+    final hsl = HSLColor.fromColor(accent);
+    final warm = hsl.withHue((hsl.hue + 22) % 360).toColor();
+    final cool = hsl.withHue((hsl.hue - 22 + 360) % 360).toColor();
+
+    for (final particle in particles.particles) {
+      final fade = particles.fadeOf(particle) * particles.edgeFadeOf(particle);
+      if (fade < 0.01) continue;
+
+      final n = particles.displacedPosition(particle);
+      final position = Offset(n.dx * size.width, n.dy * size.height);
+
+      final flare = particle.excitation;
+      final radius = particle.baseRadius *
+          (0.45 + 0.55 * particle.depth) *
+          (1 + flare * 0.5);
+      // The spec's opacity is tuned against a full-screen field over a blurred
+      // cover. On a 72px strip it would be nearly invisible, so the preview
+      // lifts it and keeps the relative depth ordering — without this the three
+      // presets differ so little that the picker looks broken.
+      final alpha = (spec.particleOpacity *
+              3.2 *
+              (0.3 + 0.7 * particle.depth) *
+              particles.glowOf(particle) *
+              (1 + flare * 0.9) *
+              fade)
+          .clamp(0.0, 1.0);
+      if (alpha < 0.01) continue;
+
+      if (particle.depth > 0.35) {
+        paint.color = tint.withValues(alpha: alpha * 0.16);
+        canvas.drawCircle(position, radius * 2.6, paint);
+      }
+
+      if (flare > 0.12 && particle.depth > 0.45) {
+        final split = radius * 0.9 * flare;
+        final dx = particle.splitCos * split;
+        final dy = particle.splitSin * split;
+        paint.color = warm.withValues(alpha: alpha * 0.55 * flare);
+        canvas.drawCircle(position.translate(dx, dy), radius, paint);
+        paint.color = cool.withValues(alpha: alpha * 0.55 * flare);
+        canvas.drawCircle(position.translate(-dx, -dy), radius, paint);
+      }
+
+      paint.color = tint.withValues(alpha: alpha);
+      canvas.drawCircle(position, radius, paint);
+    }
+  }
+
+  void _paintCover(Canvas canvas, Size size, Paint paint) {
+    final beat = _beat;
+    // `coverPunch` is the preset's actual peak scale, so subtle and bold
+    // visibly differ here the same way they do on the player.
+    final side =
+        math.min(size.width, size.height) * (0.60 + spec.coverPunch * beat);
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = Radius.circular(side * 0.16);
+
+    // A solid bloom opening behind the artwork, so the pulse is legible outside
+    // the square as well as inside it. Sized to stay inside the strip at peak.
+    final halo = side * (1.3 + 0.25 * beat);
+    paint.color = _weak.withValues(alpha: 0.45 + 0.55 * beat);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: halo, height: halo),
+        Radius.circular(side * 0.26),
+      ),
+      paint,
+    );
+
+    paint.color = _strong;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: side, height: side),
+        radius,
+      ),
+      paint,
+    );
+  }
+
+  /// A phone-shaped screen rather than a flat swatch: the whole point of the
+  /// setting is *where* the artwork sits relative to the edges, and a plain
+  /// block cannot show that.
+  void _paintImmersive(Canvas canvas, Size size, Paint paint) {
+    final w = size.width;
+    final h = size.height;
+    Rect box(double x, double y, double bw, double bh) =>
+        Rect.fromLTWH(x * w, y * h, bw * w, bh * h);
+
+    // The strip is wide and short, so both layouts are drawn across its full
+    // width. The only difference is whether the artwork touches the edges.
+    if (!on) {
+      final side = h * 0.56;
+      paint.color = _strong;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH((w - side) / 2, h * 0.1, side, side),
+          const Radius.circular(10),
+        ),
+        paint,
+      );
+      paint.color = _weak;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.38, h * 0.74, w * 0.24, h * 0.035),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.2, h * 0.84, w * 0.6, h * 0.12),
+          Radius.circular(h * 0.06),
+        ),
+        paint,
+      );
+      paint.color = _strong;
+      canvas.drawCircle(Offset(w / 2, h * 0.9), h * 0.05, paint);
+      return;
+    }
+
+    paint.color = _weak;
+    canvas.drawRect(Offset.zero & size, paint);
+
+    // Artwork fills the full width and dissolves into the backdrop through
+    // solid bands, matching the player's fade rather than a gradient.
+    paint.color = _strong;
+    canvas.drawRect(box(0, 0, 1, 0.58), paint);
+    for (var i = 1; i <= 3; i++) {
+      paint.color = Color.lerp(_strong, _weak, i / 4)!;
+      canvas.drawRect(box(0, 0.58 + (i - 1) * 0.035, 1, 0.035), paint);
+    }
+
+    paint.color = _strong;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        box(0.3, 0.71, 0.4, 0.04),
+        const Radius.circular(3),
+      ),
+      paint,
+    );
+    paint.color = _strong.withValues(alpha: 0.5);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        box(0.36, 0.79, 0.28, 0.03),
+        const Radius.circular(3),
+      ),
+      paint,
+    );
+
+    // Controls sit straight on the backdrop, with no card behind them.
+    paint.color = _strong.withValues(alpha: 0.5);
+    canvas.drawCircle(Offset(w * 0.34, h * 0.9), h * 0.05, paint);
+    canvas.drawCircle(Offset(w * 0.66, h * 0.9), h * 0.05, paint);
+    paint.color = _strong;
+    canvas.drawCircle(Offset(w / 2, h * 0.9), h * 0.09, paint);
+  }
+
   @override
-  bool shouldRepaint(_FlyAwayTrailPainter oldDelegate) =>
-      progress != oldDelegate.progress;
+  bool shouldRepaint(_DemoPainter oldDelegate) =>
+      oldDelegate.kind != kind ||
+      oldDelegate.accent != accent ||
+      oldDelegate.on != on ||
+      oldDelegate.reactive != reactive ||
+      oldDelegate.spec.particleCount != spec.particleCount ||
+      oldDelegate.spec.particleImpulse != spec.particleImpulse ||
+      oldDelegate.solids.canvas != solids.canvas;
+
+  @override
+  bool shouldRebuildSemantics(_DemoPainter oldDelegate) => false;
 }

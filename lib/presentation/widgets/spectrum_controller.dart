@@ -43,6 +43,11 @@ class SpectrumController extends ChangeNotifier {
   /// Analysis lands mid-track, and without this the bars visibly jump.
   static const double _gridBlendMs = 400;
 
+  /// How long the bars take to settle to rest after playback pauses (and to
+  /// rise again on resume), so pausing eases the waveform down instead of
+  /// snapping it.
+  static const double _pauseEaseMs = 300;
+
   /// Longest step the ballistics will integrate in one go. A frame that arrives
   /// after the app was busy elsewhere should not teleport the bars.
   static const double _maxStepSeconds = 0.1;
@@ -50,6 +55,7 @@ class SpectrumController extends ChangeNotifier {
   final AudioPlayer? _player;
   final ValueListenable<Song?>? _currentSong;
   final BeatAnalysisService? _beatAnalysis;
+  final ValueListenable<bool>? _playingIntent;
 
   final PlayheadClock _clock = PlayheadClock();
 
@@ -69,6 +75,7 @@ class SpectrumController extends ChangeNotifier {
   String? _beatMapFilename;
   int _beatMapToken = 0;
   double _gridBlend = 0;
+  double _pauseBlend = 0;
 
   Ticker? _ticker;
   StreamSubscription<Duration>? _positionSub;
@@ -81,13 +88,17 @@ class SpectrumController extends ChangeNotifier {
   Duration _elapsed = Duration.zero;
   Duration? _lastEmitted;
 
+  /// [playingIntent] is the UI's play state. It flips the moment pause is
+  /// pressed, while the player keeps running through its pause fade.
   SpectrumController({
     required AudioPlayer player,
     required ValueListenable<Song?> currentSong,
     required BeatAnalysisService beatAnalysis,
+    ValueListenable<bool>? playingIntent,
   })  : _player = player,
         _currentSong = currentSong,
-        _beatAnalysis = beatAnalysis;
+        _beatAnalysis = beatAnalysis,
+        _playingIntent = playingIntent;
 
   /// Detached from the player and the analysis service, for driving frames by
   /// hand in tests.
@@ -95,7 +106,8 @@ class SpectrumController extends ChangeNotifier {
   SpectrumController.forTesting()
       : _player = null,
         _currentSong = null,
-        _beatAnalysis = null;
+        _beatAnalysis = null,
+        _playingIntent = null;
 
   VisualizerMode get mode => _mode;
 
@@ -148,7 +160,7 @@ class SpectrumController extends ChangeNotifier {
       final player = _player!;
       _clock
         ..reset(player.position)
-        ..playing = player.playing;
+        ..playing = _playingIntent?.value ?? player.playing;
       _positionSub = player.positionStream.listen((pos) {
         if (!_appActive) return;
         _clock.onPosition(pos);
@@ -157,6 +169,7 @@ class SpectrumController extends ChangeNotifier {
         _positionSub?.pause();
       }
       _stateSub = player.playerStateStream.listen(_onPlayerState);
+      _playingIntent?.addListener(_onPlayingIntent);
       _currentSong?.addListener(_loadBeatMap);
       PowerStateService.instance.powerSave.addListener(_onPowerSave);
       _onPowerSave();
@@ -169,6 +182,7 @@ class SpectrumController extends ChangeNotifier {
       _positionSub = null;
       _stateSub?.cancel();
       _stateSub = null;
+      _playingIntent?.removeListener(_onPlayingIntent);
       _currentSong?.removeListener(_loadBeatMap);
       PowerStateService.instance.powerSave.removeListener(_onPowerSave);
       if (_observer != null) {
@@ -186,8 +200,16 @@ class SpectrumController extends ChangeNotifier {
   }
 
   void _onPlayerState(PlayerState state) {
+    if (_playingIntent != null) return;
     if (_clock.playing == state.playing) return;
     _clock.playing = state.playing;
+    _syncTicker();
+  }
+
+  void _onPlayingIntent() {
+    final playing = _playingIntent!.value;
+    if (_clock.playing == playing) return;
+    _clock.playing = playing;
     _syncTicker();
   }
 
@@ -218,7 +240,8 @@ class SpectrumController extends ChangeNotifier {
     final ticker = _ticker;
     if (ticker == null) return;
 
-    final shouldRun = _wired && _clock.playing && _appActive;
+    final shouldRun =
+        _wired && _appActive && (_clock.playing || _pauseBlend < 1);
     if (shouldRun && !ticker.isActive) {
       _lastEmitted = null;
       ticker.start();
@@ -286,7 +309,15 @@ class SpectrumController extends ChangeNotifier {
         : math.min((_elapsed - last).inMicroseconds / 1e6, _maxStepSeconds);
     _lastEmitted = _elapsed;
 
+    final pauseStep = dt * 1000 / _pauseEaseMs;
+    _pauseBlend = (_pauseBlend + (_clock.playing ? -pauseStep : pauseStep))
+        .clamp(0.0, 1.0);
+
     advance(dt, _clock.visualPositionMs);
+    if (_pauseBlend >= 1) {
+      _syncTicker();
+      return;
+    }
     notifyListeners();
   }
 
@@ -316,6 +347,7 @@ class SpectrumController extends ChangeNotifier {
         final band = _syncedTargets[i] * SpectrumBars.breath(i, elapsedSeconds);
         target = target + (band - target) * _gridBlend;
       }
+      target = target + (SpectrumBars.floor - target) * _pauseBlend;
       // Cross-fade the response along with the targets: the idle walk has one
       // time constant in both directions, the synced bars snap up and glide
       // down. Switching filters in one frame is visible; sliding between them

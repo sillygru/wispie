@@ -93,7 +93,7 @@ class SettingsState {
     this.lyricsTimingOffsetSeconds = 0,
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
-    this.fullBleedDesignEnabled = false,
+    this.fullBleedDesignEnabled = true,
   })  : progressBarType = progressBarType ??
             (showWaveform != null
                 ? (showWaveform
@@ -388,8 +388,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
               .clamp(-60.0, 60.0),
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
-      fullBleedDesignEnabled:
-          prefs.getBool(_keyFullBleedDesignEnabled) ?? false,
+      fullBleedDesignEnabled: prefs.getBool(_keyFullBleedDesignEnabled) ?? true,
     );
   }
 

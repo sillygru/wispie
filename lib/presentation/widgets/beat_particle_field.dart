@@ -250,7 +250,9 @@ class _BeatWave {
   });
 }
 
-@visibleForTesting
+/// The mote simulation, deliberately with no painter attached so it can be
+/// driven from anywhere: the player field, the onboarding preview, and tests.
+/// Only the drawing is presentation-specific.
 class ParticleSystem {
   /// How fast a beat's wavefront crosses the field, and how thick it is.
   ///

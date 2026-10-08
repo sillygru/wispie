@@ -182,7 +182,7 @@ class _AppearanceSettingsScreenState
             AppSettingsSwitch(
               icon: AppIcons.autoAwesome,
               searchId: 'appearance.full_bleed_design',
-              title: 'New player & detail design',
+              title: 'Immersive design',
               subtitle: 'Full-bleed player cover and gradient detail screens',
               value: settings.fullBleedDesignEnabled,
               onChanged: notifier.setFullBleedDesignEnabled,
@@ -193,16 +193,25 @@ class _AppearanceSettingsScreenState
           label: 'Player motion',
           icon: AppIcons.graphicEq,
           children: [
+            // The immersive player bleeds the artwork off three sides and
+            // dissolves its lower third, so a scale has nowhere to go but under
+            // that fade. The pulse is genuinely unavailable there, so the row
+            // goes dead rather than sitting there pretending to work.
             AppSettingsSwitch(
               icon: AppIcons.album,
               searchId: 'appearance.beat_cover',
               title: 'Beat-reactive cover',
-              subtitle: 'Album art pulses with the beat',
+              subtitle: settings.fullBleedDesignEnabled
+                  ? 'Unavailable while immersive design is on'
+                  : 'Album art pulses with the beat',
               value: settings.beatReactiveCoverEnabled,
-              onChanged: notifier.setBeatReactiveCoverEnabled,
+              onChanged: settings.fullBleedDesignEnabled
+                  ? null
+                  : notifier.setBeatReactiveCoverEnabled,
             ),
             // Cover intensity — only visible when the cover toggle is on.
-            if (settings.beatReactiveCoverEnabled)
+            if (settings.beatReactiveCoverEnabled &&
+                !settings.fullBleedDesignEnabled)
               _MotionIntensityRow(
                 id: 'appearance.cover_intensity',
                 accent: accent,
