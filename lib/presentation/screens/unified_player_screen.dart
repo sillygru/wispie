@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -440,16 +441,24 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     return Theme(
       data: AppTheme.getPlayerTheme(themeState, accent),
       child: Builder(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.transparent,
-          body: ValueListenableBuilder<Song?>(
-            valueListenable:
-                ref.watch(audioPlayerManagerProvider).currentSongNotifier,
-            builder: (context, song, _) {
-              if (song == null) return _buildEmptyState(context);
-              return _buildBody(context, song, accent);
-            },
-          ),
+        builder: (context) => CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () =>
+                Navigator.of(context).maybePop(),
+          },
+          child: Focus(
+              autofocus: true,
+              child: Scaffold(
+                backgroundColor: Colors.transparent,
+                body: ValueListenableBuilder<Song?>(
+                  valueListenable:
+                      ref.watch(audioPlayerManagerProvider).currentSongNotifier,
+                  builder: (context, song, _) {
+                    if (song == null) return _buildEmptyState(context);
+                    return _buildBody(context, song, accent);
+                  },
+                ),
+              )),
         ),
       ),
     );
@@ -587,13 +596,13 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   Widget _buildWideContent(BuildContext context, Song song, Color accent) {
     return Column(
       children: [
-        _buildHeader(context, song),
+        _buildWideHeader(context, song),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final sideWidth = (constraints.maxWidth * 0.42).clamp(
+              final sideWidth = (constraints.maxWidth * 0.4).clamp(
                 320.0,
-                WideLayout.playerSideWidth,
+                WideLayout.playerSideWidth * 1.3,
               );
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -620,30 +629,48 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                       children: [
                         Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: PlayerTokens.s5,
+                            horizontal: PlayerTokens.s6,
                             vertical: PlayerTokens.s2,
                           ),
-                          child: PlayerSegmentedPill(
-                            labels: const ['Lyrics', 'Queue'],
-                            position: _landscapePosition,
-                            onSelected: _selectLandscapeTab,
-                            accent: accent,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 280),
+                              child: PlayerSegmentedPill(
+                                labels: const ['Lyrics', 'Queue'],
+                                position: _landscapePosition,
+                                onSelected: _selectLandscapeTab,
+                                accent: accent,
+                              ),
+                            ),
                           ),
                         ),
                         Expanded(
-                          child: IndexedStack(
-                            index: _landscapeTab,
-                            children: [
-                              LyricsPane(
-                                song: song,
-                                accent: accent,
-                                paneVisible: _lyricsVisible,
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 880),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: PlayerTokens.s4,
+                                ),
+                                child: IndexedStack(
+                                  index: _landscapeTab,
+                                  children: [
+                                    LyricsPane(
+                                      song: song,
+                                      accent: accent,
+                                      paneVisible: _lyricsVisible,
+                                    ),
+                                    QueuePane(
+                                      accent: accent,
+                                      initialShowHistory:
+                                          widget.queueShowsHistory,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              QueuePane(
-                                accent: accent,
-                                initialShowHistory: widget.queueShowsHistory,
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -655,6 +682,40 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// Desktop top bar: no touch drag handle or dismiss-drag, and no title (the
+  /// cover column already carries it).
+  Widget _buildWideHeader(BuildContext context, Song song) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: PlayerTokens.s3,
+        vertical: PlayerTokens.s1,
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            color: Colors.white,
+            onPressed: () => Navigator.of(context).maybePop(),
+            tooltip: 'Close (Esc)',
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.more_vert_rounded),
+            color: Colors.white,
+            tooltip: 'Song options',
+            onPressed: () => showSongOptionsMenu(
+              context,
+              ref,
+              song.filename,
+              song.title,
+              song: song,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

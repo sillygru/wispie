@@ -382,6 +382,17 @@ final List<SettingsDestination> settingsRegistry = [
         const AppearanceSettingsScreen(highlightId: 'appearance.beat_cover'),
   ),
   SettingsDestination(
+    anchorId: 'appearance.spin_artwork',
+    icon: AppIcons.album,
+    title: 'Spin artwork while playing',
+    subtitle: 'Artwork turns in the minimized bottom bar while a song plays',
+    breadcrumb: 'Settings › Appearance › Player motion',
+    keywords: const ['rotate', 'turn', 'spin', 'artwork', 'dock', 'mini'],
+    open: () => const AppearanceSettingsScreen(
+      highlightId: 'appearance.spin_artwork',
+    ),
+  ),
+  SettingsDestination(
     anchorId: 'appearance.beat_particles',
     icon: AppIcons.autoAwesome,
     title: 'Beat-reactive particles',

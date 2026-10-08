@@ -12,7 +12,6 @@ class VolumeMonitorService {
   StreamSubscription<double>? _volumeSubscription;
   double _currentVolume = 1.0;
   bool _isAutoPauseEnabled = false;
-  bool _wasPlayingBeforeMute = false;
   Timer? _volumeZeroDebounceTimer;
 
   final VoidCallback? onVolumeZero;
@@ -61,29 +60,26 @@ class VolumeMonitorService {
       _volumeZeroDebounceTimer = Timer(
         const Duration(milliseconds: 500),
         () {
-          onVolumeZero?.call();
-          _wasPlayingBeforeMute = true;
           _volumeZeroDebounceTimer = null;
+          onVolumeZero?.call();
         },
       );
     }
-    // Check if volume restored from 0 - cancel pending pause
+    // Volume restored from 0: cancel any pending pause. Whether to resume is
+    // decided by the owner, which knows if the pause actually came from mute.
     else if (previousVolume <= epsilon && volume > epsilon) {
+      final hadPendingPause = _volumeZeroDebounceTimer != null;
       _volumeZeroDebounceTimer?.cancel();
       _volumeZeroDebounceTimer = null;
-
-      // If we had paused due to mute, resume playback
-      if (_wasPlayingBeforeMute) {
-        onVolumeRestored?.call();
-        _wasPlayingBeforeMute = false;
-      }
+      if (!hadPendingPause) onVolumeRestored?.call();
     }
   }
 
   void setAutoPauseEnabled(bool enabled) {
     _isAutoPauseEnabled = enabled;
     if (!enabled) {
-      _wasPlayingBeforeMute = false;
+      _volumeZeroDebounceTimer?.cancel();
+      _volumeZeroDebounceTimer = null;
     }
   }
 

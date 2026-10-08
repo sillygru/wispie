@@ -452,9 +452,16 @@ class _MorphingMini extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final manager = ref.watch(audioPlayerManagerProvider);
+    final visualizerMode =
+        ref.watch(settingsProvider.select((s) => s.visualizerMode));
+    final bool spinArtwork =
+        ref.watch(settingsProvider.select((s) => s.spinArtworkWhilePlaying));
     final double barOpacity =
         1 - Curves.easeOut.transform((collapse / 0.3).clamp(0.0, 1.0));
-    final double ringOpacity = ((collapse - 0.7) / 0.3).clamp(0.0, 1.0);
+    // Last third of the morph: the circle has formed, so the layers that only
+    // make sense on the ball (progress ring, bars, spin) come up here rather
+    // than appearing on the bar and travelling with it.
+    final double ballOpacity = ((collapse - 0.7) / 0.3).clamp(0.0, 1.0);
     final BorderRadius br = BorderRadius.circular(radius);
 
     return LayoutBuilder(
@@ -519,38 +526,59 @@ class _MorphingMini extends ConsumerWidget {
                         rect: art,
                         child: ValueListenableBuilder<bool>(
                           valueListenable: manager.playingNotifier,
-                          builder: (context, playing, child) => AnimatedOpacity(
+                          builder: (context, playing, _) => AnimatedOpacity(
                             // Paused reads as a dimmed cover, not a new icon.
                             opacity: playing || collapse < 0.7 ? 1 : 0.55,
                             duration: AppTokens.dBase,
                             curve: AppTokens.cStandard,
-                            child: child,
-                          ),
-                          child: _heroIfOwner(
-                            // Only one Hero per tag may exist on the route: the
-                            // bar owns it until it has faded out, then the
-                            // travelling cover takes over so opening the player
-                            // from the ball still flies the artwork.
-                            owns: barOpacity <= 0,
-                            tag: PlayerTokens.coverHeroTag(song.filename),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(artRadius),
-                              child: AlbumArtImage(
-                                url: song.coverUrl ?? '',
-                                filename: song.filename,
-                                cacheVersion: song.mtime,
-                                width: FloatingDock.pillHeight,
-                                height: FloatingDock.pillHeight,
-                                fit: BoxFit.cover,
+                            child: _heroIfOwner(
+                              // Only one Hero per tag may exist on the route: the
+                              // bar owns it until it has faded out, then the
+                              // travelling cover takes over so opening the player
+                              // from the ball still flies the artwork.
+                              owns: barOpacity <= 0,
+                              tag: PlayerTokens.coverHeroTag(song.filename),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(artRadius),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    _SpinArtwork(
+                                      enabled: spinArtwork &&
+                                          playing &&
+                                          ballOpacity > 0,
+                                      child: AlbumArtImage(
+                                        url: song.coverUrl ?? '',
+                                        filename: song.filename,
+                                        cacheVersion: song.mtime,
+                                        width: FloatingDock.pillHeight,
+                                        height: FloatingDock.pillHeight,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    // The ball has room for the track's own bars,
+                                    // so the same signal the expanded bar gives
+                                    // survives the collapse.
+                                    if (ballOpacity > 0)
+                                      Opacity(
+                                        opacity: ballOpacity,
+                                        child: PlayingVisualizerOverlay(
+                                          playing: playing,
+                                          mode: visualizerMode,
+                                          size: 20,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    if (ringOpacity > 0)
+                    if (ballOpacity > 0)
                       IgnorePointer(
                         child: Opacity(
-                          opacity: ringOpacity,
+                          opacity: ballOpacity,
                           child: _ProgressRing(accent: accent),
                         ),
                       ),
@@ -853,6 +881,72 @@ Widget _heroIfOwner({
   required Widget child,
 }) =>
     owns ? Hero(tag: tag, child: child) : child;
+
+/// One slow revolution while [enabled].
+///
+/// The collapsed ball is a still circle with a progress ring, so on its own it
+/// barely says anything is playing. The turn is slow enough to read as a record
+/// rather than a spinner, and the ticker is torn down the moment it is not
+/// wanted — a paused ball costs nothing.
+class _SpinArtwork extends StatefulWidget {
+  static const Duration revolution = Duration(seconds: 45);
+
+  final bool enabled;
+  final Widget child;
+
+  const _SpinArtwork({required this.enabled, required this.child});
+
+  @override
+  State<_SpinArtwork> createState() => _SpinArtworkState();
+}
+
+class _SpinArtworkState extends State<_SpinArtwork>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: _SpinArtwork.revolution,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_SpinArtwork oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) _sync();
+  }
+
+  void _sync() {
+    // Stopping rather than resetting leaves the controller where it was, so a
+    // paused ball resumes mid-turn instead of snapping back to upright.
+    final bool on = widget.enabled &&
+        TickerMode.valuesOf(context).enabled &&
+        !MediaQuery.disableAnimationsOf(context);
+    if (on && !_c.isAnimating) {
+      _c.repeat();
+    } else if (!on && _c.isAnimating) {
+      _c.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Isolated so the turn is a compositor transform on a cached layer rather
+    // than a raster every frame, next to a progress ring that repaints too.
+    return RepaintBoundary(
+      child: RotationTransition(turns: _c, child: widget.child),
+    );
+  }
+}
 
 class _ProgressRing extends ConsumerWidget {
   final Color accent;

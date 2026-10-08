@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -84,42 +85,79 @@ Future<void> main() async {
   ));
 }
 
-/// Desktop launch placement: maximize once on first run, then leave the
-/// window alone so user resizes are respected on later launches.
+const _kWindowWidthKey = 'desktop_window_width_v1';
+const _kWindowHeightKey = 'desktop_window_height_v1';
+const _kWindowMaximizedKey = 'desktop_window_maximized_v1';
+
+/// Launches maximized unless the user last left the window restored, in which
+/// case the last restored size is used.
 Future<void> _initDesktopWindow(SharedPreferences prefs) async {
   if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
   try {
     await windowManager.ensureInitialized();
-    const minSize = Size(360, 540);
-    const options = WindowOptions(
-      minimumSize: minSize,
-      size: minSize,
+    final width = prefs.getDouble(_kWindowWidthKey);
+    final height = prefs.getDouble(_kWindowHeightKey);
+    final maximized = prefs.getBool(_kWindowMaximizedKey) ?? true;
+    final options = WindowOptions(
+      minimumSize: const Size(360, 540),
+      size: width != null && height != null
+          ? Size(width, height)
+          : const Size(1280, 800),
       center: true,
       title: 'Wispie',
     );
-    final placed = prefs.getBool('desktop_window_placed_v1') ?? false;
-    if (!placed) {
-      await windowManager.waitUntilReadyToShow(options, () async {
-        await windowManager.show();
+    await windowManager.waitUntilReadyToShow(options, () async {
+      if (maximized) {
         try {
           await windowManager.maximize();
         } on Exception catch (e) {
           debugPrint('Desktop maximize failed: $e');
         }
-        try {
-          await prefs.setBool('desktop_window_placed_v1', true);
-        } on Exception catch (e) {
-          debugPrint('Failed to persist window flag: $e');
-        }
-      });
-    } else {
-      await windowManager.waitUntilReadyToShow(options, () async {
-        await windowManager.show();
-      });
-    }
+      }
+      await windowManager.show();
+      await windowManager.focus();
+    });
+    windowManager.addListener(_WindowStateSaver(prefs));
   } on Exception catch (e) {
     debugPrint('Desktop window init failed: $e');
   }
+}
+
+class _WindowStateSaver with WindowListener {
+  _WindowStateSaver(this._prefs);
+
+  final SharedPreferences _prefs;
+
+  Future<void> _save() async {
+    try {
+      if (await windowManager.isMaximized() ||
+          await windowManager.isFullScreen()) {
+        await _prefs.setBool(_kWindowMaximizedKey, true);
+        return;
+      }
+      final size = await windowManager.getSize();
+      await _prefs.setDouble(_kWindowWidthKey, size.width);
+      await _prefs.setDouble(_kWindowHeightKey, size.height);
+      await _prefs.setBool(_kWindowMaximizedKey, false);
+    } on Exception catch (e) {
+      debugPrint('Failed to persist window state: $e');
+    }
+  }
+
+  @override
+  void onWindowResized() => _save();
+
+  @override
+  void onWindowMaximize() => _save();
+
+  @override
+  void onWindowUnmaximize() => _save();
+
+  @override
+  void onWindowEnterFullScreen() => _save();
+
+  @override
+  void onWindowLeaveFullScreen() => _save();
 }
 
 Future<void> _setupAudioSession() async {
@@ -271,6 +309,55 @@ class _WispieAppState extends ConsumerState<WispieApp>
     } catch (_) {}
   }
 
+  static final bool _isDesktop =
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  Map<ShortcutActivator, VoidCallback> _playbackShortcuts() {
+    final player = ref.read(audioPlayerManagerProvider);
+    // Plain keys must not steal typing from text fields.
+    VoidCallback guarded(VoidCallback action) => () {
+          final focused = FocusManager.instance.primaryFocus?.context;
+          if (focused?.widget is EditableText ||
+              focused?.findAncestorWidgetOfExactType<EditableText>() != null) {
+            return;
+          }
+          action();
+        };
+    void seekBy(Duration delta) {
+      final target = player.player.position + delta;
+      player.player.seek(target < Duration.zero ? Duration.zero : target);
+    }
+
+    void adjustVolume(double delta) {
+      final v = (player.player.volume + delta).clamp(0.0, 1.0);
+      player.player.setVolume(v);
+    }
+
+    final playPause = player.togglePlayPause;
+    return {
+      const SingleActivator(LogicalKeyboardKey.space): guarded(playPause),
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): playPause,
+      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
+          player.player.seekToNext(),
+      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
+          player.player.seekToPrevious(),
+      for (final meta in [true, false]) ...{
+        SingleActivator(LogicalKeyboardKey.arrowRight,
+            meta: meta, control: !meta): guarded(player.player.seekToNext),
+        SingleActivator(LogicalKeyboardKey.arrowLeft,
+            meta: meta, control: !meta): guarded(player.player.seekToPrevious),
+      },
+      const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true):
+          guarded(() => seekBy(const Duration(seconds: 10))),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true):
+          guarded(() => seekBy(const Duration(seconds: -10))),
+      const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () =>
+          adjustVolume(0.05),
+      const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () =>
+          adjustVolume(-0.05),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -282,8 +369,15 @@ class _WispieAppState extends ConsumerState<WispieApp>
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       navigatorObservers: [PopupScrollDismiss.observer],
-      builder: (context, child) =>
-          PopupScrollDismiss(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) {
+        final content =
+            PopupScrollDismiss(child: child ?? const SizedBox.shrink());
+        if (!_isDesktop) return content;
+        return CallbackShortcuts(
+          bindings: _playbackShortcuts(),
+          child: Focus(autofocus: true, child: content),
+        );
+      },
       theme: AppTheme.getTheme(themeState),
       home: OrientationPolicy(
         child: AnimatedTheme(

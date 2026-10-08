@@ -223,6 +223,15 @@ class _AppearanceSettingsScreenState
                 onCustomChanged: notifier.setCoverMotionCustomIntensity,
               ),
             AppSettingsSwitch(
+              icon: AppIcons.album,
+              searchId: 'appearance.spin_artwork',
+              title: 'Spin artwork while playing',
+              subtitle:
+                  'Artwork turns slowly in the minimized bottom bar while a song plays',
+              value: settings.spinArtworkWhilePlaying,
+              onChanged: notifier.setSpinArtworkWhilePlaying,
+            ),
+            AppSettingsSwitch(
               icon: AppIcons.autoAwesome,
               searchId: 'appearance.beat_particles',
               title: 'Beat-reactive particles',

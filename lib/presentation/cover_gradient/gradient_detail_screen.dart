@@ -325,7 +325,11 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final double cardTop = topPad + 68;
     // One art widget serves both heroes, so it decodes at the width it will
     // actually paint at.
-    final double artWidth = photoHero ? mq.size.width : cardSide;
+    final bool isWide = WideLayout.isWide(context);
+    final double sidebarW = (mq.size.width * 0.32).clamp(340.0, 460.0);
+    final double wideSide = sidebarW - 32;
+    final double artWidth =
+        isWide ? wideSide : (photoHero ? mq.size.width : cardSide);
 
     // Scroll offset at which the in-page title has slid under the top bar,
     // so the bar can take the title over.
@@ -348,8 +352,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       coverArt = AlbumArtImage(
         url: coverUrl,
         filename: firstSong?.filename,
-        width: photoHero ? null : cardSide,
-        height: photoHero ? null : cardSide,
+        width: isWide ? wideSide : (photoHero ? null : cardSide),
+        height: isWide ? wideSide : (photoHero ? null : cardSide),
         memCacheWidth: (artWidth * dpr).round(),
         fit: BoxFit.cover,
       );
@@ -383,6 +387,154 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         effectiveIsAlbum && !effectiveIsArtist && effectiveArtistName.isNotEmpty
             ? effectiveArtistName
             : null;
+
+    final Widget? albumsBlock = showAlbumGroups
+        ? Padding(
+            padding: const EdgeInsets.only(top: AppTokens.s2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionHeader(
+                  title: 'Albums',
+                  trailing: selectedAlbum != null
+                      ? _ClearChip(
+                          onTap: () => setState(() => _selectedAlbum = null),
+                        )
+                      : null,
+                ),
+                AlbumCardSelector(
+                  allSongs: widget.songs,
+                  albums: orderedAlbums,
+                  albumGroups: albumGroups,
+                  selected: selectedAlbum,
+                  artistName: effectiveArtistName,
+                  onSelected: (album) => setState(() => _selectedAlbum = album),
+                ),
+              ],
+            ),
+          )
+        : null;
+
+    final Widget songsHeader = _SectionHeader(
+      title: selectedAlbum ?? 'Songs',
+      trailing: Text(
+        '${visibleSongs.length}',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+      ),
+    );
+
+    final Widget songsSliver = visibleSongs.isEmpty
+        ? const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                'No songs in this list',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          )
+        : SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final Song song = visibleSongs[index];
+                return _GradientSongRow(
+                  song: song,
+                  accent: baseAccent,
+                  playlistId: widget.playlistId,
+                  heroTagPrefix: 'gradient_${widget.title}',
+                  visibleSongs: visibleSongs,
+                  // Every song on an artist page is by that artist, so the
+                  // album is the useful line.
+                  showAlbumLine: effectiveIsArtist,
+                );
+              },
+              childCount: visibleSongs.length,
+            ),
+          );
+
+    final Widget detailInfo = _DetailInfo(
+      title: (photoHero && !isWide) ? null : widget.title,
+      artistLine: artistLine,
+      visibleSongs: visibleSongs,
+      sortedSongs: sortedSongs,
+      playlistId: widget.playlistId,
+      isUnknown: isUnknownArtistOrAlbum,
+      albumCount: showAlbumGroups ? albumGroups.length : 0,
+      accent: baseAccent,
+    );
+
+    // Desktop: cover, title, actions and albums pinned in a sidebar; the song
+    // list gets the full height beside it.
+    final double contentTop = topPad + 72;
+    final Widget wideBody = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: sidebarW,
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(top: contentTop, bottom: 150),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  child: GestureDetector(
+                    onTap: onArtworkTap,
+                    child: Container(
+                      width: wideSide,
+                      height: wideSide,
+                      decoration: BoxDecoration(
+                        borderRadius: AppTokens.brLg,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            blurRadius: 40,
+                            offset: const Offset(0, 18),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: AppTokens.brLg,
+                        child: coverArt,
+                      ),
+                    ),
+                  ),
+                ),
+                detailInfo,
+                if (albumsBlock != null) albumsBlock,
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: ProgressiveEdgeFade(
+                height: 140,
+                topHeight: 64,
+                child: CustomScrollView(
+                  controller: _scroll,
+                  slivers: [
+                    SliverPadding(
+                      padding: EdgeInsets.only(top: contentTop - 24),
+                    ),
+                    SliverToBoxAdapter(child: songsHeader),
+                    songsSliver,
+                    const SliverPadding(padding: EdgeInsets.only(bottom: 150)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
 
     return PopScope(
       canPop: !selectionState.isSelectionMode,
@@ -423,104 +575,30 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 child: ColoredBox(color: Color(0x4D000000)),
               ),
             ),
-            WideContentCenter(
-              // Rows ease out under the floating mini player and under the
-              // top bar instead of hard-cutting.
-              child: ProgressiveEdgeFade(
-                height: 140,
-                topHeight: 64,
-                child: CustomScrollView(
-                  controller: _scroll,
-                  slivers: [
-                    SliverToBoxAdapter(child: hero),
-                    SliverToBoxAdapter(
-                      child: _DetailInfo(
-                        title: photoHero ? null : widget.title,
-                        artistLine: artistLine,
-                        visibleSongs: visibleSongs,
-                        sortedSongs: sortedSongs,
-                        playlistId: widget.playlistId,
-                        isUnknown: isUnknownArtistOrAlbum,
-                        albumCount: showAlbumGroups ? albumGroups.length : 0,
-                        accent: baseAccent,
-                      ),
-                    ),
-                    if (showAlbumGroups)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: AppTokens.s2),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _SectionHeader(
-                                title: 'Albums',
-                                trailing: selectedAlbum != null
-                                    ? _ClearChip(
-                                        onTap: () => setState(
-                                            () => _selectedAlbum = null),
-                                      )
-                                    : null,
-                              ),
-                              AlbumCardSelector(
-                                allSongs: widget.songs,
-                                albums: orderedAlbums,
-                                albumGroups: albumGroups,
-                                selected: selectedAlbum,
-                                artistName: effectiveArtistName,
-                                onSelected: (album) =>
-                                    setState(() => _selectedAlbum = album),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    SliverToBoxAdapter(
-                      child: _SectionHeader(
-                        title: selectedAlbum ?? 'Songs',
-                        trailing: Text(
-                          '${visibleSongs.length}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (visibleSongs.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text(
-                            'No songs in this list',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final Song song = visibleSongs[index];
-                            return _GradientSongRow(
-                              song: song,
-                              accent: baseAccent,
-                              playlistId: widget.playlistId,
-                              heroTagPrefix: 'gradient_${widget.title}',
-                              visibleSongs: visibleSongs,
-                              // Every song on an artist page is by that
-                              // artist, so the album is the useful line.
-                              showAlbumLine: effectiveIsArtist,
-                            );
-                          },
-                          childCount: visibleSongs.length,
-                        ),
-                      ),
-                    const SliverPadding(padding: EdgeInsets.only(bottom: 150)),
-                  ],
+            if (isWide)
+              wideBody
+            else
+              WideContentCenter(
+                // Rows ease out under the floating mini player and under the
+                // top bar instead of hard-cutting.
+                child: ProgressiveEdgeFade(
+                  height: 140,
+                  topHeight: 64,
+                  child: CustomScrollView(
+                    controller: _scroll,
+                    slivers: [
+                      SliverToBoxAdapter(child: hero),
+                      SliverToBoxAdapter(child: detailInfo),
+                      if (albumsBlock != null)
+                        SliverToBoxAdapter(child: albumsBlock),
+                      SliverToBoxAdapter(child: songsHeader),
+                      songsSliver,
+                      const SliverPadding(
+                          padding: EdgeInsets.only(bottom: 150)),
+                    ],
+                  ),
                 ),
               ),
-            ),
             // Floating top bar: glass buttons over the hero, a blurred bar
             // with the title once the hero has scrolled away.
             Positioned(
@@ -530,7 +608,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
               child: _FloatingTopBar(
                 title: widget.title,
                 scroll: _scrollOffset,
-                revealOffset: titleRevealOffset,
+                revealOffset: isWide ? 1e9 : titleRevealOffset,
                 effectiveSortOrder: effectiveSortOrder,
                 showAlbumGroups: showAlbumGroups,
                 isUnknown: isUnknownArtistOrAlbum,

@@ -48,6 +48,7 @@ class SettingsState {
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
   final bool fullBleedDesignEnabled;
+  final bool spinArtworkWhilePlaying;
 
   SettingsState({
     this.visualizerMode = VisualizerMode.synced,
@@ -94,6 +95,7 @@ class SettingsState {
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
     this.fullBleedDesignEnabled = true,
+    this.spinArtworkWhilePlaying = false,
   })  : progressBarType = progressBarType ??
             (showWaveform != null
                 ? (showWaveform
@@ -147,6 +149,7 @@ class SettingsState {
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
     bool? fullBleedDesignEnabled,
+    bool? spinArtworkWhilePlaying,
   }) {
     return SettingsState(
       visualizerMode: visualizerMode ?? this.visualizerMode,
@@ -218,6 +221,8 @@ class SettingsState {
       syncSettingsEnabled: syncSettingsEnabled ?? this.syncSettingsEnabled,
       fullBleedDesignEnabled:
           fullBleedDesignEnabled ?? this.fullBleedDesignEnabled,
+      spinArtworkWhilePlaying:
+          spinArtworkWhilePlaying ?? this.spinArtworkWhilePlaying,
     );
   }
 }
@@ -271,6 +276,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const String _keyAutoSyncEnabled = 'auto_sync_enabled';
   static const String _keySyncSettingsEnabled = 'sync_settings_enabled';
   static const String _keyFullBleedDesignEnabled = 'full_bleed_design_enabled';
+  static const String _keySpinArtworkWhilePlaying =
+      'spin_artwork_while_playing';
   static const double maxDelayDuration = 12.0;
   static const int minMotionLatencyMs = -200;
   static const int maxMotionLatencyMs = 500;
@@ -389,6 +396,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
       fullBleedDesignEnabled: prefs.getBool(_keyFullBleedDesignEnabled) ?? true,
+      spinArtworkWhilePlaying:
+          prefs.getBool(_keySpinArtworkWhilePlaying) ?? false,
     );
   }
 
@@ -715,6 +724,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(fullBleedDesignEnabled: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyFullBleedDesignEnabled, enabled);
+  }
+
+  Future<void> setSpinArtworkWhilePlaying(bool enabled) async {
+    state = state.copyWith(spinArtworkWhilePlaying: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keySpinArtworkWhilePlaying, enabled);
   }
 }
 

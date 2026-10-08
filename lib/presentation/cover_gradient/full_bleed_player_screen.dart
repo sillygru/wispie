@@ -363,16 +363,24 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     return Theme(
       data: AppTheme.getPlayerTheme(themeState, accent),
       child: Builder(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          body: ValueListenableBuilder<Song?>(
-            valueListenable:
-                ref.watch(audioPlayerManagerProvider).currentSongNotifier,
-            builder: (context, song, _) {
-              if (song == null) return _buildEmptyState(context);
-              return _buildBody(context, song, accent);
-            },
-          ),
+        builder: (context) => CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () =>
+                Navigator.of(context).maybePop(),
+          },
+          child: Focus(
+              autofocus: true,
+              child: Scaffold(
+                backgroundColor: Colors.black,
+                body: ValueListenableBuilder<Song?>(
+                  valueListenable:
+                      ref.watch(audioPlayerManagerProvider).currentSongNotifier,
+                  builder: (context, song, _) {
+                    if (song == null) return _buildEmptyState(context);
+                    return _buildBody(context, song, accent);
+                  },
+                ),
+              )),
         ),
       ),
     );
@@ -587,74 +595,106 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     Color accent,
     double coverH,
   ) {
-    return Column(
+    final double topPad = MediaQuery.paddingOf(context).top;
+    return Stack(
       children: [
-        _buildFloatingHeader(context, song, accent),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double sideWidth = (constraints.maxWidth * 0.42).clamp(
-                320.0,
-                WideLayout.playerSideWidth,
-              );
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    width: sideWidth,
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: _FullBleedPlayerPane(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final double sideWidth = (constraints.maxWidth * 0.4).clamp(
+              320.0,
+              WideLayout.playerSideWidth * 1.3,
+            );
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: sideWidth,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, box) => _FullBleedPlayerPane(
                             song: song,
                             accent: accent,
-                            coverHeight: coverH * 0.72,
+                            coverHeight: box.maxHeight * 0.62,
                             coverKey: _coverKey,
                             paneVisible: _nowPlayingVisible,
                             audioManager: _manager,
                           ),
                         ),
-                        _FullBleedTransportDock(song: song, accent: accent),
-                      ],
-                    ),
+                      ),
+                      _FullBleedTransportDock(song: song, accent: accent),
+                    ],
                   ),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: WideLayoutGutter.of(context),
-                            vertical: PlayerTokens.s2,
-                          ),
-                          child: PlayerSegmentedPill(
-                            labels: const <String>['Lyrics', 'Queue'],
-                            position: _landscapePosition,
-                            onSelected: _selectLandscapeTab,
-                            accent: accent,
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          PlayerTokens.s6,
+                          topPad + PlayerTokens.s3,
+                          PlayerTokens.s6,
+                          PlayerTokens.s2,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            child: PlayerSegmentedPill(
+                              labels: const <String>['Lyrics', 'Queue'],
+                              position: _landscapePosition,
+                              onSelected: _selectLandscapeTab,
+                              accent: accent,
+                            ),
                           ),
                         ),
-                        Expanded(
-                          child: IndexedStack(
-                            index: _landscapeTab,
-                            children: [
-                              LyricsPane(
-                                song: song,
-                                accent: accent,
-                                paneVisible: _lyricsVisible,
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 880),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: PlayerTokens.s4,
                               ),
-                              QueuePane(
-                                accent: accent,
-                                initialShowHistory: widget.queueShowsHistory,
+                              child: IndexedStack(
+                                index: _landscapeTab,
+                                children: [
+                                  LyricsPane(
+                                    song: song,
+                                    accent: accent,
+                                    paneVisible: _lyricsVisible,
+                                  ),
+                                  QueuePane(
+                                    accent: accent,
+                                    initialShowHistory:
+                                        widget.queueShowsHistory,
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              );
-            },
+                ),
+              ],
+            );
+          },
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: _buildFloatingHeader(
+            context,
+            song,
+            accent,
+            scrim: false,
+            wide: true,
           ),
         ),
       ],
@@ -669,12 +709,13 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     Song song,
     Color accent, {
     bool scrim = true,
+    bool wide = false,
   }) {
     final double topPad = MediaQuery.paddingOf(context).top;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onVerticalDragUpdate: _onDismissDragUpdate,
-      onVerticalDragEnd: _onDismissDragEnd,
+      onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
+      onVerticalDragEnd: wide ? null : _onDismissDragEnd,
       child: Stack(
         children: [
           // The narrow layout lays its own eased scrim under the whole chrome
@@ -700,20 +741,21 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
             ),
             child: Column(
               children: [
-                Container(
-                  width: 38,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: PlayerTokens.s1),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.38),
-                    borderRadius: PlayerTokens.brPill,
+                if (!wide)
+                  Container(
+                    width: 38,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: PlayerTokens.s1),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.38),
+                      borderRadius: PlayerTokens.brPill,
+                    ),
                   ),
-                ),
                 Row(
                   children: [
                     GlassCircleButton(
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                      tooltip: 'Close',
+                      tooltip: wide ? 'Close (Esc)' : 'Close',
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                     const Spacer(),
@@ -964,11 +1006,14 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         return SizedBox(
           width: double.infinity,
           height: height,
-          child: ShaderMask(
-            shaderCallback: (Rect bounds) =>
-                _coverFadeShader(bounds, fadeTop, 1),
-            blendMode: BlendMode.dstIn,
-            child: art,
+          child: _SideFade(
+            enabled: WideLayout.isWide(context),
+            child: ShaderMask(
+              shaderCallback: (Rect bounds) =>
+                  _coverFadeShader(bounds, fadeTop, 1),
+              blendMode: BlendMode.dstIn,
+              child: art,
+            ),
           ),
         );
       },
@@ -1010,6 +1055,35 @@ class _FullBleedPlayerPane extends ConsumerWidget {
       colors: colors,
       stops: stops,
     ).createShader(bounds);
+  }
+}
+
+/// Dissolves the right edge of the cover into the backdrop on wide windows,
+/// where the cover column sits beside the lyrics instead of spanning the screen.
+class _SideFade extends StatelessWidget {
+  final bool enabled;
+  final Widget child;
+
+  const _SideFade({required this.enabled, required this.child});
+
+  static double _smootherstep(double t) => t * t * t * (t * (t * 6 - 15) + 10);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) => LinearGradient(
+        colors: <Color>[
+          for (var i = 0; i <= 12; i++)
+            Colors.white.withValues(alpha: 1 - _smootherstep(i / 12)),
+        ],
+        stops: <double>[
+          for (var i = 0; i <= 12; i++) 0.3 + 0.7 * (i / 12),
+        ],
+      ).createShader(bounds),
+      child: child,
+    );
   }
 }
 

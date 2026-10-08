@@ -434,9 +434,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
     Widget buildShellBody() {
       return GestureDetector(
-        onHorizontalDragStart: _onHorizontalDragStart,
-        onHorizontalDragUpdate: _onHorizontalDragUpdate,
-        onHorizontalDragEnd: _onHorizontalDragEnd,
+        // Desktop has the nav rail; a trackpad's sideways scroll would
+        // otherwise drag the whole shell, bottom bar included.
+        onHorizontalDragStart: isWide ? null : _onHorizontalDragStart,
+        onHorizontalDragUpdate: isWide ? null : _onHorizontalDragUpdate,
+        onHorizontalDragEnd: isWide ? null : _onHorizontalDragEnd,
         behavior: HitTestBehavior.translucent,
         child: Stack(
           children: [

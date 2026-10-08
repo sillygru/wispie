@@ -857,6 +857,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       );
       _volumeMonitorService?.initialize();
 
+      // Any playback start (notification, headset, lock screen, gap resume)
+      // invalidates a mute-pause; otherwise a later unrelated volume-up,
+      // possibly from another app, would start playback out of nowhere.
+      _track(_player.playingStream.listen((playing) {
+        if (playing) _wasPausedByMute = false;
+      }));
+
       _ref!.listen(settingsProvider, (previous, next) {
         _cachedSettings = next;
         _syncPositionListener();
