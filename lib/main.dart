@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:flutter/services.dart' show LogicalKeyboardKey, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
@@ -29,6 +29,10 @@ import 'services/color_extraction_service.dart';
 import 'services/update_service.dart';
 import 'services/passive_art_fetcher_service.dart';
 import 'services/sync_service.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'domain/services/version_tracker.dart';
+import 'providers/version_provider.dart';
+import 'presentation/widgets/downgrade_warning_dialog.dart';
 import 'presentation/widgets/update_available_dialog.dart';
 import 'theme/app_theme.dart';
 
@@ -75,8 +79,13 @@ Future<void> main() async {
 
   await _initDesktopWindow(prefs);
 
+  final packageInfo = await PackageInfo.fromPlatform();
+  final versionChange =
+      await VersionTracker.evaluate(prefs, packageInfo.version);
+
   runApp(ProviderScope(
     overrides: [
+      versionChangeProvider.overrideWithValue(versionChange),
       setupProvider
           .overrideWith(() => InitializedSetupNotifier(isSetupComplete)),
       authProvider.overrideWith(() => PreloadedAuthNotifier(username)),
@@ -225,12 +234,51 @@ class _WispieAppState extends ConsumerState<WispieApp>
       // notification to appear. Fire-and-forget so startup is not blocked;
       // on older Android it is a no-op (auto-granted).
       unawaited(PermissionService.instance.ensureNotificationPermission());
+      if (ref.read(versionChangeProvider).kind ==
+          VersionChangeKind.downgraded) {
+        unawaited(_handleDowngrade());
+        return;
+      }
       unawaited(
         ref.read(updateCheckProvider.notifier).prime().then((_) {
           if (mounted) _checkAndShowUpdateDialog();
         }).catchError((_) {}),
       );
     });
+  }
+
+  Future<void> _handleDowngrade() async {
+    final change = ref.read(versionChangeProvider);
+    final ctx = _navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    final choice = await showDowngradeWarningDialog(
+      ctx,
+      previousVersion: change.previous ?? '?',
+      currentVersion: change.current,
+    );
+    switch (choice) {
+      case DowngradeChoice.risk:
+        await VersionTracker.acceptCurrent(
+          await SharedPreferences.getInstance(),
+          change.current,
+        );
+      case DowngradeChoice.update:
+        await UpdateService().openLatestRelease(
+          url: Uri.parse(UpdateService.latestReleaseUrl),
+        );
+        _quit();
+      case DowngradeChoice.quit:
+      case null:
+        _quit();
+    }
+  }
+
+  void _quit() {
+    if (Platform.isAndroid) {
+      SystemNavigator.pop();
+    } else {
+      exit(0);
+    }
   }
 
   @override
