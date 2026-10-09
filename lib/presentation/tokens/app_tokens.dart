@@ -245,9 +245,10 @@ class AppTokens {
   /// hairline icon like two different products; w700 is the heaviest rung the
   /// icon set can hold its own against.
   static TextStyle screenTitle(BuildContext context) => const TextStyle(
-        fontWeight: FontWeight.w700,
-        fontSize: 26,
-        letterSpacing: -0.3,
+        fontWeight: FontWeight.w800,
+        fontSize: 34,
+        height: 1.1,
+        letterSpacing: -1.2,
         color: Colors.white,
       );
 

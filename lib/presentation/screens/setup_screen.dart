@@ -1060,11 +1060,8 @@ String _progressBarLabel(ProgressBarType type) => switch (type) {
 /// The onboarding flow paints solid fills instead of the app's translucent
 /// tonal washes.
 ///
-/// Behind this screen sits the ambient bloom, which is already a gradient, so a
-/// 4% white card laid over it reads as a smear rather than as a block.
-/// Blending the same values against the scaffold colour bakes them into one
-/// opaque colour, which is what lets the cards here carry weight the same way
-/// the app's do — with flat colour rather than with a glow.
+/// Blending the values against the scaffold colour bakes them into one opaque
+/// colour, so the cards carry weight with flat colour rather than with a glow.
 class _Solids {
   const _Solids(this.canvas);
 

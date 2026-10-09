@@ -45,31 +45,14 @@ class AppSliverHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
 
-    // No glass: when the content scrolls under the header, a solid, ambient-
-    // matching backdrop eases in so the title stays legible. It holds nearly
-    // full opacity across the header and only feathers out in the last sliver
-    // of height, so nothing reads through behind the title — depth from a
-    // gradient, never a blur panel.
+    // When content scrolls under the header, a solid block of the canvas colour
+    // takes over so the title sits on flat colour instead of a feathered fade.
     final Widget scrim = IgnorePointer(
       child: AnimatedOpacity(
         opacity: isScrolled ? 1 : 0,
         duration: AppTokens.dFast,
         curve: AppTokens.cStandard,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                scaffoldBg.withValues(alpha: 0.96),
-                scaffoldBg.withValues(alpha: 0.96),
-                scaffoldBg.withValues(alpha: 0.5),
-                scaffoldBg.withValues(alpha: 0.0),
-              ],
-              stops: const [0.0, 0.6, 0.82, 1.0],
-            ),
-          ),
-        ),
+        child: ColoredBox(color: scaffoldBg),
       ),
     );
 

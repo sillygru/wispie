@@ -58,12 +58,22 @@ class AppSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = borderRadius ?? AppTokens.brMd;
+    final canvas = Theme.of(context).scaffoldBackgroundColor;
 
+    // Baked against the canvas rather than left translucent, so each block is
+    // one flat colour the way the setup flow's cards are.
     Color fill = transparent
         ? Colors.transparent
         : depth == AppDepth.well
-            ? AppTokens.wellFill
-            : AppTokens.surface(level);
+            ? Color.alphaBlend(AppTokens.wellFill, canvas)
+            : Color.alphaBlend(
+                Colors.white.withValues(
+                  alpha: level >= 2
+                      ? AppTokens.surface2Alpha
+                      : AppTokens.surface1Alpha,
+                ),
+                canvas,
+              );
     if (accentTint != null && !transparent) {
       fill = Color.alphaBlend(
         accentTint!.withValues(alpha: AppTokens.accentWashAlpha),
@@ -77,7 +87,6 @@ class AppSurface extends StatelessWidget {
       decoration: BoxDecoration(
         color: fill,
         borderRadius: radius,
-        boxShadow: transparent ? null : AppTokens.shadowFor(depth),
       ),
       // Ink canvas for ListTile descendants: without an intervening Material
       // their splashes paint on this DecoratedBox and trip the
