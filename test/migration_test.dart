@@ -58,6 +58,47 @@ void main() {
     await dbV2.close();
     await dir.delete(recursive: true);
   });
+  test('fresh stats create has playevent.source', () async {
+    final dir = await Directory.systemTemp.createTemp('migrate_stats_');
+    final db = await openDatabase('${dir.path}/wispie_stats.db',
+        version: kStatsDbVersion,
+        onCreate: (db, v) async => createStatsSchema(db));
+    final cols = await db.rawQuery('PRAGMA table_info(playevent)');
+    expect(cols.any((c) => c['name'] == 'source'), isTrue);
+    final idx = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_playevent_ts'");
+    expect(idx.length, 1);
+    await db.close();
+    await dir.delete(recursive: true);
+  });
+
+  test('stats upgrade v1->v2 adds source, keeps rows, is idempotent', () async {
+    final dir = await Directory.systemTemp.createTemp('migrate_stats_up_');
+    final path = '${dir.path}/wispie_stats.db';
+    final v1 = await openDatabase(path, version: 1, onCreate: (db, v) async {
+      await db.execute(
+          'CREATE TABLE playevent (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, song_filename TEXT, timestamp REAL, duration_played REAL, total_length REAL, play_ratio REAL, foreground_duration REAL, background_duration REAL)');
+    });
+    await v1.insert('playevent', {'song_filename': 'a.mp3', 'timestamp': 1.0});
+    await v1.close();
+
+    final v2 = await openDatabase(path, version: kStatsDbVersion,
+        onUpgrade: (db, oldV, newV) async {
+      if (oldV < 2) await upgradeStatsFrom1To2(db);
+    });
+    await upgradeStatsFrom1To2(v2);
+    final rows = await v2.query('playevent');
+    expect(rows.length, 1);
+    expect(rows.first['source'], isNull);
+    final cols = await v2.rawQuery('PRAGMA table_info(playevent)');
+    expect(cols.any((c) => c['name'] == 'source'), isTrue);
+    final idx = await v2.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_playevent_ts'");
+    expect(idx.length, 1);
+    await v2.close();
+    await dir.delete(recursive: true);
+  });
+
   test('upgrade v3->v4 indexes the filename column of membership tables',
       () async {
     final dir = await Directory.systemTemp.createTemp('migrate_v4_');

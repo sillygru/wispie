@@ -90,6 +90,18 @@ class AppPageRoute<T> extends PageRoute<T> {
   }
 }
 
+/// Marks the subtree of the library tab's own navigator. Pages in there sit
+/// under the shell's dock and mini player, so they must not draw their own.
+class LibraryTabScope extends InheritedWidget {
+  const LibraryTabScope({super.key, required super.child});
+
+  static bool isEmbedded(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<LibraryTabScope>() != null;
+
+  @override
+  bool updateShouldNotify(LibraryTabScope oldWidget) => false;
+}
+
 /// Push [page] with the app's shared [AppPageRoute] transition.
 extension AppNavigation on BuildContext {
   Future<T?> pushApp<T>(Widget page, {bool fullscreenDialog = false}) {

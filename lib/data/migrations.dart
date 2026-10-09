@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
-const int kStatsDbVersion = 1;
+const int kStatsDbVersion = 2;
 const int kUserDataDbVersion = 4;
 
 const List<String> _statsTableStmts = [
@@ -23,8 +23,10 @@ const List<String> _statsTableStmts = [
       play_ratio REAL,
       foreground_duration REAL,
       background_duration REAL,
+      source TEXT,
       FOREIGN KEY (session_id) REFERENCES playsession (id)
     )''',
+  'CREATE INDEX IF NOT EXISTS idx_playevent_ts ON playevent(timestamp)',
 ];
 
 const List<String> _userDataTableStmts = [
@@ -165,6 +167,15 @@ Future<void> createUserDataSchema(Database db) async {
 
 Future<void> createStatsSchema(Database db) async {
   await _createAllStatsTables(db);
+}
+
+Future<void> upgradeStatsFrom1To2(Database db) async {
+  final cols = await db.rawQuery('PRAGMA table_info(playevent)');
+  if (!cols.any((c) => c['name'] == 'source')) {
+    await db.execute('ALTER TABLE playevent ADD COLUMN source TEXT');
+  }
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_playevent_ts ON playevent(timestamp)');
 }
 
 Future<void> upgradeUserDataFrom1To2(Database db) async {

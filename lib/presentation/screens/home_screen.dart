@@ -492,6 +492,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               lastPlayedAsync.asData?.value ?? const {};
 
           final affinities = ref.watch(songAffinitiesProvider).asData?.value;
+          final tasteSnapshot = ref.watch(tasteSnapshotProvider).asData?.value;
 
           final sortedSongs = LibraryLogic.sortSongs(
             songs,
@@ -501,6 +502,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             playCounts: playCounts,
             lastPlayedTimestamps: lastPlayedTimestamps,
             affinities: affinities,
+            tasteSnapshot: tasteSnapshot,
           );
 
           final topRecommendations = ref.watch(recommendationsProvider);

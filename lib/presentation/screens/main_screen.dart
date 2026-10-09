@@ -135,7 +135,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   List<Widget> get _screens => [
         HomeScreen(scrollController: _scrollControllers[0]),
-        LibraryScreen(scrollController: _scrollControllers[1]),
+        LibraryTabNavigator(scrollController: _scrollControllers[1]),
         ProfileScreen(scrollController: _scrollControllers[2]),
       ];
 

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart'; // For AppLifecycleListener
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
 import 'dart:isolate';
@@ -11,8 +12,12 @@ import '../models/song.dart';
 import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
 import '../models/shuffle_config.dart';
+import '../domain/models/play_source.dart';
+import '../domain/services/shuffle_migration.dart';
 import '../domain/services/shuffle_selector.dart';
+import '../domain/services/smart_weights.dart';
 import '../domain/services/song_affinity.dart';
+import '../domain/services/taste_model.dart';
 import '../domain/services/queue_ops.dart' as queue_ops;
 import 'stats_service.dart';
 import 'storage_service.dart';
@@ -99,6 +104,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   // Merged song groups for shuffle weighting
   Map<String, List<String>> _mergedGroups = {};
   Map<String, String?> _mergedGroupPriorities = {};
+
+  /// Play source per queue entry (keyed by `QueueItem.queueId`, not filename,
+  /// since one song can be queued twice). Bounded to avoid growing forever.
+  final Map<String, PlaySource> _itemSource = {};
+  static const int _maxItemSources = 2000;
+  String? _currentQueueId;
   // Filename -> groupId lookup, rebuilt on setUserData().
   Map<String, String> _filenameToGroupId = const <String, String>{};
 
@@ -118,6 +129,16 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       })>? _cachedPlayHistory;
   DateTime? _shuffleCacheTimestamp;
   static const Duration _shuffleCacheDuration = Duration(seconds: 30);
+
+  // Smart taste snapshot. Built in an isolate, rebuilt lazily after play events,
+  // user-data or library changes. Shuffle waits on it only briefly.
+  TasteSnapshot? _taste;
+  Future<TasteSnapshot>? _tasteBuilding;
+  bool _tasteDirty = true;
+  static const Duration _tasteWait = Duration(milliseconds: 1500);
+  // Artists of the last completed plays this app session, for session context.
+  final List<String> _recentCompletedArtists = [];
+  static const int _sessionArtistWindow = 5;
 
   // Stats tracking state
   String? _currentSongFilename;
@@ -315,6 +336,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _mergedGroupPriorities = mergedGroupPriorities;
     }
     _invalidateShuffleCache();
+    _tasteDirty = true;
   }
 
   void _invalidateShuffleCache() {
@@ -595,6 +617,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
           _isCompleting = false;
           _currentSongFilename = newFilename;
+          final currentIdx = _player.currentIndex;
+          _currentQueueId = currentIdx != null &&
+                  currentIdx >= 0 &&
+                  currentIdx < _effectiveQueue.length &&
+                  _effectiveQueue[currentIdx].song.filename == newFilename
+              ? _effectiveQueue[currentIdx].queueId
+              : null;
           _foregroundDuration = 0.0;
           _backgroundDuration = 0.0;
           _playStartTime = _player.playing ? DateTime.now() : null;
@@ -775,6 +804,23 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }));
   }
 
+  /// Where a queue entry came from, for `playevent.source`. Entries never
+  /// tagged explicitly fall back to the active mode, since that is what placed
+  /// them. Returns null only when there is no queue entry at all.
+  PlaySource? _sourceFor(String? queueId) {
+    if (queueId == null) return null;
+    return _itemSource[queueId] ??
+        (_shuffleState.config.enabled ? PlaySource.shuffle : PlaySource.linear);
+  }
+
+  void _tagSource(String queueId, PlaySource source) {
+    _itemSource.remove(queueId);
+    _itemSource[queueId] = source;
+    while (_itemSource.length > _maxItemSources) {
+      _itemSource.remove(_itemSource.keys.first);
+    }
+  }
+
   void _generateOfflineNext() async {
     // Queue extension is speculative work; let uninterrupted playback use the
     // existing queue while the app is backgrounded and resume generation when
@@ -808,11 +854,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       final shuffled = await _weightedShuffle(
         candidateItems,
         lastItem: currentItem,
+        context: ShuffleContext.radio,
       );
 
       if (shuffled.isNotEmpty) {
         final nextItem = shuffled.first;
         _effectiveQueue.add(nextItem);
+        _tagSource(nextItem.queueId, PlaySource.radio);
         final source = await _createAudioSource(nextItem);
         await _player.addAudioSource(source);
         _updateQueueNotifier();
@@ -825,10 +873,21 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Future<void> _initPersistence() async {
     // Load shuffle state
     final savedShuffleJson = await _storageService.loadShuffleState();
-    if (savedShuffleJson != null) {
-      _shuffleState = ShuffleState.fromJson(savedShuffleJson);
-      shuffleStateNotifier.value = _shuffleState;
-      shuffleNotifier.value = _shuffleState.config.enabled;
+    _shuffleState = migrateShuffleState(
+      savedShuffleJson,
+      await _currentAppVersion(),
+    );
+    shuffleStateNotifier.value = _shuffleState;
+    shuffleNotifier.value = _shuffleState.config.enabled;
+    await _saveShuffleState();
+  }
+
+  Future<String> _currentAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      return 'unknown';
     }
   }
 
@@ -1483,6 +1542,16 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     double finalDuration = _foregroundDuration + _backgroundDuration;
 
     if (finalDuration > 0.5 && !isExternalSongFilename(_currentSongFilename!)) {
+      _tasteDirty = true;
+      final completed = effectiveTotalLength > 0 &&
+          finalDuration / effectiveTotalLength >= 0.85;
+      final artist = song?.artist ?? '';
+      if (completed && artist.isNotEmpty) {
+        _recentCompletedArtists.add(artist);
+        if (_recentCompletedArtists.length > _sessionArtistWindow) {
+          _recentCompletedArtists.removeAt(0);
+        }
+      }
       // Transient open-with plays leave no stats rows: their cache-path keys
       // could never rejoin the library entry they may later be imported as.
       unawaited(_statsService.trackStats({
@@ -1491,6 +1560,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         'foreground_duration': _foregroundDuration,
         'background_duration': _backgroundDuration,
         'total_length': effectiveTotalLength,
+        'source': _sourceFor(_currentQueueId)?.dbValue,
       }));
     }
     _foregroundDuration = 0.0;
@@ -1500,7 +1570,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     } else if (_playStartTime != null) {
       _playStartTime = DateTime.now();
     }
-    unawaited(_statsService.flush());
+    unawaited(_statsService.flush().whenComplete(() {
+      _tasteDirty = true;
+    }));
     _ref?.read(songsProvider.notifier).refreshPlayCounts();
   }
 
@@ -1538,6 +1610,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   Future<void> init(List<Song> songs, {bool autoSelect = false}) async {
     _allSongs = songs;
+    _tasteDirty = true;
+    if (_shuffleState.config.personality == ShufflePersonality.smart) {
+      unawaited(tasteSnapshot());
+    }
     _songMap = {for (var s in songs) s.filename: s};
     _isRestrictedToOriginal = false;
     await _player.setShuffleModeEnabled(false);
@@ -1662,6 +1738,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }) {
     final oldSongMapKeys = _songMap.keys.toSet();
     _allSongs = newSongs.where((s) => !_isHidden(s.filename)).toList();
+    _tasteDirty = true;
     _songMap = {for (var s in _allSongs) s.filename: s};
 
     final currentIdx = _player.currentIndex;
@@ -1974,6 +2051,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Future<void> shuffleAndPlay(
     List<Song> songs, {
     bool isRestricted = false,
+    ShuffleContext? context,
   }) async {
     if (songs.isEmpty) return;
 
@@ -2009,7 +2087,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // the queue. This used to be a uniform Random().nextInt over the whole
     // library, which meant the one song the listener actually hears on pressing
     // shuffle ignored every personality and weighting setting.
-    final selectedItem = await _selectSeedItem(_originalQueue);
+    final selectedItem =
+        await _selectSeedItem(_originalQueue, context: context);
 
     // Build shuffled effective queue for the selected song
     final otherItems = List<QueueItem>.from(_originalQueue)
@@ -2017,6 +2096,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final shuffledOthers = await _weightedShuffle(
       otherItems,
       lastItem: selectedItem,
+      context: context,
     );
     _effectiveQueue = [selectedItem, ...shuffledOthers];
     _updateQueueNotifier();
@@ -2034,7 +2114,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   /// Same shuffle as [shuffleAndPlay], but the current song keeps playing and
   /// the freshly shuffled library replaces everything after it.
-  Future<void> shuffleAfterCurrentSong(List<Song> songs) async {
+  Future<void> shuffleAfterCurrentSong(
+    List<Song> songs, {
+    ShuffleContext? context,
+  }) async {
     if (songs.isEmpty) return;
 
     final rawIndex = _player.currentIndex;
@@ -2063,6 +2146,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final shuffled = await _weightedShuffle(
       candidates,
       lastItem: currentItem,
+      context: context,
     );
     if (shuffled.isEmpty) return;
 
@@ -2084,9 +2168,14 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   /// Same shuffle as [shuffleAndPlay], but the whole current queue plays out
   /// first and the freshly shuffled library is appended at the end.
-  Future<void> shuffleAfterCurrentQueue(List<Song> songs) async {
+  Future<void> shuffleAfterCurrentQueue(
+    List<Song> songs, {
+    ShuffleContext? context,
+  }) async {
     if (songs.isEmpty) return;
-    if (_effectiveQueue.isEmpty) return shuffleAndPlay(songs);
+    if (_effectiveQueue.isEmpty) {
+      return shuffleAndPlay(songs, context: context);
+    }
 
     _shuffleState = _shuffleState.copyWith(
       config: _shuffleState.config.copyWith(enabled: true),
@@ -2099,6 +2188,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final shuffled = await _weightedShuffle(
       songs.map((s) => QueueItem(song: s)).toList(),
       lastItem: _effectiveQueue.last,
+      context: context,
     );
     if (shuffled.isEmpty) return;
 
@@ -2522,13 +2612,81 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     return (affinities: _cachedAffinities!, historyIndex: historyIndex);
   }
 
-  /// Groups queue items into shuffle candidates, collapsing merged songs into
-  /// a single candidate so a merge group competes as one song, not several.
-  List<ShuffleCandidate<_VirtualShuffleItem>> _buildCandidates(
-    List<QueueItem> items,
-    Map<String, SongAffinity> affinities,
-    Map<String, int> historyIndex,
-  ) {
+  /// Smart taste snapshot, or null when smart is off or the snapshot is not
+  /// ready. Never throws: a shuffle must start even if the model fails.
+  Future<TasteSnapshot?> tasteSnapshot() async {
+    if (!_tasteDirty && _taste != null) return _taste;
+    try {
+      return await (_tasteBuilding ??= _buildTaste());
+    } catch (e) {
+      debugPrint('Smart taste snapshot failed: $e');
+      return _taste;
+    }
+  }
+
+  Future<TasteSnapshot?> _tasteForShuffle() async {
+    if (_shuffleState.config.personality != ShufflePersonality.smart) {
+      return null;
+    }
+    return tasteSnapshot().timeout(_tasteWait, onTimeout: () => _taste);
+  }
+
+  Future<TasteSnapshot> _buildTaste() async {
+    _tasteDirty = false;
+    try {
+      final rows = await DatabaseService.instance.getTasteEvents();
+      final inputs = TasteInputs(
+        events: [
+          for (final r in rows)
+            PlaySignal(
+              filename: r.filename,
+              timestamp: r.timestamp,
+              ratio: r.ratio,
+              secondsPlayed: r.secondsPlayed,
+              sessionId: r.sessionId,
+              source: PlaySource.parse(r.source),
+            ),
+        ],
+        meta: {
+          for (final s in _allSongs)
+            s.filename: SongMeta(artist: s.artist, album: s.album),
+        },
+        favorites: {
+          for (final s in _allSongs)
+            if (_isFavorite(s.filename)) s.filename,
+        },
+        suggestLess: {
+          for (final s in _allSongs)
+            if (_isSuggestLess(s.filename)) s.filename,
+        },
+        now: DateTime.now(),
+      );
+      final snapshot = await Isolate.run(() => buildTasteSnapshot(inputs));
+      _taste = snapshot;
+      return snapshot;
+    } catch (_) {
+      _tasteDirty = true;
+      rethrow;
+    } finally {
+      _tasteBuilding = null;
+    }
+  }
+
+  ShuffleWeights _weightsFor() =>
+      ShuffleWeights.forPersonality(_shuffleState.config);
+
+  /// Shuffles over most of the library are "library" picks. Anything smaller
+  /// is scoped to an album, artist, playlist or search result.
+  ShuffleContext _resolveShuffleContext(int poolSize, ShuffleContext? context) {
+    if (context != null) return context;
+    final library = _allSongs.length;
+    return library > 0 && poolSize >= library * 0.8
+        ? ShuffleContext.library
+        : ShuffleContext.scoped;
+  }
+
+  /// Groups queue items so a merge group competes as one song, not several.
+  List<_VirtualShuffleItem> _virtualItems(List<QueueItem> items) {
     final Map<String, List<QueueItem>> mergeGroups = {};
     final List<QueueItem> standaloneItems = [];
 
@@ -2541,7 +2699,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       }
     }
 
-    final virtualItems = <_VirtualShuffleItem>[
+    return [
       for (final item in standaloneItems)
         _VirtualShuffleItem(
           type: _VirtualItemType.standalone,
@@ -2556,12 +2714,35 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           groupId: entry.key,
         ),
     ];
-
-    return [
-      for (final virtual in virtualItems)
-        _toCandidate(virtual, affinities, historyIndex),
-    ];
   }
+
+  List<ShuffleCandidate<_VirtualShuffleItem>> _legacyCandidates(
+    List<_VirtualShuffleItem> virtual,
+    Map<String, SongAffinity> affinities,
+    Map<String, int> historyIndex,
+  ) =>
+      [for (final v in virtual) _toCandidate(v, affinities, historyIndex)];
+
+  /// Smart pool: one candidate per virtual item. Taste is summed in the
+  /// weights step, so only identity and flags are needed here.
+  List<SmartCandidate<_VirtualShuffleItem>> _smartCandidates(
+    List<_VirtualShuffleItem> virtual,
+  ) =>
+      [
+        for (final v in virtual)
+          SmartCandidate<_VirtualShuffleItem>(
+            item: v,
+            filenames: [for (final q in v.items) q.song.filename],
+            artistKey: tasteArtistKey(
+              v.representative.song.artist,
+              v.representative.song.filename,
+            ),
+            albumKey: v.representative.song.album.trim().toLowerCase(),
+            isFavorite: v.items.any((q) => _isFavorite(q.song.filename)),
+            isSuggestLess: v.items.any((q) => _isSuggestLess(q.song.filename)),
+            isInPlaylist: v.items.any((q) => _isInPlaylist(q.song.filename)),
+          ),
+      ];
 
   /// Collapses a candidate (possibly a merge group) into the signals scoring
   /// needs. Merge groups take the strongest signal across their members —
@@ -2634,43 +2815,87 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     );
   }
 
-  /// Chooses the song shuffle opens with, weighted by listening affinity.
+  /// Chooses the song shuffle opens with.
   ///
   /// Falls back to a uniform pick only if scoring somehow yields nothing, so
   /// pressing shuffle can never fail to start playback.
-  Future<QueueItem> _selectSeedItem(List<QueueItem> items) async {
+  Future<QueueItem> _selectSeedItem(
+    List<QueueItem> items, {
+    ShuffleContext? context,
+  }) async {
     final model = await _loadShuffleModel();
-    final weights = ShuffleWeights.forPersonality(_shuffleState.config);
-    final candidates =
-        _buildCandidates(items, model.affinities, model.historyIndex);
+    final taste = await _tasteForShuffle();
+    final virtual = _virtualItems(items);
 
-    final seed = selectSeed(candidates, weights);
-    final selected =
-        seed == null ? null : _selectSongFromVirtualItem(seed.payload);
+    _VirtualShuffleItem? seed;
+    if (taste != null) {
+      final config = _shuffleState.config;
+      seed = selectSmartSeed<_VirtualShuffleItem>(
+        pool: _smartCandidates(virtual),
+        taste: taste,
+        familiarity: 1 - config.discoveryLevel,
+        context: _resolveShuffleContext(items.length, context),
+        historyIndex: model.historyIndex,
+        historyLimit: config.antiRepeatEnabled ? config.historyLimit : 0,
+        favoriteMultiplier: config.favoriteMultiplier,
+        suggestLessMultiplier: config.suggestLessMultiplier,
+      );
+    } else {
+      final candidates =
+          _legacyCandidates(virtual, model.affinities, model.historyIndex);
+      seed = selectSeed(candidates, _weightsFor())?.payload;
+    }
+
+    final selected = seed == null ? null : _selectSongFromVirtualItem(seed);
     return selected ?? items[Random().nextInt(items.length)];
   }
 
   Future<List<QueueItem>> _weightedShuffle(
     List<QueueItem> items, {
     QueueItem? lastItem,
+    ShuffleContext? context,
   }) async {
     if (items.isEmpty) return [];
 
     final model = await _loadShuffleModel();
-    final weights = ShuffleWeights.forPersonality(_shuffleState.config);
-    final candidates =
-        _buildCandidates(items, model.affinities, model.historyIndex);
+    final taste = await _tasteForShuffle();
+    final virtual = _virtualItems(items);
 
-    final ordered = orderQueue(
-      candidates,
-      weights,
-      lastArtist: lastItem?.song.artist,
-      lastAlbum: lastItem?.song.album,
-    );
+    final List<_VirtualShuffleItem> ordered;
+    if (taste != null) {
+      final config = _shuffleState.config;
+      ordered = orderSmartQueue<_VirtualShuffleItem>(
+        pool: _smartCandidates(virtual),
+        taste: taste,
+        familiarity: 1 - config.discoveryLevel,
+        context: _resolveShuffleContext(items.length, context),
+        streakBreakerEnabled: config.streakBreakerEnabled,
+        currentArtist: lastItem?.song.artist,
+        currentFilename: lastItem?.song.filename ?? _currentSongFilename,
+        historyIndex: model.historyIndex,
+        historyLimit: config.antiRepeatEnabled ? config.historyLimit : 0,
+        favoriteMultiplier: config.favoriteMultiplier,
+        suggestLessMultiplier: config.suggestLessMultiplier,
+        lastArtist: lastItem?.song.artist,
+        lastAlbum: lastItem?.song.album,
+      );
+    } else {
+      final candidates =
+          _legacyCandidates(virtual, model.affinities, model.historyIndex);
+      ordered = [
+        for (final c in orderQueue(
+          candidates,
+          _weightsFor(),
+          lastArtist: lastItem?.song.artist,
+          lastAlbum: lastItem?.song.album,
+        ))
+          c.payload,
+      ];
+    }
 
     final result = <QueueItem>[];
-    for (final candidate in ordered) {
-      final selected = _selectSongFromVirtualItem(candidate.payload);
+    for (final virtualItem in ordered) {
+      final selected = _selectSongFromVirtualItem(virtualItem);
       if (selected != null) result.add(selected);
     }
     return result;
@@ -2888,6 +3113,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           : const <String>[];
 
       final candidate = QueueItem(song: song);
+      _tagSource(candidate.queueId, PlaySource.queued);
 
       // Merged-group fix: if a sibling of the requested song already sits in
       // the upcoming section, remove that sibling and insert the *requested*
@@ -3113,6 +3339,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       final sourceIndex =
           _effectiveQueue.indexWhere((item) => item.queueId == queueId);
       if (sourceIndex < 0 || sourceIndex == currentIndex) return;
+      _tagSource(queueId, PlaySource.manual);
 
       final targetIndex = currentIndex + 1;
 

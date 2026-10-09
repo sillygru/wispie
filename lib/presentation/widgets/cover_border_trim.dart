@@ -151,7 +151,8 @@ class _CoverBorderTrimState extends State<CoverBorderTrim> {
     });
   }
 
-  static double _align(double a, double b) => a + b == 0 ? 0 : 2 * a / (a + b) - 1;
+  static double _align(double a, double b) =>
+      a + b == 0 ? 0 : 2 * a / (a + b) - 1;
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +166,8 @@ class _CoverBorderTrimState extends State<CoverBorderTrim> {
           fit: BoxFit.cover,
           child: ClipRect(
             child: Align(
-              alignment: Alignment(_align(t.left, t.right), _align(t.top, t.bottom)),
+              alignment:
+                  Alignment(_align(t.left, t.right), _align(t.top, t.bottom)),
               widthFactor: 1 - t.left - t.right,
               heightFactor: 1 - t.top - t.bottom,
               // Unit box; the image fills it, so factors map to image fractions.

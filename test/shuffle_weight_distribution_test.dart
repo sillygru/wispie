@@ -130,8 +130,8 @@ void main() {
     test('overwhelmingly beats the uniform pick it replaced', () {
       // Uniform over 500 songs would give the 20 loved songs 4%.
       final uniform = _lovedCount / total;
-      final share =
-          lovedSeedShare(ShuffleWeights.forPersonality(const ShuffleConfig()));
+      final share = lovedSeedShare(ShuffleWeights.forPersonality(
+          const ShuffleConfig(personality: ShufflePersonality.defaultMode)));
 
       expect(share, greaterThan(uniform * 5));
     });
@@ -139,8 +139,8 @@ void main() {
     test('personalities order the concentration as advertised', () {
       final consistent = lovedSeedShare(ShuffleWeights.forPersonality(
           const ShuffleConfig(personality: ShufflePersonality.consistent)));
-      final normal =
-          lovedSeedShare(ShuffleWeights.forPersonality(const ShuffleConfig()));
+      final normal = lovedSeedShare(ShuffleWeights.forPersonality(
+          const ShuffleConfig(personality: ShufflePersonality.defaultMode)));
       final explorer = lovedSeedShare(ShuffleWeights.forPersonality(
           const ShuffleConfig(personality: ShufflePersonality.explorer)));
 
@@ -157,7 +157,8 @@ void main() {
         favorites: {_tail(0)},
       );
       final pool = _candidates(withFavorite, favorites: {_tail(0)});
-      final weights = ShuffleWeights.forPersonality(const ShuffleConfig());
+      final weights = ShuffleWeights.forPersonality(
+          const ShuffleConfig(personality: ShufflePersonality.defaultMode));
 
       final favoriteIndex = pool.indexWhere((c) => c.payload == _tail(0));
       final neighbourIndex = pool.indexWhere((c) => c.payload == _tail(1));
@@ -171,7 +172,8 @@ void main() {
     test('preserves the whole library exactly once', () {
       final ordered = orderQueue(
         candidates,
-        ShuffleWeights.forPersonality(const ShuffleConfig()),
+        ShuffleWeights.forPersonality(
+            const ShuffleConfig(personality: ShufflePersonality.defaultMode)),
         random: Random(21),
       );
 
@@ -182,7 +184,8 @@ void main() {
     test('front-loads the loved band', () {
       final ordered = orderQueue(
         candidates,
-        ShuffleWeights.forPersonality(const ShuffleConfig()),
+        ShuffleWeights.forPersonality(
+            const ShuffleConfig(personality: ShufflePersonality.defaultMode)),
         random: Random(21),
       );
 
@@ -196,7 +199,8 @@ void main() {
     test('keeps same-artist tracks apart in the opening stretch', () {
       final ordered = orderQueue(
         candidates,
-        ShuffleWeights.forPersonality(const ShuffleConfig()),
+        ShuffleWeights.forPersonality(
+            const ShuffleConfig(personality: ShufflePersonality.defaultMode)),
         random: Random(21),
       );
 
@@ -225,7 +229,8 @@ void main() {
       ];
 
       final model = computeAffinities(events: events, now: _now);
-      final weights = ShuffleWeights.forPersonality(const ShuffleConfig());
+      final weights = ShuffleWeights.forPersonality(
+          const ShuffleConfig(personality: ShufflePersonality.defaultMode));
 
       ShuffleCandidate<String> asCandidate(String name) =>
           ShuffleCandidate<String>(

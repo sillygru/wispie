@@ -24,6 +24,7 @@ import '../services/lrclib_service.dart';
 import '../domain/services/search_service.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
+import '../domain/services/taste_model.dart';
 import '../domain/services/bulk_rename_planner.dart';
 import 'search_provider.dart';
 import '../presentation/widgets/spectrum_controller.dart';
@@ -1972,6 +1973,14 @@ final songAffinitiesProvider =
     now: DateTime.now(),
     favorites: userData.favorites.toSet(),
   );
+});
+
+/// Smart taste snapshot shared with shuffle. Null when the model is not ready
+/// yet, in which case callers fall back to [songAffinitiesProvider].
+final tasteSnapshotProvider = FutureProvider<TasteSnapshot?>((ref) async {
+  ref.watch(songsProvider);
+  ref.watch(userDataProvider);
+  return ref.read(audioPlayerManagerProvider).tasteSnapshot();
 });
 
 /// Folder the library tree is rooted at, resolved from the configured music

@@ -50,7 +50,8 @@ ShuffleCandidate<String> _candidate(
     );
 
 void main() {
-  final defaults = ShuffleWeights.forPersonality(const ShuffleConfig());
+  final defaults = ShuffleWeights.forPersonality(
+      const ShuffleConfig(personality: ShufflePersonality.defaultMode));
 
   group('scoreCandidate', () {
     test('a loved song outscores an indifferent one', () {
@@ -117,10 +118,10 @@ void main() {
 
     test('anti-repeat scales with the configured history limit', () {
       // A hardcoded bucket ladder ignored historyLimit entirely.
-      final short =
-          ShuffleWeights.forPersonality(const ShuffleConfig(historyLimit: 20));
-      final long =
-          ShuffleWeights.forPersonality(const ShuffleConfig(historyLimit: 400));
+      final short = ShuffleWeights.forPersonality(const ShuffleConfig(
+          personality: ShufflePersonality.defaultMode, historyLimit: 20));
+      final long = ShuffleWeights.forPersonality(const ShuffleConfig(
+          personality: ShufflePersonality.defaultMode, historyLimit: 400));
 
       final atTen = _candidate('a', historyIndex: 10);
       expect(scoreCandidate(atTen, short),
@@ -128,8 +129,9 @@ void main() {
     });
 
     test('disabling anti-repeat removes the recency penalty', () {
-      final weights = ShuffleWeights.forPersonality(
-          const ShuffleConfig(antiRepeatEnabled: false));
+      final weights = ShuffleWeights.forPersonality(const ShuffleConfig(
+          personality: ShufflePersonality.defaultMode,
+          antiRepeatEnabled: false));
       expect(scoreCandidate(_candidate('a', historyIndex: 0), weights),
           scoreCandidate(_candidate('b'), weights));
     });
@@ -330,8 +332,9 @@ void main() {
     });
 
     test('disabling the streak breaker turns spacing off', () {
-      final weights = ShuffleWeights.forPersonality(
-          const ShuffleConfig(streakBreakerEnabled: false));
+      final weights = ShuffleWeights.forPersonality(const ShuffleConfig(
+          personality: ShufflePersonality.defaultMode,
+          streakBreakerEnabled: false));
       expect(weights.artistSpacing, 0);
       expect(weights.albumSpacing, 0);
 

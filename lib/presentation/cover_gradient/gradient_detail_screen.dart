@@ -626,17 +626,18 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                     context, ref, sortedSongs),
               ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: selectionState.isSelectionMode
-                    ? const BulkSelectionBar()
-                    : const FloatingGlassMiniPlayer(),
+            if (!LibraryTabScope.isEmbedded(context))
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: selectionState.isSelectionMode
+                      ? const BulkSelectionBar()
+                      : const FloatingGlassMiniPlayer(),
+                ),
               ),
-            ),
           ],
         ),
       ),

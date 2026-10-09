@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 
-enum ShufflePersonality { defaultMode, explorer, consistent, custom }
+/// [smart] is the default. The rest are legacy: they keep their original
+/// scoring and are only offered as explicit choices.
+enum ShufflePersonality { smart, defaultMode, explorer, consistent, custom }
 
 class ShuffleConfig extends Equatable {
   final bool enabled;
@@ -10,6 +12,11 @@ class ShuffleConfig extends Equatable {
   final double suggestLessMultiplier;
   final int historyLimit;
   final ShufflePersonality personality;
+
+  /// Smart only. 0 favours familiar songs, 1 favours discovery.
+  final double discoveryLevel;
+
+  bool get isLegacy => personality != ShufflePersonality.smart;
 
   // Custom mode - Simple Settings
   final bool avoidRepeatingSongs;
@@ -32,7 +39,8 @@ class ShuffleConfig extends Equatable {
     this.favoriteMultiplier = 1.2,
     this.suggestLessMultiplier = 0.2,
     this.historyLimit = 200,
-    this.personality = ShufflePersonality.defaultMode,
+    this.personality = ShufflePersonality.smart,
+    this.discoveryLevel = 0.35,
     // Custom mode - Simple (defaults)
     this.avoidRepeatingSongs = true,
     this.avoidRepeatingArtists = true,
@@ -57,6 +65,7 @@ class ShuffleConfig extends Equatable {
           ((json['suggest_less_multiplier'] as num?) ?? 0.2).toDouble(),
       historyLimit: (json['history_limit'] as int?) ?? 200,
       personality: _parsePersonality(json['personality'] as String?),
+      discoveryLevel: _parseDiscoveryLevel(json['discovery_level']),
       // Custom mode - Simple
       avoidRepeatingSongs: (json['avoid_repeating_songs'] as bool?) ?? true,
       avoidRepeatingArtists: (json['avoid_repeating_artists'] as bool?) ?? true,
@@ -80,6 +89,7 @@ class ShuffleConfig extends Equatable {
       'suggest_less_multiplier': suggestLessMultiplier,
       'history_limit': historyLimit,
       'personality': _personalityToString(personality),
+      'discovery_level': discoveryLevel,
       // Custom mode - Simple
       'avoid_repeating_songs': avoidRepeatingSongs,
       'avoid_repeating_artists': avoidRepeatingArtists,
@@ -96,6 +106,8 @@ class ShuffleConfig extends Equatable {
 
   static ShufflePersonality _parsePersonality(String? val) {
     switch (val) {
+      case 'default':
+        return ShufflePersonality.defaultMode;
       case 'explorer':
         return ShufflePersonality.explorer;
       case 'consistent':
@@ -103,21 +115,28 @@ class ShuffleConfig extends Equatable {
       case 'custom':
         return ShufflePersonality.custom;
       default:
-        return ShufflePersonality.defaultMode;
+        return ShufflePersonality.smart;
     }
   }
 
   static String _personalityToString(ShufflePersonality p) {
     switch (p) {
+      case ShufflePersonality.smart:
+        return 'smart';
+      case ShufflePersonality.defaultMode:
+        return 'default';
       case ShufflePersonality.explorer:
         return 'explorer';
       case ShufflePersonality.consistent:
         return 'consistent';
       case ShufflePersonality.custom:
         return 'custom';
-      default:
-        return 'default';
     }
+  }
+
+  static double _parseDiscoveryLevel(Object? val) {
+    if (val is! num || !val.isFinite) return 0.35;
+    return val.toDouble().clamp(0.0, 1.0).toDouble();
   }
 
   ShuffleConfig copyWith({
@@ -128,6 +147,7 @@ class ShuffleConfig extends Equatable {
     double? suggestLessMultiplier,
     int? historyLimit,
     ShufflePersonality? personality,
+    double? discoveryLevel,
     // Custom mode - Simple
     bool? avoidRepeatingSongs,
     bool? avoidRepeatingArtists,
@@ -149,6 +169,7 @@ class ShuffleConfig extends Equatable {
           suggestLessMultiplier ?? this.suggestLessMultiplier,
       historyLimit: historyLimit ?? this.historyLimit,
       personality: personality ?? this.personality,
+      discoveryLevel: discoveryLevel ?? this.discoveryLevel,
       // Custom mode - Simple
       avoidRepeatingSongs: avoidRepeatingSongs ?? this.avoidRepeatingSongs,
       avoidRepeatingArtists:
@@ -173,6 +194,7 @@ class ShuffleConfig extends Equatable {
         suggestLessMultiplier,
         historyLimit,
         personality,
+        discoveryLevel,
         // Custom mode - Simple
         avoidRepeatingSongs,
         avoidRepeatingArtists,
@@ -218,8 +240,13 @@ class HistoryEntry extends Equatable {
 class ShuffleState extends Equatable {
   final ShuffleConfig config;
 
+  /// App version that last migrated this state. Null means the state predates
+  /// the smart default and must be migrated (see `migrateShuffleState`).
+  final String? savedAppVersion;
+
   const ShuffleState({
     this.config = const ShuffleConfig(),
+    this.savedAppVersion,
   });
 
   factory ShuffleState.fromJson(Map<String, dynamic> json) {
@@ -227,23 +254,27 @@ class ShuffleState extends Equatable {
       config: json['config'] != null
           ? ShuffleConfig.fromJson(json['config'])
           : const ShuffleConfig(),
+      savedAppVersion: json['savedAppVersion'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'config': config.toJson(),
+      'savedAppVersion': savedAppVersion,
     };
   }
 
   ShuffleState copyWith({
     ShuffleConfig? config,
+    String? savedAppVersion,
   }) {
     return ShuffleState(
       config: config ?? this.config,
+      savedAppVersion: savedAppVersion ?? this.savedAppVersion,
     );
   }
 
   @override
-  List<Object?> get props => [config];
+  List<Object?> get props => [config, savedAppVersion];
 }

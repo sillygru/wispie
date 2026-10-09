@@ -36,6 +36,69 @@ import '../utils/wide_layout.dart';
 import '../components/wide_track_table.dart';
 import '../components/animated_removal.dart';
 
+/// Gives the library tab its own navigator, so artist, album, playlist and
+/// folder drill-downs push inside the tab and the shell's dock stays on top.
+class LibraryTabNavigator extends StatefulWidget {
+  final ScrollController? scrollController;
+
+  const LibraryTabNavigator({super.key, this.scrollController});
+
+  @override
+  State<LibraryTabNavigator> createState() => _LibraryTabNavigatorState();
+}
+
+class _LibraryTabNavigatorState extends State<LibraryTabNavigator> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  late final _StackChangeObserver _observer =
+      _StackChangeObserver(_onStackChanged);
+  bool _hasInnerRoutes = false;
+
+  void _onStackChanged() {
+    final hasInnerRoutes = _navigatorKey.currentState?.canPop() ?? false;
+    if (hasInnerRoutes != _hasInnerRoutes && mounted) {
+      setState(() => _hasInnerRoutes = hasInnerRoutes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_hasInnerRoutes,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _navigatorKey.currentState?.maybePop();
+      },
+      child: LibraryTabScope(
+        child: Navigator(
+          key: _navigatorKey,
+          observers: [_observer],
+          onGenerateRoute: (_) => AppPageRoute<void>(
+            builder: (_) =>
+                LibraryScreen(scrollController: widget.scrollController),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StackChangeObserver extends NavigatorObserver {
+  _StackChangeObserver(this.onChanged);
+
+  final VoidCallback onChanged;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onChanged();
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onChanged();
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      onChanged();
+}
+
 class LibraryScreen extends ConsumerStatefulWidget {
   final String? relativePath;
   final ScrollController? scrollController;
@@ -261,6 +324,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       playCounts: playCounts,
       lastPlayedTimestamps: lastPlayedTimestamps,
       affinities: ref.watch(songAffinitiesProvider).asData?.value,
+      tasteSnapshot: ref.watch(tasteSnapshotProvider).asData?.value,
     );
 
     final sortedSubFolders = content.subFolders;

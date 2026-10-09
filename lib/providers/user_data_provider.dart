@@ -7,7 +7,10 @@ import '../domain/value_objects/filename.dart';
 import 'providers.dart';
 import 'session_history_provider.dart';
 import '../services/database_service.dart';
+import '../services/library_logic.dart';
+import '../domain/services/taste_model.dart';
 import '../models/playlist.dart';
+import '../models/shuffle_config.dart';
 import '../models/song.dart';
 import '../domain/models/play_session.dart';
 
@@ -847,13 +850,23 @@ class UserDataNotifier extends Notifier<UserDataState> {
     String id,
     List<Song> allSongs,
     Map<String, int> playCounts,
-    List<PlaySession> sessions,
-  ) {
+    List<PlaySession> sessions, {
+    TasteSnapshot? taste,
+    ShuffleConfig? config,
+  }) {
     if (allSongs.isEmpty) return [];
     final random = Random();
 
     switch (id) {
       case 'quick_picks':
+        if (taste != null && config?.personality == ShufflePersonality.smart) {
+          return LibraryLogic.smartRecommendedOrder(
+            allSongs,
+            taste,
+            config!,
+            state,
+          ).take(10).toList();
+        }
         final recommendations = List<Song>.from(allSongs);
         recommendations.sort((a, b) {
           double score(Song s) {
@@ -945,6 +958,9 @@ class UserDataNotifier extends Notifier<UserDataState> {
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
     final audioManager = ref.read(audioPlayerManagerProvider);
     final currentPlaylistId = audioManager.currentPlaylistId;
+    final taste = await audioManager.tasteSnapshot();
+    if (!ref.mounted) return;
+    final shuffleConfig = audioManager.shuffleStateNotifier.value.config;
 
     final recommendationTypes = [
       (
@@ -1003,7 +1019,13 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
       if (shouldUpdate) {
         final recomSongs = _generateSongsForRecommendation(
-            type.id, songs, playCounts, sessions);
+          type.id,
+          songs,
+          playCounts,
+          sessions,
+          taste: taste,
+          config: shuffleConfig,
+        );
         if (recomSongs.isNotEmpty) {
           final playlist = Playlist(
             id: type.id,

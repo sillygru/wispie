@@ -53,7 +53,9 @@ class DatabaseService {
         'wispie_stats.db',
         version: kStatsDbVersion,
         onCreate: (db, v) async => createStatsSchema(db),
-        onUpgrade: (db, oldV, newV) async {},
+        onUpgrade: (db, oldV, newV) async {
+          if (oldV < 2) await upgradeStatsFrom1To2(db);
+        },
       );
       _userDataDatabase = await _openDatabaseWithMigrations(
         'wispie_data.db',
@@ -1958,6 +1960,66 @@ class DatabaseService {
     }
   }
 
+  /// Full event stream for the smart taste model, grouped by session so burst
+  /// and co-play detection can walk it in one pass. Timestamps are epoch seconds.
+  Future<
+      List<
+          ({
+            String filename,
+            double timestamp,
+            double ratio,
+            double secondsPlayed,
+            String? sessionId,
+            String? source,
+          })>> getTasteEvents({int sinceDays = 365}) async {
+    await _ensureInitialized();
+    if (_statsDatabase == null) return [];
+    try {
+      final cutoff = DateTime.now()
+              .subtract(Duration(days: sinceDays))
+              .millisecondsSinceEpoch /
+          1000.0;
+      final results = await _statsDatabase!.rawQuery(
+        'SELECT song_filename, timestamp, play_ratio, duration_played, total_length, '
+        'session_id, source FROM playevent WHERE timestamp >= ? '
+        'ORDER BY session_id, timestamp',
+        [cutoff],
+      );
+
+      final events = <({
+        String filename,
+        double timestamp,
+        double ratio,
+        double secondsPlayed,
+        String? sessionId,
+        String? source,
+      })>[];
+      for (final r in results) {
+        final filename = r['song_filename'] as String?;
+        final timestamp = (r['timestamp'] as num?)?.toDouble();
+        if (filename == null || timestamp == null) continue;
+
+        final duration = (r['duration_played'] as num?)?.toDouble() ?? 0.0;
+        final totalLength = (r['total_length'] as num?)?.toDouble() ?? 0.0;
+        final ratio = (r['play_ratio'] as num?)?.toDouble() ??
+            (totalLength > 0 ? duration / totalLength : 0.0);
+
+        events.add((
+          filename: filename,
+          timestamp: timestamp,
+          ratio: ratio,
+          secondsPlayed: duration,
+          sessionId: r['session_id'] as String?,
+          source: r['source'] as String?,
+        ));
+      }
+      return events;
+    } catch (e) {
+      debugPrint('Error fetching taste events: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, ({int count, double avgRatio})>> getSkipStats() async {
     await _ensureInitialized();
     if (_statsDatabase == null) return {};
@@ -2059,6 +2121,7 @@ class DatabaseService {
         (event['foreground_duration'] as num?)?.toDouble() ?? 0.0;
     final incomingBg =
         (event['background_duration'] as num?)?.toDouble() ?? 0.0;
+    final incomingSource = event['source'] as String?;
 
     if (lastEvents.isNotEmpty) {
       final last = lastEvents.first;
@@ -2089,6 +2152,7 @@ class DatabaseService {
             ? min(1.0, newDuration / effectiveTotalLength)
             : max(lastRatio, incomingRatio);
         final newTimestamp = max(lastTimestamp, timestamp);
+        final lastSource = last['source'] as String?;
 
         await txn.update(
             'playevent',
@@ -2099,6 +2163,8 @@ class DatabaseService {
               'total_length': effectiveTotalLength,
               'timestamp': newTimestamp,
               'play_ratio': newRatio,
+              if (lastSource == null && incomingSource != null)
+                'source': incomingSource,
             },
             where: 'id = ?',
             whereArgs: [lastId]);
@@ -2124,6 +2190,7 @@ class DatabaseService {
         final newRatio = effectiveTotalLength > 0
             ? min(1.0, newDuration / effectiveTotalLength)
             : incomingRatio;
+        final lastSource = last['source'] as String?;
 
         await txn.update(
             'playevent',
@@ -2134,6 +2201,8 @@ class DatabaseService {
               'total_length': effectiveTotalLength,
               'timestamp': timestamp,
               'play_ratio': newRatio,
+              if (lastSource == null && incomingSource != null)
+                'source': incomingSource,
             },
             where: 'id = ?',
             whereArgs: [lastId]);
@@ -2156,6 +2225,7 @@ class DatabaseService {
         'play_ratio': sanitizedRatio,
         'foreground_duration': event['foreground_duration'],
         'background_duration': event['background_duration'],
+        'source': incomingSource,
       });
     }
   }

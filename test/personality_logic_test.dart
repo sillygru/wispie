@@ -81,7 +81,8 @@ void main() {
 
     test('no two personalities resolve to the same taste ratio', () {
       final ratios = [
-        for (final p in ShufflePersonality.values) _tasteRatio(_weights(p)),
+        for (final p in ShufflePersonality.values)
+          if (p != ShufflePersonality.smart) _tasteRatio(_weights(p)),
       ];
       expect(ratios.toSet().length, ratios.length);
     });

@@ -10,6 +10,7 @@ import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
+import '../components/app_settings.dart';
 import '../components/scroll_chrome.dart';
 import '../components/app_section_header.dart';
 import '../components/app_surface.dart';
@@ -37,6 +38,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   String _appVersion = '';
   ShufflePersonality? _pendingPersonality;
   bool _hasPersonalityChanges = false;
+  double? _discoveryDraft;
+
   @override
   void initState() {
     super.initState();
@@ -232,6 +235,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 child: const Column(
                                   children: [
                                     _PersonalityTile(
+                                      title: 'Smart',
+                                      subtitle:
+                                          'Learns your taste, trends and context. Recommended',
+                                      value: ShufflePersonality.smart,
+                                    ),
+                                    _LegacyCaption(),
+                                    _PersonalityTile(
                                       title: 'Default',
                                       subtitle: 'Balanced mix with anti-repeat',
                                       value: ShufflePersonality.defaultMode,
@@ -253,6 +263,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     ),
                                   ],
                                 ),
+                              ),
+                              _discoveryControl(
+                                audioManager,
+                                shuffleState,
+                                selectedValue,
                               ),
                               if (_hasPersonalityChanges)
                                 Padding(
@@ -582,6 +597,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
+                                      SizedBox(
+                                        height: 96,
+                                        child: _PersonalityCard(
+                                          title: 'Smart',
+                                          subtitle:
+                                              'Learns your taste, trends and context. Recommended',
+                                          value: ShufflePersonality.smart,
+                                          groupValue: selectedValue,
+                                          accent: accent,
+                                          onTap: (v) => setState(() {
+                                            _pendingPersonality = v;
+                                            _hasPersonalityChanges =
+                                                v != current;
+                                          }),
+                                        ),
+                                      ),
+                                      const SizedBox(height: AppTokens.s3),
+                                      const _LegacyCaption(),
                                       GridView.count(
                                         crossAxisCount: compact ? 1 : 2,
                                         shrinkWrap: true,
@@ -645,6 +678,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             }),
                                           ),
                                         ],
+                                      ),
+                                      _discoveryControl(
+                                        audioManager,
+                                        shuffleState,
+                                        selectedValue,
                                       ),
                                       if (_hasPersonalityChanges)
                                         Padding(
@@ -750,6 +788,37 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _discoveryControl(
+    AudioPlayerManager audioManager,
+    ShuffleState shuffleState,
+    ShufflePersonality selected,
+  ) {
+    if (selected != ShufflePersonality.smart) return const SizedBox.shrink();
+    final value = _discoveryDraft ?? shuffleState.config.discoveryLevel;
+    final label = value < 0.34
+        ? 'Familiar'
+        : value > 0.66
+            ? 'Discover'
+            : 'Balanced';
+    return AppSettingsSlider(
+      icon: AppIcons.tune,
+      title: 'Familiar to Discover',
+      valueLabel: label,
+      value: value,
+      min: 0,
+      max: 1,
+      divisions: 10,
+      onChanged: (v) => setState(() => _discoveryDraft = v),
+      onChangeEnd: (v) {
+        setState(() => _discoveryDraft = null);
+        audioManager.updateShuffleConfig(
+          shuffleState.config.copyWith(discoveryLevel: v),
+          applyToCurrentQueue: false,
+        );
+      },
     );
   }
 
@@ -859,6 +928,26 @@ class _PersonalityCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LegacyCaption extends StatelessWidget {
+  const _LegacyCaption();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s3,
+        AppTokens.s4,
+        AppTokens.s1,
+      ),
+      child: Text(
+        'Legacy: fixed behaviour, kept for compatibility',
+        style: AppTokens.meta(context),
       ),
     );
   }

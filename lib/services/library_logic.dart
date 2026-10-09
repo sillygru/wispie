@@ -3,7 +3,9 @@ import '../models/song.dart';
 import '../models/shuffle_config.dart';
 import '../domain/services/cover_path.dart';
 import '../domain/services/shuffle_selector.dart';
+import '../domain/services/smart_weights.dart';
 import '../domain/services/song_affinity.dart';
+import '../domain/services/taste_model.dart';
 import '../providers/user_data_provider.dart';
 
 class LibraryFolderContent {
@@ -107,6 +109,7 @@ class LibraryLogic {
     Map<String, int>? playCounts,
     Map<String, double>? lastPlayedTimestamps,
     Map<String, SongAffinity>? affinities,
+    TasteSnapshot? tasteSnapshot,
   }) {
     final sorted = List<Song>.from(songs);
 
@@ -176,9 +179,13 @@ class LibraryLogic {
         break;
 
       case SongSortOrder.recommended:
-        // Ranks by the same affinity model and personality weights the shuffle
-        // engine draws from, so "Recommended" and shuffle agree about taste.
-        if (userData == null || shuffleConfig == null || affinities == null) {
+        // Same two-stage model shuffle draws from, so "Recommended" and shuffle
+        // agree about taste.
+        final useSmart = tasteSnapshot != null &&
+            shuffleConfig?.personality == ShufflePersonality.smart;
+        if (userData == null ||
+            shuffleConfig == null ||
+            (!useSmart && affinities == null)) {
           sorted.sort((a, b) {
             final titleA = lowerTitle[a.filename]!;
             final titleB = lowerTitle[b.filename]!;
@@ -187,6 +194,20 @@ class LibraryLogic {
           break;
         }
 
+        if (useSmart) {
+          final ranked = smartRecommendedOrder(
+            sorted,
+            tasteSnapshot,
+            shuffleConfig,
+            userData,
+          );
+          sorted
+            ..clear()
+            ..addAll(ranked);
+          break;
+        }
+
+        final playlistFilenames = _userPlaylistFilenames(userData);
         final weights = ShuffleWeights.forPersonality(shuffleConfig);
 
         // Score once per song rather than inside the comparator, which would
@@ -198,9 +219,10 @@ class LibraryLogic {
                 payload: song,
                 artist: song.artist,
                 album: song.album,
-                affinity: affinities[song.filename] ?? SongAffinity.unknown,
+                affinity: affinities![song.filename] ?? SongAffinity.unknown,
                 isFavorite: userData.isFavorite(song.filename),
                 isSuggestLess: userData.isSuggestLess(song.filename),
+                isInPlaylist: playlistFilenames.contains(song.filename),
               ),
               weights,
             ),
@@ -240,6 +262,44 @@ class LibraryLogic {
     return sorted;
   }
 
+  static Set<String> _userPlaylistFilenames(UserDataState userData) => {
+        for (final playlist in userData.playlists)
+          if (!playlist.isRecommendation)
+            for (final song in playlist.songs) song.songFilename,
+      };
+
+  /// Smart "Recommended" order: the shuffle's sort-context weights, then the
+  /// per-artist diversity cap so one artist cannot fill the top of the list.
+  static List<Song> smartRecommendedOrder(
+    List<Song> songs,
+    TasteSnapshot taste,
+    ShuffleConfig config,
+    UserDataState userData,
+  ) {
+    final playlistFilenames = _userPlaylistFilenames(userData);
+    final pool = [
+      for (final song in songs)
+        SmartCandidate<Song>(
+          item: song,
+          filenames: [song.filename],
+          artistKey: tasteArtistKey(song.artist, song.filename),
+          albumKey: song.album.trim().toLowerCase(),
+          isFavorite: userData.isFavorite(song.filename),
+          isSuggestLess: userData.isSuggestLess(song.filename),
+          isInPlaylist: playlistFilenames.contains(song.filename),
+        ),
+    ];
+    final weights = computeSmartWeights<Song>(
+      pool: pool,
+      taste: taste,
+      familiarity: 1 - config.discoveryLevel,
+      context: ShuffleContext.sort,
+      favoriteMultiplier: config.favoriteMultiplier,
+      suggestLessMultiplier: config.suggestLessMultiplier,
+    );
+    return diversifiedTop<Song>(pool, weights, count: pool.length);
+  }
+
   static LibraryFolderContent getFolderContent({
     required List<Song> allSongs,
     required String currentFullPath,
@@ -249,6 +309,7 @@ class LibraryLogic {
     Map<String, int>? playCounts,
     Map<String, double>? lastPlayedTimestamps,
     Map<String, SongAffinity>? affinities,
+    TasteSnapshot? tasteSnapshot,
   }) {
     // Filter songs in the current path (or subpaths)
 
@@ -292,6 +353,7 @@ class LibraryLogic {
       playCounts: playCounts,
       lastPlayedTimestamps: lastPlayedTimestamps,
       affinities: affinities,
+      tasteSnapshot: tasteSnapshot,
     );
 
     return LibraryFolderContent(

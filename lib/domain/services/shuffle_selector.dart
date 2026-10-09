@@ -48,6 +48,10 @@ class ShuffleCandidate<T> {
   });
 }
 
+/// Where a shuffle was requested from. Smart weights use it to decide how much
+/// to trust recent taste and context.
+enum ShuffleContext { library, scoped, radio, sort }
+
 /// Resolved, personality-independent knobs the scoring maths reads.
 class ShuffleWeights {
   /// Exponent applied to affinity. Above 1 sharpens toward favourites, below 1
@@ -100,6 +104,9 @@ class ShuffleWeights {
   ///
   /// Every field of [ShuffleConfig] is consumed here or by the caller. If a
   /// setting is exposed in the UI it must have an effect on this struct.
+  ///
+  /// Smart never reaches this scoring path when a taste snapshot exists; without
+  /// one it falls back to the default weights.
   factory ShuffleWeights.forPersonality(ShuffleConfig config) {
     final antiRepeat = config.antiRepeatEnabled;
     final streak = config.streakBreakerEnabled;
@@ -143,6 +150,7 @@ class ShuffleWeights {
       case ShufflePersonality.custom:
         return _customWeights(config);
 
+      case ShufflePersonality.smart:
       case ShufflePersonality.defaultMode:
         return ShuffleWeights(
           affinityExponent: 1.2,
@@ -208,7 +216,8 @@ double scoreCandidate<T>(
   final affinity = candidate.affinity;
   final a = affinity.affinity.clamp(0.0, 1.0);
 
-  // Familiarity: sharpened or flattened by the personality's exponent.
+  // Familiarity: long-term taste, optionally blended with the 30-day trend,
+  // then sharpened or flattened by the personality's exponent.
   double score = pow(a, weights.affinityExponent).toDouble();
 
   // Discovery: decays smoothly with play count rather than switching off after
@@ -304,21 +313,90 @@ List<ShuffleCandidate<T>> orderQueue<T>(
   String? lastAlbum,
 }) {
   if (candidates.length <= 1) return List.of(candidates);
+  return _orderByScores(
+    candidates,
+    scoreCandidates(candidates, weights),
+    artistSpacing: weights.artistSpacing,
+    albumSpacing: weights.albumSpacing,
+    artistOf: (c) => c.artist,
+    albumOf: (c) => c.album,
+    random: random,
+    lastArtist: lastArtist,
+    lastAlbum: lastAlbum,
+  );
+}
+
+/// [orderQueue] for weights that are already probabilities (smart shuffle).
+/// Spacing is passed explicitly because it is derived from the weights, not
+/// from [ShuffleWeights].
+List<T> orderQueueWeighted<T>(
+  List<T> items,
+  List<double> weights, {
+  required int artistSpacing,
+  required int albumSpacing,
+  required String Function(T) artistOf,
+  required String Function(T) albumOf,
+  Random? random,
+  String? lastArtist,
+  String? lastAlbum,
+}) {
+  if (items.length <= 1) return List.of(items);
+  return _orderByScores(
+    items,
+    weights,
+    artistSpacing: artistSpacing,
+    albumSpacing: albumSpacing,
+    artistOf: artistOf,
+    albumOf: albumOf,
+    random: random,
+    lastArtist: lastArtist,
+    lastAlbum: lastAlbum,
+  );
+}
+
+List<T> _orderByScores<T>(
+  List<T> items,
+  List<double> scores, {
+  required int artistSpacing,
+  required int albumSpacing,
+  required String Function(T) artistOf,
+  required String Function(T) albumOf,
+  Random? random,
+  String? lastArtist,
+  String? lastAlbum,
+}) {
   final rng = random ?? Random();
 
-  final scores = scoreCandidates(candidates, weights);
-
-  final keyed = <({double key, ShuffleCandidate<T> candidate})>[];
-  for (var i = 0; i < candidates.length; i++) {
-    final w = max(scores[i], _minScore);
+  final keyed = <({double key, T item})>[];
+  for (var i = 0; i < items.length; i++) {
+    final s = scores[i];
+    final w = s.isFinite && s > 0 ? s : 1e-12;
     // nextDouble() can return exactly 0; nudge so log() stays finite.
     final u = max(rng.nextDouble(), 1e-12);
-    keyed.add((key: -log(u) / w, candidate: candidates[i]));
+    keyed.add((key: -log(u) / w, item: items[i]));
   }
   keyed.sort((a, b) => a.key.compareTo(b.key));
 
-  final ordered = [for (final k in keyed) k.candidate];
-  return _applySpacing(ordered, weights, lastArtist, lastAlbum);
+  final ordered = [for (final k in keyed) k.item];
+  return _applySpacing(
+    ordered,
+    artistSpacing: artistSpacing,
+    albumSpacing: albumSpacing,
+    artistOf: artistOf,
+    albumOf: albumOf,
+    lastArtist: lastArtist,
+    lastAlbum: lastAlbum,
+  );
+}
+
+/// Draws one item proportional to [weights]. Smart shuffle's seed picker.
+T? selectSeedWeighted<T>(
+  List<T> items,
+  List<double> weights, {
+  Random? random,
+}) {
+  if (items.isEmpty) return null;
+  return items[_sampleIndex(weights, random ?? Random())];
 }
 
 /// Normalizes an artist/album string for comparison. Empty means "unknown".
@@ -334,18 +412,19 @@ String _norm(String value) => value.toLowerCase().trim();
 /// place — so the case that most needs spreading out gets none. Ranking by
 /// "how badly does this clash" instead degrades gracefully: it still finds the
 /// alternating order when a perfect one doesn't exist.
-List<ShuffleCandidate<T>> _applySpacing<T>(
-  List<ShuffleCandidate<T>> ordered,
-  ShuffleWeights weights,
+List<T> _applySpacing<T>(
+  List<T> ordered, {
+  required int artistSpacing,
+  required int albumSpacing,
+  required String Function(T) artistOf,
+  required String Function(T) albumOf,
   String? lastArtist,
   String? lastAlbum,
-) {
-  final artistSpacing = weights.artistSpacing;
-  final albumSpacing = weights.albumSpacing;
+}) {
   if (artistSpacing <= 0 && albumSpacing <= 0) return ordered;
 
   const lookAhead = 25;
-  final result = List<ShuffleCandidate<T>>.of(ordered);
+  final result = List<T>.of(ordered);
 
   // Last placed position per artist/album. Seeded with the outgoing song at a
   // negative index so spacing is measured from before the queue starts.
@@ -362,16 +441,16 @@ List<ShuffleCandidate<T>> _applySpacing<T>(
   /// Zero means it fits cleanly; larger means a tighter clash. Untagged
   /// artists and albums never clash — otherwise every untagged song in the
   /// library would look like one enormous artist run.
-  int deficit(ShuffleCandidate<T> candidate, int position) {
+  int deficit(T candidate, int position) {
     var total = 0;
 
-    final artist = _norm(candidate.artist);
+    final artist = _norm(artistOf(candidate));
     if (artistSpacing > 0 && artist.isNotEmpty) {
       final at = lastArtistAt[artist];
       if (at != null) total += max(0, artistSpacing - (position - at));
     }
 
-    final album = _norm(candidate.album);
+    final album = _norm(albumOf(candidate));
     if (albumSpacing > 0 && album.isNotEmpty) {
       final at = lastAlbumAt[album];
       if (at != null) total += max(0, albumSpacing - (position - at));
@@ -402,8 +481,8 @@ List<ShuffleCandidate<T>> _applySpacing<T>(
     }
 
     final placed = result[i];
-    final artist = _norm(placed.artist);
-    final album = _norm(placed.album);
+    final artist = _norm(artistOf(placed));
+    final album = _norm(albumOf(placed));
     if (artist.isNotEmpty) lastArtistAt[artist] = i;
     if (album.isNotEmpty) lastAlbumAt[album] = i;
   }
