@@ -120,10 +120,15 @@ class _BarSeekTrackState extends State<BarSeekTrack> {
                       ),
                     ),
                   ),
+                  // Positioned rather than a FractionallySizedBox: the box
+                  // hands its child the incoming height, and a childless
+                  // DecoratedBox sizes to zero, so the fill never painted.
                   if (played > 0)
-                    FractionallySizedBox(
-                      widthFactor: played,
-                      alignment: Alignment.centerLeft,
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: constraints.maxWidth * played,
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: widget.accent,

@@ -696,6 +696,10 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
         platform == TargetPlatform.linux;
     const double inset = FloatingDock.barArtInset;
     const double art = FloatingDock.barArtSize;
+    // Right edge the transport controls claim. The track column and the
+    // progress hairline both stop short of it so neither runs under the
+    // buttons on a narrow phone.
+    const double transportInset = 100;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -709,7 +713,7 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
           child: Stack(
             children: [
               Positioned.fill(
-                right: 100,
+                right: transportInset,
                 child: ClipRect(
                   child: AnimatedBuilder(
                     animation: _x,
@@ -765,26 +769,37 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                         ),
                         const SizedBox(width: AppTokens.s3),
                         Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTokens.rowTitle(context).copyWith(
-                                    fontSize: 15, fontWeight: FontWeight.w700),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                song.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTokens.rowSubtitle(context)
-                                    .copyWith(fontSize: 13),
-                              ),
-                            ],
+                          child: MediaQuery(
+                            // The card is a fixed 64 high, so two stacked
+                            // lines stop fitting once the system font grows;
+                            // the same 1.25 ceiling the cards use keeps them
+                            // inside it.
+                            data: MediaQuery.of(context).copyWith(
+                              textScaler: MediaQuery.textScalerOf(context)
+                                  .clamp(maxScaleFactor: 1.25),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTokens.rowTitle(context).copyWith(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  song.artist,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTokens.rowSubtitle(context)
+                                      .copyWith(fontSize: 13),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -844,10 +859,12 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                 ),
               ),
               // Progress hairline aligned with the text column, inside the
-              // card rather than on its rounded edge.
+              // card rather than on its rounded edge. It stops at the same
+              // inset as that column, or on a narrow phone it runs underneath
+              // the transport buttons.
               Positioned(
                 left: inset + art + AppTokens.s3,
-                right: AppTokens.s4,
+                right: transportInset,
                 bottom: AppTokens.s1 + 1,
                 height: desktop ? AppTokens.s2 : 2,
                 child: BarSeekTrack(
