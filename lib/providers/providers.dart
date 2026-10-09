@@ -316,6 +316,23 @@ final bottomDockVisibilityProvider =
   BottomDockVisibilityNotifier.new,
 );
 
+/// Returns the shell to the Home bottom-nav tab.
+///
+/// Esc uses this as its last step: pop a pushed route, and once there is
+/// nothing left to pop, fall back to the Home tab rather than doing nothing.
+/// Each call mints a new [id] so pressing Esc while already Home still lands.
+class HomeNavigationNotifier extends Notifier<int?> {
+  int _nextId = 0;
+
+  @override
+  int? build() => null;
+
+  void goHome() => state = ++_nextId;
+}
+
+final homeNavigationProvider =
+    NotifierProvider<HomeNavigationNotifier, int?>(HomeNavigationNotifier.new);
+
 /// Opens the Library bottom-nav tab on a Folders / Artists / Albums sub-tab.
 ///
 /// Each call mints a new [id] so re-tapping the same destination still notifies
@@ -958,9 +975,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
     final playCounts = await DatabaseService.instance.getPlayCounts();
 
+    var changed = false;
     final updatedSongs = state.value!.map((s) {
       final newCount = playCounts[s.filename] ?? 0;
       if (newCount == s.playCount) return s;
+      changed = true;
       return Song(
         title: s.title,
         artist: s.artist,
@@ -976,6 +995,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         songDateEpochSec: s.songDateEpochSec,
       );
     }).toList();
+
+    // Publishing an identical list still rebuilds every provider watching
+    // songsProvider (stats, insights, library), and this runs on every
+    // lifecycle change — a screenshot is enough.
+    if (!changed) return;
 
     await DatabaseService.instance.insertSongsBatch(updatedSongs);
 

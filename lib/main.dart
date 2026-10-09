@@ -442,7 +442,22 @@ class _WispieAppState extends ConsumerState<WispieApp>
       ...mediaKeys,
       for (final entry in typingKeys.entries)
         EditableAwareActivator(entry.key): entry.value,
+      // Esc as a global back. Screens that own Esc (player, search) bind it
+      // deeper in the focus tree, so they keep their own behaviour; this only
+      // catches the pushes that had none, like Settings. With no route left to
+      // pop, fall back to the Home tab instead of doing nothing, which is what
+      // a second Esc on Settings should feel like.
+      EditableAwareActivator(
+        const SingleActivator(LogicalKeyboardKey.escape),
+      ): _goBack,
     };
+  }
+
+  /// Pops the top route, or returns to Home when there is nothing to pop.
+  Future<void> _goBack() async {
+    final navigator = _navigatorKey.currentState;
+    if (navigator != null && await navigator.maybePop()) return;
+    ref.read(homeNavigationProvider.notifier).goHome();
   }
 
   @override

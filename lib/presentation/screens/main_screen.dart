@@ -300,6 +300,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
       }
     });
 
+    ref.listen(homeNavigationProvider, (previous, next) {
+      if (next == null) return;
+      // Home is bottom-nav index 0.
+      if (_selectedIndex != 0) {
+        setState(() {
+          _tabDirection = 0 > _selectedIndex ? 1 : -1;
+          _selectedIndex = 0;
+        });
+      }
+    });
+
     ref.listen(libraryNavigationProvider, (previous, next) {
       if (next == null) return;
       // Library is bottom-nav index 1.
