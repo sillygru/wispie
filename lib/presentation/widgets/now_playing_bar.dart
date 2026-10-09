@@ -219,9 +219,10 @@ class _NowPlayingContent extends ConsumerWidget {
     final Widget shuffle = ValueListenableBuilder<bool>(
       valueListenable: audioManager.shuffleNotifier,
       builder: (context, shuffling, _) => Tooltip(
-        message: 'Shuffle',
+        message: 'Shuffle (hold for a new shuffle)',
         child: Pressable(
           onTap: audioManager.toggleShuffle,
+          onLongPress: audioManager.newShuffleQueue,
           child: Padding(
             padding: const EdgeInsets.all(8),
             child: AppIcon(

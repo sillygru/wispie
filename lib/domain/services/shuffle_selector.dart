@@ -424,7 +424,12 @@ List<T> _applySpacing<T>(
   if (artistSpacing <= 0 && albumSpacing <= 0) return ordered;
 
   const lookAhead = 25;
-  final result = List<T>.of(ordered);
+
+  // Normalised once up front: the look-ahead below compares each track many
+  // times, and lowercasing per comparison was most of the shuffle's CPU.
+  final artistKeys = [for (final item in ordered) _norm(artistOf(item))];
+  final albumKeys = [for (final item in ordered) _norm(albumOf(item))];
+  final result = List<int>.generate(ordered.length, (i) => i);
 
   // Last placed position per artist/album. Seeded with the outgoing song at a
   // negative index so spacing is measured from before the queue starts.
@@ -441,16 +446,16 @@ List<T> _applySpacing<T>(
   /// Zero means it fits cleanly; larger means a tighter clash. Untagged
   /// artists and albums never clash — otherwise every untagged song in the
   /// library would look like one enormous artist run.
-  int deficit(T candidate, int position) {
+  int deficit(int candidate, int position) {
     var total = 0;
 
-    final artist = _norm(artistOf(candidate));
+    final artist = artistKeys[candidate];
     if (artistSpacing > 0 && artist.isNotEmpty) {
       final at = lastArtistAt[artist];
       if (at != null) total += max(0, artistSpacing - (position - at));
     }
 
-    final album = _norm(albumOf(candidate));
+    final album = albumKeys[candidate];
     if (albumSpacing > 0 && album.isNotEmpty) {
       final at = lastAlbumAt[album];
       if (at != null) total += max(0, albumSpacing - (position - at));
@@ -460,12 +465,13 @@ List<T> _applySpacing<T>(
   }
 
   for (var i = 0; i < result.length; i++) {
-    if (deficit(result[i], i) > 0) {
+    final currentDeficit = deficit(result[i], i);
+    if (currentDeficit > 0) {
       // Promote the least-clashing track from the window. Ties keep the
       // earliest index, preserving the weighted order this started from.
       final limit = min(result.length, i + 1 + lookAhead);
       var bestIndex = i;
-      var bestDeficit = deficit(result[i], i);
+      var bestDeficit = currentDeficit;
 
       for (var j = i + 1; j < limit && bestDeficit > 0; j++) {
         final candidateDeficit = deficit(result[j], i);
@@ -481,11 +487,11 @@ List<T> _applySpacing<T>(
     }
 
     final placed = result[i];
-    final artist = _norm(artistOf(placed));
-    final album = _norm(albumOf(placed));
+    final artist = artistKeys[placed];
+    final album = albumKeys[placed];
     if (artist.isNotEmpty) lastArtistAt[artist] = i;
     if (album.isNotEmpty) lastAlbumAt[album] = i;
   }
 
-  return result;
+  return [for (final index in result) ordered[index]];
 }

@@ -13,6 +13,7 @@ import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
 import '../models/shuffle_config.dart';
 import '../domain/models/play_source.dart';
+import '../domain/services/remembered_order.dart';
 import '../domain/services/shuffle_migration.dart';
 import '../domain/services/shuffle_selector.dart';
 import '../domain/services/smart_weights.dart';
@@ -115,6 +116,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   // Shuffle state
   ShuffleState _shuffleState = const ShuffleState();
+
+  // Upcoming order from the last shuffle, in memory only. Lets the shuffle
+  // button flip back to a shuffle the listener already heard instead of
+  // rolling a new one. Cleared whenever a new queue starts.
+  List<String>? _rememberedUpcomingIds;
+  bool _shuffleOrderDirty = false;
+  bool _shuffleOrderApplying = false;
 
   // Cache DB query results and the derived affinity model across rapid
   // shuffle calls. Cleared by _invalidateShuffleCache() whenever user data
@@ -388,6 +396,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     shuffleStateNotifier.value = _shuffleState;
     shuffleNotifier.value = config.enabled;
     _invalidateShuffleCache();
+    _rememberedUpcomingIds = null;
     _saveShuffleState();
 
     if (applyToCurrentQueue && _effectiveQueue.isNotEmpty) {
@@ -436,6 +445,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
 
     _sessionTopOrder.clear();
+    _rememberedUpcomingIds = null;
 
     bool usedContextQueue = false;
     if (_originalQueue.isEmpty) {
@@ -1983,7 +1993,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
-      if (a[i].song.filename != b[i].song.filename) return false;
+      if (a[i].queueId != b[i].queueId) return false;
     }
     return true;
   }
@@ -2088,6 +2098,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // via the queue overlay in _loadShuffleModel. Invalidate so the DB side
     // is re-read and the overlay is prepended correctly.
     _invalidateShuffleCache();
+    _rememberedUpcomingIds = null;
 
     // Set up fresh queue (always replaces current queue entirely)
     _originalQueue = songs.map((s) => QueueItem(song: s)).toList();
@@ -2146,6 +2157,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     shuffleStateNotifier.value = _shuffleState;
     _saveShuffleState();
     _invalidateShuffleCache();
+    _rememberedUpcomingIds = null;
 
     final currentItem = _effectiveQueue[rawIndex];
     final candidates = songs
@@ -2195,6 +2207,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     shuffleStateNotifier.value = _shuffleState;
     _saveShuffleState();
     _invalidateShuffleCache();
+    _rememberedUpcomingIds = null;
 
     final shuffled = await _weightedShuffle(
       songs.map((s) => QueueItem(song: s)).toList(),
@@ -2220,17 +2233,80 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     });
   }
 
-  Future<void> toggleShuffle() async {
-    final isShuffle = !shuffleNotifier.value;
-    shuffleNotifier.value = isShuffle;
+  /// Flips between the remembered shuffle and the original order. Rapid taps
+  /// collapse into one reorder of the latest state.
+  Future<void> toggleShuffle() => _setShuffleMode(!shuffleNotifier.value);
+
+  /// Long-press on the shuffle button: roll a brand-new shuffle instead of
+  /// restoring the remembered one.
+  Future<void> newShuffleQueue() {
+    _rememberedUpcomingIds = null;
+    return _setShuffleMode(true);
+  }
+
+  Future<void> _setShuffleMode(bool enabled) async {
+    shuffleNotifier.value = enabled;
     _shuffleState = _shuffleState.copyWith(
-      config: _shuffleState.config.copyWith(enabled: isShuffle),
+      config: _shuffleState.config.copyWith(enabled: enabled),
     );
     shuffleStateNotifier.value = _shuffleState;
-    await updateShuffleConfig(
-      _shuffleState.config,
-      createSnapshotOnQueueApply: isShuffle,
-    );
+    _saveShuffleState();
+
+    _shuffleOrderDirty = true;
+    if (_shuffleOrderApplying) return;
+
+    _shuffleOrderApplying = true;
+    try {
+      while (_shuffleOrderDirty) {
+        _shuffleOrderDirty = false;
+        await _applyShuffleOrder(shuffleNotifier.value);
+      }
+    } finally {
+      _shuffleOrderApplying = false;
+    }
+  }
+
+  Future<void> _applyShuffleOrder(bool enabled) async {
+    await _runSerializedQueueMutation(() async {
+      if (_effectiveQueue.isEmpty) return;
+
+      final currentIndex =
+          (_player.currentIndex ?? 0).clamp(0, _effectiveQueue.length - 1);
+      final currentItem = _effectiveQueue[currentIndex];
+      final upcoming = _effectiveQueue.sublist(currentIndex + 1);
+
+      if (upcoming.length > 1) {
+        final List<QueueItem> reordered;
+        if (enabled) {
+          final remembered = _rememberedUpcomingIds;
+          if (remembered != null) {
+            reordered = applyRememberedOrder<QueueItem>(
+              upcoming,
+              remembered,
+              (item) => item.queueId,
+            );
+          } else {
+            reordered = await _weightedShuffle(upcoming, lastItem: currentItem);
+          }
+          _rememberedUpcomingIds = reordered.map((i) => i.queueId).toList();
+        } else {
+          reordered = _inOriginalOrder(upcoming, currentItem);
+        }
+
+        _effectiveQueue = [
+          ..._effectiveQueue.sublist(0, currentIndex + 1),
+          ...reordered,
+        ];
+        await _mutateQueueAfterIndex(currentIndex);
+        _updateQueueNotifier();
+        _warmThemePalettesAroundIndex(currentIndex);
+      }
+
+      if (_currentQueueSnapshotId != null) {
+        await _updateCurrentSnapshotSongs();
+      }
+      _savePlaybackState();
+    });
   }
 
   Future<void> replaceQueue(
@@ -2247,6 +2323,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _pendingQueuePlaylistId = null;
     pendingQueueNotifier.value = false;
     _sessionTopOrder.clear();
+    _rememberedUpcomingIds = null;
 
     _currentPlaylistId = playlistId;
 
@@ -2440,6 +2517,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           ...reordered,
         ];
         await _mutateQueueAfterIndex(currentIndex);
+        _updateQueueNotifier();
         _warmThemePalettesAroundIndex(currentIndex);
       }
 
@@ -3090,14 +3168,19 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     await _guardPlayerMutation(() async {
       try {
-        final playerLen = _player.sequenceState.sequence.length;
-        for (int i = playerLen - 1; i > currentIndex; i--) {
-          await _player.removeAudioSourceAt(i);
+        // Sequential on purpose: on iOS each source may start an ffmpeg proxy,
+        // and fanning those out at once spikes CPU.
+        final sources = <AudioSource>[];
+        for (final item in tail) {
+          sources.add(await _createAudioSource(item));
         }
 
-        for (int i = 0; i < tail.length; i++) {
-          final source = await _createAudioSource(tail[i]);
-          await _player.insertAudioSource(currentIndex + 1 + i, source);
+        final playerLen = _player.sequenceState.sequence.length;
+        if (playerLen > currentIndex + 1) {
+          await _player.removeAudioSourceRange(currentIndex + 1, playerLen);
+        }
+        if (sources.isNotEmpty) {
+          await _player.insertAudioSources(currentIndex + 1, sources);
         }
         _syncCoverWarmer(currentIndex);
       } catch (e) {
