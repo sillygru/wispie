@@ -196,7 +196,8 @@ final List<SettingsDestination> settingsRegistry = [
     anchorId: 'playback.desktop_sidebar',
     icon: AppIcons.queue,
     title: 'Lyrics & Queue Sidebar',
-    subtitle: 'Show lyrics and the queue beside the library on wide windows',
+    subtitle:
+        'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
     breadcrumb: 'Settings › Playback › Lyrics',
     keywords: const ['sidebar', 'panel', 'desktop', 'queue', 'lyrics'],
     open: () => const PlaybackSettingsScreen(

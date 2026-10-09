@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'presentation/widgets/collection_accent_scope.dart';
 import 'package:flutter/services.dart'
     show HardwareKeyboard, KeyEvent, LogicalKeyboardKey, SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -403,8 +404,7 @@ class _WispieAppState extends ConsumerState<WispieApp>
     }
 
     void adjustVolume(double delta) {
-      final v = (player.player.volume + delta).clamp(0.0, 1.0);
-      player.player.setVolume(v);
+      player.setUserVolume(player.userVolumeNotifier.value + delta);
     }
 
     final playPause = player.togglePlayPause;
@@ -486,10 +486,46 @@ class _WispieAppState extends ConsumerState<WispieApp>
           data: AppTheme.getTheme(themeState),
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
-          child: (!isSetupComplete || !authState.isAuthenticated)
-              ? const SetupScreen()
-              : const MainScreen(),
+          child: _AnimatedAppAccent(
+            accent: themeState.extractedColor,
+            isNeutral: themeState.isNeutralCover,
+            child: (!isSetupComplete || !authState.isAuthenticated)
+                ? const SetupScreen()
+                : const MainScreen(),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// Eases the app-wide accent between palettes (track changes, entering or
+/// leaving an artist / album page) at the same pace as the [AnimatedTheme]
+/// around it, instead of snapping.
+class _AnimatedAppAccent extends StatelessWidget {
+  final Color? accent;
+  final bool isNeutral;
+  final Widget child;
+
+  const _AnimatedAppAccent({
+    required this.accent,
+    required this.isNeutral,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Always installs the scope: inserting it later would remount the app.
+    final target = accent ?? Theme.of(context).colorScheme.primary;
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(end: target),
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+      child: child,
+      builder: (context, value, child) => CollectionAccentScope(
+        accent: value ?? target,
+        isNeutral: isNeutral,
+        child: child!,
       ),
     );
   }

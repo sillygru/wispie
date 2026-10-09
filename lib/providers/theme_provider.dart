@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/color_extraction_service.dart';
+import 'browse_palette_provider.dart';
 
 /// The theme has exactly one input: the palette extracted from the current
 /// cover. There are no modes to persist — the artwork is the theme (see
@@ -14,30 +15,52 @@ class ThemeState {
   /// one be discarded instead of tinting the app with a previous track's cover.
   final String? paletteFilename;
 
+  /// Palette of the artist / album page in view; while set it themes the
+  /// whole app in place of the playing track's.
+  final ExtractedPalette? browsePalette;
+
   ThemeState({
     this.extractedPalette,
     this.paletteFilename,
+    this.browsePalette,
   });
 
-  Color? get extractedColor => extractedPalette?.color;
+  ExtractedPalette? get effectivePalette => browsePalette ?? extractedPalette;
+
+  Color? get extractedColor => effectivePalette?.color;
 
   /// The cover has no usable chroma, so the theme uses its OLED variant rather
   /// than inventing a hue.
-  bool get isNeutralCover => extractedPalette?.isNeutral ?? false;
+  bool get isNeutralCover => effectivePalette?.isNeutral ?? false;
 
-  List<Color> get palette => extractedPalette?.palette ?? [];
+  List<Color> get palette => effectivePalette?.palette ?? [];
 
   ThemeState withPalette(ExtractedPalette? palette, String? filename) {
     return ThemeState(
       extractedPalette: palette,
       paletteFilename: filename,
+      browsePalette: browsePalette,
+    );
+  }
+
+  ThemeState withBrowsePalette(ExtractedPalette? palette) {
+    return ThemeState(
+      extractedPalette: extractedPalette,
+      paletteFilename: paletteFilename,
+      browsePalette: palette,
     );
   }
 }
 
 class ThemeNotifier extends Notifier<ThemeState> {
   @override
-  ThemeState build() => ThemeState();
+  ThemeState build() {
+    ref.listen<ExtractedPalette?>(
+      activeBrowsePaletteProvider,
+      (_, next) => state = state.withBrowsePalette(next),
+    );
+    return ThemeState(browsePalette: ref.read(activeBrowsePaletteProvider));
+  }
 
   /// Applies the palette extracted for [forFilename].
   ///

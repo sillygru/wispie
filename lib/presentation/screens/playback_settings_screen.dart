@@ -60,7 +60,7 @@ class _PlaybackSettingsScreenState
                 searchId: 'playback.desktop_sidebar',
                 title: 'Lyrics & Queue Sidebar',
                 subtitle:
-                    'Show lyrics and the queue beside the library on wide windows',
+                    'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
                 value: settings.desktopSidebarEnabled,
                 onChanged: notifier.setDesktopSidebarEnabled,
               ),

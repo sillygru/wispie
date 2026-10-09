@@ -22,6 +22,7 @@ import '../../services/screen_wake_lock_service.dart';
 import '../../theme/app_theme.dart';
 import '../components/player_segmented_pill.dart';
 import '../components/pressable.dart';
+import '../components/favorite_heart_button.dart';
 import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
@@ -33,7 +34,6 @@ import '../widgets/beat_particle_field.dart';
 import '../widgets/blurred_background.dart';
 import '../widgets/smooth_color_builder.dart';
 import '../widgets/clickable_artist_text.dart';
-import '../widgets/heart_context_menu.dart';
 import '../widgets/now_playing_lyric_peek.dart';
 import '../widgets/player_motion.dart';
 import '../widgets/reactive_waveform_progress_bar.dart';
@@ -1376,144 +1376,15 @@ class _FullBleedInfoBlock extends ConsumerWidget {
         // the transform.
         Transform.translate(
           offset: const Offset(10, 0),
-          child: _FullBleedFavoriteButton(song: song, accent: accent),
-        ),
-      ],
-    );
-  }
-}
-
-/// Same heart behavior as the legacy pane: tap toggles, long-press opens the
-/// heart menu, both directions pop and favouriting adds a ring.
-class _FullBleedFavoriteButton extends ConsumerStatefulWidget {
-  final Song song;
-  final Color accent;
-
-  const _FullBleedFavoriteButton({required this.song, required this.accent});
-
-  @override
-  ConsumerState<_FullBleedFavoriteButton> createState() =>
-      _FullBleedFavoriteButtonState();
-}
-
-class _FullBleedFavoriteButtonState
-    extends ConsumerState<_FullBleedFavoriteButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pop;
-  late final Animation<double> _ringScale;
-  late final Animation<double> _ringFade;
-  bool _showRing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 620),
-    );
-    _pop = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.78)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 14,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.78, end: 1.32)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.32, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 56,
-      ),
-    ]).animate(_controller);
-    _ringScale = Tween<double>(begin: 0.35, end: 1.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart),
-    );
-    _ringFade = Tween<double>(begin: 0.45, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.65)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    final bool wasFavorite = ref.read(userDataProvider).isFavorite(
-          widget.song.filename,
-        );
-    HapticFeedback.mediumImpact();
-    songActionToggleFavorite(
-      context,
-      ref,
-      widget.song.filename,
-      widget.song.title,
-      showFeedback: false,
-    );
-    _showRing = !wasFavorite;
-    _controller.forward(from: 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isFavorite = ref.watch(
-      userDataProvider.select((data) => data.isFavorite(widget.song.filename)),
-    );
-    return InkResponse(
-      radius: 28,
-      onTap: _toggle,
-      onLongPress: () {
-        HapticFeedback.mediumImpact();
-        showHeartContextMenu(
-          context: context,
-          ref: ref,
-          songFilename: widget.song.filename,
-          songTitle: widget.song.title,
-        );
-      },
-      child: SizedBox(
-        width: 48,
-        height: 48,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                if (_showRing && _controller.isAnimating && _ringFade.value > 0)
-                  Transform.scale(
-                    scale: _ringScale.value,
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color:
-                              widget.accent.withValues(alpha: _ringFade.value),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                Transform.scale(scale: _pop.value, child: child),
-              ],
-            );
-          },
-          child: Icon(
-            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            size: 28,
-            color: isFavorite
-                ? widget.accent
-                : Colors.white.withValues(alpha: PlayerTokens.aSecondary),
+          child: FavoriteHeartButton(
+            filename: song.filename,
+            title: song.title,
+            accent: accent,
+            inactiveColor:
+                Colors.white.withValues(alpha: PlayerTokens.aSecondary),
           ),
         ),
-      ),
+      ],
     );
   }
 }

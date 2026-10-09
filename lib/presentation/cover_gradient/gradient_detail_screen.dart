@@ -43,6 +43,7 @@ import '../widgets/sort_menu.dart';
 import '../components/transport_controls.dart';
 import 'cover_blur_background.dart';
 import 'cover_gradient_palette.dart';
+import '../../providers/browse_palette_provider.dart';
 import 'floating_mini_player.dart';
 import 'glass_chrome.dart';
 import '../components/animated_removal.dart';
@@ -87,15 +88,19 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   Color? _detailAccent;
   bool _detailNeutral = false;
   String _paletteKey = '';
+  late final BrowsePaletteNotifier _browsePalette;
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    _browsePalette = ref.read(browsePaletteProvider.notifier);
   }
 
   @override
   void dispose() {
+    // Deferred: providers can't be modified while the tree is finalizing.
+    Future.microtask(() => _browsePalette.release(this));
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _scrollOffset.dispose();
@@ -144,6 +149,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       final palette = await ColorExtractionService.extractPalette(path);
       if (!mounted) return;
       if (palette == null) return;
+      _browsePalette.claim(this, palette);
       setState(() {
         _detailAccent = palette.color;
         _detailNeutral = palette.isNeutral;

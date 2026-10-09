@@ -92,7 +92,7 @@ class SettingsState {
     this.lyricsTargetLanguage = 'es',
     this.lyricsAutoTranslate = false,
     this.lyricsTranslationMode = 'subtext',
-    this.lyricsSimulatedRichSyncEnabled = true,
+    this.lyricsSimulatedRichSyncEnabled = false,
     this.lyricsTimingOffsetSeconds = 0,
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
@@ -396,7 +396,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       lyricsTranslationMode:
           prefs.getString(_keyLyricsTranslationMode) ?? 'subtext',
       lyricsSimulatedRichSyncEnabled:
-          prefs.getBool(_keyLyricsSimulatedRichSyncEnabled) ?? true,
+          prefs.getBool(_keyLyricsSimulatedRichSyncEnabled) ?? false,
       lyricsTimingOffsetSeconds:
           (prefs.getDouble(_keyLyricsTimingOffsetSeconds) ?? 0)
               .clamp(-60.0, 60.0),

@@ -190,6 +190,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   // Fade state tracking
   double _targetVolume = 1.0;
+  // The volume the user chose. Fades ramp the player's volume around this and
+  // never write to it, so the volume UI does not move during a fade.
+  final ValueNotifier<double> userVolumeNotifier = ValueNotifier(1.0);
   DateTime? _fadeStartTime;
   double? _fadeDurationMs;
   bool _holdMutedUntilNextTrack = false;
@@ -770,7 +773,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           _holdMutedUntilNextTrack = false;
 
           // Always reset volume on song change
-          _setVolumeWithSafety(1.0);
+          _setVolumeWithSafety(userVolumeNotifier.value);
 
           // Handle fade in for new song
           if (settings.fadeInDuration > 0) {
@@ -784,7 +787,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _track(_player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
         if (!_holdMutedUntilNextTrack) {
-          _setVolumeWithSafety(1.0);
+          _setVolumeWithSafety(userVolumeNotifier.value);
         }
         _isFadingOut = false;
 
@@ -1029,7 +1032,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       final targetMs = _fadeDurationMs!;
 
       if (elapsed >= targetMs) {
-        _setVolumeWithSafety(1.0);
+        _setVolumeWithSafety(userVolumeNotifier.value);
         _fadeStartTime = null;
         _fadeDurationMs = null;
         timer.cancel();
@@ -1081,6 +1084,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
   }
 
+  void setUserVolume(double volume) {
+    userVolumeNotifier.value = volume.clamp(0.0, 1.0);
+    if (!_isFadingOut && !_isPlayPauseFading) {
+      _setVolumeWithSafety(userVolumeNotifier.value);
+    }
+  }
+
   /// Toggles playback with optional fade based on settings.
   void togglePlayPause() {
     if (_player.playing) {
@@ -1118,7 +1128,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         _isPausingByFade = true;
         _setVolumeWithSafety(0.01);
         _player.pause();
-        _setVolumeWithSafety(1.0);
+        _setVolumeWithSafety(userVolumeNotifier.value);
         return;
       }
       final progress = elapsed / fadeDurationMs;
@@ -1146,6 +1156,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _player.play();
     _isPlayPauseFading = true;
     final startTime = DateTime.now();
+    final targetVolume = userVolumeNotifier.value;
 
     _playPauseFadeTimer =
         Timer.periodic(const Duration(milliseconds: 33), (timer) {
@@ -1153,11 +1164,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       if (elapsed >= fadeDurationMs) {
         timer.cancel();
         _isPlayPauseFading = false;
-        _setVolumeWithSafety(1.0);
+        _setVolumeWithSafety(targetVolume);
         return;
       }
       final progress = elapsed / fadeDurationMs;
-      final curved = pow(progress, 0.5).toDouble();
+      final curved = targetVolume * pow(progress, 0.5).toDouble();
       _setVolumeWithSafety(curved);
     });
   }
@@ -1172,7 +1183,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _fadeStartTime = null;
     _fadeDurationMs = null;
     _targetVolume = 1.0;
-    _setVolumeWithSafety(1.0);
+    _setVolumeWithSafety(userVolumeNotifier.value);
   }
 
   void _cancelTransitions() {
@@ -1186,7 +1197,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _fadeStartTime = null;
     _fadeDurationMs = null;
     _targetVolume = 1.0;
-    _setVolumeWithSafety(1.0);
+    _setVolumeWithSafety(userVolumeNotifier.value);
   }
 
   void _cancelGap() {

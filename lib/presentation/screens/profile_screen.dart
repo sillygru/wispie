@@ -615,14 +615,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       ),
                                       const SizedBox(height: AppTokens.s3),
                                       const _LegacyCaption(),
-                                      GridView.count(
-                                        crossAxisCount: compact ? 1 : 2,
+                                      GridView(
                                         shrinkWrap: true,
                                         physics:
                                             const NeverScrollableScrollPhysics(),
-                                        crossAxisSpacing: AppTokens.s3,
-                                        mainAxisSpacing: AppTokens.s3,
-                                        childAspectRatio: compact ? 3.6 : 2.2,
+                                        gridDelegate:
+                                            SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: compact ? 1 : 2,
+                                          crossAxisSpacing: AppTokens.s3,
+                                          mainAxisSpacing: AppTokens.s3,
+                                          mainAxisExtent: 96,
+                                        ),
                                         children: [
                                           _PersonalityCard(
                                             title: 'Default',

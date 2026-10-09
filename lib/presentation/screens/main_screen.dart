@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +20,9 @@ import '../widgets/external_open_banner.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/auto_backup_indicator.dart';
 import '../components/app_feedback.dart';
+import '../widgets/blurred_background.dart';
 import '../components/app_icon.dart';
+import '../components/pressable.dart';
 import '../components/app_nav_bar.dart';
 import '../components/floating_dock.dart';
 import '../components/tab_switch_transition.dart';
@@ -36,6 +37,7 @@ import 'player/lyrics_pane.dart';
 
 import '../../models/song.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/browse_palette_provider.dart';
 import '../../theme/app_theme.dart';
 
 class SyncIndicator extends ConsumerWidget {
@@ -273,24 +275,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final settings = ref.watch(settingsProvider);
+    final sidePanelOpen = ref.watch(_sidePanelOpenProvider);
     final topPadding = mediaQuery.padding.top;
-    final androidSystemBottomInset = mediaQuery.padding.bottom;
-    final bottomDockState = ref.watch(bottomDockVisibilityProvider);
-    final bottomDockVisibility =
-        settings.autoHideBottomBarOnScroll ? bottomDockState.visibility : 1.0;
-    final isBottomDockHidden = bottomDockVisibility <= 0.001;
-
-    final nowPlayingBottomPadding = settings.autoHideBottomBarOnScroll &&
-            isBottomDockHidden &&
-            androidSystemBottomInset > 0
-        ? Platform.isIOS
-            ? 12.0
-            : 8.0 + androidSystemBottomInset
-        : settings.autoHideBottomBarOnScroll && isBottomDockHidden
-            ? Platform.isIOS
-                ? 16.0
-                : 20.0
-            : 12.0;
 
     final isSelectionMode =
         ref.watch(selectionProvider.select((s) => s.isSelectionMode));
@@ -335,6 +321,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
     // Wide windows (tablet/desktop landscape) earn the desktop arrangement.
     // Phones stay portrait-locked at the OS level, so this keys off size.
     final isWide = WideLayout.isWide(context);
+    final libraryActive = _selectedIndex == 1;
+    if (ref.read(browseTabActiveProvider) != libraryActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(browseTabActiveProvider.notifier).set(libraryActive);
+        }
+      });
+    }
     final accent = AppTokens.accentOf(context, ref);
     final drawerSlideMax = WideLayout.drawerWidth(mediaQuery.size.width);
 
@@ -389,20 +383,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
             child: isSelectionMode
                 ? const BulkSelectionBar()
                 : isWide
-                    ? Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: WideLayout.maxContentWidth,
-                          ),
-                          child: NowPlayingBar(
-                            padding: EdgeInsets.fromLTRB(
-                              12,
-                              0,
-                              12,
-                              nowPlayingBottomPadding,
-                            ),
-                          ),
-                        ),
+                    ? const NowPlayingBar(
+                        padding: EdgeInsets.zero,
+                        docked: true,
+                        leadingInset: 76,
                       )
                     : FloatingDock(
                         selectedIndex: _selectedIndex,
@@ -514,10 +498,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   onSearch: openSearch,
                   onSettings: openSettings,
                 ),
-                Expanded(child: buildShellBody()),
-                if (settings.desktopSidebarEnabled &&
-                    mediaQuery.size.width >= _sidePanelBreakpoint)
-                  const _WideSidePanel(),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      buildShellBody(),
+                      // Above the content: the hover zone and its pill only
+                      // work if nothing under them absorbs the pointer.
+                      if (mediaQuery.size.width >= _sidePanelBreakpoint &&
+                          settings.desktopSidebarEnabled &&
+                          !sidePanelOpen)
+                        const Positioned.fill(child: _SidebarEdgeReveal()),
+                    ],
+                  ),
+                ),
+                if (mediaQuery.size.width >= _sidePanelBreakpoint)
+                  _AnimatedSidePanel(open: sidePanelOpen),
               ],
             ),
           ),
@@ -730,11 +725,142 @@ class _WideNavDestination extends StatelessWidget {
   }
 }
 
+/// Hover zone on the right edge that reveals the hidden sidebar handle. The
+/// handle tracks the pointer's y with a lagging ease, and x stays pinned.
+class _SidebarEdgeReveal extends StatefulWidget {
+  const _SidebarEdgeReveal();
+
+  @override
+  State<_SidebarEdgeReveal> createState() => _SidebarEdgeRevealState();
+}
+
+class _SidebarEdgeRevealState extends State<_SidebarEdgeReveal> {
+  static const _zoneWidth = 96.0;
+  static const _handleHeight = 56.0;
+  static const _topDeadZone = _handleHeight / 2 * 2.5 * 1.2;
+  static const _bottomDeadZone = _handleHeight / 2 * 2.5 * 1.8;
+
+  double _y = 0;
+  bool _inZone = false;
+
+  void _onHover(PointerHoverEvent event) {
+    final size = context.size;
+    if (size == null) return;
+    final dy = event.localPosition.dy;
+    final nearVerticalEdge =
+        dy < _topDeadZone || dy > size.height - _bottomDeadZone;
+    final inZone =
+        !nearVerticalEdge && event.localPosition.dx >= size.width - _zoneWidth;
+    final y = (dy - _handleHeight / 2)
+        .clamp(0.0, size.height - _handleHeight)
+        .toDouble();
+    if (inZone == _inZone && (!inZone || y == _y)) return;
+    setState(() {
+      _inZone = inZone;
+      if (inZone) _y = y;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      opaque: false,
+      onExit: (_) {
+        if (_inZone) setState(() => _inZone = false);
+      },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerHover: _onHover,
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
+              top: _y,
+              right: PlayerTokens.s1,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: _inZone ? 1 : 0,
+                child: IgnorePointer(
+                  ignoring: !_inZone,
+                  child: const _WideSidePanelHandle(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pill that restores the hidden right sidebar in one click.
+class _WideSidePanelHandle extends ConsumerWidget {
+  const _WideSidePanelHandle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Tooltip(
+      message: 'Show sidebar',
+      child: Pressable(
+        onTap: () => ref.read(_sidePanelOpenProvider.notifier).set(true),
+        child: Container(
+          width: 28,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTokens.floatingFill,
+            borderRadius: AppTokens.brSm,
+          ),
+          child: const AppIcon(AppIcons.arrowBack, size: 16),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether the desktop Lyrics/Queue sidebar is shown. Session-only: the
+/// settings toggle controls the expand handle, not this.
+class _SidePanelOpenNotifier extends Notifier<bool> {
+  @override
+  bool build() => true;
+
+  void set(bool open) => state = open;
+}
+
+final _sidePanelOpenProvider =
+    NotifierProvider<_SidePanelOpenNotifier, bool>(_SidePanelOpenNotifier.new);
+
 /// Window width at which the shell docks Lyrics/Queue on the right instead of
 /// leaving the extra width empty.
 const double _sidePanelBreakpoint = 1200;
 
 /// Desktop right column: Lyrics and Queue for whatever is playing, so neither
+/// Slides the desktop side panel open and closed by animating its width. The
+/// panel stays mounted so lyrics and queue state survive a toggle.
+class _AnimatedSidePanel extends StatelessWidget {
+  final bool open;
+
+  const _AnimatedSidePanel({required this.open});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: open ? 1.0 : 0.0),
+      duration: AppTokens.dBase,
+      curve: AppTokens.cStandard,
+      builder: (context, factor, child) => ClipRect(
+        child: Align(
+          alignment: Alignment.centerRight,
+          widthFactor: factor,
+          child: child,
+        ),
+      ),
+      child: const _WideSidePanel(),
+    );
+  }
+}
+
 /// Desktop right column, Spotify-style: one scroll of now playing art, a
 /// lyrics block and the upcoming queue. No tabs; everything is visible at once.
 class _WideSidePanel extends ConsumerStatefulWidget {
@@ -757,8 +883,7 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeProvider);
-    final accent =
-        themeState.extractedColor ?? Theme.of(context).colorScheme.primary;
+    final accent = AppTokens.accentOf(context, ref);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final width = (MediaQuery.sizeOf(context).width * 0.24).clamp(320.0, 420.0);
 
@@ -767,41 +892,63 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
       child: Container(
         width: width,
         color: Colors.black,
-        child: SafeArea(
-          left: false,
-          child: ValueListenableBuilder<Song?>(
-            valueListenable: audioManager.currentSongNotifier,
-            builder: (context, song, _) {
-              if (song == null) {
-                return Center(
-                  child: Text(
-                    'Nothing playing',
-                    style: PlayerTokens.meta(context),
-                  ),
-                );
-              }
-              return ValueListenableBuilder<List<QueueItem>>(
-                valueListenable: audioManager.queueNotifier,
-                builder: (context, queue, _) => StreamBuilder<int?>(
-                  stream: audioManager.player.currentIndexStream,
-                  initialData: audioManager.player.currentIndex,
-                  builder: (context, snapshot) {
-                    final current = snapshot.data ?? -1;
-                    final upcoming =
-                        current >= 0 ? queue.skip(current + 1).toList() : queue;
-                    return _buildScroll(
-                      context,
-                      song,
-                      accent,
-                      audioManager,
-                      queue,
-                      upcoming,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ValueListenableBuilder<Song?>(
+              valueListenable: audioManager.currentSongNotifier,
+              builder: (context, song, _) => song == null
+                  ? const SizedBox.shrink()
+                  : BlurredBackground(
+                      url: song.coverUrl ?? '',
+                      filename: song.filename,
+                      gradientColors: [
+                        Color.alphaBlend(
+                          accent.withValues(alpha: 0.18),
+                          Colors.black.withValues(alpha: 0.68),
+                        ),
+                        Colors.black.withValues(alpha: 0.94),
+                      ],
+                    ),
+            ),
+            SafeArea(
+              left: false,
+              child: ValueListenableBuilder<Song?>(
+                valueListenable: audioManager.currentSongNotifier,
+                builder: (context, song, _) {
+                  if (song == null) {
+                    return Center(
+                      child: Text(
+                        'Nothing playing',
+                        style: PlayerTokens.meta(context),
+                      ),
                     );
-                  },
-                ),
-              );
-            },
-          ),
+                  }
+                  return ValueListenableBuilder<List<QueueItem>>(
+                    valueListenable: audioManager.queueNotifier,
+                    builder: (context, queue, _) => StreamBuilder<int?>(
+                      stream: audioManager.player.currentIndexStream,
+                      initialData: audioManager.player.currentIndex,
+                      builder: (context, snapshot) {
+                        final current = snapshot.data ?? -1;
+                        final upcoming = current >= 0
+                            ? queue.skip(current + 1).toList()
+                            : queue;
+                        return _buildScroll(
+                          context,
+                          song,
+                          accent,
+                          audioManager,
+                          queue,
+                          upcoming,
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -858,6 +1005,12 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                tooltip: 'Hide sidebar',
+                onPressed: () =>
+                    ref.read(_sidePanelOpenProvider.notifier).set(false),
+                icon: const AppIcon(AppIcons.chevronRight),
               ),
             ],
           ),
