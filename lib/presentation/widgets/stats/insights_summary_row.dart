@@ -36,6 +36,7 @@ class InsightsSummaryRow extends ConsumerWidget {
     };
 
     return AppSurface(
+      clipContent: true,
       padding: EdgeInsets.zero,
       child: AppListRow(
         leading: AppRowIcon(icon: AppIcons.analytics, color: accent),

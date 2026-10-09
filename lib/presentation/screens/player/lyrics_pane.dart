@@ -56,10 +56,8 @@ class LyricsPane extends ConsumerStatefulWidget {
   /// A lazy list does not lay a line out until it is near the viewport, so a
   /// far-off active line has no measured offset. The base term places the line
   /// near the anchor on the assumption that every line is [estimatedLineHeight]
-  /// tall; the retry term walks the viewport down past that, so a line that is
-  /// taller than the estimate (subtext translations, wrapped lines) still comes
-  /// into build range instead of the caller re-requesting the same fallen-short
-  /// offset forever. The result is clamped to the scroll range.
+  /// tall; the retry term steps the viewport *towards* the line, so a fallen-short
+  /// or overshot estimate still reaches it. Clamped to the scroll range.
   @visibleForTesting
   static double scrollAttemptOffset({
     required int index,
@@ -71,11 +69,14 @@ class LyricsPane extends ConsumerStatefulWidget {
     required double viewport,
     required double minExtent,
     required double maxExtent,
+    required double currentOffset,
   }) {
     final estimate = actionStripHeight +
         index * estimatedLineHeight -
         viewport * activeLineAnchor;
-    return (estimate + viewport * retryViewportStep * attempt)
+    // Step up when the estimate landed past the line, down when it fell short.
+    final double direction = estimate < currentOffset ? -1.0 : 1.0;
+    return (estimate + direction * viewport * retryViewportStep * attempt)
         .clamp(minExtent, maxExtent);
   }
 
@@ -420,8 +421,16 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// not trust this estimate — see [_alignToLine].
   static const double _estimatedLineHeight = 72;
 
-  /// How far past a fallen-short estimate each retry pushes the viewport.
+  /// The sidebar pane's type and padding are under half the full pane's, so the
+  /// full-size number overshot every line.
+  static const double _compactEstimatedLineHeight = 40;
+
+  /// How far each retry steps towards a line the estimate has not reached.
   static const double _alignRetryViewportStep = 0.5;
+
+  /// The pane follows the singing itself, so a scrollbar is just noise.
+  static final ScrollBehavior _noScrollbars =
+      const MaterialScrollBehavior().copyWith(scrollbars: false);
 
   /// Upper bound on not-yet-built retries, so a line that keeps eluding the
   /// estimate can never keep the pane in an endless post-frame loop. The list
@@ -557,7 +566,11 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         .positionStream
         .listen(_onSample);
     _onSample(ref.read(audioPlayerManagerProvider).player.position);
-    if (!_frameTicker.isActive) _frameTicker.start();
+    if (!_frameTicker.isActive) {
+      // A restarted ticker counts from zero, so a stale stamp extrapolates backwards.
+      _lastFrameElapsed = Duration.zero;
+      _frameTicker.start();
+    }
   }
 
   void _onSample(Duration position) {
@@ -1182,9 +1195,17 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     int requestId, {
     required int attempt,
   }) async {
-    if (!mounted ||
-        !_scrollController.hasClients ||
-        requestId != _scrollRequestId) {
+    if (!mounted || requestId != _scrollRequestId) {
+      return;
+    }
+
+    // No viewport is "not ready yet", not failure: a bottom-bar seek lands before
+    // the list attaches, and nothing re-requests the scroll.
+    if (!_scrollController.hasClients) {
+      if (attempt >= _maxAlignAttempts || !widget.paneVisible.value) return;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _alignToLine(index, requestId, attempt: attempt + 1),
+      );
       return;
     }
 
@@ -1198,13 +1219,16 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       final target = LyricsPane.scrollAttemptOffset(
         index: index,
         attempt: attempt,
-        actionStripHeight: _actionStripHeight,
-        estimatedLineHeight: _estimatedLineHeight,
+        actionStripHeight:
+            widget.compact ? PlayerTokens.s2 : _actionStripHeight,
+        estimatedLineHeight:
+            widget.compact ? _compactEstimatedLineHeight : _estimatedLineHeight,
         activeLineAnchor: _activeLineAnchor,
         retryViewportStep: _alignRetryViewportStep,
         viewport: pos.viewportDimension,
         minExtent: pos.minScrollExtent,
         maxExtent: pos.maxScrollExtent,
+        currentOffset: pos.pixels,
       );
       if ((target - pos.pixels).abs() >= 1) pos.jumpTo(target);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1328,7 +1352,12 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     return Stack(
       children: [
         Positioned.fill(
-          child: ProgressiveEdgeFade(child: _buildContent(context)),
+          child: ProgressiveEdgeFade(
+            child: ScrollConfiguration(
+              behavior: _noScrollbars,
+              child: _buildContent(context),
+            ),
+          ),
         ),
         // Kept inside the pane rather than in the shell header: the shell owns
         // the chrome, and this action belongs to the lyrics view alone. The

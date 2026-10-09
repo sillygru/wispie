@@ -6,14 +6,10 @@ import '../../models/song.dart';
 import '../tokens/player_tokens.dart';
 import '../widgets/album_art_image.dart' show StaticAlbumArtImage;
 
-/// A square identity thumbnail for a queue: the first few covers tiled into one
-/// tile, so a saved queue is recognisable at a glance instead of reading as one
-/// more line of text.
-///
-/// The tiling follows the number of covers actually available — one cover fills
-/// the square, two split it, three use a large left tile, four make a 2x2 grid.
-/// With nothing to show it falls back to a deterministic gradient seeded from
-/// [seed], so the same queue keeps the same colours between sessions.
+/// A square identity thumbnail for a queue: the first song's cover, so a saved
+/// queue is recognisable at a glance. With no cover it falls back to a
+/// deterministic gradient seeded from [seed], so the same queue keeps the same
+/// colours between sessions.
 class QueueCoverMosaic extends StatelessWidget {
   final List<Song> songs;
   final double size;
@@ -30,135 +26,40 @@ class QueueCoverMosaic extends StatelessWidget {
     this.size = 60,
   });
 
-  static const double _gap = 1.5;
-
-  /// Resolves a cover URL to a local path and its file size.
-  /// Returns null if the file doesn't exist or the URL isn't a local path.
-  /// Single stat call per file: existence + size in one syscall.
-  static ({String path, int size})? _resolveCover(String? url) {
+  /// Resolves a cover URL to a local path and checks the file exists.
+  static bool _hasCover(String? url) {
     final path = CoverPath.toLocalPath(url);
-    if (path == null) return null;
+    if (path == null) return false;
     try {
-      final stat = File(path).statSync();
-      if (stat.type == FileSystemEntityType.notFound) return null;
-      return (path: path, size: stat.size);
+      return File(path).statSync().type != FileSystemEntityType.notFound;
     } on FileSystemException {
-      return null;
+      return false;
     } on ArgumentError {
       // A stored path the platform rejects outright (embedded NUL, bad
       // encoding) is a missing cover, not a crash.
-      return null;
+      return false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final uniqueUrls = <String>{};
-    final covers = <Song>[];
-    int? firstSize;
-    bool allSameSize = true;
-
-    for (final song in songs) {
-      if (covers.length >= 4) break;
-      final result = _resolveCover(song.coverUrl);
-      if (result == null || !uniqueUrls.add(result.path)) continue;
-
-      // Track file size as we go to detect duplicates (same image extracted
-      // from different songs in the same album).
-      if (allSameSize) {
-        if (firstSize == null) {
-          firstSize = result.size;
-        } else if (result.size != firstSize) {
-          allSameSize = false;
-        }
-      }
-
-      covers.add(song);
-    }
-
-    // If all unique covers have the same file size, they're the same image
-    // extracted from different songs — show a single full cover instead of
-    // repeating it in a grid.
-    if (covers.length >= 2 && allSameSize) {
-      covers.removeRange(1, covers.length);
-    }
+    final first = songs.isEmpty ? null : songs.first;
 
     return ClipRRect(
       borderRadius: PlayerTokens.brSm,
       child: SizedBox(
         width: size,
         height: size,
-        child: Container(
-          // Shows through the gaps between tiles and behind missing artwork.
-          color: Colors.white.withValues(alpha: 0.06),
-          child: covers.isEmpty ? _buildPlaceholder() : _buildTiles(covers),
-        ),
+        child: first != null && _hasCover(first.coverUrl)
+            ? StaticAlbumArtImage(
+                url: first.coverUrl ?? '',
+                filename: first.filename,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+              )
+            : _buildPlaceholder(),
       ),
-    );
-  }
-
-  Widget _buildTiles(List<Song> covers) {
-    switch (covers.length) {
-      case 1:
-        return _cover(covers[0], size);
-      case 2:
-        return Row(
-          children: [
-            Expanded(child: _cover(covers[0], size / 2)),
-            const SizedBox(width: _gap),
-            Expanded(child: _cover(covers[1], size / 2)),
-          ],
-        );
-      case 3:
-        return Row(
-          children: [
-            Expanded(child: _cover(covers[0], size / 2)),
-            const SizedBox(width: _gap),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(child: _cover(covers[1], size / 2)),
-                  const SizedBox(height: _gap),
-                  Expanded(child: _cover(covers[2], size / 2)),
-                ],
-              ),
-            ),
-          ],
-        );
-      default:
-        return Column(
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(child: _cover(covers[0], size / 2)),
-                  const SizedBox(width: _gap),
-                  Expanded(child: _cover(covers[1], size / 2)),
-                ],
-              ),
-            ),
-            const SizedBox(height: _gap),
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(child: _cover(covers[2], size / 2)),
-                  const SizedBox(width: _gap),
-                  Expanded(child: _cover(covers[3], size / 2)),
-                ],
-              ),
-            ),
-          ],
-        );
-    }
-  }
-
-  Widget _cover(Song song, double extent) {
-    return StaticAlbumArtImage(
-      url: song.coverUrl ?? '',
-      filename: song.filename,
-      width: extent,
-      height: extent,
-      fit: BoxFit.cover,
     );
   }
 

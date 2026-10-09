@@ -22,6 +22,7 @@ import '../routes/player_route.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_media_card.dart';
+import '../components/player_track_row.dart';
 import '../components/queue_cover_mosaic.dart';
 import '../components/app_screen_header.dart';
 import '../components/scroll_chrome.dart';
@@ -47,6 +48,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     with ScrollChromeMixin {
   static const double _cardSize = 168;
   static const double _queueCardSize = 120;
+  static const double _queueSheetListHeight = 360;
 
   double _computeMediaCarouselHeight(
     BuildContext context,
@@ -265,6 +267,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (WideLayout.isWide(ctx)) ...[
+                    SizedBox(
+                      height: _queueSheetListHeight,
+                      child: ListView.builder(
+                        itemCount: songs.length,
+                        itemBuilder: (_, i) => PlayerTrackRow(
+                          song: songs[i],
+                          accent: AppTokens.accentOf(ctx, innerRef),
+                          index: i,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppTokens.s4),
+                  ],
                   Text(
                     '${songs.length} ${songs.length == 1 ? 'track' : 'tracks'}',
                     style: AppTokens.meta(context),
@@ -691,7 +707,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 }
 
 /// Resolves a saved queue's filenames back to songs, in queue order. Deleted
-/// tracks drop out; the mosaic caps how many tiles it actually draws.
+/// tracks drop out; the thumbnail uses the first remaining song's cover.
 List<Song> _queueSnapshotSongs(
   AsyncValue<List<Song>> songsAsync,
   QueueSnapshot snapshot,

@@ -112,6 +112,7 @@ class _HistogramCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppSurface(
+      clipContent: true,
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
         AppTokens.s4,

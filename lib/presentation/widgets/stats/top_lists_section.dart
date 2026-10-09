@@ -91,6 +91,7 @@ class _RankedBlock extends StatelessWidget {
           child: Text(label, style: AppTokens.sectionLabel(context)),
         ),
         AppSurface(
+          clipContent: true,
           padding: const EdgeInsets.all(AppTokens.s2),
           child: RankedGroup(
             entries: entries,

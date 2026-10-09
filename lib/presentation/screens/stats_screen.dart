@@ -29,6 +29,9 @@ class StatsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTokens.accentOf(context, ref);
     final insights = ref.watch(listeningInsightsProvider);
+    // Refreshing keeps the previous value; only a first load should swap the
+    // list out, otherwise the scroll position is lost on every refresh.
+    final data = insights.value;
 
     return AmbientScaffold(
       appBar: AppTopBar(title: 'Listening'),
@@ -43,20 +46,7 @@ class StatsScreen extends ConsumerWidget {
             // refreshable — while a single message fills it, which is what
             // makes pull-to-refresh work before the data arrives.
             switch (insights) {
-              AsyncData(value: final data) when data.isEmpty =>
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: AppEmptyState(
-                    icon: AppIcons.analytics,
-                    title: 'No listening history yet',
-                    message: 'Play something and your listening habits will '
-                        'show up here.',
-                  ),
-                ),
-              AsyncData(value: final data) => SliverToBoxAdapter(
-                  child: _StatsBody(insights: data, accent: accent),
-                ),
-              AsyncError(:final error) => SliverFillRemaining(
+              AsyncError(:final error) when data == null => SliverFillRemaining(
                   hasScrollBody: false,
                   child: AppEmptyState(
                     icon: AppIcons.error,
@@ -67,9 +57,21 @@ class StatsScreen extends ConsumerWidget {
                     onAction: () => ref.invalidate(listeningInsightsProvider),
                   ),
                 ),
-              _ => const SliverFillRemaining(
+              _ when data == null => const SliverFillRemaining(
                   hasScrollBody: false,
                   child: AppLoading(message: 'Reading your listening history'),
+                ),
+              _ when data.isEmpty => const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: AppEmptyState(
+                    icon: AppIcons.analytics,
+                    title: 'No listening history yet',
+                    message: 'Play something and your listening habits will '
+                        'show up here.',
+                  ),
+                ),
+              _ => SliverToBoxAdapter(
+                  child: _StatsBody(insights: data, accent: accent),
                 ),
             },
             const SliverPadding(

@@ -12,6 +12,7 @@ import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
 import 'audio_visualizer.dart';
 import '../components/app_icon.dart';
+import '../components/bar_seek_track.dart';
 import '../components/pressable.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
@@ -118,6 +119,7 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
               compact: widget.compact,
               embedded: widget.embedded,
               coverVersion: song?.mtime,
+              scrubbable: isDesktop,
             ),
           ),
         );
@@ -138,6 +140,9 @@ class _NowPlayingContent extends ConsumerWidget {
   final bool embedded;
   final Object? coverVersion;
 
+  /// Desktop can aim at the hairline, so it seeks there.
+  final bool scrubbable;
+
   const _NowPlayingContent({
     required this.metadata,
     required this.player,
@@ -148,6 +153,7 @@ class _NowPlayingContent extends ConsumerWidget {
     required this.roomy,
     required this.compact,
     required this.embedded,
+    required this.scrubbable,
     this.coverVersion,
   });
 
@@ -356,31 +362,15 @@ class _NowPlayingContent extends ConsumerWidget {
             left: compact ? AppTokens.s5 : 14,
             right: compact ? AppTokens.s5 : 14,
             bottom: compact ? 3 : AppTokens.s1 + 2,
-            // Boundaried: this repaints five times a second on every screen in
-            // the app, and without a layer of its own each of those repaints
-            // dirtied the whole bar — including the backdrop blur behind it.
-            child: RepaintBoundary(
-              child: StreamBuilder<Duration>(
-                stream:
-                    (isBarVisible && appActive) ? player.positionStream : null,
-                initialData: player.position,
-                builder: (context, snapshot) {
-                  final position = snapshot.data ?? Duration.zero;
-                  final duration = player.duration ?? Duration.zero;
-                  final progress = duration.inMilliseconds > 0
-                      ? position.inMilliseconds / duration.inMilliseconds
-                      : 0.0;
-                  return ClipRRect(
-                    borderRadius: AppTokens.brPill,
-                    child: LinearProgressIndicator(
-                      value: progress.clamp(0.0, 1.0),
-                      minHeight: compact ? 2 : 3,
-                      backgroundColor: Colors.white.withValues(alpha: 0.10),
-                      valueColor: AlwaysStoppedAnimation<Color>(accent),
-                    ),
-                  );
-                },
-              ),
+            // A taller band to hit, stopping short of the transport buttons above it.
+            height: scrubbable ? AppTokens.s2 + 2 : null,
+            child: BarSeekTrack(
+              player: player,
+              accent: accent,
+              trackColor: Colors.white.withValues(alpha: 0.10),
+              thickness: compact ? 2 : 3,
+              interactive: scrubbable,
+              live: isBarVisible && appActive,
             ),
           ),
         ],

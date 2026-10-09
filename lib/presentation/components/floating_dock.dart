@@ -16,6 +16,7 @@ import '../widgets/album_art_image.dart';
 import '../widgets/audio_visualizer.dart';
 import 'app_icon.dart';
 import 'app_nav_bar.dart';
+import 'bar_seek_track.dart';
 import 'pressable.dart';
 import 'transport_controls.dart';
 import 'track_swipe_switcher.dart';
@@ -688,6 +689,11 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
     final player = manager.player;
     final Song song = widget.song;
     final Color accent = widget.accent;
+    // A mouse can aim at the hairline; a finger cannot.
+    final TargetPlatform platform = Theme.of(context).platform;
+    final bool desktop = platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
     const double inset = FloatingDock.barArtInset;
     const double art = FloatingDock.barArtSize;
 
@@ -843,28 +849,12 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                 left: inset + art + AppTokens.s3,
                 right: AppTokens.s4,
                 bottom: AppTokens.s1 + 1,
-                height: 2,
-                child: RepaintBoundary(
-                  child: StreamBuilder<Duration>(
-                    stream: player.positionStream,
-                    initialData: player.position,
-                    builder: (context, snapshot) {
-                      final total = player.duration ?? Duration.zero;
-                      final double p = total.inMilliseconds > 0
-                          ? (snapshot.data ?? Duration.zero).inMilliseconds /
-                              total.inMilliseconds
-                          : 0.0;
-                      return ClipRRect(
-                        borderRadius: AppTokens.brPill,
-                        child: LinearProgressIndicator(
-                          value: p.clamp(0.0, 1.0),
-                          minHeight: 2,
-                          backgroundColor: Colors.white.withValues(alpha: 0.10),
-                          valueColor: AlwaysStoppedAnimation<Color>(accent),
-                        ),
-                      );
-                    },
-                  ),
+                height: desktop ? AppTokens.s2 : 2,
+                child: BarSeekTrack(
+                  player: player,
+                  accent: accent,
+                  trackColor: Colors.white.withValues(alpha: 0.10),
+                  interactive: desktop,
                 ),
               ),
             ],

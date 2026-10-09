@@ -36,6 +36,7 @@ class _TrendSectionState extends State<TrendSection> {
         : widget.insights.peakTrendPoint ?? points.last;
 
     return AppSurface(
+      clipContent: true,
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
         AppTokens.s5,

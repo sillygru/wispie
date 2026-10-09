@@ -27,6 +27,7 @@ class OverviewSection extends StatelessWidget {
     final percent = StatsFormat.signedPercent(change);
 
     return AppSurface(
+      clipContent: true,
       padding: const EdgeInsets.all(AppTokens.s5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

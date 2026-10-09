@@ -13,6 +13,7 @@ void main() {
     required int attempt,
     double minExtent = 0,
     double maxExtent = 20000,
+    double currentOffset = 0,
   }) {
     return LyricsPane.scrollAttemptOffset(
       index: index,
@@ -24,6 +25,7 @@ void main() {
       viewport: viewport,
       minExtent: minExtent,
       maxExtent: maxExtent,
+      currentOffset: currentOffset,
     );
   }
 
@@ -65,6 +67,16 @@ void main() {
         }
       }
       expect(reached, isTrue);
+    });
+
+    test('walk back up when the estimate overshot the line', () {
+      // Seeking backwards: retries must step back towards the line, not past it.
+      const currentOffset = 9000.0;
+      final attempts = [
+        for (var i = 0; i < 5; i++)
+          attemptOffset(index: 10, attempt: i, currentOffset: currentOffset),
+      ];
+      expect(attempts, [346, 0, 0, 0, 0]);
     });
 
     test('stay within the scroll range', () {

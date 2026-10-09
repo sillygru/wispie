@@ -30,6 +30,7 @@ class TasteSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppSurface(
+          clipContent: true,
           padding: const EdgeInsets.all(AppTokens.s5),
           child: Column(
             children: [
@@ -62,6 +63,7 @@ class TasteSection extends StatelessWidget {
         ),
         const SizedBox(height: AppTokens.s3),
         AppSurface(
+          clipContent: true,
           padding: const EdgeInsets.symmetric(
             horizontal: AppTokens.s5,
             vertical: AppTokens.s4,
