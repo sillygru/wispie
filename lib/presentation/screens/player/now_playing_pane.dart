@@ -464,9 +464,7 @@ class _CoverStage extends ConsumerWidget {
               memCacheWidth:
                   (size * MediaQuery.devicePixelRatioOf(context)).round(),
               // autoFit crops to a square; sourceAspect keeps the original ratio.
-              fit: coverSizing == PlayerCoverSizingMode.autoFit
-                  ? BoxFit.cover
-                  : BoxFit.contain,
+              fit: coverFitFor(coverSizing),
             ),
           ),
         ),

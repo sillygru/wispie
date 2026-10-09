@@ -9,6 +9,7 @@ import '../components/app_settings.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
+import 'beat_sync_calibration_screen.dart';
 import 'quick_actions_settings_screen.dart';
 import '../tokens/app_icons.dart';
 
@@ -284,6 +285,13 @@ class _AppearanceSettingsScreenState
                   ),
                 ),
               ),
+            ),
+            AppSettingsTile(
+              icon: AppIcons.syncAlt,
+              searchId: 'appearance.beat_calibrate',
+              title: 'Calibrate beat sync',
+              subtitle: 'Line up particles with a click track by ear',
+              onTap: () => context.pushApp(const BeatSyncCalibrationScreen()),
             ),
           ],
         ),

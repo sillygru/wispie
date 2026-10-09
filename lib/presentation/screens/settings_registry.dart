@@ -453,6 +453,17 @@ final List<SettingsDestination> settingsRegistry = [
         const AppearanceSettingsScreen(highlightId: 'appearance.beat_offset'),
   ),
   SettingsDestination(
+    anchorId: 'appearance.beat_calibrate',
+    icon: AppIcons.syncAlt,
+    title: 'Calibrate beat sync',
+    subtitle: 'Line up particles with a click track by ear',
+    breadcrumb: 'Settings › Appearance › Player motion',
+    keywords: const ['calibrate', 'sync', 'latency', 'offset', 'test', 'click'],
+    open: () => const AppearanceSettingsScreen(
+      highlightId: 'appearance.beat_calibrate',
+    ),
+  ),
+  SettingsDestination(
     anchorId: 'appearance.quick_picks',
     icon: AppIcons.autoAwesome,
     title: 'Quick Picks',

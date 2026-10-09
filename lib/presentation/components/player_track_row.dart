@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/song.dart';
+import '../../providers/settings_provider.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/player_tokens.dart';
 import 'app_icon.dart';
-import '../widgets/album_art_image.dart' show StaticAlbumArtImage;
+import '../widgets/album_art_image.dart' show StaticAlbumArtImage, coverFitFor;
 import '../widgets/audio_visualizer.dart';
 import '../widgets/duration_display.dart' show DurationFormatter;
 
@@ -13,7 +15,7 @@ import '../widgets/duration_display.dart' show DurationFormatter;
 /// section above the current track, and the expanded contents of a history
 /// snapshot. Using a single row across all three lists is most of what makes
 /// the panes feel like one screen rather than three.
-class PlayerTrackRow extends StatelessWidget {
+class PlayerTrackRow extends ConsumerWidget {
   final Song song;
 
   /// The currently playing track: accent-tinted, with a visualizer or bars.
@@ -51,7 +53,10 @@ class PlayerTrackRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final coverFit = coverFitFor(
+      ref.watch(settingsProvider.select((s) => s.coverSizingMode)),
+    );
     final row = Container(
       height: PlayerTokens.rowHeight,
       padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s4),
@@ -65,7 +70,7 @@ class PlayerTrackRow extends StatelessWidget {
           : null,
       child: Row(
         children: [
-          _buildArtwork(),
+          _buildArtwork(coverFit),
           const SizedBox(width: PlayerTokens.s3),
           Expanded(
             child: Column(
@@ -118,7 +123,7 @@ class PlayerTrackRow extends StatelessWidget {
     return Opacity(opacity: PlayerTokens.aPlayed, child: tappable);
   }
 
-  Widget _buildArtwork() {
+  Widget _buildArtwork(BoxFit coverFit) {
     final art = ClipRRect(
       borderRadius: PlayerTokens.brSm,
       child: SizedBox(
@@ -132,7 +137,7 @@ class PlayerTrackRow extends StatelessWidget {
               filename: song.filename,
               width: PlayerTokens.artSize,
               height: PlayerTokens.artSize,
-              fit: BoxFit.cover,
+              fit: coverFit,
             ),
             if (isCurrent)
               GestureDetector(

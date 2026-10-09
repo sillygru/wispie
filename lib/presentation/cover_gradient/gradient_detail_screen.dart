@@ -633,10 +633,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
               child: SafeArea(
                 top: false,
                 child: selectionState.isSelectionMode
-                    ? const Padding(
-                        padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
-                        child: BulkSelectionBar(),
-                      )
+                    ? const BulkSelectionBar()
                     : const FloatingGlassMiniPlayer(),
               ),
             ),

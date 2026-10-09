@@ -98,6 +98,7 @@ class SongListItem extends ConsumerWidget {
               accent: accent,
               audioManager: audioManager,
               visualizerMode: settings.visualizerMode,
+              coverFit: coverFitFor(settings.coverSizingMode),
             ),
             tall: true,
             subtitleWidget: _SongMeta(
@@ -170,6 +171,7 @@ class _Artwork extends StatelessWidget {
   final Color accent;
   final AudioPlayerManager audioManager;
   final VisualizerMode visualizerMode;
+  final BoxFit coverFit;
 
   const _Artwork({
     required this.song,
@@ -180,6 +182,7 @@ class _Artwork extends StatelessWidget {
     required this.accent,
     required this.audioManager,
     required this.visualizerMode,
+    required this.coverFit,
   });
 
   @override
@@ -198,9 +201,8 @@ class _Artwork extends StatelessWidget {
                 filename: song.filename,
                 width: AppTokens.artSizeLarge,
                 height: AppTokens.artSizeLarge,
-                fit: BoxFit.cover,
+                fit: coverFit,
                 memCacheWidth: 140,
-                memCacheHeight: 140,
               ),
             ),
           ),

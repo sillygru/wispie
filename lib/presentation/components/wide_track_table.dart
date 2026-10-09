@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
 import 'app_icon.dart';
@@ -290,13 +291,15 @@ class _WideTrackRowState extends ConsumerState<WideTrackRow> {
   }
 }
 
-class _RowArt extends StatelessWidget {
+class _RowArt extends ConsumerWidget {
   final Song song;
 
   const _RowArt({required this.song});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final coverSizing =
+        ref.watch(settingsProvider.select((s) => s.coverSizingMode));
     return ClipRRect(
       borderRadius: AppTokens.brSm,
       child: AlbumArtImage(
@@ -304,9 +307,9 @@ class _RowArt extends StatelessWidget {
         filename: song.filename,
         width: 40,
         height: 40,
-        fit: BoxFit.cover,
+        fit: coverFitFor(coverSizing),
+        trimBorders: coverSizing == PlayerCoverSizingMode.autoFit,
         memCacheWidth: 104,
-        memCacheHeight: 104,
       ),
     );
   }

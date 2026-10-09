@@ -4,9 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../../domain/services/cover_path.dart';
+import '../../models/song.dart';
 import '../../services/cover_refresh_service.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import 'cover_border_trim.dart';
+
+/// Maps Player Cover Sizing onto a [BoxFit] so every cover surface reads the
+/// setting the same way: autoFit crops to the box, sourceAspect letterboxes.
+BoxFit coverFitFor(PlayerCoverSizingMode mode) =>
+    mode == PlayerCoverSizingMode.autoFit ? BoxFit.cover : BoxFit.contain;
 
 class AlbumArtImage extends StatefulWidget {
   final String url;
@@ -26,6 +33,9 @@ class AlbumArtImage extends StatefulWidget {
   final int? memCacheHeight;
   final FilterQuality filterQuality;
 
+  /// Crops baked-in black bars; see [CoverBorderTrim].
+  final bool trimBorders;
+
   const AlbumArtImage({
     super.key,
     required this.url,
@@ -42,6 +52,7 @@ class AlbumArtImage extends StatefulWidget {
     this.memCacheWidth,
     this.memCacheHeight,
     this.filterQuality = FilterQuality.medium,
+    this.trimBorders = false,
   });
 
   @override
@@ -162,6 +173,14 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
           return widget.placeholder ?? _buildPlaceholder();
         },
       );
+      if (widget.trimBorders) {
+        content = CoverBorderTrim(
+          path: path,
+          width: widget.width,
+          height: widget.height,
+          child: content,
+        );
+      }
     } else {
       content = Image.network(
         // The resolved URL, not widget.url — otherwise a cover the lazy
@@ -211,6 +230,7 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     final path = _localPath(image.url);
     if (path == null) return;
 
+    CoverBorderTrim.forget(path);
     final provider = FileImage(File(path));
     await provider.evict();
 
@@ -324,7 +344,6 @@ class StaticAlbumArtImage extends StatelessWidget {
 
     // Locals: public fields do not promote, so copy before null checks.
     final w = width;
-    final h = height;
 
     if (isLocal) {
       final String path = CoverPath.normalize(url);
@@ -336,7 +355,6 @@ class StaticAlbumArtImage extends StatelessWidget {
         fit: fit,
         filterQuality: FilterQuality.low,
         cacheWidth: w != null && w.isFinite ? (w * 2).toInt() : null,
-        cacheHeight: h != null && h.isFinite ? (h * 2).toInt() : null,
         errorBuilder: (context, error, stackTrace) {
           return errorWidget ?? _buildErrorWidget();
         },
@@ -349,7 +367,6 @@ class StaticAlbumArtImage extends StatelessWidget {
         fit: fit,
         filterQuality: FilterQuality.low,
         cacheWidth: w != null && w.isFinite ? (w * 2).toInt() : null,
-        cacheHeight: h != null && h.isFinite ? (h * 2).toInt() : null,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return placeholder ?? _buildPlaceholderWidget();
