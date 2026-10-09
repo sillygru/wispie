@@ -29,6 +29,7 @@ class SettingsState {
   final double playFadeDuration;
   final double pauseFadeDuration;
   final bool keepScreenAwakeOnLyrics;
+  final bool desktopSidebarEnabled;
   final PlayerCoverSizingMode coverSizingMode;
   final bool beatReactiveCoverEnabled;
   final bool beatReactiveParticlesEnabled;
@@ -76,6 +77,7 @@ class SettingsState {
     this.playFadeDuration = 0.3,
     this.pauseFadeDuration = 0.3,
     this.keepScreenAwakeOnLyrics = true,
+    this.desktopSidebarEnabled = true,
     this.coverSizingMode = PlayerCoverSizingMode.autoFit,
     this.beatReactiveCoverEnabled = true,
     this.beatReactiveParticlesEnabled = true,
@@ -130,6 +132,7 @@ class SettingsState {
     double? playFadeDuration,
     double? pauseFadeDuration,
     bool? keepScreenAwakeOnLyrics,
+    bool? desktopSidebarEnabled,
     PlayerCoverSizingMode? coverSizingMode,
     bool? beatReactiveCoverEnabled,
     bool? beatReactiveParticlesEnabled,
@@ -192,6 +195,8 @@ class SettingsState {
       pauseFadeDuration: pauseFadeDuration ?? this.pauseFadeDuration,
       keepScreenAwakeOnLyrics:
           keepScreenAwakeOnLyrics ?? this.keepScreenAwakeOnLyrics,
+      desktopSidebarEnabled:
+          desktopSidebarEnabled ?? this.desktopSidebarEnabled,
       coverSizingMode: coverSizingMode ?? this.coverSizingMode,
       beatReactiveCoverEnabled:
           beatReactiveCoverEnabled ?? this.beatReactiveCoverEnabled,
@@ -254,6 +259,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyPlayFadeDuration = 'play_fade_duration';
   static const _keyPauseFadeDuration = 'pause_fade_duration';
   static const _keyKeepScreenAwakeOnLyrics = 'keep_screen_awake_on_lyrics';
+  static const _keyDesktopSidebarEnabled = 'desktop_sidebar_enabled';
   static const _keyCoverSizingMode = 'cover_sizing_mode';
   static const _keyBeatReactiveCoverEnabled = 'beat_reactive_cover_enabled';
   static const _keyBeatReactiveParticlesEnabled =
@@ -366,6 +372,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       pauseFadeDuration: prefs.getDouble(_keyPauseFadeDuration) ?? 0.3,
       keepScreenAwakeOnLyrics:
           prefs.getBool(_keyKeepScreenAwakeOnLyrics) ?? true,
+      desktopSidebarEnabled: prefs.getBool(_keyDesktopSidebarEnabled) ?? true,
       coverSizingMode: coverSizingModeIndex != null &&
               coverSizingModeIndex >= 0 &&
               coverSizingModeIndex < PlayerCoverSizingMode.values.length
@@ -628,6 +635,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(pauseFadeDuration: value.clamp(0.0, 1.0));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyPauseFadeDuration, value.clamp(0.0, 1.0));
+  }
+
+  Future<void> setDesktopSidebarEnabled(bool enabled) async {
+    state = state.copyWith(desktopSidebarEnabled: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDesktopSidebarEnabled, enabled);
   }
 
   Future<void> setKeepScreenAwakeOnLyrics(bool enabled) async {

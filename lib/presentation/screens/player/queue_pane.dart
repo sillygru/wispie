@@ -692,13 +692,24 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     // row drops Dismissible entirely in favour of a cursor-anchored right-click
     // menu, and the whole row becomes the drag handle. Narrow windows
     // (phones, portrait tablets) keep the touch behaviour below untouched.
-    if (WideLayout.isWide(context)) {
+    final platform = Theme.of(context).platform;
+    final desktop = platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
+    if (desktop || WideLayout.isWide(context)) {
       return _WideUpcomingRow(
         key: ValueKey('upnext_${item.queueId}'),
         accent: widget.accent,
         item: item,
         index: index,
         onTap: () => _jumpTo(audioManager, item),
+        onMoveToTop: () => _moveToTopNow(audioManager, item),
+        onRemove: () {
+          final absolute =
+              queue.indexWhere((queued) => queued.queueId == item.queueId);
+          if (absolute == -1) return;
+          _remove(audioManager, item, absolute);
+        },
         onOpenMenu: (position) => _showWideRowMenu(
           context,
           position,
@@ -895,6 +906,8 @@ class _WideUpcomingRow extends StatefulWidget {
   final QueueItem item;
   final int index;
   final VoidCallback onTap;
+  final VoidCallback onMoveToTop;
+  final VoidCallback onRemove;
   final void Function(Offset globalPosition) onOpenMenu;
 
   const _WideUpcomingRow({
@@ -903,6 +916,8 @@ class _WideUpcomingRow extends StatefulWidget {
     required this.item,
     required this.index,
     required this.onTap,
+    required this.onMoveToTop,
+    required this.onRemove,
     required this.onOpenMenu,
   });
 
@@ -961,6 +976,23 @@ class _WideUpcomingRowState extends State<_WideUpcomingRow> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_hovering) ...[
+                      IconButton(
+                        tooltip: 'Move to top',
+                        icon: const Icon(
+                          Icons.vertical_align_top_rounded,
+                          size: 20,
+                        ),
+                        color: Colors.white54,
+                        onPressed: widget.onMoveToTop,
+                      ),
+                      IconButton(
+                        tooltip: 'Remove from queue',
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        color: Colors.white54,
+                        onPressed: widget.onRemove,
+                      ),
+                    ],
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTapDown: (details) =>

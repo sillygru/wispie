@@ -28,6 +28,15 @@ import '../components/tab_switch_transition.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
+import '../widgets/album_art_image.dart';
+import '../tokens/player_tokens.dart';
+import '../../models/queue_item.dart';
+import '../../services/audio_player_manager.dart';
+import 'player/lyrics_pane.dart';
+
+import '../../models/song.dart';
+import '../../providers/theme_provider.dart';
+import '../../theme/app_theme.dart';
 
 class SyncIndicator extends ConsumerWidget {
   const SyncIndicator({super.key});
@@ -506,6 +515,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   onSettings: openSettings,
                 ),
                 Expanded(child: buildShellBody()),
+                if (settings.desktopSidebarEnabled &&
+                    mediaQuery.size.width >= _sidePanelBreakpoint)
+                  const _WideSidePanel(),
               ],
             ),
           ),
@@ -712,6 +724,302 @@ class _WideNavDestination extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Window width at which the shell docks Lyrics/Queue on the right instead of
+/// leaving the extra width empty.
+const double _sidePanelBreakpoint = 1200;
+
+/// Desktop right column: Lyrics and Queue for whatever is playing, so neither
+/// Desktop right column, Spotify-style: one scroll of now playing art, a
+/// lyrics block and the upcoming queue. No tabs; everything is visible at once.
+class _WideSidePanel extends ConsumerStatefulWidget {
+  const _WideSidePanel();
+
+  @override
+  ConsumerState<_WideSidePanel> createState() => _WideSidePanelState();
+}
+
+class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
+  // The panel is always on screen when built, so lyrics always sync.
+  final ValueNotifier<bool> _lyricsVisible = ValueNotifier(true);
+
+  @override
+  void dispose() {
+    _lyricsVisible.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeState = ref.watch(themeProvider);
+    final accent =
+        themeState.extractedColor ?? Theme.of(context).colorScheme.primary;
+    final audioManager = ref.watch(audioPlayerManagerProvider);
+    final width = (MediaQuery.sizeOf(context).width * 0.24).clamp(320.0, 420.0);
+
+    return Theme(
+      data: AppTheme.getPlayerTheme(themeState, accent),
+      child: Container(
+        width: width,
+        color: Colors.black,
+        child: SafeArea(
+          left: false,
+          child: ValueListenableBuilder<Song?>(
+            valueListenable: audioManager.currentSongNotifier,
+            builder: (context, song, _) {
+              if (song == null) {
+                return Center(
+                  child: Text(
+                    'Nothing playing',
+                    style: PlayerTokens.meta(context),
+                  ),
+                );
+              }
+              return ValueListenableBuilder<List<QueueItem>>(
+                valueListenable: audioManager.queueNotifier,
+                builder: (context, queue, _) => StreamBuilder<int?>(
+                  stream: audioManager.player.currentIndexStream,
+                  initialData: audioManager.player.currentIndex,
+                  builder: (context, snapshot) {
+                    final current = snapshot.data ?? -1;
+                    final upcoming =
+                        current >= 0 ? queue.skip(current + 1).toList() : queue;
+                    return _buildScroll(
+                      context,
+                      song,
+                      accent,
+                      audioManager,
+                      queue,
+                      upcoming,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Fixed layout, no outer scroll: header, lyrics and queue are all visible
+  /// at once, and each region scrolls only itself so a wheel over the queue
+  /// can never move the lyrics.
+  Widget _buildScroll(
+    BuildContext context,
+    Song song,
+    Color accent,
+    AudioPlayerManager audioManager,
+    List<QueueItem> queue,
+    List<QueueItem> upcoming,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            PlayerTokens.s4,
+            PlayerTokens.s4,
+            PlayerTokens.s4,
+            PlayerTokens.s2,
+          ),
+          child: Row(
+            children: [
+              AlbumArtImage(
+                url: song.coverUrl ?? '',
+                filename: song.filename,
+                cacheVersion: song.mtime,
+                width: 56,
+                height: 56,
+                borderRadius: PlayerTokens.s2,
+                memCacheWidth: 168,
+              ),
+              const SizedBox(width: PlayerTokens.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PlayerTokens.trackTitle(context),
+                    ),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PlayerTokens.trackSubtitle(context),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 5,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s2),
+            child: LyricsPane(
+              song: song,
+              accent: accent,
+              paneVisible: _lyricsVisible,
+              compact: true,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            PlayerTokens.s4,
+            PlayerTokens.s3,
+            PlayerTokens.s4,
+            PlayerTokens.s1,
+          ),
+          child: Text(
+            upcoming.isEmpty ? 'Nothing up next' : 'Next in queue',
+            style: PlayerTokens.sectionLabel(context),
+          ),
+        ),
+        Expanded(
+          flex: 4,
+          child: ListView.builder(
+            padding: const EdgeInsets.only(
+              bottom: AppTokens.scrollBottomInset,
+            ),
+            itemCount: upcoming.length,
+            itemBuilder: (context, i) {
+              final item = upcoming[i];
+              return _SideQueueRow(
+                key: ValueKey(item.queueId),
+                item: item,
+                accent: accent,
+                onTap: () => audioManager.jumpToQueueItem(item.queueId),
+                onMoveToTop: i == 0
+                    ? null
+                    : () => audioManager.moveUpcomingToTop(item.queueId),
+                onRemove: () {
+                  final absolute =
+                      queue.indexWhere((q) => q.queueId == item.queueId);
+                  if (absolute >= 0) audioManager.removeFromQueue(absolute);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact queue row; actions appear on hover so the list stays quiet.
+class _SideQueueRow extends StatefulWidget {
+  final QueueItem item;
+  final Color accent;
+  final VoidCallback onTap;
+  final VoidCallback? onMoveToTop;
+  final VoidCallback onRemove;
+
+  const _SideQueueRow({
+    super.key,
+    required this.item,
+    required this.accent,
+    required this.onTap,
+    required this.onMoveToTop,
+    required this.onRemove,
+  });
+
+  @override
+  State<_SideQueueRow> createState() => _SideQueueRowState();
+}
+
+class _SideQueueRowState extends State<_SideQueueRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final song = widget.item.song;
+    final muted = Colors.white.withValues(alpha: PlayerTokens.aSecondary);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: PlayerTokens.dFast,
+          curve: PlayerTokens.cStandard,
+          margin: const EdgeInsets.symmetric(horizontal: PlayerTokens.s2),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PlayerTokens.s2,
+            vertical: PlayerTokens.s1 + 2,
+          ),
+          decoration: BoxDecoration(
+            color: _hover ? AppTokens.surface(2) : Colors.transparent,
+            borderRadius: PlayerTokens.brSm,
+          ),
+          child: Row(
+            children: [
+              AlbumArtImage(
+                url: song.coverUrl ?? '',
+                filename: song.filename,
+                cacheVersion: song.mtime,
+                width: 44,
+                height: 44,
+                borderRadius: PlayerTokens.s1,
+                memCacheWidth: 132,
+              ),
+              const SizedBox(width: PlayerTokens.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PlayerTokens.meta(context),
+                    ),
+                  ],
+                ),
+              ),
+              if (_hover) ...[
+                if (widget.onMoveToTop != null)
+                  IconButton(
+                    tooltip: 'Play next',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: muted,
+                    icon: const Icon(Icons.vertical_align_top_rounded),
+                    onPressed: widget.onMoveToTop,
+                  ),
+                IconButton(
+                  tooltip: 'Remove from queue',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: muted,
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: widget.onRemove,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

@@ -193,6 +193,17 @@ final List<SettingsDestination> settingsRegistry = [
     ),
   ),
   SettingsDestination(
+    anchorId: 'playback.desktop_sidebar',
+    icon: AppIcons.queue,
+    title: 'Lyrics & Queue Sidebar',
+    subtitle: 'Show lyrics and the queue beside the library on wide windows',
+    breadcrumb: 'Settings › Playback › Lyrics',
+    keywords: const ['sidebar', 'panel', 'desktop', 'queue', 'lyrics'],
+    open: () => const PlaybackSettingsScreen(
+      highlightId: 'playback.desktop_sidebar',
+    ),
+  ),
+  SettingsDestination(
     anchorId: 'playback.keep_screen_awake',
     icon: AppIcons.screenLock,
     title: 'Keep Screen Awake on Lyrics',

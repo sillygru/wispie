@@ -38,6 +38,13 @@ class LyricsLine extends StatelessWidget {
   /// Signed line distance from the active line; drives the opacity falloff.
   final int distance;
 
+  /// Sidebar sizing: smaller type and tighter rows.
+  final bool compact;
+
+  double get _fontSize => compact
+      ? PlayerTokens.lyricsFontSizeCompact
+      : PlayerTokens.lyricsFontSize;
+
   const LyricsLine({
     super.key,
     required this.text,
@@ -52,6 +59,7 @@ class LyricsLine extends StatelessWidget {
     this.wordLine,
     this.onTap,
     this.distance = 0,
+    this.compact = false,
   });
 
   static LyricsVoiceAlignment detectAlignment(String text) {
@@ -136,9 +144,9 @@ class LyricsLine extends StatelessWidget {
           child: AnimatedContainer(
             duration: PlayerTokens.dLyricsLine,
             curve: PlayerTokens.cLyricsLine,
-            padding: const EdgeInsets.symmetric(
-              horizontal: PlayerTokens.s4,
-              vertical: PlayerTokens.s3,
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? PlayerTokens.s2 : PlayerTokens.s4,
+              vertical: compact ? PlayerTokens.s1 : PlayerTokens.s3,
             ),
             child: InkWell(
               onTap: hasTime ? onTap : null,
@@ -147,7 +155,7 @@ class LyricsLine extends StatelessWidget {
                 duration: ripple,
                 curve: PlayerTokens.cLyricsLine,
                 style: TextStyle(
-                  fontSize: PlayerTokens.lyricsFontSize,
+                  fontSize: _fontSize,
                   fontWeight: FontWeight.w800,
                   color: (isActive
                           ? lyricsLitInk(activeColor)
@@ -177,8 +185,8 @@ class LyricsLine extends StatelessWidget {
                           translation,
                           textAlign: textAlign,
                           style: TextStyle(
-                            fontSize: PlayerTokens.lyricsFontSize *
-                                PlayerTokens.lyricsTranslationScale,
+                            fontSize:
+                                _fontSize * PlayerTokens.lyricsTranslationScale,
                             fontWeight: FontWeight.w500,
                             color: isActive
                                 ? activeColor.withValues(alpha: 0.88)
@@ -273,7 +281,7 @@ class LyricsLine extends StatelessWidget {
             primaryText.replaceAll(RegExp(r'\s*\([^)]+\)\s*'), ' ').trim();
 
         final backingStyle = TextStyle(
-          fontSize: PlayerTokens.lyricsFontSize * 0.72,
+          fontSize: _fontSize * 0.72,
           fontWeight: FontWeight.w600,
           color:
               lyricsDimInk(activeColor).withValues(alpha: lineOpacity * 0.88),
@@ -308,14 +316,14 @@ class LyricsLine extends StatelessWidget {
   }) {
     final style = isBacking
         ? TextStyle(
-            fontSize: PlayerTokens.lyricsFontSize * 0.72,
+            fontSize: _fontSize * 0.72,
             fontWeight: FontWeight.w600,
             height: 1.25,
             letterSpacing: -0.2,
             color: lyricsDimInk(activeColor).withValues(alpha: lineOpacity),
           )
         : TextStyle(
-            fontSize: PlayerTokens.lyricsFontSize,
+            fontSize: _fontSize,
             fontWeight: FontWeight.w800,
             height: 1.28,
             letterSpacing: -0.4,

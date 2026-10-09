@@ -649,7 +649,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                           child: Align(
                             alignment: Alignment.topCenter,
                             child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 880),
+                              constraints: const BoxConstraints(
+                                  maxWidth: WideLayout.maxContentWidth),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: PlayerTokens.s4,

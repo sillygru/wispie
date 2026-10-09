@@ -147,6 +147,7 @@ class PlayerTokens {
   static const double rowHeight = 68;
   static const double artSize = 48;
   static const double lyricsFontSize = 32;
+  static const double lyricsFontSizeCompact = 20;
   static const double lyricsTranslationScale = 0.68;
   static const double lyricsActiveScale = 1.0;
   static const double lyricsInactiveScale = 0.93;

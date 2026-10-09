@@ -31,10 +31,10 @@ class WideLayout {
   static const double minDrawerWidth = 240;
 
   /// Maximum content width for centered reading columns on wide windows.
-  static const double maxContentWidth = 1100;
+  static const double maxContentWidth = 1800;
 
   /// Maximum width for narrow reading columns (settings, profile).
-  static const double maxNarrowWidth = 800;
+  static const double maxNarrowWidth = 1040;
 
   /// Fixed width of the player's left (cover) column on wide windows.
   static const double playerSideWidth = 440;

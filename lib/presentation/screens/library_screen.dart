@@ -57,6 +57,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   final TextEditingController _filterController = TextEditingController();
   String _filter = '';
 
+  /// Collection shown in the wide tracks table: null is All, otherwise
+  /// [_favoritesKey] or a playlist id.
+  String? _collection;
+  static const String _favoritesKey = '__favorites__';
+
   @override
   void dispose() {
     _filterController.dispose();
@@ -282,6 +287,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             .where((s) =>
                 matches(s.title) || matches(s.artist) || matches(s.album))
             .toList();
+    final inlineCollections = isRoot && wideFolders;
+    List<Song> songsOfPlaylist(String id) {
+      final playlist = playlists.where((pl) => pl.id == id).firstOrNull;
+      if (playlist == null) return const [];
+      final names = playlist.songs.map((ps) => ps.songFilename).toSet();
+      return allSongs.where((s) => names.contains(s.filename)).toList();
+    }
+
+    final List<Song> tableSource = !inlineCollections || _collection == null
+        ? immediateSongs
+        : _collection == _favoritesKey
+            ? allSongs.where((s) => userData.isFavorite(s.filename)).toList()
+            : songsOfPlaylist(_collection!);
+    final tableSongs = query.isEmpty
+        ? tableSource
+        : tableSource
+            .where((s) =>
+                matches(s.title) || matches(s.artist) || matches(s.album))
+            .toList();
+    void selectCollection(String? key) => setState(() => _collection = key);
     final showFavorites =
         isRoot && (query.isEmpty || 'favorites'.contains(query));
     final showMerged =
@@ -308,7 +333,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 showSongCount: true,
                 compact: true,
               ),
+              isActive: inlineCollections && _collection == _favoritesKey,
               onTap: () {
+                if (inlineCollections) {
+                  selectCollection(_favoritesKey);
+                  return;
+                }
                 context.pushApp(
                   SongListScreen(title: 'Favorites', songs: favSongs),
                 );
@@ -426,7 +456,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   tooltip: 'Playlist options',
                   onPressed: showPlaylistOptions,
                 ),
+                isActive: inlineCollections && _collection == playlist.id,
                 onTap: () {
+                  if (inlineCollections) {
+                    selectCollection(playlist.id);
+                    return;
+                  }
                   context.pushApp(
                     SongListScreen(
                       title: playlist.name,
@@ -530,7 +565,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               _wideToolbar(
                 'Filter folders, playlists, songs...',
                 trailing:
-                    '${visibleSongs.length} ${visibleSongs.length == 1 ? 'track' : 'tracks'}',
+                    '${tableSongs.length} ${tableSongs.length == 1 ? 'track' : 'tracks'}',
               ),
               Expanded(
                 child: Padding(
@@ -552,8 +587,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                             padding: const EdgeInsets.only(
                               bottom: AppTokens.scrollBottomInset,
                             ),
-                            itemCount: collectionCount,
-                            itemBuilder: folderIndexBuilder,
+                            itemCount: collectionCount + 1,
+                            itemBuilder: (context, index) {
+                              if (index > 0) {
+                                return folderIndexBuilder(context, index - 1);
+                              }
+                              return _desktopRow(
+                                child: AppListRow(
+                                  leading: AppRowIcon(
+                                    icon: AppIcons.library,
+                                    color: AppTokens.accentOf(context, ref),
+                                  ),
+                                  title: 'All',
+                                  subtitle: '${immediateSongs.length} '
+                                      '${immediateSongs.length == 1 ? 'track' : 'tracks'}',
+                                  isActive: _collection == null,
+                                  onTap: () => selectCollection(null),
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
@@ -570,7 +622,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               SliverList(
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) {
-                                    final song = visibleSongs[index];
+                                    final song = tableSongs[index];
                                     return WideTrackRow(
                                       song: song,
                                       heroTagPrefix:
@@ -578,11 +630,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                       showAlbum: true,
                                       onTap: () => audioManager.playSong(
                                         song,
-                                        contextQueue: visibleSongs,
+                                        contextQueue: tableSongs,
                                       ),
                                     );
                                   },
-                                  childCount: visibleSongs.length,
+                                  childCount: tableSongs.length,
                                 ),
                               ),
                               const SliverPadding(

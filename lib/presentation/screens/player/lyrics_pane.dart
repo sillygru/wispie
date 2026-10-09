@@ -36,11 +36,15 @@ class LyricsPane extends ConsumerStatefulWidget {
   final Color accent;
   final ValueListenable<bool> paneVisible;
 
+  /// Sidebar mode: smaller lines and no action strip.
+  final bool compact;
+
   const LyricsPane({
     super.key,
     required this.song,
     required this.accent,
     required this.paneVisible,
+    this.compact = false,
   });
 
   @override
@@ -1330,105 +1334,107 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         // the chrome, and this action belongs to the lyrics view alone. The
         // list reserves [_actionStripHeight] at the top so no lyric ever passes
         // underneath it.
-        Positioned(
-          top: PlayerTokens.s1,
-          right: PlayerTokens.s3,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!stripCollapsed && _richSyncAvailable)
-                Padding(
-                  padding: const EdgeInsets.only(right: PlayerTokens.s1),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: widget.accent.withValues(alpha: 0.16),
-                      borderRadius: PlayerTokens.brPill,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: PlayerTokens.s2,
-                        vertical: PlayerTokens.s1,
+        if (!widget.compact)
+          Positioned(
+            top: PlayerTokens.s1,
+            right: PlayerTokens.s3,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!stripCollapsed && _richSyncAvailable)
+                  Padding(
+                    padding: const EdgeInsets.only(right: PlayerTokens.s1),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: widget.accent.withValues(alpha: 0.16),
+                        borderRadius: PlayerTokens.brPill,
                       ),
-                      child: Text(
-                        'WORD SYNC',
-                        style: PlayerTokens.meta(context).copyWith(
-                          color: widget.accent,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 10,
-                          letterSpacing: 0.8,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PlayerTokens.s2,
+                          vertical: PlayerTokens.s1,
+                        ),
+                        child: Text(
+                          'WORD SYNC',
+                          style: PlayerTokens.meta(context).copyWith(
+                            color: widget.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                            letterSpacing: 0.8,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              if (!stripCollapsed && showTranslateButton)
-                IconButton(
-                  icon: _translating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          _hasCachedTranslation
-                              ? Icons.g_translate_rounded
-                              : Icons.translate_rounded,
-                        ),
-                  color: _hasCachedTranslation
-                      ? widget.accent
-                      : Colors.white.withValues(alpha: PlayerTokens.aSecondary),
-                  tooltip: 'Translate lyrics',
-                  onPressed: _translating ? null : _openTranslationSheet,
-                ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Scoped to the button: the tint is the only thing here that
-                  // depends on the value being non-zero, and rebuilding the pill
-                  // with it would restart its own animation on every nudge.
-                  AnimatedBuilder(
-                    animation: _timing,
-                    builder: (context, _) => IconButton(
-                      icon: Icon(
-                        _timingControlVisible
-                            ? Icons.close_rounded
-                            : Icons.tune_rounded,
-                      ),
-                      color: _timing.seconds == 0
-                          ? Colors.white
-                              .withValues(alpha: PlayerTokens.aSecondary)
-                          : widget.accent,
-                      tooltip: _timingControlVisible
-                          ? 'Hide lyric timing'
-                          : 'Adjust lyric timing — hold for precision controls',
-                      onPressed: _openTimingOffset,
-                      onLongPress: _openTimingSheet,
-                    ),
-                  ),
-                  AnimatedSize(
-                    duration: PlayerTokens.dFast,
-                    curve: PlayerTokens.cStandard,
-                    child: _timingControlVisible
-                        ? LyricsTimingControl(
-                            controller: _timing,
-                            accent: widget.accent,
-                            onOpenSheet: _openTimingSheet,
+                if (!stripCollapsed && showTranslateButton)
+                  IconButton(
+                    icon: _translating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const SizedBox.shrink(),
+                        : Icon(
+                            _hasCachedTranslation
+                                ? Icons.g_translate_rounded
+                                : Icons.translate_rounded,
+                          ),
+                    color: _hasCachedTranslation
+                        ? widget.accent
+                        : Colors.white
+                            .withValues(alpha: PlayerTokens.aSecondary),
+                    tooltip: 'Translate lyrics',
+                    onPressed: _translating ? null : _openTranslationSheet,
                   ),
-                ],
-              ),
-              if (!stripCollapsed)
-                IconButton(
-                  icon: const Icon(Icons.travel_explore_rounded),
-                  color:
-                      Colors.white.withValues(alpha: PlayerTokens.aSecondary),
-                  tooltip: 'Find lyrics online',
-                  onPressed: _findLyricsOnline,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Scoped to the button: the tint is the only thing here that
+                    // depends on the value being non-zero, and rebuilding the pill
+                    // with it would restart its own animation on every nudge.
+                    AnimatedBuilder(
+                      animation: _timing,
+                      builder: (context, _) => IconButton(
+                        icon: Icon(
+                          _timingControlVisible
+                              ? Icons.close_rounded
+                              : Icons.tune_rounded,
+                        ),
+                        color: _timing.seconds == 0
+                            ? Colors.white
+                                .withValues(alpha: PlayerTokens.aSecondary)
+                            : widget.accent,
+                        tooltip: _timingControlVisible
+                            ? 'Hide lyric timing'
+                            : 'Adjust lyric timing — hold for precision controls',
+                        onPressed: _openTimingOffset,
+                        onLongPress: _openTimingSheet,
+                      ),
+                    ),
+                    AnimatedSize(
+                      duration: PlayerTokens.dFast,
+                      curve: PlayerTokens.cStandard,
+                      child: _timingControlVisible
+                          ? LyricsTimingControl(
+                              controller: _timing,
+                              accent: widget.accent,
+                              onOpenSheet: _openTimingSheet,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ),
-            ],
+                if (!stripCollapsed)
+                  IconButton(
+                    icon: const Icon(Icons.travel_explore_rounded),
+                    color:
+                        Colors.white.withValues(alpha: PlayerTokens.aSecondary),
+                    tooltip: 'Find lyrics online',
+                    onPressed: _findLyricsOnline,
+                  ),
+              ],
+            ),
           ),
-        ),
         Positioned(
           bottom: PlayerTokens.s4,
           left: 0,
@@ -1481,7 +1487,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           // find-lyrics button. The tall bottom padding is what lets the last
           // lines still scroll up to the anchor.
           padding: EdgeInsets.only(
-            top: _actionStripHeight,
+            top: widget.compact ? PlayerTokens.s2 : _actionStripHeight,
             bottom: MediaQuery.of(context).size.height * 0.22,
           ),
           itemCount: lyrics.length,
@@ -1520,6 +1526,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               playbackPosition: _playbackPosition.value,
               wordLine: wordLine,
               onTap: () => _seekToLyric(line.time),
+              compact: widget.compact,
             );
 
             final lyricWidget = KeyedSubtree(
@@ -1541,6 +1548,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                         playbackPosition: position,
                         wordLine: wordLine,
                         onTap: () => _seekToLyric(line.time),
+                        compact: widget.compact,
                       ),
                     )
                   : lineContent,

@@ -54,6 +54,16 @@ class _PlaybackSettingsScreenState
               value: settings.lyricsSimulatedRichSyncEnabled,
               onChanged: notifier.setLyricsSimulatedRichSyncEnabled,
             ),
+            if (WideLayout.isWide(context))
+              AppSettingsSwitch(
+                icon: AppIcons.queue,
+                searchId: 'playback.desktop_sidebar',
+                title: 'Lyrics & Queue Sidebar',
+                subtitle:
+                    'Show lyrics and the queue beside the library on wide windows',
+                value: settings.desktopSidebarEnabled,
+                onChanged: notifier.setDesktopSidebarEnabled,
+              ),
             // Screen-wakelock is a phone concern; desktops manage sleep
             // at the OS level.
             if (!WideLayout.isWide(context))

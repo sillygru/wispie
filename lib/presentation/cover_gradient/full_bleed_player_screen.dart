@@ -666,7 +666,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 880),
+                            constraints: const BoxConstraints(
+                                maxWidth: WideLayout.maxContentWidth),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: PlayerTokens.s4,
@@ -725,7 +726,9 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   }) {
     final double topPad = MediaQuery.paddingOf(context).top;
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+      // Wide: the header floats over the Lyrics/Queue switch, so it must let
+      // taps through to it.
+      behavior: wide ? HitTestBehavior.deferToChild : HitTestBehavior.opaque,
       onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
       onVerticalDragEnd: wide ? null : _onDismissDragEnd,
       child: Stack(

@@ -43,6 +43,7 @@ class SyncService {
     'play_fade_duration',
     'pause_fade_duration',
     'keep_screen_awake_on_lyrics',
+    'desktop_sidebar_enabled',
     'cover_sizing_mode',
     'beat_reactive_cover_enabled',
     'beat_reactive_particles_enabled',
