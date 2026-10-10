@@ -40,6 +40,9 @@ dependencies:
   sqflite_common_ffi: ^2.3.0
   sqlite3: ^3.5.2
   window_manager: ^0.5.2
+  cryptography: ^2.9.0
+  flutter_secure_storage: ^11.2.0
+  unorm_dart: ^0.3.3
 
 dev_dependencies:
   flutter_test:

@@ -1,0 +1,11 @@
+wispie-api.gru0.dev {
+	encode zstd gzip
+	# Access logs are off on purpose: they would record client IPs.
+	log {
+		output discard
+	}
+	request_body {
+		max_size 5MB
+	}
+	reverse_proxy wispie:8080
+}

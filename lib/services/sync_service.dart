@@ -1,73 +1,100 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
+import 'dart:io';
 import 'dart:math';
-import 'package:flutter/foundation.dart';
+
 import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'database_service.dart';
-import 'google_oauth_service.dart';
-import 'storage_service.dart';
+import 'sync/account_service.dart';
+import 'sync/api_client.dart'
+    show SyncApiException, SyncApiClient, SyncServerInfo;
+import 'sync/changeset.dart';
+import 'sync/hlc.dart';
+import 'sync/sync_engine.dart';
 
-typedef SyncProgressCallback = void Function(
-    String statusMessage, double progress);
+export 'sync/sync_engine.dart'
+    show
+        SyncPhase,
+        SyncProgress,
+        SyncEpochChangedException,
+        SyncRollbackException,
+        SyncNotReadyException;
 
-class SyncService {
+/// What the UI needs to know about the account/engine lifecycle.
+enum SyncStatus {
+  loggedOut,
+  needsInitialChoice,
+  ready,
+  syncing,
+  pausedEpochChanged,
+  error,
+}
+
+/// App-level owner of the sync account and engine (plan_sync.md section 1.9).
+/// Single-flight: one operation at a time, requests while busy coalesce.
+class SyncService extends ChangeNotifier {
   static final SyncService instance = SyncService._internal();
   SyncService._internal();
 
-  final GoogleOAuthService _oauth = GoogleOAuthService();
-  bool _isSyncing = false;
-  String? _deviceId;
-  String? _deviceName;
+  static const _kCategories = 'sync_categories';
+  static const _kAutoEnabled = 'auto_sync_enabled';
+  static const Duration _startDelay = Duration(seconds: 5);
+  static const Duration _foregroundGap = Duration(minutes: 5);
+  static const Duration _dirtyDebounce = Duration(seconds: 60);
+  static const Duration _periodic = Duration(minutes: 15);
 
-  static const String _filePrefix = 'wispie_sync_v1_';
-
-  /// Hash of the last successfully uploaded snapshot payload. When a sync runs
-  /// and the local payload is unchanged, the upload is skipped entirely — an
-  /// unchanged library should cost nothing but a tiny file listing.
-  static const String _lastUploadHashKey = 'sync_last_upload_hash';
-  static const List<String> _syncableSettingsKeys = [
-    'theme_mode',
-    'use_cover_color',
-    'apply_cover_color_to_all',
-    'sort_order',
-    'visualizer_enabled',
-    'visualizer_mode',
-    'show_song_duration',
-    'animated_sound_wave_enabled',
-    'show_waveform',
-    'fade_out_duration',
-    'fade_in_duration',
-    'delay_duration',
-    'play_fade_duration',
-    'pause_fade_duration',
-    'keep_screen_awake_on_lyrics',
-    'desktop_sidebar_enabled',
-    'cover_sizing_mode',
-    'beat_reactive_cover_enabled',
-    'beat_reactive_particles_enabled',
-    'cover_motion_intensity',
-    'particle_motion_intensity',
-    'cover_motion_custom_intensity',
-    'particle_motion_custom_intensity',
-    'player_motion_latency_ms',
-    'spin_artwork_while_playing',
-    'show_quick_picks',
-    'show_recent_queues',
-    'show_for_you',
-    'lyrics_target_language',
-    'lyrics_auto_translate',
-    'lyrics_translation_mode',
-    'auto_hide_bottom_bar_on_scroll',
-    'auto_pause_on_volume_zero',
-    'auto_resume_on_volume_restore',
+  static const List<String> _legacyKeys = [
+    'sync_processed_files',
+    'sync_last_upload_hash',
+    'sync_last_timestamp',
+    'sync_signed_in',
+    'google_account_email',
   ];
 
-  bool get isSignedIn => _oauth.isSignedIn;
-  bool get isSyncing => _isSyncing;
-  String? get accountEmail => _oauth.accountEmail;
-  String? get lastError => _oauth.lastError;
+  final AccountService _account = AccountService();
+  SyncEngine? _engine;
+  SyncKv? _kv;
+  String? _deviceId;
+  bool _busy = false;
+  bool _syncAgain = false;
+  bool _initialized = false;
+  bool _foreground = true;
+  String? _lastError;
+  Timer? _debounce;
+  Timer? _periodicTimer;
+  SyncProgress? _progress;
+  final StreamController<SyncProgress> _progressCtl =
+      StreamController<SyncProgress>.broadcast();
+
+  Stream<SyncProgress> get progressStream => _progressCtl.stream;
+  SyncProgress? get progress => _progress;
+  AccountService get account => _account;
+  bool get isBusy => _busy;
+  String? get lastError => _lastError;
+  String? get username => _account.session?.username;
+  String? get serverUrl => _account.session?.serverUrl;
+  bool get isLoggedIn => _account.isLoggedIn;
+
+  /// Kept for callers that only care about being signed in.
+  bool get isSignedIn => isLoggedIn;
+  bool get isSyncing => _busy;
+
+  SyncStatus get status {
+    if (!isLoggedIn) return SyncStatus.loggedOut;
+    if (_busy) return SyncStatus.syncing;
+    final e = _engine;
+    if (e == null || !e.initialDone) return SyncStatus.needsInitialChoice;
+    if (e.pausedForEpoch != null) return SyncStatus.pausedEpochChanged;
+    if (_lastError != null) return SyncStatus.error;
+    return SyncStatus.ready;
+  }
+
+  int? get lastSyncMs => _engine?.lastSyncMs;
+
   String get deviceId {
     if (_deviceId == null) {
       _deviceId = _generateDeviceId();
@@ -78,498 +105,300 @@ class SyncService {
     return _deviceId!;
   }
 
+  Set<String> get categories {
+    final raw = _kv?.get(_kCategories) as String?;
+    if (raw == null) return SyncCategory.all.toSet();
+    return (jsonDecode(raw) as List)
+        .cast<String>()
+        .where(SyncCategory.all.contains)
+        .toSet();
+  }
+
+  bool get autoSyncEnabled => _kv?.get(_kAutoEnabled) != false;
+
   Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString('sync_device_id');
     if (_deviceId == null) {
       _deviceId = _generateDeviceId();
       await prefs.setString('sync_device_id', _deviceId!);
     }
-
+    for (final k in _legacyKeys) {
+      if (prefs.containsKey(k)) await prefs.remove(k);
+    }
+    _kv = PrefsSyncKv(prefs);
+    await Hlc.instance.load();
     try {
-      await _oauth.init();
+      final session = await _account.load();
+      if (session != null) await _buildEngine();
     } catch (e) {
-      debugPrint('SyncService: OAuth init failed: $e');
+      debugPrint('SyncService: restore failed: $e');
     }
+    notifyListeners();
+    _scheduleStart();
   }
 
-  Future<bool> signIn() async {
-    return await _oauth.signIn();
+  Future<void> _buildEngine() async {
+    final stats = DatabaseService.instance.getStatsDatabase();
+    final user = DatabaseService.instance.getUserDataDatabase();
+    final session = _account.session;
+    if (stats == null || user == null || session == null) return;
+    final tmp = await getTemporaryDirectory();
+    _engine = SyncEngine(
+      client: _account.client,
+      dataKey: await _account.dataKey(),
+      accountId: session.accountId,
+      changeset: Changeset(
+        stats: stats,
+        userData: user,
+        deviceId: deviceId,
+        deviceName: Platform.operatingSystem,
+      ),
+      kv: _kv ?? await PrefsSyncKv.open(),
+      tmpDir: Directory('${tmp.path}/wispie_sync'),
+      stampSetting: DatabaseService.instance.stampSettingDirty,
+      categories: () => categories,
+      onProgress: _emit,
+    );
   }
 
-  Future<void> signOut() async {
-    await _oauth.signOut();
+  void _emit(SyncProgress p) {
+    _progress = p;
+    if (!_progressCtl.isClosed) _progressCtl.add(p);
   }
 
-  Future<bool> sync(
-      {SyncProgressCallback? onProgress, bool syncSettings = true}) async {
-    if (_isSyncing) return false;
-    if (!_oauth.isSignedIn) return false;
+  // -------------------------------------------------------------- account
 
-    _isSyncing = true;
-    try {
-      onProgress?.call('Connecting to Google Drive...', 0.1);
-      final authHeaders = await _oauth.authHeaders;
-      final token = authHeaders['Authorization'];
-      if (token == null) throw Exception('No auth token');
-
-      onProgress?.call('Preparing local snapshot...', 0.2);
-      final snapshot = await _composeSnapshot(syncSettings: syncSettings);
-      final prefs = await SharedPreferences.getInstance();
-      final lastUploadHash = prefs.getString(_lastUploadHashKey);
-      final payloadHash =
-          await Isolate.run(() => _snapshotPayloadHash(snapshot));
-      final fileName =
-          '$_filePrefix${_deviceId}_${DateTime.now().millisecondsSinceEpoch}.json';
-
-      onProgress?.call('Listing cloud backups...', 0.3);
-      final processedFiles = await _getProcessedFiles();
-      final existingFiles = await _listDriveFiles(token);
-
-      int remoteCount = 0;
-      for (final file in existingFiles) {
-        final name = file['name'] as String? ?? '';
-        if (name.startsWith(_filePrefix) && !processedFiles.contains(name)) {
-          remoteCount++;
-        }
-      }
-
-      int processedCount = 0;
-      for (final file in existingFiles) {
-        final name = file['name'] as String? ?? '';
-        if (name.startsWith(_filePrefix) && !processedFiles.contains(name)) {
-          try {
-            processedCount++;
-            onProgress?.call(
-                'Downloading snapshot ($processedCount/$remoteCount)...', 0.4);
-            final json = await _downloadFile(token, file['id'] as String);
-            await _mergeSnapshot(json,
-                syncSettings: syncSettings, onProgress: onProgress);
-            processedFiles.add(name);
-          } catch (e) {
-            debugPrint('SyncService: failed to process $name: $e');
-          }
-        }
-      }
-
-      await _setProcessedFiles(processedFiles);
-
-      if (payloadHash == lastUploadHash) {
-        onProgress?.call('No local changes to upload', 0.8);
-      } else {
-        onProgress?.call('Uploading snapshot to cloud...', 0.8);
-        final uploaded = await _uploadSnapshot(token, fileName, snapshot);
-        if (uploaded) {
-          await prefs.setString(_lastUploadHashKey, payloadHash);
-        }
-      }
-      onProgress?.call('Cleaning up old snapshots...', 0.95);
-      await _cleanupOldSnapshots(token, existingFiles);
-      await _updateLastSyncTimestamp();
-
-      onProgress?.call('Sync complete', 1.0);
-      _isSyncing = false;
-      return true;
-    } catch (e) {
-      debugPrint('SyncService: sync failed: $e');
-      _isSyncing = false;
-      return false;
-    }
-  }
-
-  Future<bool> forcePushLocalToCloud(
-      {SyncProgressCallback? onProgress, bool syncSettings = true}) async {
-    if (_isSyncing) return false;
-    if (!_oauth.isSignedIn) return false;
-
-    _isSyncing = true;
-    try {
-      onProgress?.call('Connecting to Google Drive...', 0.1);
-      final authHeaders = await _oauth.authHeaders;
-      final token = authHeaders['Authorization'];
-      if (token == null) throw Exception('No auth token');
-
-      onProgress?.call('Listing cloud backups...', 0.25);
-      final existingFiles = await _listDriveFiles(token);
-
-      onProgress?.call('Removing old cloud snapshots...', 0.4);
-      for (final file in existingFiles) {
-        final name = file['name'] as String? ?? '';
-        if (name.startsWith(_filePrefix)) {
-          await _deleteFile(token, file['id'] as String);
-        }
-      }
-
-      onProgress?.call('Preparing local snapshot...', 0.65);
-      final snapshot = await _composeSnapshot(syncSettings: syncSettings);
-      final fileName =
-          '$_filePrefix${_deviceId}_${DateTime.now().millisecondsSinceEpoch}.json';
-
-      onProgress?.call('Uploading fresh snapshot...', 0.85);
-      final uploaded = await _uploadSnapshot(token, fileName, snapshot);
-      if (uploaded) {
-        final prefs = await SharedPreferences.getInstance();
-        final payloadHash =
-            await Isolate.run(() => _snapshotPayloadHash(snapshot));
-        await prefs.setString(_lastUploadHashKey, payloadHash);
-      }
-      await _setProcessedFiles({fileName});
-      await _updateLastSyncTimestamp();
-
-      onProgress?.call('Cloud updated with local data', 1.0);
-      _isSyncing = false;
-      return true;
-    } catch (e) {
-      debugPrint('SyncService: force push failed: $e');
-      _isSyncing = false;
-      return false;
-    }
-  }
-
-  Future<bool> forcePullCloudToLocal(
-      {SyncProgressCallback? onProgress, bool syncSettings = true}) async {
-    if (_isSyncing) return false;
-    if (!_oauth.isSignedIn) return false;
-
-    _isSyncing = true;
-    try {
-      onProgress?.call('Connecting to Google Drive...', 0.1);
-      final authHeaders = await _oauth.authHeaders;
-      final token = authHeaders['Authorization'];
-      if (token == null) throw Exception('No auth token');
-
-      onProgress?.call('Fetching cloud backups...', 0.25);
-      final existingFiles = await _listDriveFiles(token);
-      final validFiles = existingFiles.where((f) {
-        final name = f['name'] as String? ?? '';
-        return name.startsWith(_filePrefix);
-      }).toList();
-
-      if (validFiles.isEmpty) {
-        throw Exception('No cloud backups found');
-      }
-
-      validFiles.sort((a, b) {
-        final aTime = a['createdTime'] as String? ?? '';
-        final bTime = b['createdTime'] as String? ?? '';
-        return bTime.compareTo(aTime);
-      });
-
-      onProgress?.call('Downloading cloud snapshots...', 0.5);
-      onProgress?.call('Clearing local play stats...', 0.7);
-      await DatabaseService.instance.clearAllPlayStats();
-
-      onProgress?.call('Importing cloud stats...', 0.85);
-      for (final file in validFiles) {
-        try {
-          final snapshot = await _downloadFile(token, file['id'] as String);
-          await _mergeSnapshot(
-            snapshot,
-            syncSettings: syncSettings,
-            forceImport: true,
-            onProgress: onProgress,
-          );
-        } catch (e) {
-          debugPrint(
-              'SyncService: force pull failed to process ${file['name']}: $e');
-        }
-      }
-
-      final processedFiles = validFiles.map((f) => f['name'] as String).toSet();
-      await _setProcessedFiles(processedFiles);
-      await _updateLastSyncTimestamp();
-
-      onProgress?.call('Local data replaced from cloud', 1.0);
-      _isSyncing = false;
-      return true;
-    } catch (e) {
-      debugPrint('SyncService: force pull failed: $e');
-      _isSyncing = false;
-      return false;
-    }
-  }
-
-  Future<Map<String, dynamic>> _composeSnapshot(
-      {bool syncSettings = true}) async {
-    final db = DatabaseService.instance;
-    final storage = StorageService();
-
-    final syncedSettings = <String, dynamic>{};
-    if (syncSettings) {
-      final settings = await storage.exportAppSettings();
-      for (final key in _syncableSettingsKeys) {
-        if (settings.containsKey(key)) {
-          syncedSettings[key] = settings[key];
-        }
-      }
-    }
-
-    final artistArt = await db.getArtistArtForSync();
-    final albumArt = await db.getAlbumArtForSync();
-
-    return {
-      'version': 1,
-      'device_id': _deviceId,
-      'device_name': _deviceName ?? _deviceId,
-      'created_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      'play_events': await db.getPlayEventsForSync(),
-      'favorites': await db.getFavoritesWithTimestamps(),
-      'suggestless': await db.getSuggestLessWithTimestamps(),
-      'hidden': await db.getHiddenWithTimestamps(),
-      'playlists': await db.getPlaylistsForSync(),
-      'merged_groups': await db.getMergedGroupsForSync(),
-      'settings': syncedSettings,
-      'artist_art': artistArt,
-      'album_art': albumArt,
-    };
-  }
-
-  Future<void> _mergeSnapshot(
-    Map<String, dynamic> snapshot, {
-    bool syncSettings = true,
-    bool forceImport = false,
-    SyncProgressCallback? onProgress,
+  Future<String> register({
+    required String serverUrl,
+    required String username,
+    required String password,
   }) async {
-    final db = DatabaseService.instance;
-    final deviceId = snapshot['device_id'] as String?;
-
-    if (!forceImport && (deviceId == null || deviceId == _deviceId)) return;
-
-    try {
-      if (snapshot['play_events'] is List) {
-        onProgress?.call('Merging play stats...', 0.45);
-        final events =
-            List<Map<String, dynamic>>.from(snapshot['play_events'] as List);
-        for (final ev in events) {
-          final evDevId = ev['device_id'] as String?;
-          if ((evDevId == null || evDevId.isEmpty) &&
-              deviceId != null &&
-              deviceId.isNotEmpty) {
-            ev['device_id'] = deviceId;
-          }
-        }
-        await db.insertPlayEventsBatch(events, isSync: true);
-      }
-    } catch (e) {
-      debugPrint('SyncService: failed to merge play events: $e');
-    }
-
-    if (snapshot['favorites'] is List) {
-      await db.importFavorites(
-          List<Map<String, dynamic>>.from(snapshot['favorites'] as List));
-    }
-    if (snapshot['suggestless'] is List) {
-      await db.importSuggestLess(
-          List<Map<String, dynamic>>.from(snapshot['suggestless'] as List));
-    }
-    if (snapshot['hidden'] is List) {
-      await db.importHidden(
-          List<Map<String, dynamic>>.from(snapshot['hidden'] as List));
-    }
-    if (snapshot['playlists'] is List) {
-      onProgress?.call('Merging playlists...', 0.6);
-      await db.importPlaylists(
-          List<Map<String, dynamic>>.from(snapshot['playlists'] as List));
-    }
-    if (snapshot['merged_groups'] is List) {
-      await db.importMergedGroups(
-          List<Map<String, dynamic>>.from(snapshot['merged_groups'] as List));
-    }
-
-    if (syncSettings && snapshot['settings'] is Map) {
-      onProgress?.call('Merging settings...', 0.7);
-      await _mergeSettings(snapshot['settings'] as Map<String, dynamic>,
-          snapshot['device_id'] as String?);
-    }
-
-    if (snapshot['artist_art'] is List) {
-      await db.importArtistArtBatch(
-          List<Map<String, dynamic>>.from(snapshot['artist_art'] as List));
-    }
-    if (snapshot['album_art'] is List) {
-      await db.importAlbumArtBatch(
-          List<Map<String, dynamic>>.from(snapshot['album_art'] as List));
-    }
+    final r = await _account.register(
+        serverUrl: serverUrl, username: username, password: password);
+    await _afterAuth();
+    freshAccount = true;
+    return r.recoveryKey;
   }
 
-  Future<void> _mergeSettings(
-      Map<String, dynamic> remoteSettings, String? remoteDeviceId) async {
-    if (remoteDeviceId == null || remoteDeviceId == _deviceId) return;
-    final prefs = await SharedPreferences.getInstance();
-    for (final entry in remoteSettings.entries) {
-      final key = entry.key;
-      final value = entry.value;
-      if (value is String) {
-        await prefs.setString(key, value);
-      } else if (value is int) {
-        await prefs.setInt(key, value);
-      } else if (value is double) {
-        await prefs.setDouble(key, value);
-      } else if (value is bool) {
-        await prefs.setBool(key, value);
-      } else if (value is List) {
-        await prefs.setStringList(key, value.cast<String>());
-      }
-    }
+  Future<void> login({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    await _account.login(
+        serverUrl: serverUrl, username: username, password: password);
+    await _afterAuth();
   }
 
-  Future<List<Map<String, dynamic>>> _listDriveFiles(String token) async {
-    final url = Uri.parse(
-      'https://www.googleapis.com/drive/v3/files'
-      '?spaces=appDataFolder&q=name%20contains%20%27$_filePrefix%27'
-      '&fields=files(id%2Cname%2CcreatedTime)',
+  Future<void> recover({
+    required String serverUrl,
+    required String username,
+    required String recoveryKey,
+    required String newPassword,
+  }) async {
+    await _account.recover(
+      serverUrl: serverUrl,
+      username: username,
+      recoveryKey: recoveryKey,
+      newPassword: newPassword,
     );
+    await _afterAuth();
+  }
+
+  /// True between registering and the first upload; picks the onboarding step.
+  bool freshAccount = false;
+
+  /// Validates a candidate server URL via `GET /v1/info`.
+  Future<SyncServerInfo> probeServer(String url) =>
+      SyncApiClient(baseUrl: url).info();
+
+  Future<void> changePassword(String current, String next) async {
+    await _account.changePassword(currentPassword: current, newPassword: next);
+  }
+
+  Future<String> newRecoveryKey(String password) =>
+      _account.generateRecoveryKey(password);
+
+  /// Cloud usage, or null when offline / not logged in.
+  Future<({int used, int quota})?> usage() async {
+    if (!isLoggedIn) return null;
     try {
-      final response = await http.get(url, headers: {
-        'Authorization': token,
-      });
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return List<Map<String, dynamic>>.from(data['files'] as List? ?? []);
-      }
-    } catch (e) {
-      debugPrint('SyncService: list files failed: $e');
+      final s = await _account.client.state();
+      return (used: s.usageBytes, quota: s.quotaBytes);
+    } catch (_) {
+      return null;
     }
-    return [];
   }
 
-  Future<Map<String, dynamic>> _downloadFile(
-      String token, String fileId) async {
-    final url = Uri.parse(
-        'https://www.googleapis.com/drive/v3/files/$fileId?alt=media');
-    final response = await http.get(url, headers: {
-      'Authorization': token,
-    });
-    if (response.statusCode == 200) {
-      final body = response.body;
-      return await Isolate.run(() => jsonDecode(body) as Map<String, dynamic>);
-    }
-    throw Exception('Download failed: ${response.statusCode}');
+  Future<void> _afterAuth() async {
+    _lastError = null;
+    await _clearEngineState();
+    await _buildEngine();
+    notifyListeners();
   }
 
-  Future<bool> _uploadSnapshot(
-      String token, String fileName, Map<String, dynamic> snapshot) async {
-    final metadata = jsonEncode({
-      'name': fileName,
-      'parents': ['appDataFolder'],
-    });
+  Future<void> logout() async {
+    await _account.logout();
+    freshAccount = false;
+    await _clearEngineState();
+    _engine = null;
+    _lastError = null;
+    _cancelTimers();
+    notifyListeners();
+  }
 
-    final boundary = 'Boundary_${DateTime.now().millisecondsSinceEpoch}';
-    final bodyBytes = await Isolate.run(() {
-      final body = jsonEncode(snapshot);
-      return utf8.encode(
-        '--$boundary\r\n'
-        'Content-Type: application/json; charset=UTF-8\r\n\r\n'
-        '$metadata\r\n'
-        '--$boundary\r\n'
-        'Content-Type: application/json\r\n\r\n'
-        '$body\r\n'
-        '--$boundary--\r\n',
-      );
-    });
+  Future<void> deleteAccount(String password) async {
+    await _account.deleteAccount(password);
+    await _clearEngineState();
+    _engine = null;
+    _lastError = null;
+    _cancelTimers();
+    notifyListeners();
+  }
 
-    final url = Uri.parse(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart');
-    final response = await http.post(
-      url,
-      headers: {
-        'Authorization': token,
-        'Content-Type': 'multipart/related; boundary=$boundary',
-      },
-      body: bodyBytes,
-    );
+  Future<void> _clearEngineState() async {
+    final kv = _kv;
+    if (kv == null) return;
+    for (final k in [
+      SyncEngine.kEpoch,
+      SyncEngine.kCursor,
+      SyncEngine.kHighEpoch,
+      SyncEngine.kHighHead,
+      SyncEngine.kInitialDone,
+      SyncEngine.kSnapshotApplied,
+      SyncEngine.kEpochChanged,
+      SyncEngine.kLastSync,
+      SyncEngine.kLastCompaction,
+      SyncEngine.kSettingsSeen,
+      SyncEngine.kPendingPull,
+      SyncEngine.kDownloadId,
+    ]) {
+      await kv.set(k, null);
+    }
+  }
 
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      debugPrint(
-          'SyncService: upload failed: ${response.statusCode} ${response.body}');
+  // ------------------------------------------------------------- settings
+
+  Future<void> setAutoSyncEnabled(bool enabled) async {
+    await _kv?.set(_kAutoEnabled, enabled);
+    if (enabled) {
+      _scheduleStart();
+    } else {
+      _cancelTimers();
+    }
+    notifyListeners();
+  }
+
+  Future<void> setCategories(Set<String> next) async {
+    final before = categories;
+    await _kv?.set(_kCategories, jsonEncode(next.toList()..sort()));
+    await _engine?.queueCategoryPull(next.difference(before));
+    notifyListeners();
+  }
+
+  // ----------------------------------------------------------- operations
+
+  /// Runs [op] single-flight. Returns false if another operation is running.
+  Future<bool> _run(Future<void> Function(SyncEngine e) op,
+      {bool queueIfBusy = false}) async {
+    final e = _engine;
+    if (e == null) return false;
+    if (_busy) {
+      if (queueIfBusy) _syncAgain = true;
       return false;
     }
-    return true;
-  }
-
-  /// Stable digest of the data that would be uploaded, excluding volatile
-  /// fields like created_at and device_name, so an unchanged library hashes
-  /// identically on the next sync and the upload can be skipped. Row lists are
-  /// sorted by their JSON encoding so the digest never depends on the
-  /// database's row order.
-  static String _snapshotPayloadHash(Map<String, dynamic> snapshot) {
-    final payload = <String, dynamic>{};
-    for (final key in const [
-      'play_events',
-      'favorites',
-      'suggestless',
-      'hidden',
-      'playlists',
-      'merged_groups',
-      'settings',
-      'artist_art',
-      'album_art',
-    ]) {
-      final value = snapshot[key];
-      if (value is List) {
-        final copy = List<Object?>.from(value);
-        copy.sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
-        payload[key] = copy;
-      } else {
-        payload[key] = value;
-      }
-    }
-    return sha256.convert(utf8.encode(jsonEncode(payload))).toString();
-  }
-
-  Future<void> _deleteFile(String token, String fileId) async {
-    final url = Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId');
+    _busy = true;
+    _lastError = null;
+    notifyListeners();
+    var ok = false;
     try {
-      await http.delete(url, headers: {
-        'Authorization': token,
-      });
-    } catch (e) {
-      debugPrint('SyncService: delete failed: $e');
+      await op(e);
+      ok = true;
+    } on SyncEpochChangedException {
+      // Surfaced through [status]; not an error banner.
+    } catch (err) {
+      _lastError = _describe(err);
+      _emit(SyncProgress(SyncPhase.error, message: _lastError!));
+    } finally {
+      _busy = false;
+      notifyListeners();
     }
+    if (_syncAgain) {
+      _syncAgain = false;
+      unawaited(syncNow());
+    }
+    return ok;
   }
 
-  Future<void> _cleanupOldSnapshots(
-      String token, List<Map<String, dynamic>> files) async {
-    final ourPrefix = '$_filePrefix${_deviceId}_';
-    final ourFiles = files.where((f) {
-      final name = f['name'] as String? ?? '';
-      return name.startsWith(ourPrefix);
-    }).toList();
+  static String _describe(Object e) {
+    if (e is SyncApiException) return e.message;
+    return e.toString();
+  }
 
-    if (ourFiles.length <= 1) return;
+  Future<bool> syncNow() => _run((e) => e.sync(), queueIfBusy: true);
 
-    ourFiles.sort((a, b) {
-      final aTime = a['createdTime'] as String? ?? '';
-      final bTime = b['createdTime'] as String? ?? '';
-      return bTime.compareTo(aTime);
+  /// First upload after registering, also "overwrite cloud with this device".
+  Future<bool> overwriteCloud() => _run((e) => e.overwriteCloud());
+
+  Future<bool> mergeWithCloud() => _run((e) => e.mergeWithCloud());
+
+  /// Also covers "overwrite local with cloud" and "replace this device".
+  Future<bool> setUpAsNewDevice() => _run((e) => e.setUpAsNewDevice());
+
+  // ------------------------------------------------------------ auto-sync
+
+  bool get _autoReady {
+    final e = _engine;
+    return isLoggedIn &&
+        e != null &&
+        e.initialDone &&
+        e.pausedForEpoch == null &&
+        autoSyncEnabled;
+  }
+
+  void _scheduleStart() {
+    if (!_autoReady) return;
+    Timer(_startDelay, () {
+      if (_autoReady) unawaited(syncNow());
     });
+    _periodicTimer?.cancel();
+    _periodicTimer = Timer.periodic(_periodic, (_) {
+      if (_foreground && _autoReady) unawaited(syncNow());
+    });
+  }
 
-    for (int i = 1; i < ourFiles.length; i++) {
-      await _deleteFile(token, ourFiles[i]['id'] as String);
+  void _cancelTimers() {
+    _debounce?.cancel();
+    _periodicTimer?.cancel();
+    _debounce = null;
+    _periodicTimer = null;
+  }
+
+  /// Called after a user-intent write stamped a synced row.
+  void notifyLocalWrite() {
+    if (_busy || !_autoReady) return;
+    _debounce?.cancel();
+    _debounce = Timer(_dirtyDebounce, () {
+      if (_autoReady) unawaited(syncNow());
+    });
+  }
+
+  void onForeground() {
+    _foreground = true;
+    if (!_autoReady) return;
+    final last = lastSyncMs;
+    if (last != null &&
+        DateTime.now().millisecondsSinceEpoch - last <
+            _foregroundGap.inMilliseconds) {
+      return;
     }
+    unawaited(syncNow());
   }
 
-  Future<void> _updateLastSyncTimestamp() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(
-        'sync_last_timestamp', DateTime.now().millisecondsSinceEpoch / 1000.0);
-  }
-
-  Future<Set<String>> _getProcessedFiles() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList('sync_processed_files')?.toSet() ?? {};
-  }
-
-  Future<void> _setProcessedFiles(Set<String> files) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('sync_processed_files', files.toList());
-  }
-
-  Future<double?> getLastSyncTimestamp() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ts = prefs.getDouble('sync_last_timestamp');
-    return ts;
-  }
+  void onBackground() => _foreground = false;
 
   String _generateDeviceId() {
     final random = Random();
@@ -577,3 +406,6 @@ class SyncService {
     return sha1.convert(bytes).toString().substring(0, 12);
   }
 }
+
+/// Re-exported so UI code can validate URLs without importing the client.
+bool isInsecureSyncUrl(String url) => SyncApiClient.isInsecure(url);

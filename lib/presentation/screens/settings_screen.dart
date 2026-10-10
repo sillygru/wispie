@@ -161,7 +161,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       (AppIcons.library, 'Library', 'Music folders, scanning'),
       (AppIcons.playCircle, 'Playback', 'Audio settings, transitions'),
       (AppIcons.palette, 'Appearance', 'Theme, display options'),
-      (AppIcons.cloudUpload, 'Sync', 'Google Drive, cross-device sync'),
+      (AppIcons.cloudUpload, 'Sync', 'Encrypted cross-device sync'),
       (
         AppIcons.storage,
         'Data Management',
@@ -381,7 +381,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           AppSettingsTile(
             icon: AppIcons.cloudUpload,
             title: 'Sync',
-            subtitle: 'Google Drive, cross-device sync',
+            subtitle: 'Encrypted cross-device sync',
             onTap: () => context.pushApp(const SyncSettingsScreen()),
           ),
         ],

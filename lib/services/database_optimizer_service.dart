@@ -321,6 +321,19 @@ class DatabaseOptimizerService {
   /// Deletes sessions shorter than minDurationSeconds (default 60s) and their associated events.
   /// This removes both the short sessions and all their corresponding playevent records,
   /// as well as any orphaned play events.
+  ///
+  /// Whether this stats DB carries the sync change-tracking schema (the
+  /// `sync_tombstone` table plus `playevent.uid`). Ad-hoc test databases may
+  /// not, so optimizer tombstoning is skipped gracefully in that case.
+  Future<bool> _hasSyncTombstones(DatabaseExecutor db) async {
+    final hasTable = (await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_tombstone'"))
+        .isNotEmpty;
+    if (!hasTable) return false;
+    final cols = await db.rawQuery('PRAGMA table_info(playevent)');
+    return cols.any((c) => c['name'] == 'uid');
+  }
+
   Future<Map<String, dynamic>> _deleteShortSessions(
     Database statsDb, {
     double minDurationSeconds = 60.0,
@@ -330,10 +343,9 @@ class DatabaseOptimizerService {
     final details = <String, dynamic>{};
 
     try {
+      final hasSync = await _hasSyncTombstones(statsDb);
       await statsDb.transaction((txn) async {
-        // 1. Delete associated play events for short/invalid sessions and orphaned events
-        deletedEvents = await txn.rawDelete('''
-          DELETE FROM playevent 
+        const eventWhere = '''
           WHERE session_id IN (
             SELECT id FROM playsession 
             WHERE (end_time - start_time) < ? 
@@ -341,16 +353,45 @@ class DatabaseOptimizerService {
                OR end_time IS NULL
           )
           OR session_id NOT IN (SELECT id FROM playsession)
-          OR session_id IS NULL
-        ''', [minDurationSeconds]);
-
-        // 2. Delete short/invalid sessions
-        deletedSessions = await txn.rawDelete('''
-          DELETE FROM playsession 
+          OR session_id IS NULL''';
+        const sessionWhere = '''
           WHERE (end_time - start_time) < ? 
              OR start_time IS NULL 
-             OR end_time IS NULL
-        ''', [minDurationSeconds]);
+             OR end_time IS NULL''';
+
+        // Junk removed here is maintenance that MUST propagate, so capture the
+        // sync keys before deleting and tombstone them after.
+        List<String> eventUids = const [];
+        List<String> sessionIds = const [];
+        if (hasSync) {
+          eventUids = (await txn.rawQuery(
+                  'SELECT uid FROM playevent $eventWhere',
+                  [minDurationSeconds]))
+              .map((r) => r['uid'] as String?)
+              .whereType<String>()
+              .toList();
+          sessionIds = (await txn.rawQuery(
+                  'SELECT id FROM playsession $sessionWhere',
+                  [minDurationSeconds]))
+              .map((r) => r['id'] as String?)
+              .whereType<String>()
+              .toList();
+        }
+
+        // 1. Delete associated play events for short/invalid sessions and orphaned events
+        deletedEvents = await txn.rawDelete(
+            'DELETE FROM playevent $eventWhere', [minDurationSeconds]);
+
+        // 2. Delete short/invalid sessions
+        deletedSessions = await txn.rawDelete(
+            'DELETE FROM playsession $sessionWhere', [minDurationSeconds]);
+
+        if (hasSync) {
+          await DatabaseService.instance
+              .writeTombstones(txn, DatabaseService.tombPlayEvents, eventUids);
+          await DatabaseService.instance.writeTombstones(
+              txn, DatabaseService.tombPlaySessions, sessionIds);
+        }
       });
 
       details['sessions_deleted'] = deletedSessions;
@@ -439,12 +480,27 @@ class DatabaseOptimizerService {
       }
 
       if (idsToDelete.isNotEmpty) {
+        final hasSync = await _hasSyncTombstones(statsDb);
         await statsDb.transaction((txn) async {
+          List<String> uids = const [];
+          if (hasSync) {
+            final placeholders = List.filled(idsToDelete.length, '?').join(',');
+            uids = (await txn.rawQuery(
+                    'SELECT uid FROM playevent WHERE id IN ($placeholders)',
+                    idsToDelete))
+                .map((r) => r['uid'] as String?)
+                .whereType<String>()
+                .toList();
+          }
           final batch = txn.batch();
           for (final id in idsToDelete) {
             batch.delete('playevent', where: 'id = ?', whereArgs: [id]);
           }
           await batch.commit(noResult: true);
+          if (hasSync) {
+            await DatabaseService.instance
+                .writeTombstones(txn, DatabaseService.tombPlayEvents, uids);
+          }
         });
         deleted = idsToDelete.length;
       }

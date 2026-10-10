@@ -1,0 +1,27 @@
+services:
+  wispie:
+    build: .
+    restart: unless-stopped
+    environment:
+      WISPIE_REGISTRATION: open
+      # Caddy reaches us over the compose network; trust it for X-Forwarded-For.
+      WISPIE_TRUSTED_PROXIES: 172.16.0.0/12
+      WISPIE_QUOTA_MB: "200"
+    volumes:
+      - wispie-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [wispie]
+volumes:
+  wispie-data:
+  caddy-data:

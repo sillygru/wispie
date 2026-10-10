@@ -1,262 +1,149 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/database_service.dart';
+import '../services/sync/api_client.dart' show SyncServerInfo;
+import '../services/sync/changeset.dart';
 import '../services/sync_service.dart';
 
 class SyncState {
-  final bool isAuthenticated;
-  final String? accountEmail;
-  final bool isSyncing;
-  final String? syncStatusMessage;
-  final double? syncProgress;
-  final double? lastSyncedAt;
+  final SyncStatus status;
+  final String? username;
+  final String? serverUrl;
+  final SyncProgress? progress;
+  final int? lastSyncedAtMs;
   final String? lastError;
+  final bool autoSyncEnabled;
+  final Set<String> categories;
   final int localPlayCount;
   final int remotePlayCount;
   final int totalPlayCount;
 
   const SyncState({
-    this.isAuthenticated = false,
-    this.accountEmail,
-    this.isSyncing = false,
-    this.syncStatusMessage,
-    this.syncProgress,
-    this.lastSyncedAt,
+    this.status = SyncStatus.loggedOut,
+    this.username,
+    this.serverUrl,
+    this.progress,
+    this.lastSyncedAtMs,
     this.lastError,
+    this.autoSyncEnabled = true,
+    this.categories = const {},
     this.localPlayCount = 0,
     this.remotePlayCount = 0,
     this.totalPlayCount = 0,
   });
 
-  SyncState copyWith({
-    bool? isAuthenticated,
-    String? accountEmail,
-    bool? isSyncing,
-    String? syncStatusMessage,
-    double? syncProgress,
-    double? lastSyncedAt,
-    String? lastError,
-    int? localPlayCount,
-    int? remotePlayCount,
-    int? totalPlayCount,
-  }) {
-    return SyncState(
-      isAuthenticated: isAuthenticated ?? this.isAuthenticated,
-      accountEmail: accountEmail ?? this.accountEmail,
-      isSyncing: isSyncing ?? this.isSyncing,
-      syncStatusMessage: syncStatusMessage ?? this.syncStatusMessage,
-      syncProgress: syncProgress ?? this.syncProgress,
-      lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-      lastError: lastError ?? this.lastError,
-      localPlayCount: localPlayCount ?? this.localPlayCount,
-      remotePlayCount: remotePlayCount ?? this.remotePlayCount,
-      totalPlayCount: totalPlayCount ?? this.totalPlayCount,
-    );
-  }
+  bool get freshAccount => SyncService.instance.freshAccount;
+  bool get isAuthenticated => status != SyncStatus.loggedOut;
+  bool get isSyncing => status == SyncStatus.syncing;
+  bool get isPaused => status == SyncStatus.pausedEpochChanged;
+  bool get needsInitialChoice => status == SyncStatus.needsInitialChoice;
 }
 
 class SyncNotifier extends Notifier<SyncState> {
+  StreamSubscription<SyncProgress>? _sub;
+  bool _disposed = false;
+
+  // Held here rather than read back off `state`: build() produces the first
+  // snapshot, and reading state before build returns throws.
+  int _localPlayCount = 0;
+  int _remotePlayCount = 0;
+  int _totalPlayCount = 0;
+
+  SyncService get _svc => SyncService.instance;
+
   @override
   SyncState build() {
-    _loadState();
-    return const SyncState();
+    _svc.addListener(_refresh);
+    _sub = _svc.progressStream.listen((p) {
+      if (_disposed) return;
+      state = _snapshot(progress: p);
+    });
+    ref.onDispose(() {
+      _disposed = true;
+      _svc.removeListener(_refresh);
+      _sub?.cancel();
+    });
+    unawaited(_loadBreakdown());
+    return _snapshot();
   }
 
-  Future<void> _loadState() async {
-    final sync = SyncService.instance;
-    final lastSyncedAt = await sync.getLastSyncTimestamp();
-    final breakdown = await DatabaseService.instance
-        .getPlayStatsDeviceBreakdown(sync.deviceId);
-
-    state = SyncState(
-      isAuthenticated: sync.isSignedIn,
-      accountEmail: sync.accountEmail,
-      lastSyncedAt: lastSyncedAt,
-      localPlayCount: breakdown['localPlayCount'] ?? 0,
-      remotePlayCount: breakdown['remotePlayCount'] ?? 0,
-      totalPlayCount: breakdown['totalPlayCount'] ?? 0,
+  SyncState _snapshot({SyncProgress? progress}) {
+    final busy = _svc.status == SyncStatus.syncing;
+    return SyncState(
+      status: _svc.status,
+      username: _svc.username,
+      serverUrl: _svc.serverUrl,
+      progress: busy ? (progress ?? _svc.progress) : null,
+      lastSyncedAtMs: _svc.lastSyncMs,
+      lastError: _svc.lastError,
+      autoSyncEnabled: _svc.autoSyncEnabled,
+      categories: _svc.categories,
+      localPlayCount: _localPlayCount,
+      remotePlayCount: _remotePlayCount,
+      totalPlayCount: _totalPlayCount,
     );
   }
 
-  Future<void> refreshDeviceBreakdown() async {
-    final sync = SyncService.instance;
-    final breakdown = await DatabaseService.instance
-        .getPlayStatsDeviceBreakdown(sync.deviceId);
-    state = state.copyWith(
-      localPlayCount: breakdown['localPlayCount'] ?? 0,
-      remotePlayCount: breakdown['remotePlayCount'] ?? 0,
-      totalPlayCount: breakdown['totalPlayCount'] ?? 0,
-    );
+  void _refresh() {
+    if (_disposed) return;
+    final wasBusy = state.isSyncing;
+    state = _snapshot();
+    if (wasBusy && !state.isSyncing) unawaited(_loadBreakdown());
   }
 
-  Future<bool> signIn() async {
-    final ok = await SyncService.instance.signIn();
-    if (ok) {
-      state = state.copyWith(
-        isAuthenticated: true,
-        accountEmail: SyncService.instance.accountEmail,
-        lastError: null,
-      );
-      await refreshDeviceBreakdown();
-    } else {
-      final error = SyncService.instance.lastError;
-      state = state.copyWith(
-        lastError: error != null ? 'Sign-in failed: $error' : 'Sign-in failed',
-      );
-    }
-    return ok;
+  Future<void> _loadBreakdown() async {
+    final b = await DatabaseService.instance
+        .getPlayStatsDeviceBreakdown(_svc.deviceId);
+    if (_disposed) return;
+    _localPlayCount = b['localPlayCount'] ?? 0;
+    _remotePlayCount = b['remotePlayCount'] ?? 0;
+    _totalPlayCount = b['totalPlayCount'] ?? 0;
+    state = _snapshot();
   }
 
-  Future<void> signOut() async {
-    await SyncService.instance.signOut();
-    state = const SyncState();
+  Future<void> refreshDeviceBreakdown() => _loadBreakdown();
+
+  /// Returns the recovery key to show the user.
+  Future<String> register(String serverUrl, String username, String password) =>
+      _svc.register(
+          serverUrl: serverUrl, username: username, password: password);
+
+  Future<void> login(String serverUrl, String username, String password) =>
+      _svc.login(serverUrl: serverUrl, username: username, password: password);
+
+  Future<void> recover(String serverUrl, String username, String recoveryKey,
+          String newPassword) =>
+      _svc.recover(
+        serverUrl: serverUrl,
+        username: username,
+        recoveryKey: recoveryKey,
+        newPassword: newPassword,
+      );
+
+  Future<SyncServerInfo> probeServer(String url) => _svc.probeServer(url);
+  Future<void> changePassword(String c, String n) => _svc.changePassword(c, n);
+  Future<String> newRecoveryKey(String pw) => _svc.newRecoveryKey(pw);
+  Future<({int used, int quota})?> usage() => _svc.usage();
+
+  Future<void> logout() => _svc.logout();
+  Future<void> deleteAccount(String password) => _svc.deleteAccount(password);
+
+  Future<bool> sync() => _svc.syncNow();
+  Future<bool> overwriteCloud() => _svc.overwriteCloud();
+  Future<bool> mergeWithCloud() => _svc.mergeWithCloud();
+  Future<bool> setUpAsNewDevice() => _svc.setUpAsNewDevice();
+
+  Future<void> setAutoSyncEnabled(bool v) => _svc.setAutoSyncEnabled(v);
+  Future<void> setCategories(Set<String> c) => _svc.setCategories(c);
+
+  Future<void> setCategory(String id, bool on) {
+    final next = {..._svc.categories};
+    on ? next.add(id) : next.remove(id);
+    return _svc.setCategories(next);
   }
 
-  Future<bool> sync({bool syncSettings = true}) async {
-    if (state.isSyncing) return false;
-    state = state.copyWith(
-      isSyncing: true,
-      syncStatusMessage: 'Starting sync...',
-      syncProgress: 0.05,
-      lastError: null,
-    );
-
-    try {
-      final ok = await SyncService.instance.sync(
-        syncSettings: syncSettings,
-        onProgress: (status, progress) {
-          state = state.copyWith(
-            syncStatusMessage: status,
-            syncProgress: progress,
-          );
-        },
-      );
-
-      if (ok) {
-        final ts = await SyncService.instance.getLastSyncTimestamp();
-        await refreshDeviceBreakdown();
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastSyncedAt: ts,
-        );
-      } else {
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastError: 'Sync failed',
-        );
-      }
-      return ok;
-    } catch (e) {
-      state = state.copyWith(
-        isSyncing: false,
-        syncStatusMessage: null,
-        syncProgress: null,
-        lastError: e.toString(),
-      );
-      return false;
-    }
-  }
-
-  Future<bool> forcePushLocalToCloud({bool syncSettings = true}) async {
-    if (state.isSyncing) return false;
-    state = state.copyWith(
-      isSyncing: true,
-      syncStatusMessage: 'Preparing force push...',
-      syncProgress: 0.05,
-      lastError: null,
-    );
-
-    try {
-      final ok = await SyncService.instance.forcePushLocalToCloud(
-        syncSettings: syncSettings,
-        onProgress: (status, progress) {
-          state = state.copyWith(
-            syncStatusMessage: status,
-            syncProgress: progress,
-          );
-        },
-      );
-
-      if (ok) {
-        final ts = await SyncService.instance.getLastSyncTimestamp();
-        await refreshDeviceBreakdown();
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastSyncedAt: ts,
-        );
-      } else {
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastError: 'Push failed',
-        );
-      }
-      return ok;
-    } catch (e) {
-      state = state.copyWith(
-        isSyncing: false,
-        syncStatusMessage: null,
-        syncProgress: null,
-        lastError: e.toString(),
-      );
-      return false;
-    }
-  }
-
-  Future<bool> forcePullCloudToLocal({bool syncSettings = true}) async {
-    if (state.isSyncing) return false;
-    state = state.copyWith(
-      isSyncing: true,
-      syncStatusMessage: 'Preparing force pull...',
-      syncProgress: 0.05,
-      lastError: null,
-    );
-
-    try {
-      final ok = await SyncService.instance.forcePullCloudToLocal(
-        syncSettings: syncSettings,
-        onProgress: (status, progress) {
-          state = state.copyWith(
-            syncStatusMessage: status,
-            syncProgress: progress,
-          );
-        },
-      );
-
-      if (ok) {
-        final ts = await SyncService.instance.getLastSyncTimestamp();
-        await refreshDeviceBreakdown();
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastSyncedAt: ts,
-        );
-      } else {
-        state = state.copyWith(
-          isSyncing: false,
-          syncStatusMessage: null,
-          syncProgress: null,
-          lastError: 'Pull failed',
-        );
-      }
-      return ok;
-    } catch (e) {
-      state = state.copyWith(
-        isSyncing: false,
-        syncStatusMessage: null,
-        syncProgress: null,
-        lastError: e.toString(),
-      );
-      return false;
-    }
-  }
+  static const allCategories = SyncCategory.all;
 }
 
 final syncProvider = NotifierProvider<SyncNotifier, SyncState>(

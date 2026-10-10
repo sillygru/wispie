@@ -61,7 +61,7 @@ Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2000 lin
 
 ### Networking
 
-`SharedHttpClient.instance` is the one pooled `HttpClient` for outbound requests. Don't construct per-request clients; that's the regression its comment describes. Secrets arrive via `--dart-define`: `TELEMETRY_SECRET`, `GOOGLE_CLIENT_SECRET` (plus `WISPIE_MUSIC_UTILS_BASE_URL` for the music API).
+`SharedHttpClient.instance` is the one pooled `HttpClient` for outbound requests. Don't construct per-request clients; that's the regression its comment describes. Secrets arrive via `--dart-define`: `TELEMETRY_SECRET` (plus `WISPIE_MUSIC_UTILS_BASE_URL` for the music API).
 
 ## Testing
 

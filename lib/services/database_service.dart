@@ -15,6 +15,7 @@ import '../models/playlist.dart';
 import '../models/queue_snapshot.dart';
 import '../models/song.dart';
 import 'import_options.dart';
+import 'sync/hlc.dart';
 import 'sync_service.dart';
 import 'wispie_paths.dart';
 
@@ -49,12 +50,14 @@ class DatabaseService {
 
   Future<void> _initAsync() async {
     try {
+      await Hlc.instance.load();
       _statsDatabase = await _openDatabaseWithMigrations(
         'wispie_stats.db',
         version: kStatsDbVersion,
         onCreate: (db, v) async => createStatsSchema(db),
         onUpgrade: (db, oldV, newV) async {
           if (oldV < 2) await upgradeStatsFrom1To2(db);
+          if (oldV < 3) await upgradeStatsFrom2To3(db);
         },
       );
       _userDataDatabase = await _openDatabaseWithMigrations(
@@ -65,6 +68,7 @@ class DatabaseService {
           if (oldV < 2) await upgradeUserDataFrom1To2(db);
           if (oldV < 3) await upgradeUserDataFrom2To3(db);
           if (oldV < 4) await upgradeUserDataFrom3To4(db);
+          if (oldV < 5) await upgradeUserDataFrom4To5(db);
         },
       );
     } catch (e) {
@@ -75,6 +79,86 @@ class DatabaseService {
 
   // Schema is canonical in lib/data/migrations.dart; legacy imperative
   // ensure helpers removed.
+
+  // ==========================================================================
+  // SYNC CHANGE TRACKING HELPERS
+  // ==========================================================================
+
+  // Tombstone entity names. These match the record/category names used by the
+  // encrypted sync payload (see plan_sync.md sec 1.4).
+  static const String tombFavorites = 'favorites';
+  static const String tombSuggestless = 'suggestless';
+  static const String tombHidden = 'hidden';
+  static const String tombPlaylists = 'playlists';
+  static const String tombPlaylistSongs = 'playlist_songs';
+  static const String tombMergedGroups = 'merged_groups';
+  static const String tombMergedSongs = 'merged_songs';
+  static const String tombArtistArt = 'artist_art';
+  static const String tombAlbumArt = 'album_art';
+  static const String tombPlayEvents = 'play_events';
+  static const String tombPlaySessions = 'play_sessions';
+
+  int _hlcNow() {
+    SyncService.instance.notifyLocalWrite();
+    return Hlc.instance.now();
+  }
+
+  /// Stamps a row map for a local, user-intent write.
+  Map<String, Object?> _stamp(Map<String, Object?> row) {
+    row['hlc'] = _hlcNow();
+    row['dirty'] = 1;
+    return row;
+  }
+
+  /// Writes one explicit-removal tombstone. A re-add later gets a newer hlc and
+  /// wins, so tombstoning is safe for toggles.
+  Future<void> _tombstone(
+      DatabaseExecutor txn, String entity, String key) async {
+    await txn.insert(
+      'sync_tombstone',
+      {'entity': entity, 'key': key, 'hlc': _hlcNow(), 'dirty': 1},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Drops a tombstone when the same key is re-added locally; the re-added row
+  /// carries a newer hlc so it wins anyway, this just avoids pushing a stale
+  /// tombstone.
+  Future<void> _clearTombstone(
+      DatabaseExecutor txn, String entity, String key) async {
+    await txn.delete('sync_tombstone',
+        where: 'entity = ? AND key = ?', whereArgs: [entity, key]);
+  }
+
+  /// Public tombstone writer for maintenance that must propagate deletions
+  /// (the database optimizer). [txn] decides which database the tombstone lands
+  /// in, so stats deletions tombstone in the stats DB.
+  Future<void> writeTombstones(
+      DatabaseExecutor txn, String entity, Iterable<String> keys) async {
+    for (final key in keys) {
+      await _tombstone(txn, entity, key);
+    }
+  }
+
+  /// Marks every row of a synced table dirty after a backup restore, keeping any
+  /// clock already present. Restores never tombstone (other devices may still
+  /// hold the rows a restore happens to lack).
+  Future<void> _markRestoredDirty(DatabaseExecutor txn, String table) async {
+    await txn.rawUpdate(
+        'UPDATE $table SET dirty = 1, hlc = COALESCE(hlc, ?)', [_hlcNow()]);
+  }
+
+  /// Records that a whitelisted setting changed locally so the sync engine can
+  /// push it. Values stay in SharedPreferences; only the clock lives here.
+  Future<void> stampSettingDirty(String key) async {
+    await _ensureInitialized();
+    if (_userDataDatabase == null) return;
+    await _userDataDatabase!.insert(
+      'sync_setting_meta',
+      {'key': key, 'hlc': _hlcNow(), 'dirty': 1},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 
   Future<void> _ensureInitialized() async {
     final f = _initFuture;
@@ -141,7 +225,9 @@ class DatabaseService {
     await _ensureInitialized();
     if (_statsDatabase == null) return;
 
-    await _statsDatabase!.insert('playevent', stats);
+    final row = Map<String, Object?>.from(stats);
+    row['uid'] ??= const Uuid().v4();
+    await _statsDatabase!.insert('playevent', _stamp(row));
   }
 
   Future<List<Map<String, dynamic>>> getAllPlayEvents() async {
@@ -838,21 +924,27 @@ class DatabaseService {
   Future<void> addFavorite(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.insert(
-      'favorite',
-      {
-        'filename': filename,
-        'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.insert(
+        'favorite',
+        _stamp({
+          'filename': filename,
+          'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
+        }),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await _clearTombstone(txn, tombFavorites, filename);
+    });
   }
 
   Future<void> removeFavorite(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!
-        .delete('favorite', where: 'filename = ?', whereArgs: [filename]);
+    await _userDataDatabase!.transaction((txn) async {
+      await txn
+          .delete('favorite', where: 'filename = ?', whereArgs: [filename]);
+      await _tombstone(txn, tombFavorites, filename);
+    });
   }
 
   /// Replaces all local favorites with the given list
@@ -865,10 +957,10 @@ class DatabaseService {
       for (final filename in favorites) {
         await txn.insert(
             'favorite',
-            {
+            _stamp({
               'filename': filename,
               'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            },
+            }),
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
@@ -889,21 +981,27 @@ class DatabaseService {
   Future<void> addSuggestLess(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.insert(
-      'suggestless',
-      {
-        'filename': filename,
-        'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.insert(
+        'suggestless',
+        _stamp({
+          'filename': filename,
+          'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
+        }),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await _clearTombstone(txn, tombSuggestless, filename);
+    });
   }
 
   Future<void> removeSuggestLess(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!
-        .delete('suggestless', where: 'filename = ?', whereArgs: [filename]);
+    await _userDataDatabase!.transaction((txn) async {
+      await txn
+          .delete('suggestless', where: 'filename = ?', whereArgs: [filename]);
+      await _tombstone(txn, tombSuggestless, filename);
+    });
   }
 
   Future<List<String>> getHidden() async {
@@ -921,21 +1019,26 @@ class DatabaseService {
   Future<void> addHidden(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.insert(
-      'hidden',
-      {
-        'filename': filename,
-        'hidden_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.insert(
+        'hidden',
+        _stamp({
+          'filename': filename,
+          'hidden_at': DateTime.now().millisecondsSinceEpoch / 1000.0
+        }),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await _clearTombstone(txn, tombHidden, filename);
+    });
   }
 
   Future<void> removeHidden(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!
-        .delete('hidden', where: 'filename = ?', whereArgs: [filename]);
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.delete('hidden', where: 'filename = ?', whereArgs: [filename]);
+      await _tombstone(txn, tombHidden, filename);
+    });
   }
 
   Future<void> setHidden(List<String> hidden) async {
@@ -947,10 +1050,10 @@ class DatabaseService {
       for (final filename in hidden) {
         await txn.insert(
             'hidden',
-            {
+            _stamp({
               'filename': filename,
               'hidden_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            },
+            }),
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
@@ -1002,27 +1105,45 @@ class DatabaseService {
       // Upsert playlist
       await txn.insert(
         'playlist',
-        {
+        _stamp({
           'id': playlist.id,
           'name': playlist.name,
           'description': playlist.description,
           'is_recommendation': playlist.isRecommendation ? 1 : 0,
           'created_at': playlist.createdAt,
           'updated_at': playlist.updatedAt,
-        },
+        }),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      // Songs removed in this save are explicit removals; tombstone them so they
+      // do not resurrect from another device.
+      final existing = await txn.query('playlist_song',
+          columns: ['song_filename'],
+          where: 'playlist_id = ?',
+          whereArgs: [playlist.id]);
+      final newFilenames = playlist.songs.map((s) => s.songFilename).toSet();
+      for (final row in existing) {
+        final fn = row['song_filename'] as String?;
+        if (fn != null && !newFilenames.contains(fn)) {
+          await _tombstone(txn, tombPlaylistSongs, '${playlist.id}\u0000$fn');
+        }
+      }
 
       // Delete all songs and re-insert.
       await txn.delete('playlist_song',
           where: 'playlist_id = ?', whereArgs: [playlist.id]);
 
       for (final song in playlist.songs) {
-        await txn.insert('playlist_song', {
-          'playlist_id': playlist.id,
-          'song_filename': song.songFilename,
-          'added_at': song.addedAt,
-        });
+        await txn.insert(
+            'playlist_song',
+            _stamp({
+              'playlist_id': playlist.id,
+              'song_filename': song.songFilename,
+              'added_at': song.addedAt,
+            }));
+        await _clearTombstone(
+            txn, tombPlaylistSongs, '${playlist.id}\u0000${song.songFilename}');
       }
     });
   }
@@ -1083,9 +1204,20 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
 
     await _userDataDatabase!.transaction((txn) async {
+      final songs = await txn.query('playlist_song',
+          columns: ['song_filename'],
+          where: 'playlist_id = ?',
+          whereArgs: [playlistId]);
       await txn.delete('playlist_song',
           where: 'playlist_id = ?', whereArgs: [playlistId]);
       await txn.delete('playlist', where: 'id = ?', whereArgs: [playlistId]);
+      await _tombstone(txn, tombPlaylists, playlistId);
+      for (final row in songs) {
+        final fn = row['song_filename'] as String?;
+        if (fn != null) {
+          await _tombstone(txn, tombPlaylistSongs, '$playlistId\u0000$fn');
+        }
+      }
     });
   }
 
@@ -1102,14 +1234,18 @@ class DatabaseService {
           whereArgs: [playlistId, songFilename]);
 
       if (existing.isEmpty) {
-        await txn.insert('playlist_song', {
-          'playlist_id': playlistId,
-          'song_filename': songFilename,
-          'added_at': now
-        });
+        await txn.insert(
+            'playlist_song',
+            _stamp({
+              'playlist_id': playlistId,
+              'song_filename': songFilename,
+              'added_at': now
+            }));
+        await _clearTombstone(
+            txn, tombPlaylistSongs, '$playlistId\u0000$songFilename');
 
         // Update playlist timestamp
-        await txn.update('playlist', {'updated_at': now},
+        await txn.update('playlist', _stamp({'updated_at': now}),
             where: 'id = ?', whereArgs: [playlistId]);
       }
     });
@@ -1129,16 +1265,20 @@ class DatabaseService {
             whereArgs: [playlistId, filename]);
 
         if (existing.isEmpty) {
-          await txn.insert('playlist_song', {
-            'playlist_id': playlistId,
-            'song_filename': filename,
-            'added_at': now
-          });
+          await txn.insert(
+              'playlist_song',
+              _stamp({
+                'playlist_id': playlistId,
+                'song_filename': filename,
+                'added_at': now
+              }));
+          await _clearTombstone(
+              txn, tombPlaylistSongs, '$playlistId\u0000$filename');
         }
       }
 
       // Update playlist timestamp once
-      await txn.update('playlist', {'updated_at': now},
+      await txn.update('playlist', _stamp({'updated_at': now}),
           where: 'id = ?', whereArgs: [playlistId]);
     });
   }
@@ -1155,10 +1295,11 @@ class DatabaseService {
         await txn.delete('playlist_song',
             where: 'playlist_id = ? AND song_filename = ?',
             whereArgs: [playlistId, filename]);
+        await _tombstone(txn, tombPlaylistSongs, '$playlistId\u0000$filename');
       }
 
       // Update playlist timestamp
-      await txn.update('playlist', {'updated_at': now},
+      await txn.update('playlist', _stamp({'updated_at': now}),
           where: 'id = ?', whereArgs: [playlistId]);
     });
   }
@@ -1172,10 +1313,15 @@ class DatabaseService {
       await txn.delete('playlist_song',
           where: 'playlist_id = ? AND song_filename = ?',
           whereArgs: [playlistId, songFilename]);
+      await _tombstone(
+          txn, tombPlaylistSongs, '$playlistId\u0000$songFilename');
       // Update playlist timestamp
-      await txn.update('playlist',
-          {'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0},
-          where: 'id = ?', whereArgs: [playlistId]);
+      await txn.update(
+          'playlist',
+          _stamp(
+              {'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0}),
+          where: 'id = ?',
+          whereArgs: [playlistId]);
     });
   }
 
@@ -1185,10 +1331,10 @@ class DatabaseService {
 
     await _userDataDatabase!.update(
         'playlist',
-        {
+        _stamp({
           'name': newName,
           'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-        },
+        }),
         where: 'id = ?',
         whereArgs: [playlistId]);
   }
@@ -1312,7 +1458,7 @@ class DatabaseService {
       await txn
           .delete('favorite', where: 'filename = ?', whereArgs: [oldFilename]);
     } else {
-      await txn.update('favorite', {'filename': newFilename},
+      await txn.update('favorite', _stamp({'filename': newFilename}),
           where: 'filename = ?', whereArgs: [oldFilename]);
     }
 
@@ -1323,7 +1469,7 @@ class DatabaseService {
       await txn.delete('suggestless',
           where: 'filename = ?', whereArgs: [oldFilename]);
     } else {
-      await txn.update('suggestless', {'filename': newFilename},
+      await txn.update('suggestless', _stamp({'filename': newFilename}),
           where: 'filename = ?', whereArgs: [oldFilename]);
     }
 
@@ -1334,7 +1480,7 @@ class DatabaseService {
       await txn
           .delete('hidden', where: 'filename = ?', whereArgs: [oldFilename]);
     } else {
-      await txn.update('hidden', {'filename': newFilename},
+      await txn.update('hidden', _stamp({'filename': newFilename}),
           where: 'filename = ?', whereArgs: [oldFilename]);
     }
 
@@ -1375,10 +1521,11 @@ class DatabaseService {
     }
 
     // Update Merged Songs - if old filename is in a merge group, update it
-    await txn.update('merged_song', {'filename': newFilename},
+    await txn.update('merged_song', _stamp({'filename': newFilename}),
         where: 'filename = ?', whereArgs: [oldFilename]);
     // Update merged_song_group priority_filename if it matches old filename
-    await txn.update('merged_song_group', {'priority_filename': newFilename},
+    await txn.update(
+        'merged_song_group', _stamp({'priority_filename': newFilename}),
         where: 'priority_filename = ?', whereArgs: [oldFilename]);
 
     // Saved queues name the song by filename. The primary key is
@@ -1403,7 +1550,8 @@ class DatabaseService {
             where: 'id = ?', whereArgs: [plSong['id']]);
       } else {
         // Rename
-        await txn.update('playlist_song', {'song_filename': newFilename},
+        await txn.update(
+            'playlist_song', _stamp({'song_filename': newFilename}),
             where: 'id = ?', whereArgs: [plSong['id']]);
       }
     }
@@ -1416,7 +1564,7 @@ class DatabaseService {
     String oldFilename,
     String newFilename,
   ) =>
-      txn.update('playevent', {'song_filename': newFilename},
+      txn.update('playevent', _stamp({'song_filename': newFilename}),
           where: 'song_filename = ?', whereArgs: [oldFilename]);
 
   Future<void> _renameManyInStats(
@@ -1482,10 +1630,10 @@ class DatabaseService {
       for (final filename in suggestLess) {
         await txn.insert(
             'suggestless',
-            {
+            _stamp({
               'filename': filename,
               'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            },
+            }),
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
@@ -1652,22 +1800,26 @@ class DatabaseService {
 
     await _userDataDatabase!.transaction((txn) async {
       // Create the group with priority
-      await txn.insert('merged_song_group', {
-        'id': groupId,
-        'priority_filename': effectivePriority,
-        'created_at': now,
-      });
+      await txn.insert(
+          'merged_song_group',
+          _stamp({
+            'id': groupId,
+            'priority_filename': effectivePriority,
+            'created_at': now,
+          }));
+      await _clearTombstone(txn, tombMergedGroups, groupId);
 
       // Add all songs to the group
       for (final filename in filenames) {
         await txn.insert(
             'merged_song',
-            {
+            _stamp({
               'filename': filename,
               'group_id': groupId,
               'added_at': now,
-            },
+            }),
             conflictAlgorithm: ConflictAlgorithm.replace);
+        await _clearTombstone(txn, tombMergedSongs, filename);
       }
       await _cleanupSingleSongGroups(txn);
     });
@@ -1689,12 +1841,13 @@ class DatabaseService {
       for (final filename in filenames) {
         await txn.insert(
             'merged_song',
-            {
+            _stamp({
               'filename': filename,
               'group_id': groupId,
               'added_at': now,
-            },
+            }),
             conflictAlgorithm: ConflictAlgorithm.replace);
+        await _clearTombstone(txn, tombMergedSongs, filename);
       }
       await _cleanupSingleSongGroups(txn);
     });
@@ -1710,6 +1863,7 @@ class DatabaseService {
     await _userDataDatabase!.transaction((txn) async {
       await txn
           .delete('merged_song', where: 'filename = ?', whereArgs: [filename]);
+      await _tombstone(txn, tombMergedSongs, filename);
 
       await _cleanupSingleSongGroups(txn);
     });
@@ -1726,10 +1880,17 @@ class DatabaseService {
     ''');
     for (final row in results) {
       final groupId = row['group_id'] as String;
+      final members = await txn.query('merged_song',
+          columns: ['filename'], where: 'group_id = ?', whereArgs: [groupId]);
       await txn
           .delete('merged_song', where: 'group_id = ?', whereArgs: [groupId]);
       await txn
           .delete('merged_song_group', where: 'id = ?', whereArgs: [groupId]);
+      await _tombstone(txn, tombMergedGroups, groupId);
+      for (final m in members) {
+        final fn = m['filename'] as String?;
+        if (fn != null) await _tombstone(txn, tombMergedSongs, fn);
+      }
     }
     await txn.delete('merged_song_group',
         where:
@@ -1742,12 +1903,19 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
 
     await _userDataDatabase!.transaction((txn) async {
+      final members = await txn.query('merged_song',
+          columns: ['filename'], where: 'group_id = ?', whereArgs: [groupId]);
       // Delete all songs in the group (cascade will handle the group)
       await txn
           .delete('merged_song', where: 'group_id = ?', whereArgs: [groupId]);
       // Delete the group itself
       await txn
           .delete('merged_song_group', where: 'id = ?', whereArgs: [groupId]);
+      await _tombstone(txn, tombMergedGroups, groupId);
+      for (final m in members) {
+        final fn = m['filename'] as String?;
+        if (fn != null) await _tombstone(txn, tombMergedSongs, fn);
+      }
     });
 
     debugPrint('Deleted merged group $groupId');
@@ -1859,18 +2027,22 @@ class DatabaseService {
 
         if (filenames.length < 2) continue;
 
-        await txn.insert('merged_song_group', {
-          'id': groupId,
-          'priority_filename': priorityFilename,
-          'created_at': now,
-        });
+        await txn.insert(
+            'merged_song_group',
+            _stamp({
+              'id': groupId,
+              'priority_filename': priorityFilename,
+              'created_at': now,
+            }));
 
         for (final filename in filenames) {
-          await txn.insert('merged_song', {
-            'filename': filename,
-            'group_id': groupId,
-            'added_at': now,
-          });
+          await txn.insert(
+              'merged_song',
+              _stamp({
+                'filename': filename,
+                'group_id': groupId,
+                'added_at': now,
+              }));
         }
       }
     });
@@ -2083,6 +2255,8 @@ class DatabaseService {
 
     final deviceId = event['device_id'] as String?;
 
+    final rowDirty = isSync ? 0 : 1;
+
     await txn.insert(
         'playsession',
         {
@@ -2091,18 +2265,20 @@ class DatabaseService {
           'end_time': timestamp,
           'platform': event['platform'] ?? 'unknown',
           'device_id': deviceId,
+          'hlc': _hlcNow(),
+          'dirty': rowDirty,
         },
         conflictAlgorithm: ConflictAlgorithm.ignore);
 
     if (deviceId != null && deviceId.isNotEmpty) {
       await txn.rawUpdate(
-          'UPDATE playsession SET device_id = ? WHERE id = ? AND (device_id IS NULL OR device_id = \'\')',
-          [deviceId, sessionId]);
+          'UPDATE playsession SET device_id = ?, hlc = ?, dirty = ? WHERE id = ? AND (device_id IS NULL OR device_id = \'\')',
+          [deviceId, _hlcNow(), rowDirty, sessionId]);
     }
 
     await txn.rawUpdate(
-        'UPDATE playsession SET end_time = ? WHERE id = ? AND end_time < ?',
-        [timestamp, sessionId, timestamp]);
+        'UPDATE playsession SET end_time = ?, hlc = ?, dirty = ? WHERE id = ? AND end_time < ?',
+        [timestamp, _hlcNow(), rowDirty, sessionId, timestamp]);
 
     // Coalesce logic (Fix for fragmented stats)
     final lastEvents = await txn.query(
@@ -2163,6 +2339,8 @@ class DatabaseService {
               'total_length': effectiveTotalLength,
               'timestamp': newTimestamp,
               'play_ratio': newRatio,
+              'hlc': _hlcNow(),
+              'dirty': rowDirty,
               if (lastSource == null && incomingSource != null)
                 'source': incomingSource,
             },
@@ -2201,6 +2379,8 @@ class DatabaseService {
               'total_length': effectiveTotalLength,
               'timestamp': timestamp,
               'play_ratio': newRatio,
+              'hlc': _hlcNow(),
+              'dirty': rowDirty,
               if (lastSource == null && incomingSource != null)
                 'source': incomingSource,
             },
@@ -2217,6 +2397,7 @@ class DatabaseService {
       }
 
       await txn.insert('playevent', {
+        'uid': (event['uid'] as String?) ?? const Uuid().v4(),
         'session_id': sessionId,
         'song_filename': songFilename,
         'timestamp': timestamp,
@@ -2226,6 +2407,8 @@ class DatabaseService {
         'foreground_duration': event['foreground_duration'],
         'background_duration': event['background_duration'],
         'source': incomingSource,
+        'hlc': _hlcNow(),
+        'dirty': rowDirty,
       });
     }
   }
@@ -2460,6 +2643,9 @@ class DatabaseService {
             await txn.insert('playevent', eventMap);
           }
         }
+        await backfillPlayEventUids(txn);
+        await _markRestoredDirty(txn, 'playsession');
+        await _markRestoredDirty(txn, 'playevent');
       });
 
       await _userDataDatabase!.transaction((txn) async {
@@ -2544,6 +2730,16 @@ class DatabaseService {
           psMap.remove('id');
           await txn.insert('playlist_song', psMap,
               conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+
+        for (final t in const [
+          'favorite',
+          'suggestless',
+          'hidden',
+          'playlist',
+          'playlist_song'
+        ]) {
+          await _markRestoredDirty(txn, t);
         }
 
         // Import queue history
@@ -2700,6 +2896,9 @@ class DatabaseService {
           await txn.insert('playevent', eventMap);
         }
       }
+      await backfillPlayEventUids(txn);
+      await _markRestoredDirty(txn, 'playsession');
+      await _markRestoredDirty(txn, 'playevent');
     });
   }
 
@@ -2714,6 +2913,7 @@ class DatabaseService {
         await txn.insert('favorite', fav,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _markRestoredDirty(txn, 'favorite');
     });
   }
 
@@ -2728,6 +2928,7 @@ class DatabaseService {
         await txn.insert('suggestless', sl,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _markRestoredDirty(txn, 'suggestless');
     });
   }
 
@@ -2742,6 +2943,7 @@ class DatabaseService {
         await txn.insert('hidden', h,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _markRestoredDirty(txn, 'hidden');
     });
   }
 
@@ -2813,6 +3015,8 @@ class DatabaseService {
         await txn.insert('playlist_song', psMap,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _markRestoredDirty(txn, 'playlist');
+      await _markRestoredDirty(txn, 'playlist_song');
     });
   }
 
@@ -2838,6 +3042,8 @@ class DatabaseService {
               conflictAlgorithm: ConflictAlgorithm.ignore);
         }
       }
+      await _markRestoredDirty(txn, 'merged_song_group');
+      await _markRestoredDirty(txn, 'merged_song');
     });
   }
 
@@ -2867,6 +3073,8 @@ class DatabaseService {
               conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
+      await _markRestoredDirty(txn, 'artist_art');
+      await _markRestoredDirty(txn, 'album_art');
     });
   }
 
@@ -2897,26 +3105,39 @@ class DatabaseService {
     String? source,
   }) async {
     await _ensureInitialized();
-    await _userDataDatabase!.insert(
-      'artist_art',
-      {
-        'artist_name': artistName.trim(),
-        'image_url': imageUrl,
-        'local_path': localPath,
-        'source': source,
-        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.insert(
+        'artist_art',
+        _stamp({
+          'artist_name': artistName.trim(),
+          'image_url': imageUrl,
+          'local_path': localPath,
+          'source': source,
+          'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
+        }),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await _clearTombstone(txn, tombArtistArt, artistName.trim());
+    });
   }
 
   Future<void> deleteArtistArt(String artistName) async {
     await _ensureInitialized();
-    await _userDataDatabase!.delete(
-      'artist_art',
-      where: 'LOWER(TRIM(artist_name)) = ?',
-      whereArgs: [artistName.trim().toLowerCase()],
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      final rows = await txn.query('artist_art',
+          columns: ['artist_name'],
+          where: 'LOWER(TRIM(artist_name)) = ?',
+          whereArgs: [artistName.trim().toLowerCase()]);
+      await txn.delete(
+        'artist_art',
+        where: 'LOWER(TRIM(artist_name)) = ?',
+        whereArgs: [artistName.trim().toLowerCase()],
+      );
+      for (final r in rows) {
+        final name = r['artist_name'] as String?;
+        if (name != null) await _tombstone(txn, tombArtistArt, name);
+      }
+    });
   }
 
   Future<void> clearArtistArt() async {
@@ -2951,28 +3172,41 @@ class DatabaseService {
     String? source,
   }) async {
     await _ensureInitialized();
-    await _userDataDatabase!.insert(
-      'album_art',
-      {
-        'album_key': albumKey,
-        'album_name': albumName,
-        'artist_name': artistName,
-        'image_url': imageUrl,
-        'local_path': localPath,
-        'source': source,
-        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      await txn.insert(
+        'album_art',
+        _stamp({
+          'album_key': albumKey,
+          'album_name': albumName,
+          'artist_name': artistName,
+          'image_url': imageUrl,
+          'local_path': localPath,
+          'source': source,
+          'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
+        }),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      await _clearTombstone(txn, tombAlbumArt, albumKey);
+    });
   }
 
   Future<void> deleteAlbumArt(String albumKey) async {
     await _ensureInitialized();
-    await _userDataDatabase!.delete(
-      'album_art',
-      where: 'LOWER(album_key) = ?',
-      whereArgs: [albumKey.toLowerCase()],
-    );
+    await _userDataDatabase!.transaction((txn) async {
+      final rows = await txn.query('album_art',
+          columns: ['album_key'],
+          where: 'LOWER(album_key) = ?',
+          whereArgs: [albumKey.toLowerCase()]);
+      await txn.delete(
+        'album_art',
+        where: 'LOWER(album_key) = ?',
+        whereArgs: [albumKey.toLowerCase()],
+      );
+      for (final r in rows) {
+        final key = r['album_key'] as String?;
+        if (key != null) await _tombstone(txn, tombAlbumArt, key);
+      }
+    });
   }
 
   Future<void> clearAlbumArt() async {

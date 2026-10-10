@@ -20,7 +20,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/setup_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
-import 'providers/settings_provider.dart';
 import 'providers/providers.dart';
 import 'services/cache_service.dart';
 import 'services/storage_service.dart';
@@ -364,33 +363,13 @@ class _WispieAppState extends ConsumerState<WispieApp>
     }
     if (state == AppLifecycleState.resumed) {
       unawaited(_onAppForeground());
+    } else if (state == AppLifecycleState.paused) {
+      SyncService.instance.onBackground();
     }
   }
 
   Future<void> _onAppForeground() async {
-    try {
-      final sync = SyncService.instance;
-      if (!sync.isSignedIn) return;
-      if (sync.isSyncing) return;
-      final settings = ref.read(settingsProvider);
-      if (!settings.autoSyncEnabled) return;
-
-      final lastSyncedAt = await sync.getLastSyncTimestamp();
-      if (lastSyncedAt != null) {
-        final nowSec = DateTime.now().millisecondsSinceEpoch / 1000.0;
-        if (nowSec - lastSyncedAt < 900) {
-          return;
-        }
-      }
-
-      await Future.delayed(const Duration(seconds: 5));
-      if (!mounted) return;
-      if (sync.isSyncing) return;
-
-      unawaited(ref.read(syncProvider.notifier).sync(
-            syncSettings: settings.syncSettingsEnabled,
-          ));
-    } catch (_) {}
+    SyncService.instance.onForeground();
   }
 
   static final bool _isDesktop =

@@ -60,10 +60,6 @@ class StatsService {
     }
   }
 
-  Future<void> syncBack() async {
-    // Local-only - no sync needed
-  }
-
   Future<void> flush() async {
     while (true) {
       final activeFlush = _activeFlush;
