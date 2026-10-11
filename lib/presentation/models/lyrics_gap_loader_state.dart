@@ -82,48 +82,43 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
   required Duration delay,
   required Duration minimumWindow,
 }) {
-  final syncedEntries = <(int, LyricLine)>[];
+  // Walks the lines in place: this runs on every playhead frame, so building
+  // a per-call list of the whole song was pure GC churn.
+  var activeIdx = -1;
+  var nextIdx = -1;
+  var firstIdx = -1;
   for (var i = 0; i < lyrics.length; i++) {
     final line = lyrics[i];
-    if (line.isSynced) {
-      syncedEntries.add((i, line));
-    }
-  }
-
-  if (syncedEntries.isEmpty) {
-    return LyricsGapLoaderState.hidden;
-  }
-
-  int activeSyncedEntry = -1;
-  for (var i = 0; i < syncedEntries.length; i++) {
-    if (syncedEntries[i].$2.time <= position) {
-      activeSyncedEntry = i;
+    if (!line.isSynced) continue;
+    if (firstIdx < 0) firstIdx = i;
+    if (line.time <= position) {
+      activeIdx = i;
     } else {
+      nextIdx = i;
       break;
     }
   }
 
+  if (firstIdx < 0) return LyricsGapLoaderState.hidden;
+
   // Intro gap: the silence starts at zero, so the window opens at [delay].
-  if (activeSyncedEntry < 0) {
+  if (activeIdx < 0) {
     return _stateForWindow(
       position: position,
       windowStart: delay,
-      windowEnd: syncedEntries.first.$2.time,
+      windowEnd: lyrics[firstIdx].time,
       minimumWindow: minimumWindow,
-      insertBeforeLyricIndex: syncedEntries.first.$1,
+      insertBeforeLyricIndex: firstIdx,
     );
   }
 
-  final nextEntryIndex = activeSyncedEntry + 1;
-  if (nextEntryIndex >= syncedEntries.length) {
-    return LyricsGapLoaderState.hidden;
-  }
+  if (nextIdx < 0) return LyricsGapLoaderState.hidden;
 
   return _stateForWindow(
     position: position,
-    windowStart: syncedEntries[activeSyncedEntry].$2.time + delay,
-    windowEnd: syncedEntries[nextEntryIndex].$2.time,
+    windowStart: lyrics[activeIdx].time + delay,
+    windowEnd: lyrics[nextIdx].time,
     minimumWindow: minimumWindow,
-    insertBeforeLyricIndex: syncedEntries[nextEntryIndex].$1,
+    insertBeforeLyricIndex: nextIdx,
   );
 }

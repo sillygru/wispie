@@ -163,14 +163,18 @@ class LyricsLine extends StatelessWidget {
                       .withValues(alpha: lineOpacity),
                   height: 1.28,
                   letterSpacing: -0.4,
-                  shadows: [
-                    Shadow(
-                      color: activeColor.withValues(
-                        alpha: 0.35 * glowIntensity,
-                      ),
-                      blurRadius: 18 * glowIntensity,
-                    ),
-                  ],
+                  // A zero-strength shadow still costs an extra blurred text
+                  // draw per row, so unlit rows carry none at all.
+                  shadows: glowIntensity <= 0
+                      ? null
+                      : [
+                          Shadow(
+                            color: activeColor.withValues(
+                              alpha: 0.35 * glowIntensity,
+                            ),
+                            blurRadius: 18 * glowIntensity,
+                          ),
+                        ],
                 ),
                 child: SizedBox(
                   width: double.infinity,

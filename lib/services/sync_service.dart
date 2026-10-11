@@ -43,9 +43,9 @@ class SyncService extends ChangeNotifier {
   static const _kCategories = 'sync_categories';
   static const _kAutoEnabled = 'auto_sync_enabled';
   static const Duration _startDelay = Duration(seconds: 5);
-  static const Duration _foregroundGap = Duration(minutes: 5);
-  static const Duration _dirtyDebounce = Duration(seconds: 60);
-  static const Duration _periodic = Duration(minutes: 15);
+  static const Duration _foregroundGap = Duration(hours: 1);
+  static const Duration _dirtyDebounce = Duration(minutes: 5);
+  static const Duration _periodic = Duration(hours: 1);
 
   static const List<String> _legacyKeys = [
     'sync_processed_files',

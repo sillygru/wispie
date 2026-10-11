@@ -285,9 +285,10 @@ class ArtistSearchResultItem extends ConsumerWidget {
     final theme = Theme.of(context);
     final cachedArt =
         ref.watch(artistAlbumArtProvider).getArtistArt(artistName);
-    final hasImage = cachedArt != null && File(cachedArt).existsSync();
-
-    final Widget artworkWidget = hasImage
+    // errorBuilder replaces a sync existsSync() on the UI thread per row;
+    // cacheWidth keeps a full-size artist photo from being decoded for 56px.
+    final Widget fallbackCover = CollectionCover(songs: songs, size: 56);
+    final Widget artworkWidget = cachedArt != null
         ? ClipRRect(
             borderRadius: AppTokens.brSm,
             child: Image.file(
@@ -295,12 +296,11 @@ class ArtistSearchResultItem extends ConsumerWidget {
               fit: BoxFit.cover,
               width: 56,
               height: 56,
+              cacheWidth: 168,
+              errorBuilder: (_, __, ___) => fallbackCover,
             ),
           )
-        : CollectionCover(
-            songs: songs,
-            size: 56,
-          );
+        : fallbackCover;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

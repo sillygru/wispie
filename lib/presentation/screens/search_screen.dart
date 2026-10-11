@@ -42,16 +42,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.initState();
     // Opening search should be type-and-go, so focus the field and select what
     // is in it; the next keystroke then replaces the query instead of appending.
-    // Deferred to the first frame because a route transition still owns focus
-    // here, and autofocus alone cannot express the select-all half.
+    // Focus waits for the route transition to finish: raising the keyboard
+    // while the page is still sliding in makes both animations fight for
+    // frames, which read as lag or a slow-motion keyboard.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _searchFocus.requestFocus();
-      _searchController.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: _searchController.text.length,
-      );
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation == null || animation.isCompleted) {
+        _focusField();
+        return;
+      }
+      late final AnimationStatusListener listener;
+      listener = (status) {
+        if (status != AnimationStatus.completed &&
+            status != AnimationStatus.dismissed) {
+          return;
+        }
+        animation.removeStatusListener(listener);
+        if (mounted && status == AnimationStatus.completed) _focusField();
+      };
+      animation.addStatusListener(listener);
     });
+  }
+
+  void _focusField() {
+    _searchFocus.requestFocus();
+    _searchController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _searchController.text.length,
+    );
   }
 
   @override

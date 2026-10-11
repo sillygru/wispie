@@ -911,8 +911,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
     if (isBackground && _lastRefreshTime != null) {
       final diff = DateTime.now().difference(_lastRefreshTime!);
-      if (diff.inSeconds < 30) {
-        // Reduced from 60 seconds for better responsiveness
+      // A full rescan plus stats flush on every app switch was the resume
+      // hitch; new files are rare enough that minutes is fine.
+      if (diff.inMinutes < 10) {
         return;
       }
     }

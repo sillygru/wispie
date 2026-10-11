@@ -367,7 +367,10 @@ class _WispieAppState extends ConsumerState<WispieApp>
       unawaited(ref.read(audioPlayerManagerProvider).forceFlushCurrentStats());
     }
     if (state == AppLifecycleState.resumed) {
-      unawaited(_onAppForeground());
+      Future<void>.delayed(
+        const Duration(milliseconds: 800),
+        () => unawaited(_onAppForeground()),
+      );
     } else if (state == AppLifecycleState.paused) {
       SyncService.instance.onBackground();
     }

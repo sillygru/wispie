@@ -263,11 +263,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Trigger background refresh when app returns to foreground
-      ref.read(songsProvider.notifier).refresh(isBackground: true);
-
-      // Check and run auto-backup if needed
-      ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
+      // Deferred so the resume transition frames are not competing with
+      // library diffing and backup work.
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        ref.read(songsProvider.notifier).refresh(isBackground: true);
+        ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
+      });
     }
   }
 

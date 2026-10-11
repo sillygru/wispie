@@ -581,10 +581,23 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
   Duration _lastFrameElapsed = Duration.zero;
 
+  bool _activeLineHasWords() {
+    final active = _activeLine.value;
+    if (active < 0 || active >= _wordLines.length) return false;
+    return LyricsPane.effectiveWordLine(
+          _wordLines[active],
+          ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled,
+        ) !=
+        null;
+  }
+
   void _onFrame(Duration elapsed) {
     _lastFrameElapsed = elapsed;
     final player = ref.read(audioPlayerManagerProvider).player;
     if (!player.playing) return;
+    // Per-frame extrapolation only matters for word wipes and the gap dots;
+    // plain line-synced lyrics are fine on the ~5Hz position samples.
+    if (_gapSlot.value < 0 && !_activeLineHasWords()) return;
     final dt = elapsed - _sampleElapsed;
     final extrapolated = _sampleAt +
         Duration(microseconds: (dt.inMicroseconds * player.speed).round());
@@ -1502,7 +1515,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
     // Rebuilds when the singing moves on or a gap opens — not on every tick of
     // the playhead.
-    return ListenableBuilder(
+    return RepaintBoundary(
+        child: ListenableBuilder(
       listenable: Listenable.merge([_activeLine, _gapSlot]),
       builder: (context, _) {
         final active = _activeLine.value;
@@ -1615,7 +1629,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               ],
             );
 
-            return AnimatedBuilder(
+            return RepaintBoundary(
+                child: AnimatedBuilder(
               animation: _cascade,
               child: row,
               builder: (context, child) {
@@ -1632,11 +1647,11 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                   child: child,
                 );
               },
-            );
+            ));
           },
         );
       },
-    );
+    ));
   }
 
   Widget _buildEmptyState(BuildContext context) {
