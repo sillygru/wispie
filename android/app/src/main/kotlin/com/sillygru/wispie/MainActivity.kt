@@ -168,13 +168,19 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "restartApp" -> handleRestartApp(result)
-                    "setAppIcon" -> {
-                        val name = call.argument<String>("name")
-                        val all = call.argument<List<String>>("all")
-                        if (name != null && all != null) setLauncherIcon(name, all)
-                        result.success(null)
-                    }
                     else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "wispie/app_icon")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "setAppIcon") {
+                    val name = call.argument<String>("name")
+                    val all = call.argument<List<String>>("all")
+                    if (name != null && all != null) setLauncherIcon(name, all)
+                    result.success(null)
+                } else {
+                    result.notImplemented()
                 }
             }
     }

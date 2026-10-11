@@ -3,6 +3,7 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
+import '../../providers/settings_provider.dart';
 import '../../services/update_service.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
@@ -50,7 +51,7 @@ class AboutSettingsScreen extends ConsumerWidget {
                 ClipRRect(
                   borderRadius: AppTokens.brSm,
                   child: Image.asset(
-                    'assets/app_icon.png',
+                    ref.watch(settingsProvider).appIconStyle.previewAsset,
                     width: 64,
                     height: 64,
                     fit: BoxFit.cover,

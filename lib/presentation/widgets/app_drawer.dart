@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
+import '../../providers/settings_provider.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
 import '../components/app_section_header.dart';
@@ -305,7 +306,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               width: iconSize,
               height: iconSize,
               child: Image.asset(
-                'assets/app_icon.png',
+                ref.watch(settingsProvider).appIconStyle.previewAsset,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(
                   color: accent.withValues(alpha: AppTokens.accentWashAlpha),
