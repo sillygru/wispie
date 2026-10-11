@@ -1,1 +1,12 @@
+# Runtime data directory (database, blobs, keys).
 data/
+# Local build output.
+bin/
+# Machine-local deploy script.
+deploy.sh
+# Machine-local systemd unit.
+wispie-api.service
+# Server logs.
+*.log
+# Local compose override; the .example template is tracked.
+docker-compose.yml
