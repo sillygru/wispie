@@ -63,7 +63,7 @@ const double _maxBpm = 240;
 /// half-time — see [_estimateBeatPeriod]. Sigma is librosa's `std_bpm` default,
 /// deliberately wide so a genuine 170–180 BPM track is not penalised into its
 /// own half.
-const double _tempoPriorCentreSec = 0.5;
+const double _tempoPriorCentreSec = 0.45;
 const double _tempoPriorOctaveSigma = 1.0;
 
 /// Weights on the 2nd and 3rd harmonics when scoring a candidate beat period.
@@ -151,23 +151,36 @@ BeatMap analyzeBeats(Float32List samples,
   final normalized = _normalizeOnset(onset);
   if (normalized == null) return beatless();
 
+  final accent = _accentEnvelope(normalized, spectra.bassOnset);
+  final loudness = _localLoudness(spectra.bands);
+
   final estimated = _estimateBeatPeriod(normalized);
   if (estimated == null) return beatless();
-  final periodFrames = _correctHalfTime(spectra.bassOnset, estimated);
+  // The low-band half-time rescue is deliberately not applied: measured
+  // against a reference tracker on real pop/rock it doubled far more slow
+  // songs into off-beat pulsing than it rescued fast ones.
+  final periodFrames = estimated;
 
   final localScore = _smoothForDp(normalized, periodFrames);
   final beatFrames = _trackBeats(localScore, periodFrames);
   if (beatFrames.isEmpty) return beatless();
 
-  final beatsMs = Int32List(beatFrames.length);
-  for (var i = 0; i < beatFrames.length; i++) {
+  final snapped = _snapToOnsets(beatFrames, accent, periodFrames);
+
+  final beatsMs = Int32List(snapped.length);
+  var previousMs = -1;
+  for (var i = 0; i < snapped.length; i++) {
     // Parabolic interpolation recovers sub-frame position: a frame is 23ms, and
     // quantising every beat to that grid is audible-adjacent as visual slop.
-    final refined = _refinePeak(localScore, beatFrames[i]);
-    beatsMs[i] = (refined * analysisHopSize / sampleRate * 1000).round();
+    final source = snapped[i] == beatFrames[i] ? localScore : accent;
+    final refined = _refinePeak(source, snapped[i]);
+    var ms = (refined * analysisHopSize / sampleRate * 1000).round();
+    if (ms <= previousMs) ms = previousMs + 1;
+    beatsMs[i] = ms;
+    previousMs = ms;
   }
 
-  final strength = _beatStrengths(normalized, beatFrames);
+  final strength = _beatStrengths(accent, loudness, snapped, periodFrames);
   final downbeats = _findDownbeats(strength);
   final bpm = _bpmFromBeats(beatsMs, periodFrames, sampleRate);
 
@@ -405,7 +418,20 @@ class _RunningMean {
 /// over-correct downward either — with no eighth-note content `acf(L/2)` sits in
 /// the anti-correlation trough, so `L/2` never wins on the strength of `acf(L)`
 /// alone.
-double? _estimateBeatPeriod(Float32List onset) {
+/// Weight on the subdivision (half the period) when scoring a
+/// tempo. A real beat almost always has audible eighth notes under it; a dotted or 4/3 lag that merely correlates through syncopation does not.
+const double _subdivisionWeight = 0.2;
+
+double? _estimateBeatPeriod(Float32List raw) {
+  // A light blur so a lag between two integer frames still correlates;
+  // single-frame transients otherwise favour whichever multiple happens to
+  // land on a whole frame.
+  final onset = Float32List(raw.length);
+  for (var i = 0; i < raw.length; i++) {
+    final a = i > 0 ? raw[i - 1] : 0.0;
+    final c = i + 1 < raw.length ? raw[i + 1] : 0.0;
+    onset[i] = 0.25 * a + 0.5 * raw[i] + 0.25 * c;
+  }
   final minLag = math.max(2, (analysisFps * 60 / _maxBpm).floor());
   final maxLag = math.min(
     onset.length ~/ 2,
@@ -413,16 +439,20 @@ double? _estimateBeatPeriod(Float32List onset) {
   );
   if (maxLag <= minLag) return null;
 
-  // Harmonics reach past the tempo search range, so the correlation is computed
-  // out to 3x before any candidate is scored.
   final acfMaxLag = math.min(onset.length - 1, maxLag * 3);
   final acf = Float64List(acfMaxLag + 1);
-  for (var lag = minLag; lag <= acfMaxLag; lag++) {
+  for (var lag = 0; lag <= acfMaxLag; lag++) {
+    if (lag > 0 && lag < minLag ~/ 2) continue;
     var correlation = 0.0;
     for (var i = lag; i < onset.length; i++) {
       correlation += onset[i] * onset[i - lag];
     }
     acf[lag] = correlation / (onset.length - lag);
+  }
+  final zero = acf[0];
+  if (zero <= 0) return null;
+  for (var lag = 0; lag <= acfMaxLag; lag++) {
+    acf[lag] /= zero;
   }
 
   final centreLag = _tempoPriorCentreSec * analysisFps;
@@ -432,11 +462,19 @@ double? _estimateBeatPeriod(Float32List onset) {
   var bestScore = double.negativeInfinity;
 
   for (var lag = minLag; lag <= maxLag; lag++) {
-    var correlation = acf[lag];
-    final lag2 = lag * 2;
-    if (lag2 <= acfMaxLag) correlation += _harmonic2Weight * acf[lag2];
-    final lag3 = lag * 3;
-    if (lag3 <= acfMaxLag) correlation += _harmonic3Weight * acf[lag3];
+    final own = acf[lag];
+    var correlation = own;
+    double harmonic(int l) {
+      if (l > acfMaxLag) return 0;
+      final v = acf[l];
+      // Capped by the candidate's own correlation, so a lag with none of its
+      // own cannot win on its multiples alone.
+      return math.min(v, math.max(0.0, own));
+    }
+
+    correlation += _harmonic2Weight * harmonic(lag * 2);
+    correlation += _harmonic3Weight * harmonic(lag * 3);
+    correlation += _subdivisionWeight * math.max(0.0, _acfAt(acf, lag / 2));
 
     final octaves = math.log(lag / centreLag) * invLn2;
     final prior = math.exp(
@@ -451,7 +489,15 @@ double? _estimateBeatPeriod(Float32List onset) {
   }
 
   if (bestLag < 0 || bestScore <= 0) return null;
+
   return bestLag.toDouble();
+}
+
+double _acfAt(Float64List acf, double lag) {
+  final lower = lag.floor();
+  if (lower < 0 || lower + 1 >= acf.length) return 0;
+  final t = lag - lower;
+  return acf[lower] * (1 - t) + acf[lower + 1] * t;
 }
 
 /// Halves [period] when the low end says there is a kick *between* every pair of
@@ -668,26 +714,148 @@ double _refinePeak(Float32List signal, int index) {
   return index + delta;
 }
 
-/// Per-beat salience in 0..1, scaled against the 90th percentile so a track's
-/// own loudest beats read as 1.0 regardless of mastering level.
-Float32List _beatStrengths(Float32List onset, List<int> beats) {
-  final raw = Float32List(beats.length);
+/// Onset salience used to judge how hard each beat actually lands.
+///
+/// The full-band envelope alone rates a vocal syllable or a strummed chord the
+/// same as a drum hit, which is why non-electronic tracks punched on beats
+/// nobody hears. Blending in the kick band weights what a listener feels.
+/// Both halves are scaled to their own 95th percentile so neither dominates by
+/// mastering accident.
+Float32List _accentEnvelope(Float32List normalized, Float32List bassOnset) {
+  final full = _percentile(normalized, 0.95);
+  final bass = _percentile(bassOnset, 0.95);
+  final out = Float32List(normalized.length);
+  for (var i = 0; i < out.length; i++) {
+    final f = full > 0 ? math.min(1.5, normalized[i] / full) : 0.0;
+    final b = bass > 1e-6 ? math.min(1.5, bassOnset[i] / bass) : 0.0;
+    out[i] = 0.6 * f + 0.4 * b;
+  }
+  return out;
+}
+
+double _percentile(Float32List values, double q) {
+  if (values.isEmpty) return 0;
+  final sorted = values.toList()..sort();
+  return sorted[math.min(sorted.length - 1, (sorted.length * q).floor())];
+}
+
+/// Frames either side of a grid beat searched for the onset it belongs to.
+/// Capped well under a beat so a neighbouring hit can never be claimed.
+int _searchRadius(double period) =>
+    math.max(1, math.min(3, (period * 0.1).round()));
+
+/// Moves each beat onto the real onset next to it when there is a clearly
+/// stronger one. The DP grid is deliberately regular; live drums are not, and
+/// a pulse a frame or two off the hit reads as late.
+List<int> _snapToOnsets(List<int> beats, Float32List accent, double period) {
+  final radius = math.min(2, _searchRadius(period));
+  final out = List<int>.of(beats);
   for (var i = 0; i < beats.length; i++) {
-    raw[i] = onset[beats[i]];
+    final b = beats[i];
+    var best = b;
+    var bestValue = accent[b];
+    for (var f = math.max(0, b - radius);
+        f <= math.min(accent.length - 1, b + radius);
+        f++) {
+      if (accent[f] > bestValue) {
+        bestValue = accent[f];
+        best = f;
+      }
+    }
+    if (best != b && bestValue > accent[b] * 1.25 && bestValue > 0.2) {
+      out[i] = best;
+    }
+  }
+  return out;
+}
+
+/// Below this, a beat produces no punch at all. Grid beats carried through a
+/// quiet bar or landing between hits are kept for timing but stay still.
+const double _strengthGate = 0.18;
+
+/// Per-beat salience in 0..1.
+///
+/// Three things decide it, because a beat grid on its own says nothing about
+/// whether there is anything to react to:
+///   - the strongest accent within a few frames of the beat,
+///   - how far that stands above the surrounding background, so a dense
+///     strummed or legato passage does not punch on every grid tick,
+///   - the local loudness, so a quiet intro or breakdown moves less than the
+///     drop it leads into.
+/// The result is scaled to the track's own strong beats and soft-gated.
+Float32List _beatStrengths(
+  Float32List accent,
+  Float64List loudness,
+  List<int> beats,
+  double period,
+) {
+  final n = beats.length;
+  final out = Float32List(n);
+  if (n == 0) return out;
+  final frames = accent.length;
+  final radius = _searchRadius(period);
+
+  final raw = Float32List(n);
+  for (var i = 0; i < n; i++) {
+    final b = beats[i];
+    var peak = 0.0;
+    for (var f = math.max(0, b - radius);
+        f <= math.min(frames - 1, b + radius);
+        f++) {
+      if (accent[f] > peak) peak = accent[f];
+    }
+
+    // Background: median accent across the neighbouring beats' span.
+    final from = beats[math.max(0, i - 2)];
+    final to = beats[math.min(n - 1, i + 2)];
+    var background = 0.0;
+    if (to - from > radius * 4) {
+      final window = accent.sublist(from, to + 1).toList()..sort();
+      background = window[window.length ~/ 2];
+    }
+    final contrast = math.max(0.0, peak - 0.6 * background);
+
+    raw[i] = contrast * loudness[b];
   }
 
   final sorted = raw.toList()..sort();
-  final reference = sorted.isEmpty
-      ? 0.0
-      : sorted[math.min(sorted.length - 1, (sorted.length * 0.9).floor())];
-  if (reference <= 0) {
-    return Float32List(beats.length)..fillRange(0, beats.length, 0.5);
-  }
+  final reference = sorted[math.min(n - 1, (n * 0.85).floor())];
+  if (reference <= 0) return out;
 
-  for (var i = 0; i < raw.length; i++) {
-    raw[i] = clamp01(raw[i] / reference);
+  for (var i = 0; i < n; i++) {
+    final s = clamp01(raw[i] / reference);
+    out[i] = s <= _strengthGate ? 0 : (s - _strengthGate) / (1 - _strengthGate);
   }
-  return raw;
+  return out;
+}
+
+/// Per-frame loudness weight in 0..1: band energy averaged over ~0.8s against
+/// the track's 90th percentile, so quiet passages react less than loud ones.
+Float64List _localLoudness(List<Float32List> bands) {
+  final frames = bands.first.length;
+  final out = Float64List(frames);
+  if (frames == 0) return out;
+  final energy = Float64List(frames);
+  for (final band in bands) {
+    for (var f = 0; f < frames; f++) {
+      energy[f] += band[f];
+    }
+  }
+  final prefix = Float64List(frames + 1);
+  for (var f = 0; f < frames; f++) {
+    prefix[f + 1] = prefix[f] + energy[f];
+  }
+  final sorted = energy.toList()..sort();
+  final reference = sorted[math.min(frames - 1, (frames * 0.9).floor())];
+  if (reference <= 0) return out..fillRange(0, frames, 1);
+  final radius = (analysisFps * 0.4).round();
+  for (var f = 0; f < frames; f++) {
+    final lo = math.max(0, f - radius);
+    final hi = math.min(frames, f + radius + 1);
+    final local = (prefix[hi] - prefix[lo]) / (hi - lo);
+    out[f] = math.pow(clamp01(local / reference), 1.5).toDouble();
+  }
+  return out;
 }
 
 /// Guesses which beats are downbeats by finding the 4-beat phase whose members

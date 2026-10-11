@@ -504,17 +504,34 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
   }
 }
 
-double calculateWaveformBarHeight(double amplitude, double height) {
-  final shapedAmplitude = calibrateWaveformAmplitude(amplitude);
-  return math.max(1.0, shapedAmplitude * height * 0.85);
+/// Collapses the samples under one bar. Mostly the mean, so a bar reflects the
+/// section's loudness rather than its single loudest instant, with some of the
+/// peak kept so short hits still show.
+double waveformSliceAmplitude(List<double> data, int start, int end) {
+  if (start >= data.length) return 0;
+  final sliceEnd = math.max(start + 1, math.min(end, data.length));
+  var sum = 0.0;
+  var peak = 0.0;
+  for (var s = start; s < sliceEnd; s++) {
+    final v = data[s];
+    sum += v;
+    if (v > peak) peak = v;
+  }
+  final mean = sum / (sliceEnd - start);
+  return 0.65 * mean + 0.35 * peak;
 }
 
+double calculateWaveformBarHeight(double amplitude, double height) {
+  final shapedAmplitude = calibrateWaveformAmplitude(amplitude);
+  return math.max(1.0, shapedAmplitude * height * 0.72);
+}
+
+/// Bars arrive already normalised to the track's dynamic range; the exponent
+/// widens the gap between loud and quiet sections so they read at a glance.
 double calibrateWaveformAmplitude(double amplitude) {
-  if (amplitude < 0.15) return amplitude * 0.8;
-  if (amplitude < 0.35) return 0.12 + (amplitude - 0.15) * 0.6;
-  if (amplitude < 0.6) return 0.24 + (amplitude - 0.35) * 0.5;
-  if (amplitude < 0.8) return 0.36 + (amplitude - 0.6) * 0.5;
-  return 0.46 + (amplitude - 0.8) * 0.4;
+  if (amplitude <= 0) return 0;
+  final a = amplitude.clamp(0.0, 1.0);
+  return 0.1 + 0.9 * math.pow(a, 1.35);
 }
 
 class WaveformPainter extends CustomPainter {
@@ -596,17 +613,8 @@ class WaveformPainter extends CustomPainter {
             (((i + 1) / totalBarsCount) * WaveformService.targetWaveformSamples)
                 .ceil();
 
-        double maxAmp = 0.0;
-        if (startIndex < peakData.length) {
-          final sliceEnd = math.min(endIndex, peakData.length);
-          for (var s = startIndex; s < sliceEnd; s++) {
-            if (peakData[s] > maxAmp) maxAmp = peakData[s];
-          }
-          if (maxAmp == 0.0 && startIndex < peakData.length) {
-            maxAmp = peakData[startIndex];
-          }
-        }
-        targetHeight = calculateWaveformBarHeight(maxAmp, size.height);
+        final amp = waveformSliceAmplitude(peakData, startIndex, endIndex);
+        targetHeight = calculateWaveformBarHeight(amp, size.height);
       } else {
         targetHeight = compressedBarHeight;
       }

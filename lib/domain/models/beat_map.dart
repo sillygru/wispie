@@ -27,7 +27,7 @@ class BeatMap {
   /// Bumped whenever the analysis algorithm changes in a way that makes old
   /// cached maps wrong. [fromJson] rejects anything that does not match, so a
   /// bump silently re-analyses everyone's library instead of showing stale data.
-  static const int currentVersion = 3;
+  static const int currentVersion = 6;
 
   /// Rate at which [bands] is sampled. Envelopes are interpolated between
   /// samples at render time, so this can stay well below the display refresh.

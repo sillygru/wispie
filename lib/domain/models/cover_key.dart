@@ -21,7 +21,7 @@ class CoverKey {
   /// Stable hash used for cache file names (mirrors CacheService._cacheKey).
   String get hash => sha1.convert(utf8.encode(filename)).toString();
 
-  String waveformCacheName() => 'waveform_$hash.json';
+  String waveformCacheName() => 'waveform_v2_$hash.json';
   String beatMapCacheName() => 'beatmap_$hash.json';
   String blurredCacheName() => 'blurred_$hash.jpg';
 

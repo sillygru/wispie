@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -484,7 +485,7 @@ void writeWaveformCacheFile(String path, List<double> samples) {
   File(path).writeAsStringSync(jsonEncode(samples));
 }
 
-/// Buckets 16-bit mono PCM [bytes] into [targetSamples] peak bars.
+/// Buckets 16-bit mono PCM [bytes] into [targetSamples] loudness bars.
 ///
 /// Shared by the full and the progressive paths; both run off the UI isolate
 /// and neither touches the file here — the caller provides the byte buffer.
@@ -510,20 +511,68 @@ List<double> extractWaveformPeaksFromS16Bytes(
     return generateWaveformPlaceholderSamples(targetSamples);
   }
 
-  final samples = List<double>.filled(targetSamples, 0);
-  final samplesPerPeak = (pcm.length / targetSamples).ceil();
+  return _loudnessBars(pcm, targetSamples);
+}
 
+/// Buckets below this RMS level are treated as silence.
+const double _silenceFloorDb = -60;
+
+/// Bounds on the dB span mapped onto the full bar height. The floor keeps a
+/// brickwalled master from having its last 2 dB of variation blown up into
+/// noise; the ceiling keeps a long quiet intro from flattening the rest.
+const double _minDynamicRangeDb = 9;
+const double _maxDynamicRangeDb = 30;
+
+/// Per-bucket RMS loudness, normalised against the track's own dynamic range.
+///
+/// Raw sample peaks are useless on modern masters: limiting pins nearly every
+/// bucket at full scale, so verses, choruses and breakdowns all read the same.
+/// RMS in dB follows perceived loudness, and stretching the track's own
+/// 5th..99th percentile span across the bar height makes sections distinct.
+List<double> _loudnessBars(Int16List pcm, int targetSamples) {
+  final db = Float64List(targetSamples);
+  final length = pcm.length;
   for (var i = 0; i < targetSamples; i++) {
-    final start = i * samplesPerPeak;
-    final end = start + samplesPerPeak;
-    var maxAmp = 0.0;
-    for (var j = start; j < end && j < pcm.length; j++) {
-      final amp = pcm[j].abs() / 32768.0;
-      if (amp > maxAmp) maxAmp = amp;
+    final start = (i * length) ~/ targetSamples;
+    var end = ((i + 1) * length) ~/ targetSamples;
+    if (end <= start) end = math.min(length, start + 1);
+    if (start >= length) {
+      db[i] = double.negativeInfinity;
+      continue;
     }
-    samples[i] = maxAmp.clamp(0.0, 1.0);
+    var sumSquares = 0.0;
+    for (var j = start; j < end; j++) {
+      final v = pcm[j] / 32768.0;
+      sumSquares += v * v;
+    }
+    final meanSquare = sumSquares / (end - start);
+    db[i] = meanSquare <= 0
+        ? double.negativeInfinity
+        : 10 * math.log(meanSquare) / math.ln10;
   }
 
+  final audible = <double>[
+    for (final v in db)
+      if (v > _silenceFloorDb) v,
+  ]..sort();
+  final samples = List<double>.filled(targetSamples, 0);
+  if (audible.isEmpty) return samples;
+
+  double at(double q) =>
+      audible[math.min(audible.length - 1, (audible.length * q).floor())];
+  final hi = at(0.99);
+  var lo = at(0.05);
+  final span = hi - lo;
+  if (span < _minDynamicRangeDb) lo = hi - _minDynamicRangeDb;
+  if (span > _maxDynamicRangeDb) lo = hi - _maxDynamicRangeDb;
+  final range = hi - lo;
+
+  for (var i = 0; i < targetSamples; i++) {
+    final v = db[i];
+    if (v <= _silenceFloorDb) continue;
+    final normalized = ((v - lo) / range).clamp(0.0, 1.0);
+    samples[i] = 0.04 + 0.96 * normalized;
+  }
   return samples;
 }
 

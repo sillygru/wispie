@@ -369,6 +369,20 @@ void main() {
     }
   });
 
+  test('beats carried through silence do not punch', () {
+    final map = analyzeBeats(
+      clickTrack(bpm: 120, seconds: 24, silentRange: const [8.0, 16.0]),
+    );
+    for (var i = 0; i < map.beatsMs.length; i++) {
+      final ms = map.beatsMs[i];
+      if (ms > 9000 && ms < 15000) {
+        expect(map.beatStrength[i], lessThan(0.05));
+      } else if (ms > 2000 && ms < 7500) {
+        expect(map.beatStrength[i], greaterThan(0.5));
+      }
+    }
+  });
+
   group('downbeats', () {
     test('picks the accented phase', () {
       final map = analyzeBeats(

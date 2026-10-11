@@ -729,17 +729,8 @@ class ReactiveWaveformPainter extends CustomPainter {
             (((i + 1) / totalBarsCount) * WaveformService.targetWaveformSamples)
                 .ceil();
 
-        double maxAmp = 0.0;
-        if (startIndex < peakData.length) {
-          final sliceEnd = math.min(endIndex, peakData.length);
-          for (var s = startIndex; s < sliceEnd; s++) {
-            if (peakData[s] > maxAmp) maxAmp = peakData[s];
-          }
-          if (maxAmp == 0.0 && startIndex < peakData.length) {
-            maxAmp = peakData[startIndex];
-          }
-        }
-        targetHeight = calculateWaveformBarHeight(maxAmp, size.height);
+        final amp = waveformSliceAmplitude(peakData, startIndex, endIndex);
+        targetHeight = calculateWaveformBarHeight(amp, size.height);
       } else {
         targetHeight = compressedBarHeight;
       }

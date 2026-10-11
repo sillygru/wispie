@@ -295,10 +295,14 @@ class CacheService {
     return File(p.join(_v3Dir.path, filename));
   }
 
+  /// Versioned so a change to how bars are computed re-decodes every song;
+  /// stale `waveform_<hash>.json` files are pruned as orphans.
+  static const String waveformCachePrefix = 'waveform_v2_';
+
   Future<File> getWaveformCacheFile(String songFilename) async {
     await init();
-    return File(
-        p.join(_v3Dir.path, 'waveform_${_cacheKey(songFilename)}.json'));
+    return File(p.join(
+        _v3Dir.path, '$waveformCachePrefix${_cacheKey(songFilename)}.json'));
   }
 
   Future<File> getBeatMapCacheFile(String songFilename) async {
@@ -540,8 +544,8 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
             'blurred_${CacheService._cacheKey(filename)}.jpg')),
       );
       currentWaveformPaths.add(
-        p.normalize(p.join(
-            v3Dir.path, 'waveform_${CacheService._cacheKey(filename)}.json')),
+        p.normalize(p.join(v3Dir.path,
+            '${CacheService.waveformCachePrefix}${CacheService._cacheKey(filename)}.json')),
       );
       currentWaveformPaths.add(
         p.normalize(p.join(

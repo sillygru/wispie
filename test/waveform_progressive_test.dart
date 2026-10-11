@@ -17,6 +17,27 @@ void main() {
           reason: 'a non-silent buffer must yield visible bars');
     });
 
+    test('a limited master still separates quiet and loud sections', () {
+      // Both halves hit full scale on their peaks, as limited masters do; only
+      // the average level differs. Peak bucketing rendered these identically.
+      final pcm = Int16List(40000);
+      final rng = math.Random(7);
+      for (var i = 0; i < pcm.length; i++) {
+        final loud = i >= pcm.length ~/ 2;
+        final spike = i % 400 == 0;
+        final level = spike ? 1.0 : (loud ? 0.7 : 0.12);
+        pcm[i] = ((rng.nextDouble() * 2 - 1) * level * 32767).round();
+      }
+      final bars = extractWaveformPeaksFromS16Bytes(
+        pcm.buffer.asUint8List(),
+        200,
+      );
+      double mean(Iterable<double> v) => v.reduce((a, b) => a + b) / v.length;
+      final quiet = mean(bars.take(100));
+      final loud = mean(bars.skip(100));
+      expect(loud - quiet, greaterThan(0.4));
+    });
+
     test('returns placeholders for fewer than two bytes', () {
       final peaks = extractWaveformPeaksFromS16Bytes(Uint8List(1), 2000);
 

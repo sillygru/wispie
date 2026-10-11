@@ -288,7 +288,7 @@ void main() {
       final waveformFile = File(p.join(
         supportDir.path,
         'gru_cache_v3',
-        'waveform_$waveformKey.json',
+        'waveform_v2_$waveformKey.json',
       ));
       await waveformFile.parent.create(recursive: true);
       await waveformFile.writeAsString('[0.5]');
