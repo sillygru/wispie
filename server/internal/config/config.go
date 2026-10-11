@@ -16,6 +16,7 @@ type Config struct {
 	RegistrationOpen bool
 	PowBits          int
 	QuotaBytes       int64
+	GlobalCapBytes   int64 // 0 = unlimited
 	InactiveDays     int
 	MaxDeltaBytes    int64
 	ChunkBytes       int64
@@ -38,7 +39,8 @@ func Default() Config {
 		DataDir:           "./data",
 		RegistrationOpen:  true,
 		PowBits:           22,
-		QuotaBytes:        200 << 20,
+		QuotaBytes:        50 << 20,
+		GlobalCapBytes:    5120 << 20,
 		MaxDeltaBytes:     4 << 20,
 		ChunkBytes:        1 << 20,
 		GlobalPerMin:      120,
@@ -100,6 +102,14 @@ func FromEnv(get func(string) string) (Config, error) {
 			err = fmt.Errorf("WISPIE_QUOTA_MB: invalid %q", v)
 		} else {
 			c.QuotaBytes = int64(n) << 20
+		}
+	}
+	if v := get("WISPIE_GLOBAL_STORAGE_CAP_MB"); v != "" && err == nil {
+		n, e := strconv.Atoi(v)
+		if e != nil || n < 0 {
+			err = fmt.Errorf("WISPIE_GLOBAL_STORAGE_CAP_MB: invalid %q", v)
+		} else {
+			c.GlobalCapBytes = int64(n) << 20
 		}
 	}
 	if err != nil {

@@ -182,9 +182,17 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
                   }),
           ),
           if (_busy)
-            const Padding(
-              padding: EdgeInsets.only(top: AppTokens.s2),
-              child: LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.only(top: AppTokens.s2),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 0.95),
+                duration: AppTokens.dSlow * 10,
+                curve: Curves.easeOutCubic,
+                builder: (context, v, child) => LinearProgressIndicator(
+                  value: v,
+                  borderRadius: AppTokens.brPill,
+                ),
+              ),
             ),
           TextButton(
             onPressed: () => setState(() => _advanced = !_advanced),

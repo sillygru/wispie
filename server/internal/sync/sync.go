@@ -190,6 +190,23 @@ func (s *Service) currentSnapshot(q querier, id string, epoch int64) (snapRow, b
 	return sr, err == nil, err
 }
 
+func serverFull() *httpx.Error {
+	return httpx.Err(507, "server_full", "Sorry for the inconvenience: the sync server is currently full, so syncing is unavailable right now. Please try again later.")
+}
+
+// overGlobalCap reports whether growing total usage by delta would pass the
+// server-wide cap. Shrinking writes are always allowed.
+func (s *Service) overGlobalCap(q querier, delta int64) (bool, error) {
+	if s.Cfg.GlobalCapBytes <= 0 || delta <= 0 {
+		return false, nil
+	}
+	var total int64
+	if err := q.QueryRow(`SELECT COALESCE(SUM(usage_bytes),0) FROM accounts`).Scan(&total); err != nil {
+		return false, err
+	}
+	return total+delta > s.Cfg.GlobalCapBytes, nil
+}
+
 func (s *Service) recomputeUsage(q querier, id string) error {
 	_, err := q.Exec(`UPDATE accounts SET usage_bytes =
 		(SELECT COALESCE(SUM(size),0) FROM deltas WHERE account_id = ?1) +
@@ -384,6 +401,11 @@ func (s *Service) postDelta(w http.ResponseWriter, r *http.Request, p auth.Princ
 	if a.usage+size > s.Cfg.QuotaBytes {
 		return quotaExceeded()
 	}
+	if full, err := s.overGlobalCap(tx, size); err != nil {
+		return err
+	} else if full {
+		return serverFull()
+	}
 	seq := a.head + 1
 	file := "d_" + randHex(16)
 	if err := s.writeBlob(p.AccountID, file, body); err != nil {
@@ -469,6 +491,7 @@ func (s *Service) uploadInit(w http.ResponseWriter, r *http.Request, p auth.Prin
 	if err != nil {
 		return err
 	}
+	grow := req.Size - a.usage // reset replaces everything
 	if req.Kind == "snapshot" {
 		if req.Epoch != a.epoch {
 			return epochChanged(a.epoch)
@@ -484,11 +507,17 @@ func (s *Service) uploadInit(w http.ResponseWriter, r *http.Request, p auth.Prin
 		if has {
 			cur = snap.size
 		}
+		grow = req.Size - cur
 		if a.usage-cur+req.Size > s.Cfg.QuotaBytes {
 			return quotaExceeded()
 		}
 	} else if req.Size > s.Cfg.QuotaBytes { // reset replaces everything
 		return quotaExceeded()
+	}
+	if full, err := s.overGlobalCap(s.Store.DB, grow); err != nil {
+		return err
+	} else if full {
+		return serverFull()
 	}
 	id := randHex(16)
 	file := "u_" + id
@@ -758,7 +787,7 @@ func (s *Service) gcUploads(now time.Time) error {
 // they are older than snapshotKeep, so in-flight downloads can finish.
 func (s *Service) gcSnapshots(now time.Time) error {
 	cutoff := now.Add(-snapshotKeep).Unix()
-	rows, err := s.Store.DB.Query(`SELECT account_id, id, file, created_at FROM snapshots ORDER BY account_id, created_at DESC`)
+	rows, err := s.Store.DB.Query(`SELECT account_id, id, file, created_at FROM snapshots ORDER BY account_id, created_at DESC, base_seq DESC`)
 	if err != nil {
 		return err
 	}

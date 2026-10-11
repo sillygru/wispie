@@ -32,7 +32,8 @@ Terminate TLS in front of it (Caddy example included). Clients refuse plain `htt
 | `WISPIE_REGISTRATION` | `open` | `open` or `closed` |
 | `WISPIE_TRUSTED_PROXIES` | empty | comma list of IPs/CIDRs whose `X-Forwarded-For` is trusted |
 | `WISPIE_POW_BITS` | `22` | registration proof-of-work difficulty (leading zero bits) |
-| `WISPIE_QUOTA_MB` | `200` | per-account storage quota |
+| `WISPIE_QUOTA_MB` | `50` | per-account storage quota |
+| `WISPIE_GLOBAL_STORAGE_CAP_MB` | `5120` | server-wide cap across all accounts, e.g. `5120` for 5 GB; once reached, writes that grow storage fail with a generic "server is full" message (cap not disclosed) |
 | `WISPIE_INACTIVE_DAYS` | `0` | delete accounts idle this long (0 = off) |
 | `WISPIE_RL_GLOBAL_PER_MIN` / `_BURST` | `120` / `30` | per-IP global limit |
 | `WISPIE_RL_REGISTER_PER_HOUR` / `_PER_DAY` / `_GLOBAL_PER_HOUR` | `5` / `20` / `200` | registration start limits |

@@ -23,7 +23,13 @@ abstract class SecretStore {
 /// [SecretStoreException] so the caller refuses to stay logged in.
 class SecureSecretStore implements SecretStore {
   SecureSecretStore([FlutterSecureStorage? storage])
-      : _s = storage ?? const FlutterSecureStorage();
+      : _s = storage ??
+            const FlutterSecureStorage(
+              // macOS builds are ad-hoc signed (no Team ID), so the data
+              // protection keychain rejects every item with errSecMissingEntitlement
+              // (-34018). The file-backed login keychain needs no entitlement.
+              mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+            );
   final FlutterSecureStorage _s;
 
   Future<T> _guard<T>(Future<T> Function() f) async {

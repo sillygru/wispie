@@ -6,7 +6,8 @@ services:
       WISPIE_REGISTRATION: open
       # Caddy reaches us over the compose network; trust it for X-Forwarded-For.
       WISPIE_TRUSTED_PROXIES: 172.16.0.0/12
-      WISPIE_QUOTA_MB: "200"
+      WISPIE_QUOTA_MB: "50"
+      WISPIE_GLOBAL_STORAGE_CAP_MB: "5120"
     volumes:
       - wispie-data:/data
     read_only: true
