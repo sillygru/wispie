@@ -1,6 +1,6 @@
 # wispie-server
 
-Self-hostable, end-to-end encrypted sync server for the Wispie music player.
+Self-hostable, end-to-end encrypted sync server for the wispie music player.
 The server stores opaque encrypted blobs; it cannot read your data.
 Default public instance: `https://wispie-api.gru0.dev/`.
 

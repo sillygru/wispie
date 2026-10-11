@@ -561,7 +561,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           t: t,
           title: 'What should we call you?',
           subtitle:
-              'Wispie uses your name to greet you and to sign your listening '
+              'wispie uses your name to greet you and to sign your listening '
               'history. Nothing leaves this device either way.',
         ),
         const SizedBox(height: AppTokens.s5),
@@ -856,7 +856,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           _Headline(
             t: t,
             title: 'Where is your music?',
-            subtitle: 'Point Wispie at the folders your songs live in. It only '
+            subtitle: 'Point wispie at the folders your songs live in. It only '
                 'reads them, and you can add as many as you like.',
           ),
           const SizedBox(height: AppTokens.s5),
@@ -867,7 +867,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
               child: _SettingBlock(
                 solids: solids,
                 title: 'Storage permission',
-                subtitle: 'Wispie needs it to find audio files on this device.',
+                subtitle: 'wispie needs it to find audio files on this device.',
                 child: _BlockButton(
                   label: _permissionDeniedOnce
                       ? 'Open system settings'

@@ -90,7 +90,7 @@ Future<void> showUpdateAvailableDialog(
 
             // Description
             Text(
-              'A newer version of Wispie is ready to download.',
+              'A newer version of wispie is ready to download.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,

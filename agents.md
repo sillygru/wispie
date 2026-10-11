@@ -1,4 +1,4 @@
-# Agent Documentation - Wispie Music Player
+# Agent Documentation - wispie Music Player
 
 Local-first Flutter music player. Riverpod 3, `just_audio`, two SQLite files, MVVM/Repository.
 

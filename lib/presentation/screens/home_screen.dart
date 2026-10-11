@@ -526,7 +526,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     AppSliverHeader(
-                      title: 'Wispie',
+                      title: 'wispie',
                       isScrolled: isScrolled,
                       actions: [
                         HeaderShuffleButton(

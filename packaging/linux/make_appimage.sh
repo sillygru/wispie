@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a Wispie AppImage from a Flutter Linux bundle.
+# Build a wispie AppImage from a Flutter Linux bundle.
 # Usage: make_appimage.sh <bundle_dir> <output_appimage> [appimagetool]
 #   bundle_dir: build/linux/x64/release/bundle (contains wispie, data/, lib/)
 set -euo pipefail

@@ -212,7 +212,7 @@ class AutoBackupService {
       final isPermanentlyDenied = await PermissionService.instance
           .isStoragePermissionPermanentlyDenied();
       if (isPermanentlyDenied) {
-        return 'Wispie needs storage access to create backups. Please grant permission in system settings.';
+        return 'wispie needs storage access to create backups. Please grant permission in system settings.';
       } else {
         return 'Storage permission is required to create backups.';
       }

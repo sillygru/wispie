@@ -755,6 +755,7 @@ class StorageService {
     'show_for_you',
     'sound_reactive_particles_enabled',
     'pull_to_refresh_enabled',
+    'app_icon_style',
   ];
 
   static const List<String> _backupSettingsKeys = [

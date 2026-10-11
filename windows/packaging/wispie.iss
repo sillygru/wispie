@@ -1,4 +1,4 @@
-; Wispie Windows installer (Inno Setup 6).
+; wispie Windows installer (Inno Setup 6).
 ; Build first: flutter build windows --release
 ; Compile: iscc /DMyAppVersion=<version> windows\packaging\wispie.iss
 #ifndef MyAppVersion
@@ -7,11 +7,11 @@
 
 [Setup]
 AppId={{268D1B56-28AC-416D-83CA-114929289DF4}
-AppName=Wispie
+AppName=wispie
 AppVersion={#MyAppVersion}
 AppPublisher=sillygru
-DefaultDirName={autopf}\Wispie
-DefaultGroupName=Wispie
+DefaultDirName={autopf}\wispie
+DefaultGroupName=wispie
 OutputDir=..\..\build\windows-installer
 OutputBaseFilename=Wispie-Setup-x64
 Compression=lzma2/max
@@ -26,11 +26,11 @@ UninstallDisplayIcon={app}\wispie.exe
 Source: "..\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Wispie"; Filename: "{app}\wispie.exe"
-Name: "{autodesktop}\Wispie"; Filename: "{app}\wispie.exe"; Tasks: desktopicon
+Name: "{group}\wispie"; Filename: "{app}\wispie.exe"
+Name: "{autodesktop}\wispie"; Filename: "{app}\wispie.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; Flags: unchecked
 
 [Run]
-Filename: "{app}\wispie.exe"; Description: "Launch Wispie"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\wispie.exe"; Description: "Launch wispie"; Flags: nowait postinstall skipifsilent

@@ -230,7 +230,7 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
         fileName: 'wispie-recovery-key.txt',
         type: FileType.custom,
         allowedExtensions: ['txt'],
-        bytes: utf8.encode('Wispie recovery key\n${widget.recoveryKey}\n'),
+        bytes: utf8.encode('wispie recovery key\n${widget.recoveryKey}\n'),
       );
       if (path != null && mounted) appSnack(context, 'Recovery key saved');
     } catch (e) {

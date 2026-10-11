@@ -2,7 +2,9 @@
 #define RUNNER_FLUTTER_WINDOW_H_
 
 #include <flutter/dart_project.h>
+#include <flutter/encodable_value.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
 
@@ -23,6 +25,10 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void ApplyIcon(int resource_id);
+
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> icon_channel_;
+
   // The project to run.
   flutter::DartProject project_;
 

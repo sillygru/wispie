@@ -3,12 +3,14 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/app_icon_service.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
+import 'app_icon_settings_screen.dart';
 import 'beat_sync_calibration_screen.dart';
 import 'quick_actions_settings_screen.dart';
 import '../tokens/app_icons.dart';
@@ -190,6 +192,20 @@ class _AppearanceSettingsScreenState
             ),
           ],
         ),
+        if (AppIconService.supported)
+          AppSettingsGroup(
+            label: 'App icon',
+            icon: AppIcons.album,
+            children: [
+              AppSettingsTile(
+                icon: AppIcons.album,
+                searchId: 'appearance.app_icon',
+                title: 'App icon',
+                subtitle: settings.appIconStyle.label,
+                onTap: () => context.pushApp(const AppIconSettingsScreen()),
+              ),
+            ],
+          ),
         AppSettingsGroup(
           label: 'Player motion',
           icon: AppIcons.graphicEq,

@@ -20,7 +20,7 @@ class MusicUtilsResult {
 
 /// Small JSON client for the unified music-utils service.
 ///
-/// The service returns metadata and cover CDN URLs. Wispie remains responsible
+/// The service returns metadata and cover CDN URLs. wispie remains responsible
 /// for downloading artwork bytes into its local cover cache.
 class MusicUtilsApiClient {
   static final MusicUtilsApiClient instance = MusicUtilsApiClient._internal();

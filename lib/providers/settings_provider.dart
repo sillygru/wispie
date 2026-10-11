@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../services/app_icon_service.dart';
 import '../models/quick_action_config.dart';
 
 class SettingsState {
@@ -49,6 +50,7 @@ class SettingsState {
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
   final bool fullBleedDesignEnabled;
+  final AppIconStyle appIconStyle;
   final bool spinArtworkWhilePlaying;
 
   SettingsState({
@@ -97,6 +99,7 @@ class SettingsState {
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
     this.fullBleedDesignEnabled = true,
+    this.appIconStyle = AppIconStyle.newIcon,
     this.spinArtworkWhilePlaying = false,
   })  : progressBarType = progressBarType ??
             (showWaveform != null
@@ -152,6 +155,7 @@ class SettingsState {
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
     bool? fullBleedDesignEnabled,
+    AppIconStyle? appIconStyle,
     bool? spinArtworkWhilePlaying,
   }) {
     return SettingsState(
@@ -226,6 +230,7 @@ class SettingsState {
       syncSettingsEnabled: syncSettingsEnabled ?? this.syncSettingsEnabled,
       fullBleedDesignEnabled:
           fullBleedDesignEnabled ?? this.fullBleedDesignEnabled,
+      appIconStyle: appIconStyle ?? this.appIconStyle,
       spinArtworkWhilePlaying:
           spinArtworkWhilePlaying ?? this.spinArtworkWhilePlaying,
     );
@@ -281,6 +286,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyLyricsTimingOffsetSeconds = 'lyrics_timing_offset_seconds';
   static const String _keyAutoSyncEnabled = 'auto_sync_enabled';
   static const String _keySyncSettingsEnabled = 'sync_settings_enabled';
+  static const String _keyAppIconStyle = 'app_icon_style';
   static const String _keyFullBleedDesignEnabled = 'full_bleed_design_enabled';
   static const String _keySpinArtworkWhilePlaying =
       'spin_artwork_while_playing';
@@ -403,6 +409,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
       fullBleedDesignEnabled: prefs.getBool(_keyFullBleedDesignEnabled) ?? true,
+      appIconStyle: AppIconStyle.fromId(prefs.getString(_keyAppIconStyle)),
       spinArtworkWhilePlaying:
           prefs.getBool(_keySpinArtworkWhilePlaying) ?? false,
     );
@@ -731,6 +738,13 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(syncSettingsEnabled: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keySyncSettingsEnabled, enabled);
+  }
+
+  Future<void> setAppIconStyle(AppIconStyle style) async {
+    state = state.copyWith(appIconStyle: style);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyAppIconStyle, style.id);
+    await AppIconService.apply(style);
   }
 
   Future<void> setFullBleedDesignEnabled(bool enabled) async {

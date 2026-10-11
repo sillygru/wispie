@@ -384,6 +384,16 @@ final List<SettingsDestination> settingsRegistry = [
     ),
   ),
   SettingsDestination(
+    anchorId: 'appearance.app_icon',
+    icon: AppIcons.album,
+    title: 'App icon',
+    subtitle: 'Choose which icon wispie uses',
+    breadcrumb: 'Settings › Appearance › App icon',
+    keywords: const ['icon', 'logo', 'launcher', 'dock', 'classic', 'new'],
+    open: () =>
+        const AppearanceSettingsScreen(highlightId: 'appearance.app_icon'),
+  ),
+  SettingsDestination(
     anchorId: 'appearance.beat_cover',
     icon: AppIcons.album,
     title: 'Beat-reactive cover',

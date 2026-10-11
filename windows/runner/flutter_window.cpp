@@ -1,6 +1,12 @@
 #include "flutter_window.h"
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
+#include <string>
+
+#include "resource.h"
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -27,6 +33,28 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  icon_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "wispie/app_icon",
+      &flutter::StandardMethodCodec::GetInstance());
+  icon_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() != "setAppIcon") {
+          result->NotImplemented();
+          return;
+        }
+        // Resource ids are IDI_APP_ICON + the variant's index.
+        int index = 0;
+        if (const auto* args = std::get_if<flutter::EncodableMap>(call.arguments())) {
+          auto it = args->find(flutter::EncodableValue("index"));
+          if (it != args->end()) {
+            if (const auto* i = std::get_if<int32_t>(&it->second)) index = *i;
+          }
+        }
+        ApplyIcon(IDI_APP_ICON + index);
+        result->Success();
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -39,7 +67,22 @@ bool FlutterWindow::OnCreate() {
   return true;
 }
 
+void FlutterWindow::ApplyIcon(int resource_id) {
+  HWND hwnd = GetHandle();
+  if (!hwnd) return;
+  HINSTANCE inst = GetModuleHandle(nullptr);
+  auto load = [&](int cx, int cy) {
+    return reinterpret_cast<HICON>(LoadImage(
+        inst, MAKEINTRESOURCE(resource_id), IMAGE_ICON, cx, cy, LR_DEFAULTCOLOR));
+  };
+  HICON big = load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+  HICON small_icon = load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+  if (big) SendMessage(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
+  if (small_icon) SendMessage(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+}
+
 void FlutterWindow::OnDestroy() {
+  icon_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

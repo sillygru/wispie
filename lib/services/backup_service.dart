@@ -382,7 +382,7 @@ class BackupService {
         mimeType: 'application/zip',
       );
       await SharePlus.instance.share(
-        ShareParams(files: [xFile], text: 'Wispie Export'),
+        ShareParams(files: [xFile], text: 'wispie Export'),
       );
     } finally {
       if (await exportDir.exists()) {

@@ -21,6 +21,7 @@ import 'providers/setup_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/providers.dart';
+import 'services/app_icon_service.dart';
 import 'services/cache_service.dart';
 import 'services/storage_service.dart';
 import 'services/database_service.dart';
@@ -70,6 +71,10 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final username = prefs.getString('username');
+  if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+    unawaited(AppIconService.apply(
+        AppIconStyle.fromId(prefs.getString('app_icon_style'))));
+  }
 
   // Single user mode: always init database
   await DatabaseService.instance.init();
@@ -114,7 +119,7 @@ Future<void> _initDesktopWindow(SharedPreferences prefs) async {
           ? Size(width, height)
           : const Size(1280, 800),
       center: true,
-      title: 'Wispie',
+      title: 'wispie',
     );
     await windowManager.waitUntilReadyToShow(options, () async {
       if (maximized) {
@@ -446,7 +451,7 @@ class _WispieAppState extends ConsumerState<WispieApp>
     final themeState = ref.watch(themeProvider);
 
     return MaterialApp(
-      title: 'Wispie',
+      title: 'wispie',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       navigatorObservers: [PopupScrollDismiss.observer],

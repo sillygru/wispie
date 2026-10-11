@@ -16,9 +16,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
-        android:label="Wispie"
+        android:label="wispie"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_new"
         android:largeHeap="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
@@ -41,10 +41,6 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <action android:name="android.intent.action.MUSIC_PLAYER" />
@@ -87,6 +83,30 @@
                 <data android:mimeType="audio/*"/>
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name="com.sillygru.wispie.IconNew"
+            android:targetActivity="com.sillygru.wispie.MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_new"
+            android:label="wispie">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name="com.sillygru.wispie.IconClassic"
+            android:targetActivity="com.sillygru.wispie.MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="wispie">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
 
         <service android:name="com.ryanheise.audioservice.AudioService"
                  android:foregroundServiceType="mediaPlayback"

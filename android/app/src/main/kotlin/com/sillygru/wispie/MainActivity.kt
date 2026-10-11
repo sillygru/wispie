@@ -1,9 +1,11 @@
 package com.sillygru.wispie
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Intent
 import android.database.Cursor
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -166,9 +168,31 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "restartApp" -> handleRestartApp(result)
+                    "setAppIcon" -> {
+                        val name = call.argument<String>("name")
+                        val all = call.argument<List<String>>("all")
+                        if (name != null && all != null) setLauncherIcon(name, all)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Enables the activity-alias for [name] and disables the rest. Enabling
+     * first keeps the app launchable throughout.
+     */
+    private fun setLauncherIcon(name: String, all: List<String>) {
+        val pm = packageManager
+        fun alias(n: String) = ComponentName(this, "com.sillygru.wispie.Icon$n")
+        pm.setComponentEnabledSetting(
+            alias(name), PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+        for (other in all) {
+            if (other == name) continue
+            pm.setComponentEnabledSetting(
+                alias(other), PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+        }
     }
 
     /**

@@ -32,6 +32,30 @@ import CommonCrypto
         self?.handleMediaAccess(call, result: result)
       }
 
+      let iconChannel = FlutterMethodChannel(
+        name: "wispie/app_icon",
+        binaryMessenger: controller.binaryMessenger
+      )
+      iconChannel.setMethodCallHandler { call, result in
+        guard call.method == "setAppIcon" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        let args = call.arguments as? [String: Any]
+        let isDefault = args?["isDefault"] as? Bool ?? true
+        let suffix = args?["name"] as? String ?? ""
+        let name: String? = isDefault ? nil : "AppIcon\(suffix)"
+        guard UIApplication.shared.supportsAlternateIcons,
+          UIApplication.shared.alternateIconName != name
+        else {
+          result(nil)
+          return
+        }
+        UIApplication.shared.setAlternateIconName(name) { error in
+          result(error == nil ? nil : FlutterError(code: "icon", message: error?.localizedDescription, details: nil))
+        }
+      }
+
       powerStateMonitor = PowerStateMonitor(binaryMessenger: controller.binaryMessenger)
     }
 

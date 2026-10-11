@@ -16,7 +16,7 @@ Future<DowngradeChoice?> showDowngradeWarningDialog(
       canPop: false,
       child: AppDialog(
         title: 'Older version detected',
-        message: 'Wispie was last opened on $previousVersion, but this is '
+        message: 'wispie was last opened on $previousVersion, but this is '
             '$currentVersion. Your data may have been changed by a newer '
             'version and could break or be lost on this one.',
         actions: [

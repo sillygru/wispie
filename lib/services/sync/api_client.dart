@@ -383,7 +383,7 @@ class SyncApiClient {
   Future<SyncServerInfo> info() async {
     final j = await _json('GET', '/info', auth: false);
     if (j['name'] != 'wispie-sync') {
-      throw const SyncApiException(0, 'not_wispie', 'Not a Wispie sync server');
+      throw const SyncApiException(0, 'not_wispie', 'Not a wispie sync server');
     }
     final l = j['limits'] as Map<String, dynamic>;
     return SyncServerInfo(

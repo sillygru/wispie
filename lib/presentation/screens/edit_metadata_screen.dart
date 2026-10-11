@@ -369,7 +369,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         content: const Text(
           "Swaps this song's audio file for a different copy of the same song "
           "— a better rip, a lossless version, a clean encode.\n\n"
-          "Everything Wispie knows about the song moves to the new file: its "
+          "Everything wispie knows about the song moves to the new file: its "
           "play history, favourite status, playlists, and when it joined your "
           "library.\n\n"
           "Its metadata is re-read from the new file, so the tags, duration and "

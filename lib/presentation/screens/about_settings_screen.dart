@@ -32,7 +32,7 @@ class AboutSettingsScreen extends ConsumerWidget {
                 : 'Check for updates';
 
     final statusSubtitle = updateState.isChecking
-        ? 'Wispie is checking GitHub Releases.'
+        ? 'wispie is checking GitHub Releases.'
         : updateState.hasUpdate
             ? 'A newer version is available on GitHub.'
             : updateState.latestVersionLabel != null
@@ -62,7 +62,7 @@ class AboutSettingsScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Wispie', style: AppTokens.screenTitle(context)),
+                      Text('wispie', style: AppTokens.screenTitle(context)),
                       const SizedBox(height: 2),
                       Text(
                         'Version ${updateState.currentVersion.isEmpty ? 'Unknown' : updateState.currentVersion}',

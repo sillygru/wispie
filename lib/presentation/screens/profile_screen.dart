@@ -141,7 +141,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Wispie v$_appVersion',
+                                'wispie v$_appVersion',
                                 style: AppTokens.meta(context),
                               ),
                             ],
@@ -479,7 +479,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'Wispie v$_appVersion',
+                                      'wispie v$_appVersion',
                                       style: AppTokens.meta(context),
                                     ),
                                   ],

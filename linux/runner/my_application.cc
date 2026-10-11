@@ -19,6 +19,27 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Window/taskbar icon only; the launcher icon comes from the installed
+// .desktop entry and cannot be swapped at runtime.
+static void icon_method_call_cb(FlMethodChannel* channel,
+                                FlMethodCall* method_call, gpointer user_data) {
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(fl_method_call_get_name(method_call), "setAppIcon") == 0) {
+    FlValue* args = fl_method_call_get_args(method_call);
+    FlValue* path = args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_MAP
+                        ? fl_value_lookup_string(args, "path")
+                        : nullptr;
+    if (path != nullptr && fl_value_get_type(path) == FL_VALUE_TYPE_STRING) {
+      gtk_window_set_icon_from_file(GTK_WINDOW(user_data),
+                                    fl_value_get_string(path), nullptr);
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(method_call, response, nullptr);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -74,6 +95,15 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  g_autoptr(FlStandardMethodCodec) icon_codec = fl_standard_method_codec_new();
+  FlMethodChannel* icon_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "wispie/app_icon", FL_METHOD_CODEC(icon_codec));
+  fl_method_channel_set_method_call_handler(icon_channel, icon_method_call_cb,
+                                            window, nullptr);
+  g_object_set_data_full(G_OBJECT(window), "wispie-icon-channel", icon_channel,
+                         g_object_unref);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

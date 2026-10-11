@@ -324,7 +324,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
               child: Text(
-                'Wispie',
+                'wispie',
                 style:
                     AppTokens.paneTitle(context).copyWith(fontSize: fontSize),
               ),

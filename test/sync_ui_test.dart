@@ -77,7 +77,7 @@ void main() {
       probe: (u) async {
         if (u.contains('bad')) {
           throw const SyncApiException(
-              0, 'not_wispie', 'Not a Wispie sync server');
+              0, 'not_wispie', 'Not a wispie sync server');
         }
         return const SyncServerInfo(
           registrationOpen: true,
@@ -94,7 +94,7 @@ void main() {
     c.text = 'https://bad.example';
     await t.tap(find.text('Check server'));
     await t.pumpAndSettle();
-    expect(find.text('Not a Wispie sync server'), findsOneWidget);
+    expect(find.text('Not a wispie sync server'), findsOneWidget);
     await t.tap(find.text('Reset to default'));
     expect(c.text, 'https://wispie-api.gru0.dev');
   });
