@@ -24,6 +24,10 @@ on:
         description: 'Existing tag to (re)draft (e.g. v1.4.4-release)'
         required: true
         type: string
+      reuse_run_id:
+        description: 'Optional: reuse artifacts from this run id (any workflow) instead of building'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -42,8 +46,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
+          REUSE_RUN_ID: ${{ github.event.inputs.reuse_run_id }}
         run: |
           set -uo pipefail
+
+          if [ -n "${REUSE_RUN_ID}" ]; then
+            echo "run_id=${REUSE_RUN_ID}" >> "${GITHUB_OUTPUT}"
+            echo "run_url=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${REUSE_RUN_ID}" \
+              >> "${GITHUB_OUTPUT}"
+            echo "::notice::Reusing artifacts from run ${REUSE_RUN_ID} (manual override)"
+            exit 0
+          fi
 
           expected="
           wispie-armeabi-v7a-release
@@ -108,12 +121,21 @@ jobs:
     if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Collect build artifacts
+      # download-artifact treats an empty run-id as NaN once github-token is
+      # set, so the two sources need separate steps.
+      - name: Collect build artifacts (this run)
+        if: needs.gate.outputs.build_run_id == ''
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-          # Empty means "this run"; the gate sets it when reusing a CI run.
+
+      - name: Collect build artifacts (reused CI run)
+        if: needs.gate.outputs.build_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
           run-id: ${{ needs.gate.outputs.build_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
