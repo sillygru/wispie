@@ -227,12 +227,10 @@ class _BlurredBackgroundState extends State<BlurredBackground> {
                 maxHeight: squareSize,
                 alignment: Alignment.center,
                 child: ClipRect(
-                  child: RepaintBoundary(
-                    child: _ThrottledSpin(
-                      key: ValueKey(widget.filename),
-                      enabled: widget.slowSpin,
-                      child: _buildImageLayers(squareSize: squareSize),
-                    ),
+                  child: _ThrottledSpin(
+                    key: ValueKey(widget.filename),
+                    enabled: widget.slowSpin,
+                    child: _buildImageLayers(squareSize: squareSize),
                   ),
                 ),
               );
@@ -366,7 +364,10 @@ class _ThrottledSpinState extends State<_ThrottledSpin>
       child: Transform.rotate(
         angle: angle,
         alignment: Alignment.center,
-        child: widget.child,
+        // The boundary must sit under the transform: outside it the whole
+        // blurred image re-rasterizes every tick instead of being a cached
+        // texture that only the transform changes.
+        child: RepaintBoundary(child: widget.child),
       ),
     );
   }

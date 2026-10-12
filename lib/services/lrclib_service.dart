@@ -229,7 +229,8 @@ class LrclibService {
         return null;
       }
 
-      final body = await response.transform(utf8.decoder).join();
+      final body =
+          await response.transform(utf8.decoder).join().timeout(_timeout);
       return jsonDecode(body);
     } on SocketException catch (_) {
       return null;
@@ -250,7 +251,8 @@ class LrclibService {
 
     var version = 'dev';
     try {
-      final info = await PackageInfo.fromPlatform();
+      final info =
+          await PackageInfo.fromPlatform().timeout(const Duration(seconds: 2));
       if (info.version.isNotEmpty) version = info.version;
     } on Object catch (_) {}
 

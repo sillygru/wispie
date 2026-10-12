@@ -98,6 +98,10 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
           setState(() {
             _resolvedUrl = path;
           });
+        } else if (mounted) {
+          // Null can be transient (row not written yet mid-scan); a sticky
+          // future would leave this tile blank until the app restarts.
+          _refreshFuture = null;
         }
         return path;
       },

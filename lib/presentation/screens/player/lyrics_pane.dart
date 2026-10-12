@@ -397,7 +397,10 @@ class LyricsPane extends ConsumerStatefulWidget {
 }
 
 class _LyricsPaneState extends ConsumerState<LyricsPane>
-    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+    with
+        AutomaticKeepAliveClientMixin,
+        TickerProviderStateMixin,
+        WidgetsBindingObserver {
   /// How far down the viewport the active line sits while auto-scrolling.
   static const double _activeLineAnchor = PlayerTokens.lyricsScrollPosRatio;
 
@@ -503,6 +506,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   static const Duration _gapCollapseHold = PlayerTokens.dLyricsLoaderTransition;
 
   StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<bool>? _playingSub;
+  bool _appResumed = true;
   Timer? _lyricsTimingSaveTimer;
   bool _timingControlVisible = false;
 
@@ -531,6 +536,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   void initState() {
     super.initState();
     _scrollController.addListener(_onUserScroll);
+    WidgetsBinding.instance.addObserver(this);
+    _appResumed = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     widget.paneVisible.addListener(_syncPositionSubscription);
     _syncPositionSubscription();
     _load();
@@ -553,30 +561,56 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _positionSubscriptionActive = wanted;
 
     if (!wanted) {
-      _frameTicker.stop();
-      _lastFrameElapsed = Duration.zero;
       _positionSub?.cancel();
       _positionSub = null;
+      _playingSub?.cancel();
+      _playingSub = null;
+      _syncFrameTicker();
       return;
     }
 
-    _positionSub = ref
-        .read(audioPlayerManagerProvider)
-        .player
-        .positionStream
-        .listen(_onSample);
-    _onSample(ref.read(audioPlayerManagerProvider).player.position);
-    if (!_frameTicker.isActive) {
-      // A restarted ticker counts from zero, so a stale stamp extrapolates backwards.
+    final player = ref.read(audioPlayerManagerProvider).player;
+    _positionSub = player.positionStream.listen(_onSample);
+    _playingSub = player.playingStream.listen((_) => _syncFrameTicker());
+    _onSample(player.position);
+  }
+
+  /// A running [Ticker] schedules a frame every vsync, and each frame
+  /// re-composites and re-rasterizes the whole window, so it only runs while
+  /// something needs sub-sample motion: playing, foregrounded, and either a
+  /// word wipe or the gap loader on screen. Line-synced lyrics ride the ~5Hz
+  /// position samples and keep the app idle between them.
+  void _syncFrameTicker() {
+    final player = ref.read(audioPlayerManagerProvider).player;
+    final needed = _positionSubscriptionActive &&
+        _appResumed &&
+        player.playing &&
+        (_gapSlot.value >= 0 || _activeLineHasWords());
+    if (needed && !_frameTicker.isActive) {
+      // A restarted ticker counts from zero, so rebase the sample to it.
       _lastFrameElapsed = Duration.zero;
+      _sampleElapsed = Duration.zero;
+      _sampleAt = player.position;
       _frameTicker.start();
+    } else if (!needed && _frameTicker.isActive) {
+      _frameTicker.stop();
+      _lastFrameElapsed = Duration.zero;
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final resumed = state == AppLifecycleState.resumed;
+    if (resumed == _appResumed) return;
+    _appResumed = resumed;
+    _syncFrameTicker();
   }
 
   void _onSample(Duration position) {
     _sampleAt = position;
     _sampleElapsed = _lastFrameElapsed;
     _onPosition(position);
+    _syncFrameTicker();
   }
 
   Duration _lastFrameElapsed = Duration.zero;
@@ -608,8 +642,10 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   void dispose() {
     _gapCollapseTimer?.cancel();
     _lyricsTimingSaveTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     widget.paneVisible.removeListener(_syncPositionSubscription);
     _positionSub?.cancel();
+    _playingSub?.cancel();
     _scrollController.removeListener(_onUserScroll);
     _scrollController.dispose();
     _cascade.dispose();

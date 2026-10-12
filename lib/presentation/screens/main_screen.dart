@@ -913,41 +913,43 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                       ],
                     ),
             ),
-            SafeArea(
-              left: false,
-              child: ValueListenableBuilder<Song?>(
-                valueListenable: audioManager.currentSongNotifier,
-                builder: (context, song, _) {
-                  if (song == null) {
-                    return Center(
-                      child: Text(
-                        'Nothing playing',
-                        style: PlayerTokens.meta(context),
+            RepaintBoundary(
+              child: SafeArea(
+                left: false,
+                child: ValueListenableBuilder<Song?>(
+                  valueListenable: audioManager.currentSongNotifier,
+                  builder: (context, song, _) {
+                    if (song == null) {
+                      return Center(
+                        child: Text(
+                          'Nothing playing',
+                          style: PlayerTokens.meta(context),
+                        ),
+                      );
+                    }
+                    return ValueListenableBuilder<List<QueueItem>>(
+                      valueListenable: audioManager.queueNotifier,
+                      builder: (context, queue, _) => StreamBuilder<int?>(
+                        stream: audioManager.player.currentIndexStream,
+                        initialData: audioManager.player.currentIndex,
+                        builder: (context, snapshot) {
+                          final current = snapshot.data ?? -1;
+                          final upcoming = current >= 0
+                              ? queue.skip(current + 1).toList()
+                              : queue;
+                          return _buildScroll(
+                            context,
+                            song,
+                            accent,
+                            audioManager,
+                            queue,
+                            upcoming,
+                          );
+                        },
                       ),
                     );
-                  }
-                  return ValueListenableBuilder<List<QueueItem>>(
-                    valueListenable: audioManager.queueNotifier,
-                    builder: (context, queue, _) => StreamBuilder<int?>(
-                      stream: audioManager.player.currentIndexStream,
-                      initialData: audioManager.player.currentIndex,
-                      builder: (context, snapshot) {
-                        final current = snapshot.data ?? -1;
-                        final upcoming = current >= 0
-                            ? queue.skip(current + 1).toList()
-                            : queue;
-                        return _buildScroll(
-                          context,
-                          song,
-                          accent,
-                          audioManager,
-                          queue,
-                          upcoming,
-                        );
-                      },
-                    ),
-                  );
-                },
+                  },
+                ),
               ),
             ),
           ],

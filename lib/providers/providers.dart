@@ -860,8 +860,35 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
             },
           );
 
+          // Covers resolved lazily by tiles during the scan live only in
+          // state; withCovers predates them.
+          final liveCovers = {
+            for (final s in state.value ?? const <Song>[])
+              if (s.coverUrl != null && s.coverUrl!.isNotEmpty)
+                s.filename: s.coverUrl!
+          };
           final filteredWithCovers =
-              withCovers.where((s) => !userData.isHidden(s.filename)).toList();
+              withCovers.where((s) => !userData.isHidden(s.filename)).map((s) {
+            final live = liveCovers[s.filename];
+            if (live == null ||
+                (s.coverUrl != null && s.coverUrl!.isNotEmpty)) {
+              return s;
+            }
+            return Song(
+              title: s.title,
+              artist: s.artist,
+              album: s.album,
+              filename: s.filename,
+              url: s.url,
+              coverUrl: live,
+              hasLyrics: s.hasLyrics,
+              playCount: s.playCount,
+              duration: s.duration,
+              mtime: s.mtime,
+              createdEpochSec: s.createdEpochSec,
+              songDateEpochSec: s.songDateEpochSec,
+            );
+          }).toList();
           ref.read(audioPlayerManagerProvider).refreshSongs(filteredWithCovers);
           state = AsyncValue.data(filteredWithCovers);
         } catch (e) {

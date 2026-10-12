@@ -71,7 +71,8 @@ class MusicUtilsApiClient {
         return const MusicUtilsResult(null, MusicUtilsStatus.transient);
       }
 
-      final body = await response.transform(utf8.decoder).join();
+      final body =
+          await response.transform(utf8.decoder).join().timeout(_timeout);
       return MusicUtilsResult(jsonDecode(body), MusicUtilsStatus.ok);
     } on SocketException catch (_) {
       return const MusicUtilsResult(null, MusicUtilsStatus.transient);
@@ -90,7 +91,8 @@ class MusicUtilsApiClient {
 
     var version = 'dev';
     try {
-      final info = await PackageInfo.fromPlatform();
+      final info =
+          await PackageInfo.fromPlatform().timeout(const Duration(seconds: 2));
       if (info.version.isNotEmpty) version = info.version;
     } on Object catch (_) {
       // A descriptive development user agent is still better than the default.

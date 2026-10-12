@@ -822,7 +822,8 @@ class OnlineMetadataService {
         return null;
       }
 
-      final html = await response.transform(utf8.decoder).join();
+      final html =
+          await response.transform(utf8.decoder).join().timeout(_timeout);
       return _extractLastfmImageUrl(html);
     } catch (e) {
       debugPrint('Last.fm scrape error for $path: $e');
@@ -889,7 +890,7 @@ class OnlineMetadataService {
       }
 
       final bytesBuilder = BytesBuilder();
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(_timeout)) {
         bytesBuilder.add(chunk);
       }
       final bytes = bytesBuilder.takeBytes();
@@ -940,7 +941,8 @@ class OnlineMetadataService {
         return null;
       }
 
-      final body = await response.transform(utf8.decoder).join();
+      final body =
+          await response.transform(utf8.decoder).join().timeout(_timeout);
       return jsonDecode(body);
     } catch (e) {
       debugPrint('OnlineMetadataService GET $path error: $e');
@@ -954,7 +956,8 @@ class OnlineMetadataService {
 
     var version = 'dev';
     try {
-      final info = await PackageInfo.fromPlatform();
+      final info =
+          await PackageInfo.fromPlatform().timeout(const Duration(seconds: 2));
       if (info.version.isNotEmpty) version = info.version;
     } catch (_) {}
 
