@@ -715,6 +715,27 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
   }
 
+  Duration _lastTickPosition = Duration.zero;
+  DateTime _lastAdvanceAt = DateTime.now();
+
+  // AVFoundation can stop advancing near the end (duration estimate longer
+  // than the decodable audio) and sit there for seconds before completing.
+  void _skipStalledTail(Duration position, Duration remaining) {
+    if (!(Platform.isMacOS || Platform.isIOS)) return;
+    final now = DateTime.now();
+    if (position != _lastTickPosition || !_player.playing) {
+      _lastTickPosition = position;
+      _lastAdvanceAt = now;
+      return;
+    }
+    if (remaining < const Duration(seconds: 5) &&
+        now.difference(_lastAdvanceAt) > const Duration(milliseconds: 700) &&
+        _player.hasNext) {
+      _lastAdvanceAt = now;
+      _player.seekToNext();
+    }
+  }
+
   void _onFadePosition(Duration position) {
     if (_ref == null) return;
     // Use the cached settings populated by the settingsProvider listener
@@ -730,6 +751,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (totalDuration.inSeconds < 30) return;
 
     final remaining = totalDuration - position;
+
+    _skipStalledTail(position, remaining);
 
     // Handle gap mode - pause before end, resume after delay
     if (settings.delayDuration > 0 &&
@@ -1021,7 +1044,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // Exponential growth: volume rises slower at the start
     // linearProgress: 0.0 -> 1.0 (elapsed time ratio)
     // Returns: curved volume from 0.0 -> 1.0
-    return pow(linearProgress, 0.5).toDouble();
+    return pow(linearProgress, 1.5).toDouble();
   }
 
   void _startFadeIn(double duration) {
@@ -1032,7 +1055,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     _setVolumeWithSafety(0.0);
 
-    _fadeTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (_fadeStartTime == null || _fadeDurationMs == null) {
         timer.cancel();
         return;
@@ -1049,7 +1072,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       } else {
         final linearProgress = elapsed / targetMs;
         final curvedVolume = _fadeInCurve(linearProgress);
-        _setVolumeWithSafety(curvedVolume);
+        _setVolumeWithSafety(curvedVolume * userVolumeNotifier.value);
       }
     });
   }
@@ -1061,7 +1084,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _fadeDurationMs = duration * 1000;
     _fadeStartTime = DateTime.now();
 
-    _fadeTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (_fadeStartTime == null || _fadeDurationMs == null) {
         timer.cancel();
         return;
@@ -1071,7 +1094,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       final targetMs = _fadeDurationMs!;
 
       if (elapsed >= targetMs) {
-        _setVolumeWithSafety(0.01);
+        _setVolumeWithSafety(0.0);
         _isFadingOut = false;
         _holdMutedUntilNextTrack = true;
         _fadeStartTime = null;
@@ -1080,7 +1103,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       } else {
         final linearProgress = 1.0 - (elapsed / targetMs);
         final curvedVolume = _fadeOutCurve(linearProgress.clamp(0.0, 1.0));
-        _setVolumeWithSafety(curvedVolume);
+        _setVolumeWithSafety(curvedVolume * userVolumeNotifier.value);
       }
     });
   }

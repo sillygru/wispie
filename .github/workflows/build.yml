@@ -355,3 +355,44 @@ jobs:
           path: build/wispie-macos-x64.zip
           if-no-files-found: error
           retention-days: ${{ inputs.retention-days }}
+
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: "3.47.2"
+          cache: true
+          architecture: arm64
+
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Purge stale SwiftPM/Xcode caches (CI-only)
+        run: |
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+
+      - name: Build unsigned iOS release
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa
+          zip -qr ../wispie-ios-unsigned.ipa Payload
+          ls -l ../wispie-ios-unsigned.ipa
+
+      - name: Upload iOS ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: wispie-ios-ipa
+          path: build/wispie-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}
