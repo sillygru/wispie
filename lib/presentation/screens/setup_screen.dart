@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
 
     _outroController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 450),
     );
   }
 
@@ -435,27 +436,14 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                 return AnimatedBuilder(
                   animation: _outroController,
                   builder: (context, _) {
-                    final v = _outroController.value;
-                    double dy = 0;
-                    double dx = 0;
-                    double scale = 1;
-                    double tilt = 0;
-                    double opacity = 1;
-
-                    if (v > 0 && v < 0.16) {
-                      final arc = math.sin(v / 0.16 * math.pi);
-                      dy = arc * 16.0;
-                      scale = 1.0 - arc * 0.05;
-                    } else if (v >= 0.16) {
-                      final lt = (v - 0.16) / 0.84;
-                      final launch = lt * lt;
-                      dy = -launch * constraints.maxHeight * 1.9;
-                      dx = math.sin(lt * math.pi) * 48.0;
-                      tilt = lt * 1.4;
-                      scale = (1.0 - launch * 0.35).clamp(0.1, 1.0);
-                      opacity = (1.0 - ((lt - 0.55) / 0.45).clamp(0.0, 1.0))
-                          .clamp(0.0, 1.0);
-                    }
+                    final v = Curves.easeInOutCubic.transform(
+                      _outroController.value,
+                    );
+                    final dy = -v * 48.0;
+                    final scale = 1.0 - v * 0.04;
+                    final opacity = 1.0 - v;
+                    const dx = 0.0;
+                    const tilt = 0.0;
 
                     return Transform.translate(
                       offset: Offset(dx, dy),
@@ -535,19 +523,44 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
 
   @override
   Widget build(BuildContext context) {
-    return AmbientScaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 600),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        child: _showIntroScreen
-            ? KeyedSubtree(key: const ValueKey('intro'), child: _buildIntro())
-            : KeyedSubtree(
-                key: const ValueKey('setup'),
-                child: _buildMainSetupScreen(),
-              ),
-      ),
+    final switcher = AnimatedSwitcher(
+      duration: const Duration(milliseconds: 600),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: _showIntroScreen
+          ? KeyedSubtree(key: const ValueKey('intro'), child: _buildIntro())
+          : KeyedSubtree(
+              key: const ValueKey('setup'),
+              child: _buildMainSetupScreen(),
+            ),
     );
+    return AmbientScaffold(
+      body: kDebugMode
+          ? Stack(
+              children: [
+                switcher,
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: TextButton(
+                      onPressed: _debugSkip,
+                      child: const Text('Skip onboarding (debug)'),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : switcher,
+    );
+  }
+
+  void _debugSkip() {
+    ref.read(authProvider.notifier).setDisplayName(
+        _usernameController.text.trim().isEmpty
+            ? 'debug'
+            : _usernameController.text.trim());
+    ref.read(setupProvider.notifier).setComplete(true);
   }
 
   // ------------------------------------------------------------- STEP 1: NAME

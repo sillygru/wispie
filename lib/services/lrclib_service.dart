@@ -102,7 +102,26 @@ class LrclibService {
 
   /// Fetches the optional word/syllable payload without replacing local lyrics.
   /// A missing rich result is normal: callers should keep line-synced lyrics.
-  Future<RichLyrics?> getRichSync(Song song) async {
+  Future<RichLyrics?> getRichSync(Song song) {
+    // Every lyrics view builds its own service, so the cache is static: the
+    // sidebar and the player screen must agree, and a transient failure in one
+    // must not leave the other showing "no lyrics".
+    final key = song.filename;
+    final cached = _richSyncCache[key];
+    if (cached != null) return cached;
+    final future = _fetchRichSync(song);
+    _richSyncCache[key] = future;
+    future.then((value) {
+      if (value == null) _richSyncCache.remove(key);
+    }, onError: (_) {
+      _richSyncCache.remove(key);
+    });
+    return future;
+  }
+
+  static final Map<String, Future<RichLyrics?>> _richSyncCache = {};
+
+  Future<RichLyrics?> _fetchRichSync(Song song) async {
     final trackName = cleanTag(song.title);
     final artistName = cleanTag(song.artist);
     if (trackName == null || artistName == null) return null;

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'debug_sandbox.dart';
 
 @visibleForTesting
 String? testWispiePath;
@@ -13,9 +14,9 @@ Future<Directory> getWispieDirectory() async {
   }
   final docDir = await getApplicationDocumentsDirectory();
   if (!Platform.isMacOS && !Platform.isWindows && !Platform.isLinux) {
-    return docDir;
+    return DebugSandbox.redirect('documents', docDir);
   }
   final dir = Directory('${docDir.path}/wispie');
   if (!dir.existsSync()) dir.createSync(recursive: true);
-  return dir;
+  return DebugSandbox.redirect('wispie', dir);
 }

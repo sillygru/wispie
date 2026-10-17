@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -7,7 +8,6 @@ import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffprobe_kit.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 class FFmpegExecutionResult {
   final int returnCode;
@@ -271,7 +271,7 @@ class FFmpegService {
   ) async {
     final file = File(inputPath);
     final stat = await file.stat();
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final proxyDir =
         Directory(p.join(supportDir.path, 'gru_cache_v3', 'ios_media_proxy'));
     if (!await proxyDir.exists()) {

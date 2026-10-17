@@ -1,7 +1,7 @@
+import 'debug_sandbox.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'color_extraction_service.dart';
@@ -44,7 +44,7 @@ class StorageAnalysisService {
 
   Future<int> getCoversCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
       if (await coversDir.exists()) {
         return await _getDirSize(coversDir);
@@ -87,7 +87,7 @@ class StorageAnalysisService {
       }
 
       // Check for gru_cache_v3 directory
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await v3Dir.exists()) {
         total += await _getDirSize(v3Dir);
@@ -116,7 +116,7 @@ class StorageAnalysisService {
 
   Future<int> getBeatMapCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await cacheDir.exists()) {
         int total = 0;
@@ -139,7 +139,7 @@ class StorageAnalysisService {
 
   Future<int> getWaveformCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await cacheDir.exists()) {
         int total = 0;
@@ -162,7 +162,7 @@ class StorageAnalysisService {
 
   Future<int> getColorCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final colorCacheFile = File(p.join(supportDir.path, 'color_cache.json'));
       if (await colorCacheFile.exists()) {
         return await colorCacheFile.length();
@@ -175,7 +175,7 @@ class StorageAnalysisService {
 
   Future<int> getLyricsCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final lyricsDir = Directory(
           p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheDirName));
       if (await lyricsDir.exists()) {
@@ -189,7 +189,7 @@ class StorageAnalysisService {
 
   Future<int> getBlurredCacheSize() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final blurredDir = Directory(
           p.join(supportDir.path, 'gru_cache_v3', _blurredCacheDirName));
       if (await blurredDir.exists()) {
@@ -241,7 +241,7 @@ class StorageAnalysisService {
   /// lazy extraction path to pick them back up.
   Future<void> clearCoversCache() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
       if (await coversDir.exists()) {
         await coversDir.delete(recursive: true);
@@ -298,7 +298,7 @@ class StorageAnalysisService {
       }
 
       // Clear gru_cache_v3 directory
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await v3Dir.exists()) {
         await v3Dir.delete(recursive: true);
@@ -324,7 +324,7 @@ class StorageAnalysisService {
   /// Clears only the cached beat maps. They are rebuilt on next play.
   Future<void> clearBeatMapCache() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await cacheDir.exists()) {
         await for (var entity
@@ -346,7 +346,7 @@ class StorageAnalysisService {
   /// Clears only the waveform cache
   Future<void> clearWaveformCache() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
       if (await cacheDir.exists()) {
         await for (var entity
@@ -378,7 +378,7 @@ class StorageAnalysisService {
   /// Clears only the lyrics cache
   Future<void> clearLyricsCache() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final lyricsDir = Directory(
           p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheDirName));
       if (await lyricsDir.exists()) {
@@ -392,7 +392,7 @@ class StorageAnalysisService {
 
   Future<void> clearBlurredCache() async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final blurredDir = Directory(
           p.join(supportDir.path, 'gru_cache_v3', _blurredCacheDirName));
       if (await blurredDir.exists()) {
@@ -419,7 +419,7 @@ class StorageAnalysisService {
       }
 
       // Delete song covers directory (no SQL needed — DB is gone)
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
       if (await coversDir.exists()) await coversDir.delete(recursive: true);
 

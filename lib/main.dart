@@ -25,6 +25,7 @@ import 'services/app_icon_service.dart';
 import 'services/cache_service.dart';
 import 'services/storage_service.dart';
 import 'services/database_service.dart';
+import 'services/debug_sandbox.dart';
 import 'services/permission_service.dart';
 import 'services/power_state_service.dart';
 import 'services/color_extraction_service.dart';
@@ -40,6 +41,7 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DebugSandbox.init();
 
   // Linux and Windows have no platform implementations for audio_session or
   // audio_service; playback goes through just_audio_media_kit instead, and

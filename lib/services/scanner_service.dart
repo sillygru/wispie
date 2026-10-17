@@ -1,10 +1,10 @@
+import 'debug_sandbox.dart';
 import 'dart:io';
 import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
-import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'dart:convert';
@@ -148,7 +148,7 @@ class ScannerService {
 
   /// The one directory cached covers live in, created if missing.
   static Future<Directory> coversDirectory() async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final dir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -206,7 +206,7 @@ class ScannerService {
     List<Song> songs, {
     void Function(double progress)? onProgress,
   }) async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
@@ -364,7 +364,7 @@ class ScannerService {
     final effectivePlayCounts =
         playCounts ?? await DatabaseService.instance.getPlayCounts();
 
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
@@ -580,7 +580,7 @@ class ScannerService {
       return [];
     }
 
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
@@ -716,7 +716,7 @@ class ScannerService {
     }
     if (toProcess.isEmpty) return songs;
 
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
@@ -857,7 +857,7 @@ class ScannerService {
     if (!await file.exists()) return null;
 
     final isVideo = _isVideoFile(song.url);
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
@@ -1007,7 +1007,7 @@ class ScannerService {
     void Function(double progress)? onProgress,
     bool force = false,
   }) async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final coversDir = await coversDirectory();
 
     final lockDir = Directory(p.join(supportDir.path, 'file_locks'));

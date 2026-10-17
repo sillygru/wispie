@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,7 +10,6 @@ import 'package:flutter/foundation.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'cache_service.dart';
 import 'ffmpeg_service.dart';
@@ -426,7 +426,7 @@ class WaveformService {
   }) async {
     File? raw;
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final tempDir = Directory(p.join(supportDir.path, 'waveform_temp'));
       if (!await tempDir.exists()) {
         await tempDir.create(recursive: true);

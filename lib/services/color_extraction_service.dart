@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
@@ -5,7 +6,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:image/image.dart' as img;
 
@@ -204,7 +204,7 @@ class ColorExtractionService {
 
   static Future<void> _initInternal() async {
     try {
-      final appSupportDir = await getApplicationSupportDirectory();
+      final appSupportDir = await getSupportDirectory();
       _cacheFile = File(p.join(appSupportDir.path, 'palette_cache.json'));
       _paletteDir = Directory(p.join(appSupportDir.path, 'palettes'));
 

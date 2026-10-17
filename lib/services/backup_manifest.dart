@@ -1,7 +1,7 @@
+import 'debug_sandbox.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'wispie_paths.dart';
 
 /// The kinds of content a backup archive can carry.
@@ -61,7 +61,7 @@ const String _lyricsCacheDir = 'lyrics_cache';
 /// is safe to filter by [BackupContentType].
 Future<List<BackupArtifact>> cacheArtifacts() async {
   final docDir = await getWispieDirectory();
-  final supportDir = await getApplicationSupportDirectory();
+  final supportDir = await getSupportDirectory();
   final v3Dir = p.join(supportDir.path, 'gru_cache_v3');
 
   return [

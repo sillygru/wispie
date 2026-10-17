@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -6,7 +7,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../domain/models/beat_map.dart';
 import '../domain/services/beat_analysis.dart';
@@ -127,7 +127,7 @@ class BeatAnalysisService {
   /// (or another analysis) is mid-decode of the same file.
   Future<File?> _decodeToPcm(String path) {
     return MediaDecodeGate.run(() async {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final tempDir = Directory(p.join(supportDir.path, 'beat_analysis_temp'));
       if (!await tempDir.exists()) await tempDir.create(recursive: true);
 
@@ -179,7 +179,7 @@ class BeatAnalysisService {
   }
 
   static Future<void> clearCachedMaps() async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     final dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
     if (!await dir.exists()) return;
     await for (final entity in dir.list(followLinks: false)) {

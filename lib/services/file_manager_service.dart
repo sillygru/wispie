@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -5,7 +6,6 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
@@ -47,7 +47,7 @@ class FileManagerService {
 
   Future<RandomAccessFile?> _acquireExclusiveLock(String fileUrl) async {
     try {
-      final supportDir = await getApplicationSupportDirectory();
+      final supportDir = await getSupportDirectory();
       final lockDir = Directory(p.join(supportDir.path, 'file_locks'));
       if (!await lockDir.exists()) {
         await lockDir.create(recursive: true);

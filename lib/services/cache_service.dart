@@ -1,3 +1,4 @@
+import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -46,7 +47,7 @@ class CacheService {
   Future<void> init() async {
     if (_initialized) return;
     try {
-      _appSupportDir = await getApplicationSupportDirectory();
+      _appSupportDir = await getSupportDirectory();
       _v3Dir = Directory(p.join(_appSupportDir.path, 'gru_cache_v3'));
 
       if (!await _v3Dir.exists()) {
@@ -238,7 +239,7 @@ class CacheService {
     return compute(_calculateCacheSizeInIsolate, {
       'v3Path': _v3Dir.path,
       'docPath': (await getWispieDirectory()).path,
-      'supportPath': (await getApplicationSupportDirectory()).path,
+      'supportPath': (await getSupportDirectory()).path,
     });
   }
 

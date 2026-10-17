@@ -1,9 +1,9 @@
+import '../../services/debug_sandbox.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import '../../models/song.dart';
 import '../../services/ffmpeg_service.dart';
 
@@ -20,9 +20,15 @@ class SongRepository {
 
   final Map<String, Future<String?>> _inFlightLyrics = {};
 
+  // One source of truth for every lyrics view (sidebar, player screen), so a
+  // single failed disk/ffprobe read can't leave one of them empty.
+  final Map<String, String> _resolvedLyrics = {};
+
   /// Gets lyrics from embedded metadata in the audio file using FFmpeg.
   /// Always tries to read lyrics regardless of hasLyrics flag.
   Future<String?> getLyrics(Song song) {
+    final resolved = _resolvedLyrics[song.url];
+    if (resolved != null) return Future.value(resolved);
     return _inFlightLyrics.putIfAbsent(song.filename, () async {
       try {
         if (kDebugMode) {
@@ -35,6 +41,7 @@ class SongRepository {
         if (cacheEntry != null &&
             cacheEntry.hasLyrics &&
             cacheEntry.lyrics != null) {
+          _resolvedLyrics[song.url] = cacheEntry.lyrics!;
           return cacheEntry.lyrics;
         }
 
@@ -42,6 +49,9 @@ class SongRepository {
         final normalizedLyrics =
             (lyrics != null && lyrics.trim().isNotEmpty) ? lyrics : null;
         await _writeLyricsCache(song, normalizedLyrics);
+        if (normalizedLyrics != null) {
+          _resolvedLyrics[song.url] = normalizedLyrics;
+        }
 
         if (kDebugMode) {
           if (normalizedLyrics != null) {
@@ -84,6 +94,7 @@ class SongRepository {
   }
 
   Future<void> clearLyricsCache() async {
+    _resolvedLyrics.clear();
     final dir = await _getLyricsCacheDirectory();
     if (await dir.exists()) {
       await dir.delete(recursive: true);
@@ -91,6 +102,7 @@ class SongRepository {
   }
 
   Future<void> invalidateLyricsCache(Song song) async {
+    _resolvedLyrics.remove(song.url);
     final cacheFile = await _getCacheFileForSong(song);
     if (await cacheFile.exists()) {
       await cacheFile.delete();
@@ -116,6 +128,7 @@ class SongRepository {
   Future<void> saveLyricsToCache(Song song, String? lyrics) async {
     final normalizedLyrics =
         (lyrics != null && lyrics.trim().isNotEmpty) ? lyrics : null;
+    _resolvedLyrics.remove(song.url);
     await _writeLyricsCache(song, normalizedLyrics);
   }
 
@@ -144,7 +157,7 @@ class SongRepository {
   }
 
   Future<Directory> _getLyricsCacheDirectory() async {
-    final supportDir = await getApplicationSupportDirectory();
+    final supportDir = await getSupportDirectory();
     return Directory(
         p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheFolder));
   }

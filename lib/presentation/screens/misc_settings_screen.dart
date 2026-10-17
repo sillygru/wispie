@@ -3,7 +3,9 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/debug_sandbox.dart';
 import '../../services/storage_service.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../../services/backup_service.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
@@ -113,6 +115,24 @@ class _MiscSettingsScreenState extends ConsumerState<MiscSettingsScreen> {
                     setState(() {});
                   },
                 ),
+              ),
+            ],
+          ),
+        if (kDebugMode)
+          AppSettingsGroup(
+            label: 'Debug',
+            icon: AppIcons.tune,
+            children: [
+              AppSettingsSwitch(
+                icon: AppIcons.cloudUpload,
+                title: 'Persist writes',
+                subtitle:
+                    'Debug builds keep changes in a throwaway copy by default. Applies on next launch.',
+                value: DebugSandbox.persistWrites,
+                onChanged: (val) async {
+                  await DebugSandbox.setFlag('persist_writes', val);
+                  setState(() {});
+                },
               ),
             ],
           ),
