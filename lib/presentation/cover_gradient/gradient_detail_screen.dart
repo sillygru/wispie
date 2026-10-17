@@ -175,8 +175,18 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         !widget.isAlbum &&
         LibraryLogic.hasMultipleAlbums(widget.songs);
 
-    final SongSortOrder effectiveSortOrder =
-        multiAlbumArtist ? (_localSort ?? SongSortOrder.playCount) : sortOrder;
+    // Album views and the grouped artist view keep their own sort so changing
+    // it never re-sorts the rest of the library. Selecting an album inside an
+    // artist switches the default to song date.
+    final bool usesLocalSort = multiAlbumArtist || widget.isAlbum;
+    final bool albumContext =
+        widget.isAlbum || (multiAlbumArtist && _selectedAlbum != null);
+    final SongSortOrder effectiveSortOrder = usesLocalSort
+        ? (_localSort ??
+            (albumContext
+                ? SongSortOrder.songDateOldNew
+                : SongSortOrder.playCount))
+        : sortOrder;
 
     final List<Song> sortedSongs = LibraryLogic.sortSongs(
       widget.songs,
@@ -404,7 +414,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                   title: 'Albums',
                   trailing: selectedAlbum != null
                       ? _ClearChip(
-                          onTap: () => setState(() => _selectedAlbum = null),
+                          onTap: () => setState(() {
+                            _selectedAlbum = null;
+                            _localSort = null;
+                          }),
                         )
                       : null,
                 ),
@@ -414,7 +427,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                   albumGroups: albumGroups,
                   selected: selectedAlbum,
                   artistName: effectiveArtistName,
-                  onSelected: (album) => setState(() => _selectedAlbum = album),
+                  onSelected: (album) => setState(() {
+                    _selectedAlbum = album;
+                    _localSort = null;
+                  }),
                 ),
               ],
             ),
@@ -616,7 +632,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 scroll: _scrollOffset,
                 revealOffset: isWide ? 1e9 : titleRevealOffset,
                 effectiveSortOrder: effectiveSortOrder,
-                showAlbumGroups: showAlbumGroups,
+                usesLocalSort: usesLocalSort,
                 isUnknown: isUnknownArtistOrAlbum,
                 canFetchCover: canFetchCover,
                 effectiveIsArtist: effectiveIsArtist,
@@ -1692,7 +1708,7 @@ class _FloatingTopBar extends StatelessWidget {
   final ValueListenable<double> scroll;
   final double revealOffset;
   final SongSortOrder effectiveSortOrder;
-  final bool showAlbumGroups;
+  final bool usesLocalSort;
   final bool isUnknown;
   final bool canFetchCover;
   final bool effectiveIsArtist;
@@ -1711,7 +1727,7 @@ class _FloatingTopBar extends StatelessWidget {
     required this.scroll,
     required this.revealOffset,
     required this.effectiveSortOrder,
-    required this.showAlbumGroups,
+    required this.usesLocalSort,
     required this.isUnknown,
     required this.canFetchCover,
     required this.effectiveIsArtist,
@@ -1815,7 +1831,7 @@ class _FloatingTopBar extends StatelessWidget {
                 ),
               ),
               _GlassWrap(
-                child: showAlbumGroups
+                child: usesLocalSort
                     ? SortMenu(
                         sortOrder: effectiveSortOrder,
                         onSelected: onLocalSort,

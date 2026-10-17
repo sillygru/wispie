@@ -7,8 +7,9 @@ enum SongSortOrder {
   album,
   playCount,
   recommended,
-  songDate,
+  songDateNewOld,
   recentlyPlayed,
+  songDateOldNew,
 }
 
 enum PlayerCoverSizingMode {

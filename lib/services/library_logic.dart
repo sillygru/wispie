@@ -235,11 +235,23 @@ class LibraryLogic {
         });
         break;
 
-      case SongSortOrder.songDate:
+      case SongSortOrder.songDateNewOld:
+      case SongSortOrder.songDateOldNew:
+        // Untagged tracks sink to the bottom in both directions so they don't
+        // interrupt a dated album.
+        final newestFirst = sortOrder == SongSortOrder.songDateNewOld;
         sorted.sort((a, b) {
-          final songDateA = a.songDateEpochSec ?? 0;
-          final songDateB = b.songDateEpochSec ?? 0;
-          return songDateB.compareTo(songDateA); // Newest release first
+          final dateA = a.songDateEpochSec;
+          final dateB = b.songDateEpochSec;
+          if (dateA == null && dateB == null) {
+            return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
+          }
+          if (dateA == null) return 1;
+          if (dateB == null) return -1;
+          final compare =
+              newestFirst ? dateB.compareTo(dateA) : dateA.compareTo(dateB);
+          if (compare != 0) return compare;
+          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
         });
         break;
 

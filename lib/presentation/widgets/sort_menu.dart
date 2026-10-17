@@ -54,9 +54,14 @@ class SortMenu extends ConsumerWidget {
           child: const Text('Date Added'),
         ),
         CheckedPopupMenuItem(
-          value: SongSortOrder.songDate,
-          checked: effectiveSort == SongSortOrder.songDate,
-          child: const Text('Song Date'),
+          value: SongSortOrder.songDateOldNew,
+          checked: effectiveSort == SongSortOrder.songDateOldNew,
+          child: const Text('Song Date (Old - New)'),
+        ),
+        CheckedPopupMenuItem(
+          value: SongSortOrder.songDateNewOld,
+          checked: effectiveSort == SongSortOrder.songDateNewOld,
+          child: const Text('Song Date (New - Old)'),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.playCount,

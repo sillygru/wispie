@@ -177,8 +177,18 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
 
     // Grouped artist lists default to most-played; the SortMenu on this
     // screen then refines that local default instead of the global setting.
-    final SongSortOrder effectiveSortOrder =
-        multiAlbumArtist ? (_localSort ?? SongSortOrder.playCount) : sortOrder;
+    // Album views and the grouped artist view keep their own sort so changing
+    // it never re-sorts the rest of the library. Selecting an album inside an
+    // artist switches the default to song date.
+    final bool usesLocalSort = multiAlbumArtist || widget.isAlbum;
+    final bool albumContext =
+        widget.isAlbum || (multiAlbumArtist && _selectedAlbum != null);
+    final SongSortOrder effectiveSortOrder = usesLocalSort
+        ? (_localSort ??
+            (albumContext
+                ? SongSortOrder.songDateOldNew
+                : SongSortOrder.playCount))
+        : sortOrder;
 
     final sortedSongs = LibraryLogic.sortSongs(
       songs,
@@ -480,7 +490,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                   floating: true,
                   snap: true,
                   actions: [
-                    if (showAlbumGroups)
+                    if (usesLocalSort)
                       SortMenu(
                         sortOrder: effectiveSortOrder,
                         onSelected: (order) =>
@@ -607,8 +617,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                         albumGroups: albumGroups,
                         selected: selectedAlbum,
                         artistName: effectiveArtistName,
-                        onSelected: (album) =>
-                            setState(() => _selectedAlbum = album),
+                        onSelected: (album) => setState(() {
+                          _selectedAlbum = album;
+                          _localSort = null;
+                        }),
                       ),
                     ),
                   ),

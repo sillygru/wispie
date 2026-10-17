@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../providers/theme_provider.dart';
+import '../../theme/app_theme.dart';
+import '../widgets/collection_accent_scope.dart';
 import '../screens/unified_player_screen.dart';
 import '../tokens/player_tokens.dart';
 
@@ -45,9 +50,31 @@ class PlayerPageRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return UnifiedPlayerScreen(
-      initialPane: initialPane,
-      queueShowsHistory: queueShowsHistory,
+    // Re-roots theme and accent on the playing track so an artist/album
+    // override from the page underneath cannot leak into the player.
+    return Consumer(
+      builder: (context, ref, child) {
+        final themeState = ref.watch(themeProvider);
+        final accent = themeState.extractedColor;
+        if (accent == null) {
+          return Theme(
+            data: AppTheme.getTheme(themeState),
+            child: child!,
+          );
+        }
+        return Theme(
+          data: AppTheme.getPlayerTheme(themeState, accent),
+          child: CollectionAccentScope(
+            accent: accent,
+            isNeutral: themeState.isNeutralCover,
+            child: child!,
+          ),
+        );
+      },
+      child: UnifiedPlayerScreen(
+        initialPane: initialPane,
+        queueShowsHistory: queueShowsHistory,
+      ),
     );
   }
 

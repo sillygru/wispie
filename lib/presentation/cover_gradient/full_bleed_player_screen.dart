@@ -990,11 +990,15 @@ class _FullBleedPlayerPane extends ConsumerWidget {
                 return ClipRRect(
                   borderRadius:
                       BorderRadius.circular((1 - t) * PlayerTokens.rSm),
-                  child: ShaderMask(
-                    shaderCallback: (bounds) =>
-                        _coverFadeShader(bounds, fadeTop, t),
-                    blendMode: BlendMode.dstIn,
-                    child: child,
+                  child: _SideFade(
+                    enabled: WideLayout.isWide(context),
+                    strength: Curves.easeInOut.transform(t),
+                    child: ShaderMask(
+                      shaderCallback: (bounds) =>
+                          _coverFadeShader(bounds, fadeTop, t),
+                      blendMode: BlendMode.dstIn,
+                      child: child,
+                    ),
                   ),
                 );
               },
@@ -1077,9 +1081,14 @@ class _FullBleedPlayerPane extends ConsumerWidget {
 /// where the cover column sits beside the lyrics instead of spanning the screen.
 class _SideFade extends StatelessWidget {
   final bool enabled;
+  final double strength;
   final Widget child;
 
-  const _SideFade({required this.enabled, required this.child});
+  const _SideFade({
+    required this.enabled,
+    required this.child,
+    this.strength = 1,
+  });
 
   static double _smootherstep(double t) => t * t * t * (t * (t * 6 - 15) + 10);
 
@@ -1091,7 +1100,8 @@ class _SideFade extends StatelessWidget {
       shaderCallback: (bounds) => LinearGradient(
         colors: <Color>[
           for (var i = 0; i <= 12; i++)
-            Colors.white.withValues(alpha: 1 - _smootherstep(i / 12)),
+            Colors.white
+                .withValues(alpha: 1 - strength * _smootherstep(i / 12)),
         ],
         stops: <double>[
           for (var i = 0; i <= 12; i++) 0.3 + 0.7 * (i / 12),

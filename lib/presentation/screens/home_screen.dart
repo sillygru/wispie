@@ -50,6 +50,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   static const double _queueCardSize = 120;
   static const double _queueSheetListHeight = 360;
 
+  /// Local to the home library list so the default is most played without
+  /// changing the sort used by the Library tab.
+  SongSortOrder _homeSort = SongSortOrder.playCount;
+
   double _computeMediaCarouselHeight(
     BuildContext context,
     double cardSize, {
@@ -496,7 +500,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
           final sortedSongs = LibraryLogic.sortSongs(
             songs,
-            settings.sortOrder,
+            _homeSort,
             userData: userData,
             shuffleConfig: shuffleState.config,
             playCounts: playCounts,
@@ -661,7 +665,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           const Expanded(
                             child: AppSectionHeader(label: 'Library'),
                           ),
-                          const SortMenu(),
+                          SortMenu(
+                            sortOrder: _homeSort,
+                            onSelected: (order) =>
+                                setState(() => _homeSort = order),
+                          ),
                           Padding(
                             padding: const EdgeInsets.only(
                               left: AppTokens.s2,
