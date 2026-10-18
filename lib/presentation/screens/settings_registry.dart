@@ -41,10 +41,9 @@ class SettingsDestination extends SettingsEntry {
 /// Every setting the search can reach, in the current language.
 ///
 /// This is hand-maintained: Dart can't enumerate widget trees, so a row and its
-/// entry are two edits. `test/settings_search_test.dart` guards the join by
-/// checking that each [SettingsEntry.anchorId] here really appears as a
-/// `searchId:` in a settings screen — a row renamed or removed without its
-/// entry fails the suite rather than silently going missing from search.
+/// entry are two edits. Each [SettingsEntry.anchorId] here must appear as a
+/// `searchId:` in a settings screen; a row renamed or removed without its
+/// entry silently disappears from search.
 List<String> _kw(String csv) => csv.split(',');
 
 List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {

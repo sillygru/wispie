@@ -11,6 +11,15 @@ Local-first Flutter music player. Riverpod 3, `just_audio`, two SQLite files, MV
 - **Comments**: minimal, explain _why_ not _what_. No "// added this" style comments.
 - **Before finishing any code change:** `dart format .` then `flutter analyze --no-pub`, both clean.
 
+## Testing Policy
+
+NEVER write unit tests after you write code.
+
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, FIRST write all the ways it could fail, THEN write the code.
+
+There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
+
 ## Verification
 
 CI (`.github/workflows/flutter_tests.yml`) gates on, in this order:
@@ -18,10 +27,9 @@ CI (`.github/workflows/flutter_tests.yml`) gates on, in this order:
 ```bash
 dart format --set-exit-if-changed .   # runs on third_party/ too (397 files incl. build/)
 flutter analyze                       # analysis_options.yaml excludes third_party + platform dirs
-flutter test                          # ~90 files, no integration_test/, no goldens
 ```
 
-Run a focused subset while iterating, e.g. `flutter test test/shuffle_logic_test.dart`. Note the local Flutter is 3.47.2 while the test workflow pins 3.44.2 and the build workflow pins 3.47.2.
+Note the local Flutter is 3.47.2 while the analyze workflow pins 3.44.2 and the build workflow pins 3.47.2.
 
 `dart format .` walks `build/` (gitignored) and can warn about package resolution there; harmless. There is no codegen: `build_runner` is a dev dependency but no `.g.dart` files exist and nothing invokes it. Don't run it.
 
@@ -39,7 +47,7 @@ Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `me
 
 `DatabaseService` (`lib/services/database_service.dart`, `.instance`) owns `wispie_stats.db` (play sessions/events) and `wispie_data.db` (library, playlists, favorites, merged groups, mood tags, queue snapshots).
 
-Schema is canonical in `lib/data/migrations.dart` only: `_userDataTableStmts` / `_createUserDataIndexes` for fresh creates, plus explicit `upgradeUserDataFromNToM` steps wired into `DatabaseService._initAsync`'s `onUpgrade`. Versions are `kStatsDbVersion` / `kUserDataDbVersion`. Adding a table or column means touching both the create path and the upgrade path; `test/migration_test.dart` asserts fresh-create and each step.
+Schema is canonical in `lib/data/migrations.dart` only: `_userDataTableStmts` / `_createUserDataIndexes` for fresh creates, plus explicit `upgradeUserDataFromNToM` steps wired into `DatabaseService._initAsync`'s `onUpgrade`. Versions are `kStatsDbVersion` / `kUserDataDbVersion`. Adding a table or column means touching both the create path and the upgrade path.
 
 ### Playback
 
@@ -49,7 +57,7 @@ Linux/Windows swap in `just_audio_media_kit` + `sqflite_common_ffi` (see the `is
 
 ### Shuffle
 
-`lib/domain/services/shuffle_selector.dart` — pure `scoreCandidate(...)`; personalities (`consistent`, `explorer`, `custom`, …) resolve to `ShuffleWeights` and apply as multiplicative penalties/boosts. Covered by `test/shuffle_logic_test.dart`, `test/shuffle_weight_distribution_test.dart`, `test/personality_logic_test.dart`.
+`lib/domain/services/shuffle_selector.dart` — pure `scoreCandidate(...)`; personalities (`consistent`, `explorer`, `custom`, …) resolve to `ShuffleWeights` and apply as multiplicative penalties/boosts.
 
 ### State management
 
@@ -63,11 +71,9 @@ Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2000 lin
 
 `SharedHttpClient.instance` is the one pooled `HttpClient` for outbound requests. Don't construct per-request clients; that's the regression its comment describes. Secrets arrive via `--dart-define`: `TELEMETRY_SECRET` (plus `WISPIE_MUSIC_UTILS_BASE_URL` for the music API).
 
-## Testing
+## Settings invariants
 
-DB-, prefs- or path-touching tests must use `TestEnvironment` from `test/test_helpers.dart` (`setUpAll`/`tearDownAll`). It creates a temp dir, installs `databaseFactoryFfi`, mocks path_provider / SharedPreferences / package_info_plus / wakelock_plus pigeon, and stubs the `wispie/*` channels (`volume`, `power`, plus legacy `gru_songs/power`, and the `wispie/volume_events`, `wispie/power_events` event channels). It also sets `testWispiePath`, `StorageService.testDocumentsPath`, and `SearchIndexRepository.testDocumentsPath`, and resets them in teardown so state doesn't leak between test files.
-
-Adding a settings key means editing `StorageService._settingsKeys` **and** claiming it in `importableSettingsKeys` or `identitySettingsKeys`, or `test/settings_key_coverage_test.dart` fails. Adding a searchable settings row means a `SettingsDestination` in `lib/presentation/screens/settings_registry.dart` plus a matching `searchId:` in the screen, or `test/settings_search_test.dart` fails.
+Adding a settings key means editing `StorageService._settingsKeys` **and** claiming it in `importableSettingsKeys` or `identitySettingsKeys`. Adding a searchable settings row means a `SettingsDestination` in `lib/presentation/screens/settings_registry.dart` plus a matching `searchId:` in the screen.
 
 ## UI / Design Standard
 

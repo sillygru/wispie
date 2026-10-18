@@ -303,9 +303,8 @@ class ParticleSystem {
   ///
   /// Both are set from a target rather than by feel: at `bold`, a full-strength
   /// beat moves a mote about 4.5% of the screen width (`Δv · _surgeTau`) and
-  /// turns it by roughly a quarter radian.
-  /// `test/particle_travel_metrics_test.dart` measures the result of both, so
-  /// retuning them means moving a number the tests already report.
+  /// turns it by roughly a quarter radian. Retuning these means retuning both,
+  /// since every value is tuned against this pair.
   static const double _surgeGain = 0.25;
   static const double _swerveGain = 0.25;
 

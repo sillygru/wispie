@@ -46,7 +46,7 @@ class KdfParams {
 /// Key hierarchy of plan_sync.md section 1.2.
 ///
 /// Deviation from the plan: implemented on the pure-Dart `cryptography`
-/// package (no native libsodium, so it also runs under `flutter test`), and
+/// package (no native libsodium), and
 /// the keyed BLAKE2b derivations are HMAC-SHA256 with the same context strings.
 class SyncCrypto {
   SyncCrypto._();
