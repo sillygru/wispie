@@ -7,12 +7,14 @@ import '../components/app_feedback.dart';
 import '../components/app_sheet.dart';
 import 'folder_picker.dart';
 import '../tokens/app_icons.dart';
+import '../../l10n/l10n.dart';
 
 /// [folderFullPath] is the absolute path of the folder the row stands for — the
 /// library tree is not always rooted at the first configured music folder, so a
 /// relative path cannot be resolved reliably here.
 void showFolderOptionsMenu(BuildContext context, WidgetRef ref,
     String folderName, String folderFullPath) {
+  final l10n = context.l10n;
   showAppSheet(
     context,
     title: folderName,
@@ -22,7 +24,7 @@ void showFolderOptionsMenu(BuildContext context, WidgetRef ref,
         children: [
           AppSheetAction(
             icon: AppIcons.folderMove,
-            label: 'Move Folder',
+            label: l10n.foldersMoveFolder,
             onTap: () async {
               if (kDebugMode) {
                 debugPrint("UI: Move Folder tapped for $folderName");
@@ -54,14 +56,14 @@ void showFolderOptionsMenu(BuildContext context, WidgetRef ref,
                     if (context.mounted) {
                       appSnack(
                         context,
-                        'Moved $folderName to $targetParentPath',
+                        l10n.foldersMovedTo(folderName, targetParentPath),
                         tone: AppTone.success,
                       );
                     }
                   } catch (e) {
                     if (kDebugMode) debugPrint("UI: ERROR during move: $e");
                     if (context.mounted) {
-                      appSnack(context, 'Error moving folder: $e',
+                      appSnack(context, l10n.foldersMoveError('$e'),
                           tone: AppTone.danger);
                     }
                   }

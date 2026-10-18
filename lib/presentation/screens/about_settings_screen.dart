@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/debug_sandbox.dart';
@@ -25,22 +26,23 @@ class AboutSettingsScreen extends ConsumerWidget {
     final updateState = ref.watch(updateCheckProvider);
     final updateNotifier = ref.read(updateCheckProvider.notifier);
     final accent = AppTokens.accentOf(context, ref);
+    final l10n = context.l10n;
 
     final statusTitle = updateState.isChecking
-        ? 'Checking for updates…'
+        ? l10n.aboutChecking
         : updateState.hasUpdate
-            ? 'Update available: ${updateState.latestVersionLabel}'
+            ? l10n.aboutUpdateAvailable(updateState.latestVersionLabel ?? '')
             : updateState.latestVersionLabel != null
-                ? 'You are up to date'
-                : 'Check for updates';
+                ? l10n.aboutUpToDate
+                : l10n.aboutCheckForUpdates;
 
     final statusSubtitle = updateState.isChecking
-        ? 'wispie is checking GitHub Releases.'
+        ? l10n.aboutCheckingSubtitle
         : updateState.hasUpdate
-            ? 'A newer version is available on GitHub.'
+            ? l10n.aboutUpdateAvailableSubtitle
             : updateState.latestVersionLabel != null
-                ? 'Latest release: ${updateState.latestVersionLabel}'
-                : 'Tap below to check manually.';
+                ? l10n.aboutLatestRelease(updateState.latestVersionLabel ?? '')
+                : l10n.aboutTapToCheck;
 
     final content = AppSettingsList(
       children: [
@@ -68,7 +70,9 @@ class AboutSettingsScreen extends ConsumerWidget {
                       Text('wispie', style: AppTokens.screenTitle(context)),
                       const SizedBox(height: 2),
                       Text(
-                        'Version ${updateState.currentVersion.isEmpty ? 'Unknown' : updateState.currentVersion}',
+                        l10n.aboutVersion(updateState.currentVersion.isEmpty
+                            ? l10n.aboutUnknown
+                            : updateState.currentVersion),
                         style: AppTokens.meta(context),
                       ),
                     ],
@@ -117,7 +121,7 @@ class AboutSettingsScreen extends ConsumerWidget {
                           ? null
                           : () => updateNotifier.checkForUpdate(force: true),
                       style: AppTokens.tonalButton,
-                      child: const Text('Check now'),
+                      child: Text(l10n.aboutCheckNow),
                     ),
                   ),
                   if (updateState.hasUpdate) ...[
@@ -127,7 +131,7 @@ class AboutSettingsScreen extends ConsumerWidget {
                         onPressed: () => UpdateService().openLatestRelease(
                           url: updateState.releaseUrl,
                         ),
-                        child: const Text('View release'),
+                        child: Text(l10n.aboutViewRelease),
                       ),
                     ),
                   ],
@@ -138,15 +142,14 @@ class AboutSettingsScreen extends ConsumerWidget {
         ),
         if (kDebugMode)
           AppSettingsGroup(
-            label: 'Debug',
+            label: l10n.aboutDebugGroup,
             icon: AppIcons.tune,
             children: [
               StatefulBuilder(
                 builder: (context, setState) => AppSettingsSwitch(
                   icon: AppIcons.cloudUpload,
-                  title: 'Persist writes',
-                  subtitle:
-                      'Debug builds keep changes in a throwaway copy by default. Applies on next launch.',
+                  title: l10n.aboutPersistWrites,
+                  subtitle: l10n.aboutPersistWritesSubtitle,
                   value: DebugSandbox.persistWrites,
                   onChanged: (val) async {
                     await DebugSandbox.setFlag('persist_writes', val);
@@ -160,7 +163,7 @@ class AboutSettingsScreen extends ConsumerWidget {
     );
     if (embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'About'),
+      appBar: AppTopBar(title: l10n.settingsPageAboutTitle),
       body: content,
     );
   }

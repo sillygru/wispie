@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 
 /// Progress reported by a running import or restore.
 class ImportProgress {
@@ -16,12 +17,12 @@ class ImportProgress {
 /// spinner reads as a hang.
 class ImportProgressDialog extends StatelessWidget {
   final ValueListenable<ImportProgress> progress;
-  final String title;
+  final String? title;
 
   const ImportProgressDialog({
     super.key,
     required this.progress,
-    this.title = 'Restoring data',
+    this.title,
   });
 
   @override
@@ -29,7 +30,7 @@ class ImportProgressDialog extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        title: Text(title),
+        title: Text(title ?? context.l10n.backupRestoringDataTitle),
         content: ValueListenableBuilder<ImportProgress>(
           valueListenable: progress,
           builder: (context, value, _) {

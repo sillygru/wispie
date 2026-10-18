@@ -27,13 +27,13 @@ class PlayerPageRoute extends PageRoute<void> {
   bool get opaque => false;
 
   @override
+  String? get barrierLabel => null;
+
+  @override
   bool get barrierDismissible => true;
 
   @override
   Color get barrierColor => Colors.transparent;
-
-  @override
-  String get barrierLabel => 'Dismiss player';
 
   @override
   bool get maintainState => true;

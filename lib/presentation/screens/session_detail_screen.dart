@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/play_session.dart';
@@ -25,7 +26,7 @@ class SessionDetailScreen extends ConsumerWidget {
 
     return AmbientScaffold(
       appBar: AppBar(
-        title: const Text('Session Details'),
+        title: Text(context.l10n.sessionDetailTitle),
       ),
       body: Column(
         children: [
@@ -34,7 +35,7 @@ class SessionDetailScreen extends ConsumerWidget {
             _buildSongsHeader(context, events.length, colorScheme),
           Expanded(
             child: events.isEmpty
-                ? _buildNoSongsState(colorScheme)
+                ? _buildNoSongsState(context, colorScheme)
                 : _buildSongsList(ref, events, colorScheme),
           ),
           if (events.isNotEmpty)
@@ -95,7 +96,7 @@ class SessionDetailScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Started at $timeStr',
+                      context.l10n.sessionStartedAt(timeStr),
                       style: TextStyle(
                         fontSize: 15,
                         color: colorScheme.onPrimaryContainer
@@ -115,7 +116,9 @@ class SessionDetailScreen extends ConsumerWidget {
                 context,
                 icon: AppIcons.musicNote,
                 value: '${session.songCount}',
-                label: session.songCount == 1 ? 'Song' : 'Songs',
+                label: session.songCount == 1
+                    ? context.l10n.sessionSongSingular
+                    : context.l10n.sessionSongPlural,
                 colorScheme: colorScheme,
               ),
               Container(
@@ -127,7 +130,7 @@ class SessionDetailScreen extends ConsumerWidget {
                 context,
                 icon: AppIcons.timer,
                 value: session.formattedDuration,
-                label: 'Duration',
+                label: context.l10n.sleepTimerDurationLabel,
                 colorScheme: colorScheme,
               ),
             ],
@@ -187,7 +190,7 @@ class SessionDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            'Songs Played',
+            context.l10n.sessionSongsPlayed,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -215,7 +218,7 @@ class SessionDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildNoSongsState(ColorScheme colorScheme) {
+  Widget _buildNoSongsState(BuildContext context, ColorScheme colorScheme) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -227,7 +230,7 @@ class SessionDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'No songs recorded',
+            context.l10n.sessionNoSongs,
             style: TextStyle(
               fontSize: 18,
               color: colorScheme.onSurfaceVariant,
@@ -322,7 +325,7 @@ class SessionDetailScreen extends ConsumerWidget {
           ),
         ),
         subtitle: Text(
-          song?.artist ?? 'Unknown Artist',
+          song?.artist ?? context.l10n.metaUnknownArtist,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -346,7 +349,7 @@ class SessionDetailScreen extends ConsumerWidget {
                   ),
                 ),
                 Text(
-                  _formatDuration(event.durationPlayed),
+                  _formatDuration(context, event.durationPlayed),
                   style: TextStyle(
                     fontSize: 11,
                     color: colorScheme.onSurfaceVariant,
@@ -382,8 +385,8 @@ class SessionDetailScreen extends ConsumerWidget {
               onPressed: () =>
                   _repeatQueue(context, ref, events, whenSongEnds: false),
               icon: const AppIcon(AppIcons.repeat),
-              label: const Text(
-                'Repeat Queue Now',
+              label: Text(
+                context.l10n.sessionRepeatNow,
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -401,8 +404,8 @@ class SessionDetailScreen extends ConsumerWidget {
               onPressed: () =>
                   _repeatQueue(context, ref, events, whenSongEnds: true),
               icon: const AppIcon(AppIcons.skipNext),
-              label: const Text(
-                'Play After Current Song',
+              label: Text(
+                context.l10n.sessionPlayAfterCurrent,
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               style: FilledButton.styleFrom(
@@ -428,7 +431,7 @@ class SessionDetailScreen extends ConsumerWidget {
         events.where((e) => e.song != null).map((e) => e.song!).toList();
 
     if (songs.isEmpty) {
-      appSnack(context, 'No songs available to play');
+      appSnack(context, context.l10n.sessionNoSongsAvailable);
       return;
     }
 
@@ -439,10 +442,9 @@ class SessionDetailScreen extends ConsumerWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              '${songs.length} ${songs.length == 1 ? 'song' : 'songs'} will play after current song'),
+          content: Text(context.l10n.sessionAfterCurrentSnack(songs.length)),
           action: SnackBarAction(
-            label: 'Cancel',
+            label: context.l10n.actionCancel,
             onPressed: audioManager.cancelPendingQueueReplacement,
           ),
         ),
@@ -458,10 +460,9 @@ class SessionDetailScreen extends ConsumerWidget {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-            'Playing ${songs.length} ${songs.length == 1 ? 'song' : 'songs'} from session'),
+        content: Text(context.l10n.sessionPlayingSnack(songs.length)),
         action: SnackBarAction(
-          label: 'Open Player',
+          label: context.l10n.homeOpenPlayer,
           onPressed: () => Navigator.push(context, PlayerPageRoute()),
         ),
       ),
@@ -479,12 +480,12 @@ class SessionDetailScreen extends ConsumerWidget {
     return name.substring(sepIdx + 1);
   }
 
-  String _formatDuration(double seconds) {
+  String _formatDuration(BuildContext context, double seconds) {
     final mins = (seconds / 60).floor();
     final secs = (seconds % 60).floor();
     if (mins > 0) {
-      return '${mins}m ${secs}s';
+      return context.l10n.sessionDurationMinutes(mins, secs);
     }
-    return '${secs}s';
+    return context.l10n.sessionDurationSeconds(secs);
   }
 }

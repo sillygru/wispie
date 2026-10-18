@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/providers.dart';
@@ -144,7 +145,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     final selectedPath = selection['path'] ?? '';
     if (selectedPath.isEmpty) {
       if (mounted) {
-        appSnack(context, 'Unable to access selected folder');
+        appSnack(context, context.l10n.setupUnableToAccessFolder);
       }
       return;
     }
@@ -161,7 +162,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     await _loadInitialFolders();
 
     if (mounted) {
-      appSnack(context, 'Music folder added');
+      appSnack(context, context.l10n.setupFolderAdded);
     }
   }
 
@@ -177,7 +178,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     await _loadInitialFolders();
 
     if (mounted) {
-      appSnack(context, 'Music folder removed');
+      appSnack(context, context.l10n.setupFolderRemoved);
     }
   }
 
@@ -221,10 +222,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
         mounted) {
       setState(() => _permissionDeniedOnce = true);
     } else if (mounted) {
-      appSnack(
-        context,
-        'Storage permission is required to scan your music library.',
-      );
+      appSnack(context, context.l10n.setupStoragePermissionRequired);
     }
 
     if (mounted) {
@@ -235,7 +233,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
   Future<void> _executeFinishSetup() async {
     final name = _usernameController.text.trim();
     if (name.isEmpty) {
-      appSnack(context, 'Please enter a display name');
+      appSnack(context, context.l10n.setupEnterDisplayName);
       _pageController.animateToPage(
         0,
         duration: AppTokens.dBase,
@@ -257,7 +255,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
       ref.read(setupProvider.notifier).setComplete(true);
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Setup error: $e');
+        appSnack(context, context.l10n.setupSetupError('$e'));
         _outroController.reverse();
       }
     } finally {
@@ -344,8 +342,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                           Opacity(
                             opacity: tagline,
                             child: Text(
-                              'Your music stays on your device. Setting up '
-                              'takes about a minute.',
+                              context.l10n.setupIntroTagline,
                               style: TextStyle(
                                 fontSize: 17,
                                 height: 1.4,
@@ -358,7 +355,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                           Opacity(
                             opacity: button,
                             child: _BlockButton(
-                              label: 'Get started',
+                              label: context.l10n.setupGetStarted,
                               accent: accent,
                               solids: solids,
                               onPressed: () =>
@@ -400,7 +397,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                       ? IconButton(
                           icon: const AppIcon(AppIcons.arrowBack),
                           onPressed: _previousPage,
-                          tooltip: 'Previous step',
+                          tooltip: context.l10n.setupPreviousStep,
                         )
                       : null,
                 ),
@@ -505,8 +502,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
             child: _BlockButton(
               label: _currentPage == _stepCount - 1
-                  ? (_isLoading ? 'Setting things up' : 'Start listening')
-                  : 'Continue',
+                  ? (_isLoading
+                      ? context.l10n.setupSettingThingsUp
+                      : context.l10n.setupStartListening)
+                  : context.l10n.setupContinue,
               accent: accent,
               solids: solids,
               onPressed: _isLoading || !canContinue
@@ -572,10 +571,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
       children: [
         _Headline(
           t: t,
-          title: 'What should we call you?',
-          subtitle:
-              'wispie uses your name to greet you and to sign your listening '
-              'history. Nothing leaves this device either way.',
+          title: context.l10n.setupNameTitle,
+          subtitle: context.l10n.setupNameSubtitle,
         ),
         const SizedBox(height: AppTokens.s5),
         _Rise(
@@ -600,11 +597,11 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                 letterSpacing: -1.0,
                 color: AppTokens.fgPrimary,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 filled: false,
-                hintText: 'Your name',
-                hintStyle: TextStyle(
+                hintText: context.l10n.setupNameHint,
+                hintStyle: const TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -1.0,
@@ -637,7 +634,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                   borderRadius: AppTokens.brPill,
                 ),
                 child: Text(
-                  'Nice to meet you, $name.',
+                  context.l10n.setupGreeting(name),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -660,10 +657,11 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     Color accent,
     _Solids solids,
   ) {
-    const intensities = [
-      (PlayerMotionIntensity.subtle, 'Subtle'),
-      (PlayerMotionIntensity.balanced, 'Balanced'),
-      (PlayerMotionIntensity.bold, 'Bold'),
+    final l10n = context.l10n;
+    final intensities = [
+      (PlayerMotionIntensity.subtle, l10n.appearanceIntensitySubtle),
+      (PlayerMotionIntensity.balanced, l10n.appearanceIntensityBalanced),
+      (PlayerMotionIntensity.bold, l10n.appearanceIntensityBold),
     ];
 
     // Previews only run while this page is the one on screen. The PageView
@@ -693,10 +691,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
       children: [
         _Headline(
           t: t,
-          title: 'Make it look the way you like.',
-          subtitle:
-              'Everything on this page also lives in Settings, so you can '
-              'change it whenever you want.',
+          title: l10n.setupAppearanceTitle,
+          subtitle: l10n.setupAppearanceSubtitle,
         ),
         const SizedBox(height: AppTokens.s5),
         _Rise(
@@ -704,8 +700,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           start: 0.12,
           child: _SettingBlock(
             solids: solids,
-            title: 'Immersive design',
-            subtitle: 'A full-bleed cover player and gradient detail screens.',
+            title: l10n.appearanceImmersiveTitle,
+            subtitle: l10n.setupImmersiveSubtitle,
             preview: demo(
               _DemoKind.immersive,
               settings.fullBleedDesignEnabled,
@@ -724,9 +720,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           start: 0.2,
           child: _SettingBlock(
             solids: solids,
-            title: 'Audio visualizer',
-            subtitle: 'Bars over the artwork while you listen. Synced follows '
-                'the song rather than a random pattern.',
+            title: l10n.appearanceVisualizerTitle,
+            subtitle: l10n.setupVisualizerSubtitle,
             preview: demo(_DemoKind.spectrum,
                 settings.visualizerMode != VisualizerMode.off),
             child: _Choice<VisualizerMode>(
@@ -734,10 +729,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
               solids: solids,
               value: settings.visualizerMode,
               onChanged: notifier.setVisualizerMode,
-              options: const [
-                (VisualizerMode.off, 'Off'),
-                (VisualizerMode.classic, 'Classic'),
-                (VisualizerMode.synced, 'Synced'),
+              options: [
+                (VisualizerMode.off, l10n.appearanceVisualizerOff),
+                (VisualizerMode.classic, l10n.appearanceVisualizerClassic),
+                (VisualizerMode.synced, l10n.appearanceVisualizerSynced),
               ],
             ),
           ),
@@ -748,10 +743,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           start: 0.28,
           child: _SettingBlock(
             solids: solids,
-            title: 'Beat-reactive cover',
+            title: l10n.appearanceBeatCoverTitle,
             subtitle: settings.fullBleedDesignEnabled
-                ? 'Unavailable while immersive design is on.'
-                : 'The album art breathes on every beat.',
+                ? l10n.appearanceBeatCoverUnavailable
+                : l10n.setupBeatCoverSubtitle,
             preview: demo(
               _DemoKind.cover,
               settings.beatReactiveCoverEnabled &&
@@ -785,9 +780,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           start: 0.36,
           child: _SettingBlock(
             solids: solids,
-            title: 'Beat-reactive particles',
-            subtitle: 'Motes drift across the player, and each beat carries '
-                'them further instead of just blinking them.',
+            title: l10n.appearanceParticlesTitle,
+            subtitle: l10n.setupParticlesSubtitle,
             preview: demo(
               _DemoKind.particles,
               settings.beatReactiveParticlesEnabled,
@@ -816,9 +810,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
           start: 0.44,
           child: _SettingBlock(
             solids: solids,
-            title: 'Progress bar',
-            subtitle: 'Draw the song itself as a waveform instead of a plain '
-                'line. Sound reactive makes it move as it plays.',
+            title: l10n.setupProgressBarTitle,
+            subtitle: l10n.setupProgressBarSubtitle,
             preview: AnimatedSwitcher(
               duration: AppTokens.dBase,
               switchInCurve: AppTokens.cStandard,
@@ -843,10 +836,13 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
               solids: solids,
               value: settings.progressBarType,
               onChanged: notifier.setProgressBarType,
-              options: const [
-                (ProgressBarType.basic, 'Standard'),
-                (ProgressBarType.waveform, 'Waveform'),
-                (ProgressBarType.reactive, 'Sound reactive'),
+              options: [
+                (ProgressBarType.basic, l10n.appearanceProgressStandard),
+                (ProgressBarType.waveform, l10n.appearanceProgressWaveform),
+                (
+                  ProgressBarType.reactive,
+                  l10n.appearanceProgressSoundReactive
+                ),
               ],
             ),
           ),
@@ -861,6 +857,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     Color accent,
     _Solids solids,
   ) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
       child: Column(
@@ -868,9 +865,8 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
         children: [
           _Headline(
             t: t,
-            title: 'Where is your music?',
-            subtitle: 'Point wispie at the folders your songs live in. It only '
-                'reads them, and you can add as many as you like.',
+            title: l10n.setupFoldersTitle,
+            subtitle: l10n.setupFoldersSubtitle,
           ),
           const SizedBox(height: AppTokens.s5),
           if (Platform.isAndroid && !_permissionGranted) ...[
@@ -879,12 +875,12 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
               start: 0.2,
               child: _SettingBlock(
                 solids: solids,
-                title: 'Storage permission',
-                subtitle: 'wispie needs it to find audio files on this device.',
+                title: l10n.setupStoragePermissionTitle,
+                subtitle: l10n.setupStoragePermissionSubtitle,
                 child: _BlockButton(
                   label: _permissionDeniedOnce
-                      ? 'Open system settings'
-                      : 'Grant permission',
+                      ? l10n.setupOpenSystemSettings
+                      : l10n.setupGrantPermission,
                   accent: accent,
                   solids: solids,
                   onPressed: _isLoading ? null : _requestPermission,
@@ -908,19 +904,19 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                             color: accent,
                           ),
                           const SizedBox(height: AppTokens.s3),
-                          const Text(
-                            'No folders yet',
-                            style: TextStyle(
+                          Text(
+                            l10n.setupNoFoldersTitle,
+                            style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color: AppTokens.fgPrimary,
                             ),
                           ),
                           const SizedBox(height: AppTokens.s1),
-                          const Text(
-                            'Add the one that holds your songs.',
+                          Text(
+                            l10n.setupNoFoldersSubtitle,
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 14,
                               color: AppTokens.fgTertiary,
                             ),
@@ -975,7 +971,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
                                 ),
                               ),
                               IconButton(
-                                tooltip: 'Remove folder',
+                                tooltip: l10n.setupRemoveFolderTooltip,
                                 icon: const AppIcon(AppIcons.delete, size: 18),
                                 onPressed: () => _removeFolder(folder),
                               ),
@@ -991,7 +987,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
             t: t,
             start: 0.4,
             child: _BlockButton(
-              label: 'Add a folder',
+              label: l10n.setupAddFolder,
               accent: accent,
               solids: solids,
               tonal: true,
@@ -1011,16 +1007,26 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     _Solids solids,
   ) {
     final name = _usernameController.text.trim();
+    final l10n = context.l10n;
 
     // Full-width rows rather than a row of tiles: three columns this narrow
     // cannot hold a value like "Sound reactive" or a label like "Music folders"
     // without either truncating it or wrapping onto a second line, and a
     // wrapped label shifts the tile's number out of line with its neighbours.
     final summary = <(String, String)>[
-      ('Music folders', '${_musicFolders.length}'),
-      ('Immersive design', _yesNo(settings.fullBleedDesignEnabled)),
-      ('Audio visualizer', _visualizerLabel(settings.visualizerMode)),
-      ('Progress bar', _progressBarLabel(settings.progressBarType)),
+      (l10n.setupSummaryMusicFolders, '${_musicFolders.length}'),
+      (
+        l10n.appearanceImmersiveTitle,
+        _yesNo(l10n, settings.fullBleedDesignEnabled)
+      ),
+      (
+        l10n.appearanceVisualizerTitle,
+        _visualizerLabel(l10n, settings.visualizerMode)
+      ),
+      (
+        l10n.setupProgressBarTitle,
+        _progressBarLabel(l10n, settings.progressBarType)
+      ),
     ];
 
     return ListView(
@@ -1028,9 +1034,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
       children: [
         _Headline(
           t: t,
-          title: name.isEmpty ? 'You are all set.' : 'You are all set, $name.',
-          subtitle: 'Here is what we set up. You can change any of it later '
-              'from Settings.',
+          title: name.isEmpty
+              ? l10n.setupReadyTitle
+              : l10n.setupReadyTitleNamed(name),
+          subtitle: l10n.setupReadySubtitle,
         ),
         const SizedBox(height: AppTokens.s5),
         for (final (i, row) in summary.indexed) ...[
@@ -1054,18 +1061,21 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
   }
 }
 
-String _yesNo(bool value) => value ? 'On' : 'Off';
+String _yesNo(AppLocalizations l10n, bool value) =>
+    value ? l10n.setupOn : l10n.setupOff;
 
-String _visualizerLabel(VisualizerMode mode) => switch (mode) {
-      VisualizerMode.off => 'Off',
-      VisualizerMode.classic => 'Classic',
-      VisualizerMode.synced => 'Synced',
+String _visualizerLabel(AppLocalizations l10n, VisualizerMode mode) =>
+    switch (mode) {
+      VisualizerMode.off => l10n.appearanceVisualizerOff,
+      VisualizerMode.classic => l10n.appearanceVisualizerClassic,
+      VisualizerMode.synced => l10n.appearanceVisualizerSynced,
     };
 
-String _progressBarLabel(ProgressBarType type) => switch (type) {
-      ProgressBarType.basic => 'Standard',
-      ProgressBarType.waveform => 'Waveform',
-      ProgressBarType.reactive => 'Sound reactive',
+String _progressBarLabel(AppLocalizations l10n, ProgressBarType type) =>
+    switch (type) {
+      ProgressBarType.basic => l10n.appearanceProgressStandard,
+      ProgressBarType.waveform => l10n.appearanceProgressWaveform,
+      ProgressBarType.reactive => l10n.appearanceProgressSoundReactive,
     };
 
 // -------------------------------------------------------------- HELPERS

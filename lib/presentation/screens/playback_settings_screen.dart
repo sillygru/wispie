@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
@@ -25,6 +26,7 @@ class _PlaybackSettingsScreenState
     extends ConsumerState<PlaybackSettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
@@ -38,14 +40,17 @@ class _PlaybackSettingsScreenState
       highlightId: widget.highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Transitions',
+          label: l10n.playbackGroupTransitions,
           icon: AppIcons.swapHoriz,
           children: [
             AppSettingsSlider(
               icon: AppIcons.hourglass,
               searchId: 'playback.gap',
-              title: isFadeMode ? 'Gap / Delay (off)' : 'Gap / Delay',
-              valueLabel: '${settings.delayDuration.toStringAsFixed(1)}s',
+              title: isFadeMode
+                  ? l10n.playbackGapOff
+                  : l10n.settingsSearchGapTitle,
+              valueLabel: l10n.playbackSecondsValue(
+                  settings.delayDuration.toStringAsFixed(1)),
               value: settings.delayDuration,
               min: 0,
               max: 12,
@@ -55,8 +60,11 @@ class _PlaybackSettingsScreenState
             AppSettingsSlider(
               icon: AppIcons.volumeDown,
               searchId: 'playback.fade_out',
-              title: isGapMode ? 'Fade Out (off)' : 'Fade Out',
-              valueLabel: '${settings.fadeOutDuration.toStringAsFixed(1)}s',
+              title: isGapMode
+                  ? l10n.playbackFadeOutOff
+                  : l10n.settingsSearchFadeOutTitle,
+              valueLabel: l10n.playbackSecondsValue(
+                  settings.fadeOutDuration.toStringAsFixed(1)),
               value: settings.fadeOutDuration,
               min: 0,
               max: 12,
@@ -66,8 +74,11 @@ class _PlaybackSettingsScreenState
             AppSettingsSlider(
               icon: AppIcons.volumeUp,
               searchId: 'playback.fade_in',
-              title: isGapMode ? 'Fade In (off)' : 'Fade In',
-              valueLabel: '${settings.fadeInDuration.toStringAsFixed(1)}s',
+              title: isGapMode
+                  ? l10n.playbackFadeInOff
+                  : l10n.settingsSearchFadeInTitle,
+              valueLabel: l10n.playbackSecondsValue(
+                  settings.fadeInDuration.toStringAsFixed(1)),
               value: settings.fadeInDuration,
               min: 0,
               max: 12,
@@ -77,14 +88,14 @@ class _PlaybackSettingsScreenState
           ],
         ),
         AppSettingsGroup(
-          label: 'Play / Pause',
+          label: l10n.playbackGroupPlayPause,
           icon: AppIcons.playCircle,
           children: [
             AppSettingsSlider(
               icon: AppIcons.play,
               searchId: 'playback.fade_play',
-              title: 'Fade on Play',
-              valueLabel: _fadeLabel(settings.playFadeDuration),
+              title: l10n.settingsSearchFadePlayTitle,
+              valueLabel: _fadeLabel(l10n, settings.playFadeDuration),
               value: settings.playFadeDuration,
               min: 0,
               max: 1,
@@ -94,8 +105,8 @@ class _PlaybackSettingsScreenState
             AppSettingsSlider(
               icon: AppIcons.pause,
               searchId: 'playback.fade_pause',
-              title: 'Fade on Pause',
-              valueLabel: _fadeLabel(settings.pauseFadeDuration),
+              title: l10n.settingsSearchFadePauseTitle,
+              valueLabel: _fadeLabel(l10n, settings.pauseFadeDuration),
               value: settings.pauseFadeDuration,
               min: 0,
               max: 1,
@@ -105,22 +116,22 @@ class _PlaybackSettingsScreenState
           ],
         ),
         AppSettingsGroup(
-          label: 'Audio',
+          label: l10n.playbackGroupAudio,
           icon: AppIcons.playCircle,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.volumeOff,
               searchId: 'playback.auto_pause_mute',
-              title: 'Auto-Pause on Mute',
-              subtitle: 'Pause playback when volume reaches 0',
+              title: l10n.settingsSearchAutoPauseMuteTitle,
+              subtitle: l10n.settingsSearchAutoPauseMuteSubtitle,
               value: settings.autoPauseOnVolumeZero,
               onChanged: notifier.setAutoPauseOnVolumeZero,
             ),
             AppSettingsSwitch(
               icon: AppIcons.volumeUp,
               searchId: 'playback.auto_resume_unmute',
-              title: 'Auto-Resume on Unmute',
-              subtitle: 'Resume playback when volume is restored',
+              title: l10n.settingsSearchAutoResumeUnmuteTitle,
+              subtitle: l10n.settingsSearchAutoResumeUnmuteSubtitle,
               value: settings.autoResumeOnVolumeRestore,
               onChanged: notifier.setAutoResumeOnVolumeRestore,
             ),
@@ -130,14 +141,14 @@ class _PlaybackSettingsScreenState
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Playback'),
+      appBar: AppTopBar(title: l10n.settingsPagePlaybackTitle),
       body: content,
     );
   }
 
-  static String _fadeLabel(double value) {
-    if (value == 0) return 'Off';
-    if (value >= 1.0) return '1.0 s';
-    return '${(value * 1000).round()} ms';
+  static String _fadeLabel(AppLocalizations l10n, double value) {
+    if (value == 0) return l10n.playbackValueOff;
+    if (value >= 1.0) return l10n.playbackValueOneSecond;
+    return l10n.playbackValueMilliseconds((value * 1000).round());
   }
 }

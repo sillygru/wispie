@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/rich_lyrics.dart';
+import '../../../l10n/l10n.dart';
 import '../../../domain/services/lyrics_session.dart';
 import '../../../domain/services/lyrics_timing_offset.dart';
 import '../../../models/song.dart';
@@ -937,10 +938,16 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
     try {
       await ref.read(songsProvider.notifier).updateLyrics(widget.song, chosen);
-      if (mounted) appSnack(context, 'Lyrics saved', tone: AppTone.success);
+      if (mounted) {
+        appSnack(context, context.l10n.lyricsSaved, tone: AppTone.success);
+      }
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Could not save lyrics: $e', tone: AppTone.danger);
+        appSnack(
+          context,
+          context.l10n.lyricsSaveError('$e'),
+          tone: AppTone.danger,
+        );
       }
     }
   }
@@ -966,7 +973,11 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       if (!mounted) return;
       ref.read(translationRevisionProvider.notifier).bump();
       if (mounted) {
-        appSnack(context, 'Cached translation cleared', tone: AppTone.info);
+        appSnack(
+          context,
+          context.l10n.lyricsTranslationCleared,
+          tone: AppTone.info,
+        );
       }
       return;
     }
@@ -1099,8 +1110,11 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
       if (result.isSameLanguage) {
         if (!silent) {
-          appSnack(context, 'Lyrics are already in target language',
-              tone: AppTone.info);
+          appSnack(
+            context,
+            context.l10n.lyricsAlreadyTranslated,
+            tone: AppTone.info,
+          );
         }
         setState(() {
           _translatedLyrics = null;
@@ -1118,11 +1132,19 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         if (!mounted) return;
         ref.read(translationRevisionProvider.notifier).bump();
         if (!silent) {
-          appSnack(context, 'Lyrics translated', tone: AppTone.success);
+          appSnack(
+            context,
+            context.l10n.lyricsTranslated,
+            tone: AppTone.success,
+          );
         }
       } else {
         if (!silent) {
-          appSnack(context, 'Could not translate lyrics', tone: AppTone.danger);
+          appSnack(
+            context,
+            context.l10n.lyricsTranslateError,
+            tone: AppTone.danger,
+          );
         }
       }
     } catch (e) {
@@ -1130,9 +1152,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         final lang = targetLang;
         appSnack(
           context,
-          'Translation failed: $e',
+          context.l10n.lyricsTranslationFailed('$e'),
           tone: AppTone.danger,
-          actionLabel: 'Retry',
+          actionLabel: context.l10n.lyricsRetry,
           onAction: () => _performTranslation(lang),
           duration: const Duration(seconds: 5),
         );
@@ -1433,7 +1455,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                           vertical: PlayerTokens.s1,
                         ),
                         child: Text(
-                          'WORD SYNC',
+                          context.l10n.lyricsBadgeWordSync,
                           style: PlayerTokens.meta(context).copyWith(
                             color: widget.accent,
                             fontWeight: FontWeight.w700,
@@ -1461,7 +1483,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                         ? widget.accent
                         : Colors.white
                             .withValues(alpha: PlayerTokens.aSecondary),
-                    tooltip: 'Translate lyrics',
+                    tooltip: context.l10n.lyricsTranslateTitle,
                     onPressed: _translating ? null : _openTranslationSheet,
                   ),
                 Row(
@@ -1483,8 +1505,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                                 .withValues(alpha: PlayerTokens.aSecondary)
                             : widget.accent,
                         tooltip: _timingControlVisible
-                            ? 'Hide lyric timing'
-                            : 'Adjust lyric timing — hold for precision controls',
+                            ? context.l10n.lyricsHideTimingTooltip
+                            : context.l10n.lyricsAdjustTimingTooltip,
                         onPressed: _openTimingOffset,
                         onLongPress: _openTimingSheet,
                       ),
@@ -1507,7 +1529,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                     icon: const Icon(Icons.travel_explore_rounded),
                     color:
                         Colors.white.withValues(alpha: PlayerTokens.aSecondary),
-                    tooltip: 'Find lyrics online',
+                    tooltip: context.l10n.lyricsFindOnline,
                     onPressed: _findLyricsOnline,
                   ),
               ],
@@ -1703,10 +1725,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
             ),
             const SizedBox(height: PlayerTokens.s3),
-            Text('No lyrics', style: PlayerTokens.paneTitle(context)),
+            Text(
+              context.l10n.lyricsEmptyTitle,
+              style: PlayerTokens.paneTitle(context),
+            ),
             const SizedBox(height: PlayerTokens.s1),
             Text(
-              'This track has no embedded lyrics.',
+              context.l10n.lyricsEmptySubtitle,
               textAlign: TextAlign.center,
               style: PlayerTokens.trackSubtitle(context),
             ),
@@ -1714,7 +1739,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
             FilledButton.icon(
               onPressed: _findLyricsOnline,
               icon: const Icon(Icons.travel_explore_rounded, size: 18),
-              label: const Text('Find lyrics online'),
+              label: Text(context.l10n.lyricsFindOnline),
               style: FilledButton.styleFrom(
                 backgroundColor: widget.accent,
                 foregroundColor: PlayerTokens.onAccent(widget.accent),

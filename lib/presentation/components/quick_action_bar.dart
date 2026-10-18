@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/quick_action_config.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
@@ -89,7 +90,8 @@ class _QuickActionButton extends ConsumerWidget {
 
     // Bare icons on the backdrop — no chips, no fills, no borders.
     return Tooltip(
-      message: _label(isFavorite: isFavorite, isSuggestLess: isSuggestLess),
+      message:
+          _label(context, isFavorite: isFavorite, isSuggestLess: isSuggestLess),
       child: InkResponse(
         radius: 26,
         onTap: () => _invoke(context, ref, isFavorite, isSuggestLess),
@@ -189,32 +191,41 @@ class _QuickActionButton extends ConsumerWidget {
     }
   }
 
-  String _label({required bool isFavorite, required bool isSuggestLess}) {
+  String _label(
+    BuildContext context, {
+    required bool isFavorite,
+    required bool isSuggestLess,
+  }) {
+    final l10n = context.l10n;
     switch (action) {
       case QuickAction.toggleFavorite:
-        return isFavorite ? 'Remove from favorites' : 'Add to favorites';
+        return isFavorite
+            ? l10n.songMenuRemoveFavorite
+            : l10n.songMenuAddFavorite;
       case QuickAction.toggleSuggestLess:
-        return isSuggestLess ? 'Suggest more often' : 'Suggest less often';
+        return isSuggestLess
+            ? l10n.quickActionSuggestMore
+            : l10n.quickActionSuggestLess;
       case QuickAction.playNext:
-        return 'Play next';
+        return l10n.songMenuPlayNext;
       case QuickAction.addToPlaylist:
-        return 'Add to playlist';
+        return l10n.songMenuAddToPlaylist;
       case QuickAction.addToNewPlaylist:
-        return 'Add to new playlist';
+        return l10n.songMenuAddToNewPlaylist;
       case QuickAction.share:
-        return 'Share';
+        return l10n.songMenuShare;
       case QuickAction.editMetadata:
-        return 'Edit metadata';
+        return l10n.songMenuEditMetadata;
       case QuickAction.moveToFolder:
-        return 'Move to folder';
+        return l10n.songMenuMoveToFolder;
       case QuickAction.goToAlbum:
-        return 'Go to album';
+        return l10n.quickActionGoToAlbum;
       case QuickAction.goToArtist:
-        return 'Go to artist';
+        return l10n.quickActionGoToArtist;
       case QuickAction.hide:
-        return 'Hide from library';
+        return l10n.songMenuRemoveFromLibrary;
       case QuickAction.delete:
-        return 'Delete';
+        return l10n.actionDelete;
     }
   }
 }

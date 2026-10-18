@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_feedback.dart';
@@ -96,8 +97,9 @@ class _PlaylistSelectorDialogState
         userData.playlists.where((p) => !p.isRecommendation).toList();
 
     return AlertDialog(
-      title: Text(
-          widget.songFilenames.length == 1 ? 'Add to...' : 'Bulk Add to...'),
+      title: Text(widget.songFilenames.length == 1
+          ? context.l10n.playlistDialogAddTo
+          : context.l10n.playlistDialogBulkAddTo),
       content: SizedBox(
         width: double.maxFinite,
         child: ConstrainedBox(
@@ -109,14 +111,14 @@ class _PlaylistSelectorDialogState
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.add),
-                title: const Text('New Playlist'),
+                title: Text(context.l10n.playlistNewTitle),
                 onTap: () {
                   _showNewPlaylistDialog(context, ref, widget.songFilenames);
                 },
               ),
               const Divider(),
               _PickRow(
-                title: 'Favorites',
+                title: context.l10n.libraryFavorites,
                 leading:
                     const AppIcon(AppIcons.favorite, color: AppTokens.danger),
                 value: _isFavorite,
@@ -139,7 +141,7 @@ class _PlaylistSelectorDialogState
 
                 return _PickRow(
                   title: playlist.name,
-                  subtitle: '${playlist.songs.length} songs',
+                  subtitle: context.l10n.queueSongCount(playlist.songs.length),
                   leading: const AppIcon(AppIcons.queue),
                   value: widget.songFilenames.length > 1
                       ? (allIn && isSelected
@@ -164,7 +166,7 @@ class _PlaylistSelectorDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.actionCancel),
         ),
         ElevatedButton(
           onPressed: () async {
@@ -226,10 +228,10 @@ class _PlaylistSelectorDialogState
 
             if (context.mounted) {
               Navigator.pop(context);
-              appSnack(context, 'Updated selections');
+              appSnack(context, context.l10n.playlistDialogUpdatedSelections);
             }
           },
-          child: const Text('Done'),
+          child: Text(context.l10n.actionDone),
         ),
       ],
     );
@@ -241,10 +243,10 @@ class _PlaylistSelectorDialogState
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('New Playlist'),
+        title: Text(context.l10n.playlistNewTitle),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Playlist Name'),
+          decoration: InputDecoration(hintText: context.l10n.playlistNameHint),
           autofocus: true,
           onSubmitted: (value) {
             if (value.trim().isNotEmpty) {
@@ -257,7 +259,7 @@ class _PlaylistSelectorDialogState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(dialogContext.l10n.actionCancel),
           ),
           TextButton(
             onPressed: () {
@@ -267,7 +269,7 @@ class _PlaylistSelectorDialogState
                 Navigator.pop(dialogContext);
               }
             },
-            child: const Text('Create'),
+            child: Text(dialogContext.l10n.actionCreate),
           ),
         ],
       ),
@@ -295,7 +297,7 @@ class _PlaylistSelectorDialogState
       }
     }
     if (context.mounted) {
-      appSnack(context, 'Created playlist "$name"');
+      appSnack(context, context.l10n.playlistCreated(name));
     }
   }
 }

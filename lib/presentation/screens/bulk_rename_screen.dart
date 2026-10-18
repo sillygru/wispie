@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/services/bulk_rename_planner.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../components/ambient_scaffold.dart';
@@ -19,14 +20,26 @@ import '../utils/wide_layout.dart';
 
 /// How each metadata field is named in the builder. "Current name" rather than
 /// "stem" because that is the thing the user is thinking about.
-const Map<BulkRenameToken, String> _tokenLabels = {
-  BulkRenameToken.title: 'Title',
-  BulkRenameToken.artist: 'Artist',
-  BulkRenameToken.album: 'Album',
-  BulkRenameToken.stem: 'Current name',
-  BulkRenameToken.track: 'Number',
-  BulkRenameToken.year: 'Year',
-};
+String _tokenLabel(AppLocalizations l10n, BulkRenameToken token) =>
+    switch (token) {
+      BulkRenameToken.title => l10n.metadataTitleLabel,
+      BulkRenameToken.artist => l10n.metadataArtistLabel,
+      BulkRenameToken.album => l10n.metadataAlbumLabel,
+      BulkRenameToken.stem => l10n.bulkRenameTokenCurrentName,
+      BulkRenameToken.track => l10n.bulkRenameTokenNumber,
+      BulkRenameToken.year => l10n.bulkRenameTokenYear,
+    };
+
+String _skipReasonLabel(AppLocalizations l10n, BulkRenameSkip skip) =>
+    switch (skip.reason) {
+      BulkRenameSkipReason.noTitleText => l10n.bulkRenameSkipNoTitleText,
+      BulkRenameSkipReason.alreadyNamed => l10n.bulkRenameSkipAlreadyNamed,
+      BulkRenameSkipReason.sameNameAs =>
+        l10n.bulkRenameSkipSameNameAs(skip.conflictingFilename ?? ''),
+      BulkRenameSkipReason.anotherSelected =>
+        l10n.bulkRenameSkipAnotherSelected,
+      BulkRenameSkipReason.fileExists => l10n.bulkRenameSkipFileExists,
+    };
 
 /// Builds the plan in a worker isolate.
 ///
@@ -233,7 +246,10 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
       // state it must never sit in.
       if (mounted && generation == _generation) {
         setState(() => _analyzing = false);
-        appSnack(context, 'Could not analyze the library: $error');
+        appSnack(
+          context,
+          context.l10n.bulkRenameAnalyzeError('$error'),
+        );
       }
       return const [];
     } finally {
@@ -329,13 +345,12 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
   Future<void> _confirm() async {
     if (_renameCount == 0 || _isRunning || _isBusy) return;
 
+    final l10n = context.l10n;
     final confirmed = await showAppConfirm(
       context,
-      title: 'Rename $_renameCount songs',
-      message: 'Files are renamed in place. Play stats, playlists and cached '
-          'artwork move across with them, and the database is kept in step as '
-          'each file lands.',
-      confirmLabel: 'Rename',
+      title: l10n.bulkRenameRenameCount(_renameCount),
+      message: l10n.bulkRenameConfirmMessage,
+      confirmLabel: l10n.actionRename,
     );
     if (confirmed != true || !mounted) return;
 
@@ -370,14 +385,14 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
 
     final actionable = plans.where((e) => e.willRename).length;
     if (actionable == 0) {
-      appSnack(context, 'Nothing left to rename');
+      appSnack(context, context.l10n.bulkRenameNothingLeft);
       return;
     }
 
     setState(() {
       _isRunning = true;
       _cancelRequested = false;
-      _phase = 'Starting';
+      _phase = context.l10n.bulkRenamePhaseStarting;
       _done = 0;
       _total = actionable;
     });
@@ -414,7 +429,7 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
     return PopScope(
       canPop: !_isRunning,
       child: AmbientScaffold(
-        appBar: AppTopBar(title: 'Bulk Rename'),
+        appBar: AppTopBar(title: context.l10n.bulkRenameTitle),
         body: WideContentCenter(
           maxWidth: WideLayout.maxNarrowWidth,
           child: Stack(
@@ -547,17 +562,18 @@ class _FormatSection extends StatelessWidget {
   final ValueChanged<int> onPresetSelected;
   final VoidCallback onEdit;
 
-  static const List<String> _labels = [
-    'Title',
-    'Artist - Title',
-    'Artist - Album - Title',
-    'Custom',
-  ];
+  static List<String> _labels(AppLocalizations l10n) => [
+        l10n.bulkRenameFormatTitle,
+        l10n.bulkRenameFormatArtistTitle,
+        l10n.bulkRenameFormatArtistAlbumTitle,
+        l10n.bulkRenameFormatCustom,
+      ];
 
   @override
   Widget build(BuildContext context) {
     final accent = Theme.of(context).colorScheme.primary;
     final isCustom = presetIndex == null;
+    final labels = _labels(context.l10n);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -565,16 +581,21 @@ class _FormatSection extends StatelessWidget {
         Padding(
           padding:
               const EdgeInsets.only(bottom: AppTokens.s2, left: AppTokens.s1),
-          child: Text('FORMAT', style: AppTokens.sectionLabel(context)),
+          child: Text(
+            context.l10n.bulkRenameSectionFormat,
+            style: AppTokens.sectionLabel(context),
+          ),
         ),
-        for (var i = 0; i < _labels.length; i++)
+        for (var i = 0; i < labels.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTokens.s2),
             child: _FormatBlock(
-              label: _labels[i],
+              label: labels[i],
               // The custom format's own shape is shown instead of a sample, so
               // the block always reads as "what you will get".
-              subtitle: i == 3 && isCustom ? 'Your own arrangement' : null,
+              subtitle: i == 3 && isCustom
+                  ? context.l10n.bulkRenameCustomSubtitle
+                  : null,
               isSelected: i == 3 ? isCustom : presetIndex == i,
               accent: accent,
               onTap: i == 3 ? onEdit : () => onPresetSelected(i),
@@ -661,13 +682,16 @@ class _SegmentBuilder extends StatelessWidget {
         Padding(
           padding:
               const EdgeInsets.only(bottom: AppTokens.s2, left: AppTokens.s1),
-          child: Text('ARRANGE', style: AppTokens.sectionLabel(context)),
+          child: Text(
+            context.l10n.bulkRenameSectionArrange,
+            style: AppTokens.sectionLabel(context),
+          ),
         ),
         if (segments.isEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: AppTokens.s2),
             child: Text(
-              'Add a field below to start building a name.',
+              context.l10n.bulkRenameEmptySegments,
               style: AppTokens.rowSubtitle(context),
             ),
           )
@@ -686,7 +710,7 @@ class _SegmentBuilder extends StatelessWidget {
                 segment: segments[index],
                 tokenLabel: segments[index].token == null
                     ? null
-                    : _tokenLabels[segments[index].token!]!,
+                    : _tokenLabel(context.l10n, segments[index].token!),
                 onChanged: onChanged,
                 onRemove: () => onRemove(index),
               ),
@@ -738,7 +762,7 @@ class _SegmentRow extends StatelessWidget {
         ),
         IconButton(
           icon: const AppIcon(AppIcons.close, size: AppTokens.iconSm),
-          tooltip: 'Remove',
+          tooltip: context.l10n.bulkRenameRemoveToken,
           color: AppTokens.fgTertiary,
           onPressed: onRemove,
         ),
@@ -796,7 +820,7 @@ class _LiteralField extends StatelessWidget {
       style: AppTokens.rowTitle(context),
       decoration: InputDecoration(
         isDense: true,
-        hintText: 'Text, e.g. " - "',
+        hintText: context.l10n.bulkRenameLiteralHint,
         hintStyle: AppTokens.rowSubtitle(context),
         filled: true,
         fillColor: AppTokens.wellFill,
@@ -833,12 +857,12 @@ class _AddRow extends StatelessWidget {
         for (final token in _tokens)
           ActionChip(
             avatar: const AppIcon(AppIcons.add, size: AppTokens.iconSm),
-            label: Text(_tokenLabels[token]!),
+            label: Text(_tokenLabel(context.l10n, token)),
             onPressed: () => onAddToken(token),
           ),
         ActionChip(
           avatar: const AppIcon(AppIcons.edit, size: AppTokens.iconSm),
-          label: const Text('Text'),
+          label: Text(context.l10n.bulkRenameTextChip),
           onPressed: onAddLiteral,
         ),
       ],
@@ -897,7 +921,7 @@ class _RenamePreview extends StatelessWidget {
           padding:
               const EdgeInsets.only(bottom: AppTokens.s2, left: AppTokens.s1),
           child: Text(
-            'PREVIEW',
+            context.l10n.bulkRenameSectionPreview,
             style: AppTokens.sectionLabel(context),
           ),
         ),
@@ -921,7 +945,7 @@ class _RenamePreview extends StatelessWidget {
                           ),
                           const SizedBox(width: AppTokens.s3),
                           Text(
-                            'Analyzing library',
+                            context.l10n.bulkRenameAnalyzing,
                             style: AppTokens.rowTitle(context),
                           ),
                           const Spacer(),
@@ -934,13 +958,13 @@ class _RenamePreview extends StatelessWidget {
                     : Row(
                         children: [
                           Text(
-                            '$renameCount to rename',
+                            context.l10n.bulkRenameCountToRename(renameCount),
                             style: AppTokens.rowTitle(context),
                           ),
                           const Spacer(),
                           if (skippedCount > 0)
                             Text(
-                              '$skippedCount skipped',
+                              context.l10n.bulkRenameSkippedCount(skippedCount),
                               style: AppTokens.rowSubtitle(context)
                                   .copyWith(color: AppTokens.warning),
                             ),
@@ -979,7 +1003,7 @@ class _RenamePreview extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.all(AppTokens.s3),
                     child: Text(
-                      'and $hidden more',
+                      context.l10n.bulkRenameAndMore(hidden),
                       style: AppTokens.rowSubtitle(context),
                     ),
                   ),
@@ -1001,7 +1025,7 @@ class _RenamePreview extends StatelessWidget {
             ),
             padding: const EdgeInsets.symmetric(vertical: AppTokens.s3),
           ),
-          child: Text('Rename $renameCount songs'),
+          child: Text(context.l10n.bulkRenameRenameCount(renameCount)),
         ),
       ],
     );
@@ -1045,7 +1069,7 @@ class _CheckingBar extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Checking names — $done of $total',
+                  context.l10n.bulkRenameChecking(done, total),
                   style: AppTokens.rowSubtitle(context),
                 ),
               ),
@@ -1058,7 +1082,7 @@ class _CheckingBar extends StatelessWidget {
                   minimumSize: const Size(0, 32),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: const Text('Stop'),
+                child: Text(context.l10n.bulkRenameStop),
               ),
             ],
           ),
@@ -1093,7 +1117,7 @@ class _PreviewRow extends StatelessWidget {
           const SizedBox(height: 2),
           if (skipped)
             Text(
-              plan.skipReason!,
+              _skipReasonLabel(context.l10n, plan.skipReason!),
               style: AppTokens.rowSubtitle(context)
                   .copyWith(color: AppTokens.warning),
               maxLines: 1,
@@ -1129,6 +1153,7 @@ class _ProgressOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final progress = total == 0 ? 0.0 : done / total;
 
     return Positioned.fill(
@@ -1148,7 +1173,7 @@ class _ProgressOverlay extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    cancelRequested ? 'Stopping...' : phase,
+                    cancelRequested ? l10n.bulkRenameStopping : phase,
                     style: AppTokens.rowTitle(context),
                   ),
                   const SizedBox(height: AppTokens.s3),
@@ -1167,7 +1192,9 @@ class _ProgressOverlay extends StatelessWidget {
                         child: Text(
                           // The last phases are single steps, so a counter would
                           // only ever read "1 of 1".
-                          total <= 1 ? 'Please wait' : '$done of $total',
+                          total <= 1
+                              ? l10n.bulkRenamePleaseWait
+                              : l10n.bulkRenameProgressCount(done, total),
                           style: AppTokens.rowSubtitle(context),
                         ),
                       ),
@@ -1181,7 +1208,7 @@ class _ProgressOverlay extends StatelessWidget {
                             minimumSize: const Size(0, 32),
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          child: const Text('Stop'),
+                          child: Text(context.l10n.bulkRenameStop),
                         ),
                     ],
                   ),
@@ -1203,17 +1230,14 @@ Future<void> showAppResultsSheet(
 ) {
   final renamedCount = result.successCount;
   final failures = result.failures;
+  final l10n = context.l10n;
   final message = switch ((result.stoppedEarly, failures.isEmpty)) {
-    (true, true) =>
-      'Stopped after $renamedCount songs. Their stats and cached artwork moved '
-          'across; the rest were left alone.',
+    (true, true) => l10n.bulkRenameStopped(renamedCount),
     (true, false) =>
-      'Stopped after $renamedCount songs, ${failures.length} could not be '
-          'renamed.',
-    (false, true) =>
-      'Renamed $renamedCount songs. Stats and cached artwork moved across.',
+      l10n.bulkRenameStoppedFailed(renamedCount, failures.length),
+    (false, true) => l10n.bulkRenameCompleted(renamedCount),
     (false, false) =>
-      'Renamed $renamedCount songs, ${failures.length} could not be renamed.',
+      l10n.bulkRenameCompletedFailed(renamedCount, failures.length),
   };
 
   // Nothing to report beyond the count, and nothing left on this screen to do.
@@ -1226,7 +1250,7 @@ Future<void> showAppResultsSheet(
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => AppDialog(
-      title: 'Rename finished',
+      title: l10n.bulkRenameFinishedTitle,
       message: message,
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 280),
@@ -1258,7 +1282,7 @@ Future<void> showAppResultsSheet(
       ),
       actions: [
         AppDialogAction(
-          label: 'Done',
+          label: l10n.actionDone,
           isPrimary: true,
           onPressed: () => Navigator.pop(dialogContext),
         ),

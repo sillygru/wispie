@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../tokens/app_tokens.dart';
 
 /// Confirmation dialog — the shape most of the app's ~50 `AlertDialog`s were
@@ -10,8 +11,8 @@ Future<bool?> showAppConfirm(
   BuildContext context, {
   required String title,
   String? message,
-  String confirmLabel = 'Confirm',
-  String cancelLabel = 'Cancel',
+  String? confirmLabel,
+  String? cancelLabel,
   bool isDanger = false,
 }) {
   return showDialog<bool>(
@@ -21,11 +22,11 @@ Future<bool?> showAppConfirm(
       message: message,
       actions: [
         AppDialogAction(
-          label: cancelLabel,
+          label: cancelLabel ?? context.l10n.actionCancel,
           onPressed: () => Navigator.pop(context, false),
         ),
         AppDialogAction(
-          label: confirmLabel,
+          label: confirmLabel ?? context.l10n.appDialogConfirm,
           isDanger: isDanger,
           isPrimary: true,
           onPressed: () => Navigator.pop(context, true),
@@ -41,8 +42,8 @@ Future<String?> showAppTextPrompt(
   BuildContext context, {
   required String title,
   String? initialValue,
-  String hintText = 'Enter name...',
-  String confirmLabel = 'Save',
+  String? hintText,
+  String? confirmLabel,
 }) {
   final controller = TextEditingController(text: initialValue ?? '');
 
@@ -53,7 +54,8 @@ Future<String?> showAppTextPrompt(
       content: TextField(
         controller: controller,
         autofocus: true,
-        decoration: InputDecoration(hintText: hintText),
+        decoration: InputDecoration(
+            hintText: hintText ?? context.l10n.appDialogEnterName),
         onSubmitted: (value) {
           final trimmed = value.trim();
           Navigator.pop(context, trimmed.isEmpty ? null : trimmed);
@@ -61,11 +63,11 @@ Future<String?> showAppTextPrompt(
       ),
       actions: [
         AppDialogAction(
-          label: 'Cancel',
+          label: context.l10n.actionCancel,
           onPressed: () => Navigator.pop(context),
         ),
         AppDialogAction(
-          label: confirmLabel,
+          label: confirmLabel ?? context.l10n.backupSave,
           isPrimary: true,
           onPressed: () {
             final trimmed = controller.text.trim();

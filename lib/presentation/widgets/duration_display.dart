@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
@@ -148,15 +149,10 @@ class CollectionDurationDisplay extends StatelessWidget {
 
     String displayText;
     if (showSongCount) {
-      final songsWithDuration =
-          DurationFormatter.getSongsWithDurationCount(songs);
       final totalSongs = songs.length;
 
-      if (songsWithDuration < totalSongs) {
-        displayText = '$totalSongs songs • $durationText';
-      } else {
-        displayText = '$totalSongs songs • $durationText';
-      }
+      displayText =
+          context.l10n.durationSongsWithTotal(totalSongs, durationText);
     } else {
       displayText = durationText;
     }

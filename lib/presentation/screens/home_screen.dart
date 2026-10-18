@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../widgets/album_art_image.dart';
 import '../widgets/song_list_item.dart';
 import '../../providers/providers.dart';
@@ -82,7 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final selectedPath = selection['path'] ?? '';
     if (selectedPath.isEmpty) {
       if (mounted) {
-        appSnack(context, 'Unable to access selected folder',
+        appSnack(context, context.l10n.homeFolderAccessError,
             tone: AppTone.danger);
       }
       return;
@@ -228,8 +229,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: AppMediaCard(
         size: _queueCardSize,
         title: snapshot.timestampLabel,
-        subtitle:
-            '${snapshot.displayDate} · $trackCount ${trackCount == 1 ? 'track' : 'tracks'}',
+        subtitle: context.l10n.homeQueueCardSubtitle(
+          snapshot.displayDate,
+          trackCount,
+        ),
         artwork: QueueCoverMosaic(
           songs: _queueSnapshotSongs(songsAsync, snapshot),
           accent: AppTokens.accentOf(context, ref),
@@ -286,7 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     const SizedBox(height: AppTokens.s4),
                   ],
                   Text(
-                    '${songs.length} ${songs.length == 1 ? 'track' : 'tracks'}',
+                    context.l10n.homeTrackCount(songs.length),
                     style: AppTokens.meta(context),
                   ),
                   const SizedBox(height: AppTokens.s4),
@@ -301,14 +304,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       );
                       appSnack(
                         context,
-                        'Playing ${songs.length} tracks',
-                        actionLabel: 'Open Player',
+                        context.l10n.homePlayingCount(songs.length),
+                        actionLabel: context.l10n.homeOpenPlayer,
                         onAction: () =>
                             Navigator.push(context, PlayerPageRoute()),
                       );
                     },
                     icon: const AppIcon(AppIcons.play),
-                    label: const Text('Play Now'),
+                    label: Text(context.l10n.homePlayNow),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 50),
                     ),
@@ -324,13 +327,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       );
                       appSnack(
                         context,
-                        '${songs.length} tracks will play after current song',
-                        actionLabel: 'Cancel',
+                        context.l10n.homePlayAfterCount(songs.length),
+                        actionLabel: context.l10n.actionCancel,
                         onAction: audioManager.cancelPendingQueueReplacement,
                       );
                     },
                     icon: const AppIcon(AppIcons.skipNext),
-                    label: const Text('Play After Current Song'),
+                    label: Text(context.l10n.homePlayAfterCurrent),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                       backgroundColor: AppTokens.surface(2),
@@ -363,12 +366,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           AppSheetAction(
             icon: AppIcons.playlistAdd,
-            label: 'Save to new playlist',
+            label: context.l10n.homeSaveToNewPlaylist,
             onTap: () async {
               Navigator.pop(sheetContext);
               final name = await showAppTextPrompt(
                 context,
-                title: 'Playlist Name',
+                title: context.l10n.playlistNameHint,
                 initialValue: currentTitle,
               );
               if (name == null || !context.mounted) return;
@@ -384,14 +387,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 );
               }
               if (context.mounted) {
-                appSnack(context, 'Created playlist "$name"',
+                appSnack(context, context.l10n.playlistCreated(name),
                     tone: AppTone.success);
               }
             },
           ),
           AppSheetAction(
             icon: isPinned ? AppIcons.pushPin : AppIcons.pushPin,
-            label: isPinned ? 'Unpin' : 'Pin recommendation',
+            label: isPinned
+                ? context.l10n.homeUnpin
+                : context.l10n.homePinRecommendation,
             onTap: () {
               Navigator.pop(sheetContext);
               ref.read(userDataProvider.notifier).pinRecommendation(
@@ -405,12 +410,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           AppSheetAction(
             icon: AppIcons.edit,
-            label: 'Rename recommendation',
+            label: context.l10n.homeRenameRecommendation,
             onTap: () async {
               Navigator.pop(sheetContext);
               final newName = await showAppTextPrompt(
                 context,
-                title: 'Rename Recommendation',
+                title: context.l10n.homeRenameRecommendationTitle,
                 initialValue: currentTitle,
               );
               if (newName == null) return;
@@ -424,15 +429,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           AppSheetAction(
             icon: AppIcons.delete,
-            label: 'Remove recommendation',
+            label: context.l10n.homeRemoveRecommendation,
             isDanger: true,
             onTap: () async {
               Navigator.pop(sheetContext);
               final confirmed = await showAppConfirm(
                 context,
-                title: 'Remove recommendation?',
-                message: 'Are you sure you want to remove "$currentTitle"?',
-                confirmLabel: 'Remove',
+                title: context.l10n.homeRemoveRecommendationTitle,
+                message:
+                    context.l10n.homeRemoveRecommendationMessage(currentTitle),
+                confirmLabel: context.l10n.homeRemove,
                 isDanger: true,
               );
               if (confirmed == true) {
@@ -468,10 +474,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         loading: () => const AppLoading(),
         error: (error, stack) => AppEmptyState(
           icon: AppIcons.error,
-          title: 'Something went wrong',
+          title: context.l10n.homeErrorTitle,
           message: error.toString(),
           tone: AppTone.danger,
-          actionLabel: 'Try Again',
+          actionLabel: context.l10n.homeTryAgain,
           actionIcon: AppIcons.refresh,
           onAction: () => ref.invalidate(songsProvider),
         ),
@@ -479,9 +485,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           if (songs.isEmpty) {
             return AppEmptyState(
               icon: AppIcons.musicOff,
-              title: 'No songs found',
-              message: 'Select your music folder to start listening offline.',
-              actionLabel: 'Select Music Folder',
+              title: context.l10n.homeNoSongsTitle,
+              message: context.l10n.homeNoSongsMessage,
+              actionLabel: context.l10n.homeSelectFolder,
               actionIcon: AppIcons.folder,
               onAction: _selectMusicFolder,
             );
@@ -534,7 +540,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       isScrolled: isScrolled,
                       actions: [
                         HeaderShuffleButton(
-                          tooltip: 'Shuffle all',
+                          tooltip: context.l10n.actionShuffleAll,
                           color: accent,
                           onShufflePressed: () => audioManager.shuffleAndPlay(
                             songs,
@@ -546,7 +552,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               audioManager.shuffleAfterCurrentQueue(songs),
                         ),
                         IconButton(
-                          tooltip: 'Search',
+                          tooltip: context.l10n.actionSearch,
                           icon: const AppIcon(AppIcons.search),
                           onPressed: () =>
                               context.pushApp(const SearchScreen()),
@@ -557,8 +563,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     // Quick Picks
                     if (settings.showQuickPicks &&
                         topRecommendations.isNotEmpty) ...[
-                      const SliverToBoxAdapter(
-                        child: AppSectionHeader(label: 'Quick Picks'),
+                      SliverToBoxAdapter(
+                        child: AppSectionHeader(
+                          label: context.l10n.homeQuickPicks,
+                        ),
                       ),
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(
@@ -592,8 +600,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         displayQueues.isNotEmpty) ...[
                       SliverToBoxAdapter(
                         child: AppSectionHeader(
-                          label: 'Recent Queues',
-                          actionLabel: 'See All',
+                          label: context.l10n.homeRecentQueues,
+                          actionLabel: context.l10n.actionSeeAll,
                           onActionTap: () => Navigator.push(
                             context,
                             PlayerPageRoute(
@@ -628,8 +636,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
                     // For You
                     if (settings.showForYou) ...[
-                      const SliverToBoxAdapter(
-                        child: AppSectionHeader(label: 'For You'),
+                      SliverToBoxAdapter(
+                        child: AppSectionHeader(
+                          label: context.l10n.homeForYou,
+                        ),
                       ),
                       SliverToBoxAdapter(
                         child: SizedBox(
@@ -662,8 +672,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     SliverToBoxAdapter(
                       child: Row(
                         children: [
-                          const Expanded(
-                            child: AppSectionHeader(label: 'Library'),
+                          Expanded(
+                            child: AppSectionHeader(
+                              label: context.l10n.libraryTitle,
+                            ),
                           ),
                           SortMenu(
                             sortOrder: _homeSort,
@@ -677,7 +689,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               top: AppTokens.s2,
                             ),
                             child: Text(
-                              '${songs.length} tracks',
+                              context.l10n.homeTrackCount(songs.length),
                               style: AppTokens.meta(context),
                             ),
                           ),

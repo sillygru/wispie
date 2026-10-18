@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/sync/account_service.dart';
 import '../../services/sync/api_client.dart' show SyncApiException;
 import '../components/app_feedback.dart';
@@ -56,8 +57,9 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
 
   Future<void> _submit() async {
     final uErr = PasswordPolicy.validateUsername(_user.text);
+    final l10n = context.l10n;
     final pErr = _mode == SyncAuthMode.login
-        ? (_pw.text.isEmpty ? 'Enter your password' : null)
+        ? (_pw.text.isEmpty ? l10n.syncEnterPassword : null)
         : PasswordPolicy.validate(_pw.text);
     if (uErr != null || pErr != null) {
       setState(() => _error = uErr ?? pErr);
@@ -81,7 +83,7 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
     } on SyncApiException catch (e) {
       if (mounted) setState(() => _error = _friendly(e));
     } catch (e) {
-      if (mounted) setState(() => _error = 'Something went wrong: $e');
+      if (mounted) setState(() => _error = l10n.syncAuthUnexpectedError('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -89,7 +91,7 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
 
   String _friendly(SyncApiException e) =>
       e.status == 409 && _mode == SyncAuthMode.create
-          ? 'That username is already taken'
+          ? context.l10n.syncUsernameTaken
           : e.message;
 
   @override
@@ -104,11 +106,16 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
         children: [
           SegmentedButton<SyncAuthMode>(
             showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: SyncAuthMode.create, label: Text('Create')),
-              ButtonSegment(value: SyncAuthMode.login, label: Text('Log in')),
+            segments: [
               ButtonSegment(
-                  value: SyncAuthMode.recover, label: Text('Recover')),
+                  value: SyncAuthMode.create,
+                  label: Text(context.l10n.actionCreate)),
+              ButtonSegment(
+                  value: SyncAuthMode.login,
+                  label: Text(context.l10n.syncModeLogIn)),
+              ButtonSegment(
+                  value: SyncAuthMode.recover,
+                  label: Text(context.l10n.syncModeRecover)),
             ],
             selected: {_mode},
             onSelectionChanged: _busy
@@ -123,7 +130,7 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
             controller: _user,
             enabled: !_busy,
             autocorrect: false,
-            decoration: const InputDecoration(labelText: 'Username'),
+            decoration: InputDecoration(labelText: context.l10n.syncUsername),
           ),
           if (_mode == SyncAuthMode.recover) ...[
             const SizedBox(height: AppTokens.s2),
@@ -131,7 +138,8 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
               controller: _key,
               enabled: !_busy,
               autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Recovery key'),
+              decoration:
+                  InputDecoration(labelText: context.l10n.syncRecoveryKeyTitle),
             ),
           ],
           const SizedBox(height: AppTokens.s2),
@@ -141,8 +149,9 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
             obscureText: true,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              labelText:
-                  _mode == SyncAuthMode.recover ? 'New password' : 'Password',
+              labelText: _mode == SyncAuthMode.recover
+                  ? context.l10n.syncNewPassword
+                  : context.l10n.syncPassword,
             ),
           ),
           if (_mode != SyncAuthMode.login && _pw.text.isNotEmpty) ...[
@@ -160,8 +169,7 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
             Padding(
               padding: const EdgeInsets.only(top: AppTokens.s2),
               child: Text(
-                'Your data is end-to-end encrypted. If you lose both your '
-                'password and recovery key, it cannot be recovered.',
+                context.l10n.syncEncryptionWarning,
                 style: AppTokens.rowSubtitle(context),
               ),
             ),
@@ -174,11 +182,11 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: Text(_busy
-                ? 'Securing your account...'
+                ? context.l10n.syncSecuringAccount
                 : switch (_mode) {
-                    SyncAuthMode.create => 'Create account',
-                    SyncAuthMode.login => 'Log in',
-                    SyncAuthMode.recover => 'Recover account',
+                    SyncAuthMode.create => context.l10n.syncCreateAccount,
+                    SyncAuthMode.login => context.l10n.syncLogIn,
+                    SyncAuthMode.recover => context.l10n.syncRecoverAccount,
                   }),
           ),
           if (_busy)
@@ -196,7 +204,9 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
             ),
           TextButton(
             onPressed: () => setState(() => _advanced = !_advanced),
-            child: Text(_advanced ? 'Hide advanced' : 'Advanced'),
+            child: Text(_advanced
+                ? context.l10n.syncHideAdvanced
+                : context.l10n.syncAdvanced),
           ),
           if (_advanced)
             SyncServerUrlField(
@@ -232,10 +242,13 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
         allowedExtensions: ['txt'],
         bytes: utf8.encode('wispie recovery key\n${widget.recoveryKey}\n'),
       );
-      if (path != null && mounted) appSnack(context, 'Recovery key saved');
+      if (path != null && mounted) {
+        appSnack(context, context.l10n.syncRecoveryKeySaved);
+      }
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Could not save file', tone: AppTone.danger);
+        appSnack(context, context.l10n.syncCouldNotSaveFile,
+            tone: AppTone.danger);
       }
     }
   }
@@ -248,12 +261,11 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Your recovery key',
+          Text(context.l10n.syncRecoveryKeyRevealTitle,
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppTokens.s2),
           Text(
-            'This is the only way to regain access if you forget your '
-            'password. It is shown once. Store it somewhere safe.',
+            context.l10n.syncRecoveryKeyRevealBody,
             style: AppTokens.rowSubtitle(context),
           ),
           const SizedBox(height: AppTokens.s3),
@@ -270,13 +282,13 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
             OutlinedButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: widget.recoveryKey));
-                appSnack(context, 'Copied');
+                appSnack(context, context.l10n.syncCopied);
               },
-              child: const Text('Copy'),
+              child: Text(context.l10n.syncCopy),
             ),
             OutlinedButton(
               onPressed: _saveFile,
-              child: const Text('Save to file'),
+              child: Text(context.l10n.syncSaveToFile),
             ),
           ]),
           CheckboxListTile(
@@ -284,11 +296,11 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
             controlAffinity: ListTileControlAffinity.leading,
             value: _saved,
             onChanged: (v) => setState(() => _saved = v ?? false),
-            title: const Text('I saved my recovery key'),
+            title: Text(context.l10n.syncRecoveryKeySavedCheckbox),
           ),
           FilledButton(
             onPressed: _saved ? widget.onContinue : null,
-            child: const Text('Continue'),
+            child: Text(context.l10n.syncContinue),
           ),
         ],
       ),
@@ -323,38 +335,37 @@ class SyncInitialChoice extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            freshAccount ? 'Upload your library data' : 'Set up this device',
+            freshAccount
+                ? context.l10n.syncUploadTitle
+                : context.l10n.syncSetupDeviceTitle,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: AppTokens.s2),
           Text(
             freshAccount
-                ? 'Auto-sync turns on after your data is uploaded once.'
-                : 'Choose how this device joins your cloud data. Auto-sync '
-                    'turns on after this step.',
+                ? context.l10n.syncFreshAccountBody
+                : context.l10n.syncChooseDeviceBody,
             style: AppTokens.rowSubtitle(context),
           ),
           const SizedBox(height: AppTokens.s3),
           if (freshAccount)
             FilledButton(
               onPressed: busy ? null : onSyncEverything,
-              child: const Text('Sync everything now'),
+              child: Text(context.l10n.syncEverythingNow),
             )
           else ...[
             FilledButton(
               onPressed: busy ? null : onMerge,
-              child: const Text('Merge this device with cloud'),
+              child: Text(context.l10n.syncMergeWithCloud),
             ),
             const SizedBox(height: AppTokens.s2),
             OutlinedButton(
               onPressed: busy ? null : onNewDevice,
-              child: const Text('Set up as new device'),
+              child: Text(context.l10n.syncSetupNewDevice),
             ),
             const SizedBox(height: AppTokens.s2),
             Text(
-              'Merging keeps both sides. Setting up as a new device erases '
-              'this device\'s synced data first and is safer if this device '
-              'already holds an older copy of the same history.',
+              context.l10n.syncMergeExplanation,
               style: AppTokens.rowSubtitle(context),
             ),
           ],
@@ -387,26 +398,25 @@ class SyncEpochBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Cloud data was replaced',
+          Text(context.l10n.syncCloudReplacedTitle,
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppTokens.s2),
           Text(
-            'Another device overwrote the cloud. Sync is paused on this '
-            'device until you choose.',
+            context.l10n.syncCloudReplacedBody,
             style: AppTokens.rowSubtitle(context),
           ),
           const SizedBox(height: AppTokens.s3),
           FilledButton(
             onPressed: busy ? null : onMerge,
-            child: const Text('Merge this device into the new cloud data'),
+            child: Text(context.l10n.syncMergeIntoCloud),
           ),
           TextButton(
             onPressed: busy ? null : onReplace,
-            child: const Text('Replace this device with cloud'),
+            child: Text(context.l10n.syncReplaceDeviceTile),
           ),
           TextButton(
             onPressed: busy ? null : onOverwrite,
-            child: Text('Overwrite cloud with this device',
+            child: Text(context.l10n.syncOverwriteCloudTile,
                 style: TextStyle(color: AppTokens.danger)),
           ),
         ],

@@ -752,9 +752,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 AppLocalizations.of(context).songListMergedSongs(raw.length));
           }
         } catch (e) {
-          if (context.mounted)
+          if (context.mounted) {
             appSnack(
                 context, AppLocalizations.of(context).songListMergeError('$e'));
+          }
         }
       }
     }
@@ -839,8 +840,9 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     if (selected == null) return;
     if (selected == 'reset') {
       await ref.read(artistAlbumArtProvider.notifier).removeArtistArt(artist);
-      if (context.mounted)
+      if (context.mounted) {
         appSnack(context, AppLocalizations.of(context).songListResetArtwork);
+      }
       return;
     }
     if (selected == 'custom') {
@@ -859,9 +861,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       }
       return;
     }
-    if (context.mounted)
+    if (context.mounted) {
       appSnack(
           context, AppLocalizations.of(context).songListDownloadingArtwork);
+    }
     final String? localPath = await onlineService.downloadAndCacheCover(
       selected,
       'artist_$artist',
@@ -969,8 +972,9 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       await ref
           .read(artistAlbumArtProvider.notifier)
           .removeAlbumArt(compositeKey);
-      if (context.mounted)
+      if (context.mounted) {
         appSnack(context, AppLocalizations.of(context).songListResetArtwork);
+      }
       return;
     }
     if (selected == 'custom') {
@@ -991,9 +995,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       }
       return;
     }
-    if (context.mounted)
+    if (context.mounted) {
       appSnack(
           context, AppLocalizations.of(context).songListDownloadingArtwork);
+    }
     final String? localPath = await onlineService.downloadAndCacheCover(
       selected,
       'album_$compositeKey',

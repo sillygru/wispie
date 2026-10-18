@@ -7,6 +7,7 @@ import '../components/app_feedback.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_section_header.dart';
 import '../../domain/models/listening_insights.dart';
+import '../../l10n/l10n.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
@@ -34,7 +35,7 @@ class StatsScreen extends ConsumerWidget {
     final data = insights.value;
 
     return AmbientScaffold(
-      appBar: AppTopBar(title: 'Listening'),
+      appBar: AppTopBar(title: context.l10n.statsTitle),
       body: RefreshIndicator(
         // The play log is appended by the player, so a refresh is the only way
         // to pick up a session that ended after the screen was built.
@@ -50,24 +51,25 @@ class StatsScreen extends ConsumerWidget {
                   hasScrollBody: false,
                   child: AppEmptyState(
                     icon: AppIcons.error,
-                    title: "Couldn't load your stats",
+                    title: context.l10n.statsLoadErrorTitle,
                     message: '$error',
                     tone: AppTone.danger,
-                    actionLabel: 'Try Again',
+                    actionLabel: context.l10n.homeTryAgain,
                     onAction: () => ref.invalidate(listeningInsightsProvider),
                   ),
                 ),
-              _ when data == null => const SliverFillRemaining(
+              _ when data == null => SliverFillRemaining(
                   hasScrollBody: false,
-                  child: AppLoading(message: 'Reading your listening history'),
+                  child: AppLoading(
+                    message: context.l10n.statsReadingHistory,
+                  ),
                 ),
-              _ when data.isEmpty => const SliverFillRemaining(
+              _ when data.isEmpty => SliverFillRemaining(
                   hasScrollBody: false,
                   child: AppEmptyState(
                     icon: AppIcons.analytics,
-                    title: 'No listening history yet',
-                    message: 'Play something and your listening habits will '
-                        'show up here.',
+                    title: context.l10n.statsEmptyTitle,
+                    message: context.l10n.statsEmptyMessage,
                   ),
                 ),
               _ => SliverToBoxAdapter(
@@ -99,13 +101,13 @@ class _StatsBody extends StatelessWidget {
       children: [
         const _Gutter(child: StatsRangeBar()),
         _Gutter(child: OverviewSection(insights: insights, accent: accent)),
-        const _Section(label: 'Over time'),
+        _Section(label: context.l10n.statsSectionOverTime),
         _Gutter(child: TrendSection(insights: insights, accent: accent)),
-        const _Section(label: 'When you listen'),
+        _Section(label: context.l10n.statsSectionWhen),
         _Gutter(child: RhythmSection(insights: insights, accent: accent)),
-        const _Section(label: 'Your top'),
+        _Section(label: context.l10n.statsSectionTop),
         _Gutter(child: TopListsSection(insights: insights, accent: accent)),
-        const _Section(label: 'Taste'),
+        _Section(label: context.l10n.statsSectionTaste),
         _Gutter(child: TasteSection(insights: insights, accent: accent)),
       ],
     );
@@ -130,9 +132,9 @@ class _StatsBody extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   OverviewSection(insights: insights, accent: accent),
-                  const _Section(label: 'Over time'),
+                  _Section(label: context.l10n.statsSectionOverTime),
                   TrendSection(insights: insights, accent: accent),
-                  const _Section(label: 'Taste'),
+                  _Section(label: context.l10n.statsSectionTaste),
                   TasteSection(insights: insights, accent: accent),
                 ],
               ),
@@ -143,9 +145,9 @@ class _StatsBody extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _Section(label: 'When you listen'),
+                  _Section(label: context.l10n.statsSectionWhen),
                   RhythmSection(insights: insights, accent: accent),
-                  const _Section(label: 'Your top'),
+                  _Section(label: context.l10n.statsSectionTop),
                   TopListsSection(insights: insights, accent: accent),
                 ],
               ),

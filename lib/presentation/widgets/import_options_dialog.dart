@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../../services/import_options.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -53,6 +54,7 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     final databaseCategories = {
       ImportDataCategory.favorites,
@@ -103,7 +105,7 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
         children: [
           const AppIcon(AppIcons.restore),
           const SizedBox(width: 8),
-          const Expanded(child: Text('Select Data to Restore')),
+          Expanded(child: Text(l10n.importSelectTitle)),
           IconButton(
             icon: const AppIcon(AppIcons.close),
             onPressed: () => Navigator.of(context).pop(null),
@@ -120,28 +122,28 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
               if (databaseCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  'Database',
+                  l10n.importSectionDatabase,
                   databaseCategoriesAvailable,
                   AppIcons.storage,
                 ),
               if (storageCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  'Storage',
+                  l10n.importSectionStorage,
                   storageCategoriesAvailable,
                   AppIcons.folder,
                 ),
               if (settingsCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  'Settings',
+                  l10n.importSectionSettings,
                   settingsCategoriesAvailable,
                   AppIcons.settings,
                 ),
               if (cacheCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  'Cache',
+                  l10n.importSectionCache,
                   cacheCategoriesAvailable,
                   AppIcons.folderZip,
                 ),
@@ -152,14 +154,13 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Restore Options',
+                      l10n.importOptionsTitle,
                       style: theme.textTheme.titleSmall,
                     ),
                     const SizedBox(height: 8),
                     CheckboxListTile(
-                      title: const Text('Replace Databases'),
-                      subtitle:
-                          const Text('Clear existing data before restoring'),
+                      title: Text(l10n.importReplaceDatabases),
+                      subtitle: Text(l10n.importReplaceDatabasesSubtitle),
                       value: _restoreDatabases,
                       onChanged: (value) {
                         setState(() {
@@ -179,7 +180,7 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         FilledButton(
           onPressed: _selectedCategories.isEmpty
@@ -192,7 +193,7 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
                   );
                   Navigator.of(context).pop(options);
                 },
-          child: const Text('Restore'),
+          child: Text(l10n.importRestoreAction),
         ),
       ],
     );
@@ -229,11 +230,11 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
               const Spacer(),
               TextButton(
                 onPressed: () => _selectAll(availableCategories),
-                child: const Text('All'),
+                child: Text(context.l10n.importSelectAll),
               ),
               TextButton(
                 onPressed: () => _deselectAll(availableCategories),
-                child: const Text('None'),
+                child: Text(context.l10n.importSelectNone),
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -18,7 +19,7 @@ class HeaderShuffleButton extends ConsumerStatefulWidget {
   final VoidCallback? onShufflePressed;
   final VoidCallback? onShuffleAfterSong;
   final VoidCallback? onShuffleAfterQueue;
-  final String tooltip;
+  final String? tooltip;
   final Color? color;
 
   const HeaderShuffleButton({
@@ -26,7 +27,7 @@ class HeaderShuffleButton extends ConsumerStatefulWidget {
     this.onShufflePressed,
     this.onShuffleAfterSong,
     this.onShuffleAfterQueue,
-    this.tooltip = 'Shuffle all',
+    this.tooltip,
     this.color,
   });
 
@@ -45,6 +46,7 @@ class _HeaderShuffleButtonState extends ConsumerState<HeaderShuffleButton> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final isScanning = ref.watch(isScanningProvider);
     final scanProgress = ref.watch(scanProgressProvider);
     final accent = AppTokens.accentOf(context, ref);
@@ -55,7 +57,7 @@ class _HeaderShuffleButtonState extends ConsumerState<HeaderShuffleButton> {
 
     Widget button = IconButton(
       key: const ValueKey('header_shuffle_button'),
-      tooltip: widget.tooltip,
+      tooltip: widget.tooltip ?? l10n.actionShuffleAll,
       icon: AppIcon(AppIcons.shuffle, color: effectiveColor),
       onPressed: widget.onShufflePressed,
       onLongPress: hasHoldActions ? _openHoldMenu : null,
@@ -77,7 +79,7 @@ class _HeaderShuffleButtonState extends ConsumerState<HeaderShuffleButton> {
               leadingIcon: const AppIcon(AppIcons.skipNext),
               onPressed: widget.onShuffleAfterSong,
               child: Text(
-                'Shuffle after current song',
+                l10n.shuffleButtonAfterSong,
                 style: AppTokens.rowTitle(context),
               ),
             ),
@@ -86,7 +88,7 @@ class _HeaderShuffleButtonState extends ConsumerState<HeaderShuffleButton> {
               leadingIcon: const AppIcon(AppIcons.queue),
               onPressed: widget.onShuffleAfterQueue,
               child: Text(
-                'Shuffle after current queue',
+                l10n.shuffleButtonAfterQueue,
                 style: AppTokens.rowTitle(context),
               ),
             ),
@@ -125,17 +127,18 @@ class _HeaderScanProgressCircle extends StatelessWidget {
   Widget build(BuildContext context) {
     final clampedProgress = progress.clamp(0.0, 1.0);
     final percentage = (clampedProgress * 100).toInt();
+    final l10n = context.l10n;
 
     return Tooltip(
-      message: 'Scanning library ($percentage%)',
+      message: l10n.shuffleButtonScanningTooltip('$percentage'),
       child: Semantics(
-        label: 'Scanning library $percentage percent complete',
+        label: l10n.shuffleButtonScanningSemantics('$percentage'),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppTokens.rPill),
           onTap: () {
             appSnack(
               context,
-              'Scanning library: $percentage%',
+              l10n.shuffleButtonScanningMessage('$percentage'),
               tone: AppTone.info,
             );
           },

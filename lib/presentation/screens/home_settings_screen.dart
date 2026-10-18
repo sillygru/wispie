@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
@@ -25,6 +26,7 @@ class HomeSettingsScreen extends ConsumerStatefulWidget {
 class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
@@ -32,60 +34,59 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
       highlightId: widget.highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Lists & Navigation',
+          label: l10n.homeSettingsGroupLists,
           icon: AppIcons.viewList,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.timer,
               searchId: 'appearance.song_duration',
-              title: 'Show Song Duration',
-              subtitle: 'Display duration in song lists',
+              title: l10n.settingsSearchSongDurationTitle,
+              subtitle: l10n.settingsSearchSongDurationSubtitle,
               value: settings.showSongDuration,
               onChanged: notifier.setShowSongDuration,
             ),
             AppSettingsSwitch(
               icon: AppIcons.swapVert,
               searchId: 'appearance.auto_hide_bars',
-              title: 'Auto-Hide Bars',
-              subtitle:
-                  'Header and bottom dock hide on downward scroll, restore on upward scroll',
+              title: l10n.settingsSearchAutoHideBarsTitle,
+              subtitle: l10n.homeSettingsAutoHideBarsSubtitle,
               value: settings.autoHideBottomBarOnScroll,
               onChanged: notifier.setAutoHideBottomBarOnScroll,
             ),
             AppSettingsTile(
               icon: AppIcons.flashOn,
               searchId: 'appearance.quick_actions',
-              title: 'Quick Actions',
-              subtitle: 'Customize long-press actions',
+              title: l10n.settingsSearchQuickActionsTitle,
+              subtitle: l10n.settingsSearchQuickActionsSubtitle,
               onTap: () => context.pushApp(const QuickActionsSettingsScreen()),
             ),
           ],
         ),
         AppSettingsGroup(
-          label: 'Home screen',
+          label: l10n.homeSettingsGroupHome,
           icon: AppIcons.home,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.autoAwesome,
               searchId: 'appearance.quick_picks',
-              title: 'Quick Picks',
-              subtitle: 'Show quick pick recommendations',
+              title: l10n.settingsSearchQuickPicksTitle,
+              subtitle: l10n.settingsSearchQuickPicksSubtitle,
               value: settings.showQuickPicks,
               onChanged: notifier.setShowQuickPicks,
             ),
             AppSettingsSwitch(
               icon: AppIcons.clock,
               searchId: 'appearance.recent_queues',
-              title: 'Recent Queues',
-              subtitle: 'Show recently played queues',
+              title: l10n.settingsSearchRecentQueuesTitle,
+              subtitle: l10n.settingsSearchRecentQueuesSubtitle,
               value: settings.showRecentQueues,
               onChanged: notifier.setShowRecentQueues,
             ),
             AppSettingsSwitch(
               icon: AppIcons.explore,
               searchId: 'appearance.for_you',
-              title: 'For You',
-              subtitle: 'Show recommended playlists',
+              title: l10n.settingsSearchForYouTitle,
+              subtitle: l10n.settingsSearchForYouSubtitle,
               value: settings.showForYou,
               onChanged: notifier.setShowForYou,
             ),
@@ -95,7 +96,7 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Home & Navigation'),
+      appBar: AppTopBar(title: l10n.settingsPageHomeNavigationTitle),
       body: content,
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/waveform_service.dart';
@@ -433,8 +434,9 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
                           valueListenable: _scrubDeltaNotifier,
                           builder: (context, deltaSec, _) {
                             final delta = deltaSec ?? 0;
-                            final deltaText =
-                                '${delta >= 0 ? '+' : ''}${delta}s';
+                            final deltaText = context.l10n.waveformDeltaSeconds(
+                              '${delta >= 0 ? '+' : ''}$delta',
+                            );
                             return Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,

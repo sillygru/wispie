@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/sleep_timer_service.dart';
@@ -42,7 +43,7 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
     final currentSong = audioManager.currentSongNotifier.value;
 
     return Scaffold(
-      appBar: const AppTopBar(title: 'Sleep Timer'),
+      appBar: AppTopBar(title: context.l10n.sleepTimerTitle),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
           AppTokens.s4,
@@ -51,9 +52,9 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
           AppTokens.scrollBottomInset,
         ),
         children: [
-          const AppSectionHeader(
-            label: 'Timer Mode',
-            padding: EdgeInsets.fromLTRB(
+          AppSectionHeader(
+            label: context.l10n.sleepTimerModeLabel,
+            padding: const EdgeInsets.fromLTRB(
               AppTokens.s3,
               AppTokens.s3,
               AppTokens.s3,
@@ -64,12 +65,12 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
           if (_mode == SleepTimerMode.playForTime ||
               _mode == SleepTimerMode.loopCurrent) ...[
             _buildStepperSection(
-              label: 'Duration',
-              valueLabel: '$_minutes min',
+              label: context.l10n.sleepTimerDurationLabel,
+              valueLabel: context.l10n.sleepTimerMinutesValue(_minutes),
               accent: accent,
               options: _minuteOptions,
               selected: _minutes,
-              suffix: 'min',
+              suffix: context.l10n.sleepTimerMinSuffix,
               width: 62,
               onSelected: (value) => setState(() => _minutes = value),
             ),
@@ -78,8 +79,8 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
           ],
           if (_mode == SleepTimerMode.stopAfterTracks)
             _buildStepperSection(
-              label: 'Number of Tracks',
-              valueLabel: '$_tracks tracks',
+              label: context.l10n.sleepTimerTracksLabel,
+              valueLabel: context.l10n.sleepTimerTracksValue(_tracks),
               accent: accent,
               options: _trackOptions,
               selected: _tracks,
@@ -96,30 +97,31 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
   }
 
   Widget _buildModeSelector(Color accent) {
-    const modes = [
+    final l10n = context.l10n;
+    final modes = [
       (
         SleepTimerMode.loopCurrent,
         AppIcons.repeatOne,
-        'Loop Current Song',
-        'Repeat the current song for a set time'
+        l10n.sleepTimerLoopTitle,
+        l10n.sleepTimerLoopSubtitle
       ),
       (
         SleepTimerMode.playForTime,
         AppIcons.timer,
-        'Play for Time',
-        'Stop after a specified duration'
+        l10n.sleepTimerPlayForTimeTitle,
+        l10n.sleepTimerPlayForTimeSubtitle
       ),
       (
         SleepTimerMode.stopAfterCurrent,
         AppIcons.stop,
-        'Stop After Current',
-        'Stop when the current song ends'
+        l10n.sleepTimerStopAfterCurrentTitle,
+        l10n.sleepTimerStopAfterCurrentSubtitle
       ),
       (
         SleepTimerMode.stopAfterTracks,
         AppIcons.playlist,
-        'Stop After Tracks',
-        'Stop after playing X more songs'
+        l10n.sleepTimerStopAfterTracksTitle,
+        l10n.sleepTimerStopAfterTracksSubtitle
       ),
     ];
 
@@ -244,7 +246,7 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
               const SizedBox(width: AppTokens.s3),
               Expanded(
                 child: Text(
-                  'No song is currently playing',
+                  context.l10n.sleepTimerNoSong,
                   style: AppTokens.rowSubtitle(context),
                 ),
               ),
@@ -260,7 +262,10 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('CURRENT SONG', style: AppTokens.sectionLabel(context)),
+            Text(
+              context.l10n.sleepTimerCurrentSongLabel.toUpperCase(),
+              style: AppTokens.sectionLabel(context),
+            ),
             const SizedBox(height: AppTokens.s2),
             Text(
               song.title,
@@ -284,11 +289,11 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
     return AppSurface(
       padding: const EdgeInsets.symmetric(vertical: AppTokens.s1),
       child: SwitchListTile(
-        title: const Text('Let current song finish'),
+        title: Text(context.l10n.sleepTimerLetFinishTitle),
         subtitle: Text(
           _letCurrentFinish
-              ? 'Wait for the current song to end before stopping'
-              : 'Stop immediately when timer expires',
+              ? context.l10n.sleepTimerLetFinishSubtitle
+              : context.l10n.sleepTimerStopImmediatelySubtitle,
         ),
         value: _letCurrentFinish,
         onChanged: (value) => setState(() => _letCurrentFinish = value),
@@ -303,7 +308,7 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
         FilledButton.icon(
           onPressed: _startTimer,
           icon: const AppIcon(AppIcons.play),
-          label: const Text('Start Timer'),
+          label: Text(context.l10n.sleepTimerStart),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
           ),
@@ -314,10 +319,10 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
             onPressed: () {
               SleepTimerService.instance.cancel();
               setState(() {});
-              appSnack(context, 'Sleep timer cancelled');
+              appSnack(context, context.l10n.sleepTimerCancelled);
             },
             icon: const AppIcon(AppIcons.stop),
-            label: const Text('Cancel Active Timer'),
+            label: Text(context.l10n.sleepTimerCancelActive),
             style: FilledButton.styleFrom(
               backgroundColor: AppTokens.surface(2),
               foregroundColor: AppTokens.fgPrimary,
@@ -340,7 +345,11 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
       audioManager: audioManager,
       onComplete: () {
         if (mounted) {
-          appSnack(context, 'Sleep timer finished', tone: AppTone.success);
+          appSnack(
+            context,
+            context.l10n.sleepTimerFinished,
+            tone: AppTone.success,
+          );
         }
       },
     );
@@ -350,15 +359,16 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
   }
 
   String _getTimerConfirmationMessage() {
+    final l10n = context.l10n;
     switch (_mode) {
       case SleepTimerMode.loopCurrent:
-        return 'Looping current song for $_minutes minutes';
+        return l10n.sleepTimerLoopingFor(_minutes);
       case SleepTimerMode.playForTime:
-        return 'Music will stop in $_minutes minutes';
+        return l10n.sleepTimerStopIn(_minutes);
       case SleepTimerMode.stopAfterCurrent:
-        return 'Will stop after current song ends';
+        return l10n.sleepTimerStopAfterCurrent;
       case SleepTimerMode.stopAfterTracks:
-        return 'Will stop after $_tracks more songs';
+        return l10n.sleepTimerStopAfterTracks(_tracks);
     }
   }
 }

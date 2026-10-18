@@ -27,6 +27,7 @@ import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
 import '../tokens/player_tokens.dart';
+import '../../l10n/l10n.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/album_art_image.dart';
 import '../widgets/basic_progress_bar.dart';
@@ -401,7 +402,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
               color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
             ),
             const SizedBox(height: PlayerTokens.s3),
-            Text('Nothing playing', style: PlayerTokens.paneTitle(context)),
+            Text(context.l10n.playerNothingPlaying,
+                style: PlayerTokens.paneTitle(context)),
           ],
         ),
       ),
@@ -587,7 +589,11 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                   vertical: PlayerTokens.s1,
                 ),
                 child: PlayerSegmentedPill(
-                  labels: const <String>['Lyrics', 'Player', 'Queue'],
+                  labels: <String>[
+                    context.l10n.playerPaneLyrics,
+                    context.l10n.playerPanePlayer,
+                    context.l10n.playerPaneQueue,
+                  ],
                   position: _pagePosition,
                   onSelected: _goToPane,
                   accent: accent,
@@ -654,7 +660,10 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 280),
                             child: PlayerSegmentedPill(
-                              labels: const <String>['Lyrics', 'Queue'],
+                              labels: <String>[
+                                context.l10n.playerPaneLyrics,
+                                context.l10n.playerPaneQueue,
+                              ],
                               position: _landscapePosition,
                               onSelected: _selectLandscapeTab,
                               accent: accent,
@@ -770,13 +779,15 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                   children: [
                     GlassCircleButton(
                       icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                      tooltip: wide ? 'Close (Esc)' : 'Close',
+                      tooltip: wide
+                          ? context.l10n.playerCloseEsc
+                          : context.l10n.actionClose,
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                     const Spacer(),
                     GlassCircleButton(
                       icon: const Icon(Icons.more_vert_rounded),
-                      tooltip: 'Song options',
+                      tooltip: context.l10n.playerSongOptions,
                       onPressed: () => showSongOptionsMenu(
                         context,
                         ref,
@@ -1423,7 +1434,11 @@ class _FullBleedVideoToggle extends StatelessWidget {
             isVideo ? Icons.album_rounded : Icons.movie_outlined,
             size: 18,
           ),
-          label: Text(isVideo ? 'Show artwork' : 'Show video'),
+          label: Text(
+            isVideo
+                ? context.l10n.playerShowArtwork
+                : context.l10n.playerShowVideo,
+          ),
           style: TextButton.styleFrom(
             foregroundColor: isVideo ? accent : Colors.white70,
             padding: const EdgeInsets.symmetric(
@@ -1867,7 +1882,7 @@ class _FullBleedControlRow extends StatelessWidget {
         HopIconButton(
           icon: Icons.ios_share_rounded,
           color: idle,
-          tooltip: 'Share',
+          tooltip: context.l10n.songMenuShare,
           onPressed: () => songActionShare(context, song),
         ),
       ],

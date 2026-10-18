@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../../services/sync/account_service.dart';
 import '../../services/sync/api_client.dart';
 import '../tokens/app_tokens.dart';
@@ -36,15 +37,17 @@ class _SyncServerUrlFieldState extends State<SyncServerUrlField> {
     });
     String msg;
     var ok = false;
+    final l10n = context.l10n;
     try {
       final info = await widget.probe(url);
       ok = true;
-      msg = '${info.name} - API v${info.apiVersion}'
-          '${info.registrationOpen ? '' : ' - registration closed'}';
+      msg = info.registrationOpen
+          ? l10n.syncServerInfo(info.name, info.apiVersion.toString())
+          : l10n.syncServerInfoClosed(info.name, info.apiVersion.toString());
     } on SyncApiException catch (e) {
       msg = e.message;
     } catch (e) {
-      msg = 'Could not reach the server';
+      msg = l10n.syncServerUnreachable;
     }
     if (!mounted) return;
     setState(() {
@@ -57,8 +60,8 @@ class _SyncServerUrlFieldState extends State<SyncServerUrlField> {
   @override
   Widget build(BuildContext context) {
     final insecure = SyncApiClient.isInsecure(widget.controller.text);
-    final helper = _result ??
-        (insecure ? 'Plain http: only use on a trusted private network' : null);
+    final helper =
+        _result ?? (insecure ? context.l10n.syncInsecureHttpWarning : null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -70,7 +73,7 @@ class _SyncServerUrlFieldState extends State<SyncServerUrlField> {
           autocorrect: false,
           onChanged: (_) => setState(() => _result = null),
           decoration: InputDecoration(
-            labelText: 'Server URL',
+            labelText: context.l10n.syncServerUrl,
             helperText: helper,
             helperStyle: TextStyle(
               color: _result == null
@@ -84,7 +87,9 @@ class _SyncServerUrlFieldState extends State<SyncServerUrlField> {
           children: [
             TextButton(
               onPressed: widget.enabled && !_checking ? _check : null,
-              child: Text(_checking ? 'Checking...' : 'Check server'),
+              child: Text(_checking
+                  ? context.l10n.syncChecking
+                  : context.l10n.syncCheckServer),
             ),
             TextButton(
               onPressed: widget.enabled
@@ -94,7 +99,7 @@ class _SyncServerUrlFieldState extends State<SyncServerUrlField> {
                         _result = null;
                       })
                   : null,
-              child: const Text('Reset to default'),
+              child: Text(context.l10n.syncResetDefault),
             ),
           ],
         ),

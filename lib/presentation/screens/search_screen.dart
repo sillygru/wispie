@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_filter.dart';
@@ -175,7 +176,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   onSubmitted: (_) => _playFirstResult(),
                   style: const TextStyle(fontSize: 18),
                   decoration: InputDecoration(
-                    hintText: 'Search songs, artists, albums...',
+                    hintText: context.l10n.searchFieldHint,
                     border: InputBorder.none,
                     hintStyle: TextStyle(
                       color: Theme.of(context)
@@ -220,10 +221,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return const AppEmptyState(
+    return AppEmptyState(
       icon: AppIcons.search,
-      title: 'Search your music collection',
-      message: 'Find songs, artists, albums, and lyrics.',
+      title: context.l10n.searchEmptyTitle,
+      message: context.l10n.searchEmptyMessage,
     );
   }
 
@@ -267,7 +268,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       loading: () => const AppLoading(),
       error: (err, stack) => AppEmptyState(
         icon: AppIcons.error,
-        title: 'Could not search',
+        title: context.l10n.searchFailed,
         message: '$err',
         tone: AppTone.danger,
       ),
@@ -277,8 +278,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildNoResultsState(BuildContext context) {
     return AppEmptyState(
       icon: AppIcons.searchOff,
-      title: 'No results found for "$_query"',
-      message: 'Try different keywords or check your filters.',
+      title: context.l10n.searchNoResults(_query),
+      message: context.l10n.searchNoResultsHint,
     );
   }
 
@@ -304,7 +305,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         slivers: [
           if (artists.isNotEmpty) ...[
             SliverToBoxAdapter(
-              child: AppSectionHeader(label: 'Artists (${artists.length})'),
+              child: AppSectionHeader(
+                  label: context.l10n.searchArtistsSection(artists.length)),
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
@@ -322,7 +324,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     return _WideBrowseCard(
                       title: group.artistName,
                       subtitle:
-                          '${group.results.length} ${group.results.length == 1 ? 'track' : 'tracks'}',
+                          context.l10n.searchTrackCount(group.results.length),
                       onTap: () => _showArtistSongs(
                         group.artistName,
                         group.results.map((r) => r.song).toList(),
@@ -336,7 +338,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ],
           if (albums.isNotEmpty) ...[
             SliverToBoxAdapter(
-              child: AppSectionHeader(label: 'Albums (${albums.length})'),
+              child: AppSectionHeader(
+                  label: context.l10n.searchAlbumsSection(albums.length)),
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
@@ -353,8 +356,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     final group = albums[index];
                     return _WideBrowseCard(
                       title: group.albumName,
-                      subtitle:
-                          '${group.artistName} · ${group.results.length} ${group.results.length == 1 ? 'track' : 'tracks'}',
+                      subtitle: context.l10n.searchAlbumSubtitle(
+                          group.artistName, group.results.length),
                       onTap: () => _showAlbumSongs(
                         group.albumName,
                         group.artistName,
@@ -369,7 +372,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ],
           if (songs.isNotEmpty) ...[
             SliverToBoxAdapter(
-              child: AppSectionHeader(label: 'Songs (${songs.length})'),
+              child: AppSectionHeader(
+                  label: context.l10n.searchSongsSection(songs.length)),
             ),
             const SliverToBoxAdapter(
               child: Padding(
@@ -482,7 +486,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           }
         }
         if (artistGroups.isNotEmpty) {
-          organized.add(const _SectionHeader('Artists'));
+          organized.add(_SectionHeader(context.l10n.libraryArtistsTab));
           organized.addAll(
             artistGroups.entries.map((e) => _ArtistGroup(e.key, e.value)),
           );
@@ -500,7 +504,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           }
         }
         if (albumGroups.isNotEmpty) {
-          organized.add(const _SectionHeader('Albums'));
+          organized.add(_SectionHeader(context.l10n.gradientDetailAlbums));
           organized.addAll(
             albumGroups.entries.map((e) => _AlbumGroup(
                   e.value.first.song.album,
@@ -520,7 +524,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 (filterState.songs && (r.matchedTitle || r.hasLyricsMatch)))
             .toList();
         if (songResults.isNotEmpty) {
-          organized.add(const _SectionHeader('Songs'));
+          organized.add(_SectionHeader(context.l10n.gradientDetailSongs));
           organized.addAll(songResults);
         }
       }

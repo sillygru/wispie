@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/app_icon_service.dart';
 import '../components/ambient_scaffold.dart';
@@ -19,9 +20,10 @@ class AppIconSettingsScreen extends ConsumerWidget {
     final notifier = ref.read(settingsProvider.notifier);
     final accent = AppTokens.accentOf(context, ref);
     final textTheme = Theme.of(context).textTheme;
+    final l10n = context.l10n;
 
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'App icon'),
+      appBar: AppTopBar(title: l10n.appearanceAppIcon),
       body: WideContentCenter(
         maxWidth: WideLayout.maxNarrowWidth,
         child: ListView(
@@ -59,7 +61,7 @@ class AppIconSettingsScreen extends ConsumerWidget {
             const SizedBox(height: AppTokens.s5),
             Center(
               child: Text(
-                'More icons coming soon',
+                l10n.appIconMoreSoon,
                 style: textTheme.bodyMedium?.copyWith(
                   color: AppTokens.fg(AppTokens.aSecondary),
                 ),
@@ -67,8 +69,7 @@ class AppIconSettingsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: AppTokens.s3),
             Text(
-              'Desktop launchers and file managers keep the default icon; the '
-              'window and Dock icon follow your choice.',
+              l10n.appIconDesktopNote,
               textAlign: TextAlign.center,
               style: textTheme.bodySmall?.copyWith(
                 color: AppTokens.fg(AppTokens.aSecondary),

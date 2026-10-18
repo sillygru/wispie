@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_surface.dart';
 import '../../tokens/app_tokens.dart';
 import '../../utils/stats_format.dart';
@@ -23,8 +24,9 @@ class OverviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final change = insights.listenedTrend.change;
-    final percent = StatsFormat.signedPercent(change);
+    final percent = StatsFormat.signedPercent(change, l10n);
 
     return AppSurface(
       clipContent: true,
@@ -36,7 +38,7 @@ class OverviewSection extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'TIME LISTENED',
+                  l10n.statsTimeListened,
                   style: AppTokens.sectionLabel(context),
                 ),
               ),
@@ -54,14 +56,13 @@ class OverviewSection extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              StatsFormat.duration(insights.listened),
+              StatsFormat.duration(insights.listened, l10n),
               style: AppTokens.display(context),
             ),
           ),
           const SizedBox(height: AppTokens.s1),
           Text(
-            '${insights.range.title} · ${insights.activeDays} '
-            '${insights.activeDays == 1 ? 'day' : 'days'} with music on',
+            l10n.statsRangeWithDays(insights.range.title, insights.activeDays),
             style: AppTokens.rowSubtitle(context),
           ),
           const SizedBox(height: AppTokens.s5),
@@ -69,27 +70,27 @@ class OverviewSection extends StatelessWidget {
             children: [
               Expanded(
                 child: _Metric(
-                  label: 'PLAYS',
+                  label: l10n.statsPlays,
                   value: StatsFormat.compactCount(insights.plays),
                 ),
               ),
               Expanded(
                 child: _Metric(
-                  label: 'SKIPS',
+                  label: l10n.statsSkips,
                   value: StatsFormat.compactCount(insights.skips),
                 ),
               ),
               Expanded(
                 child: _Metric(
-                  label: 'TRACKS',
+                  label: l10n.statsTracks,
                   value: StatsFormat.compactCount(insights.uniqueSongs),
                 ),
               ),
               Expanded(
                 child: _Metric(
-                  label: 'STREAK',
+                  label: l10n.statsStreak,
                   value: '${insights.currentStreak}',
-                  caption: 'best ${insights.longestStreak}',
+                  caption: l10n.statsStreakBest(insights.longestStreak),
                 ),
               ),
             ],

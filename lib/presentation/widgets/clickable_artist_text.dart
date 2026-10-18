@@ -2,6 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/l10n.dart';
+
 /// Renders artist metadata where individual artist names within multi-artist
 /// strings (e.g. "Artist 1, Artist 2 & Artist 3") are independently clickable.
 class ClickableArtistText extends StatefulWidget {
@@ -54,7 +56,7 @@ class _ClickableArtistTextState extends State<ClickableArtistText> {
     final String artistField = widget.artist;
     if (artistField.trim().isEmpty) {
       return Text(
-        'Unknown Artist',
+        context.l10n.metaUnknownArtist,
         style: widget.style,
         textAlign: widget.textAlign,
         maxLines: widget.maxLines,

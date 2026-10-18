@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/lrclib_result.dart';
+import '../../l10n/l10n.dart';
 import '../../domain/services/lrclib_match.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
@@ -22,7 +23,7 @@ Future<String?> showLyricsSearchSheet(
 }) {
   return showAppSheet<String>(
     context,
-    title: 'Find lyrics',
+    title: context.l10n.lyricsFindTitle,
     builder: (context) => _LyricsSearchSheet(song: song),
   );
 }
@@ -89,10 +90,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
     setState(() {
       _searching = false;
       _results = results;
-      _error = results.isEmpty
-          ? 'No lyrics found. Try a different title or artist, or check your '
-              'connection.'
-          : null;
+      _error = results.isEmpty ? context.l10n.lyricsNoResults : null;
     });
   }
 
@@ -109,8 +107,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
           child: SingleChildScrollView(
             child: Text(
               result.instrumental
-                  ? 'Marked as instrumental. Applying this clears any lyrics '
-                      'stored on the file.'
+                  ? context.l10n.lyricsInstrumentalWarning
                   : _previewText(lyrics),
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
@@ -119,11 +116,11 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL'),
+            child: Text(context.l10n.backupCancelUpper),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('APPLY'),
+            child: Text(context.l10n.lyricsApplyUpper),
           ),
         ],
       ),
@@ -145,6 +142,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
   @override
   Widget build(BuildContext context) {
     final accent = AppTokens.accentOf(context, ref);
+    final l10n = context.l10n;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -161,9 +159,19 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _queryField(_titleController, 'Title')),
+                    Expanded(
+                      child: _queryField(
+                        _titleController,
+                        l10n.metadataTitleLabel,
+                      ),
+                    ),
                     const SizedBox(width: AppTokens.s3),
-                    Expanded(child: _queryField(_artistController, 'Artist')),
+                    Expanded(
+                      child: _queryField(
+                        _artistController,
+                        l10n.metadataArtistLabel,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: AppTokens.s3),
@@ -189,7 +197,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
                     FilledButton.icon(
                       onPressed: _searching ? null : _search,
                       icon: const AppIcon(AppIcons.search, size: 18),
-                      label: const Text('Search'),
+                      label: Text(l10n.actionSearch),
                     ),
                   ],
                 ),
@@ -297,7 +305,7 @@ class _PlainToggle extends StatelessWidget {
             const SizedBox(width: AppTokens.s2),
             Flexible(
               child: Text(
-                'Plain text',
+                context.l10n.lyricsPlainText,
                 style: AppTokens.rowSubtitle(context),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -358,7 +366,10 @@ class _ResultRow extends StatelessWidget {
                       style: AppTokens.rowSubtitle(context),
                     ),
                     const SizedBox(height: 2),
-                    Text(_durationLine(), style: AppTokens.meta(context)),
+                    Text(
+                      _durationLine(context.l10n),
+                      style: AppTokens.meta(context),
+                    ),
                   ],
                 ),
               ),
@@ -381,16 +392,16 @@ class _ResultRow extends StatelessWidget {
 
   /// The remote length plus how far it is from the local file — the clearest
   /// signal that a result is a different recording rather than a bad tag.
-  String _durationLine() {
+  String _durationLine(AppLocalizations l10n) {
     final remote = result.duration;
-    if (remote == null) return 'Unknown length';
+    if (remote == null) return l10n.lyricsUnknownLength;
 
     final formatted = _format(remote);
     final local = localDuration;
     if (local == null) return formatted;
 
     final deltaSeconds = (remote - local).inSeconds;
-    if (deltaSeconds == 0) return '$formatted · exact match';
+    if (deltaSeconds == 0) return l10n.lyricsDurationExactMatch(formatted);
 
     final sign = deltaSeconds > 0 ? '+' : '−';
     return '$formatted · $sign${deltaSeconds.abs()}s';
@@ -404,13 +415,16 @@ class _ResultRow extends StatelessWidget {
 
   Widget _badge(BuildContext context) {
     final (label, color) = switch (result.syncType) {
-      LyricsSyncType.word => ('WORD SYNC', accent),
-      LyricsSyncType.line => ('LINE SYNC', accent),
+      LyricsSyncType.word => (context.l10n.lyricsBadgeWordSync, accent),
+      LyricsSyncType.line => (context.l10n.lyricsBadgeLineSync, accent),
       LyricsSyncType.instrumental => (
-          'INSTRUMENTAL',
+          context.l10n.lyricsBadgeInstrumental,
           AppTokens.fgTertiary,
         ),
-      LyricsSyncType.plain => ('PLAIN', AppTokens.fgTertiary),
+      LyricsSyncType.plain => (
+          context.l10n.lyricsBadgePlain,
+          AppTokens.fgTertiary,
+        ),
     };
 
     return Container(

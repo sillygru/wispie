@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/services/song_merge_finder.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/user_data_provider.dart';
@@ -49,7 +50,8 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
       body: songsAsync.when(
         data: (allSongs) => _buildContent(context, userData, allSongs),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) =>
+            Center(child: Text(context.l10n.mergedLoadError('$e'))),
       ),
     );
   }
@@ -74,19 +76,19 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
         SizedBox(
           height: topBarHeight + MediaQuery.paddingOf(context).top,
           child: AppTopBar(
-            title: 'Merged Songs',
+            title: context.l10n.mergedTitle,
             actions: [
               IconButton(
                 icon: const AppIcon(AppIcons.add),
-                tooltip: 'Create merge group',
+                tooltip: context.l10n.mergedCreateGroupTooltip,
                 onPressed: () => _openSelectSongsScreen(context, allSongs),
               ),
             ],
             bottom: AppSegmentedTabs(
               controller: _tabController,
               labels: [
-                'Groups ($mergedCount)',
-                'Auto-Find ($candidateCount)',
+                context.l10n.mergedGroupsTab(mergedCount),
+                context.l10n.mergedAutoFindTab(candidateCount),
               ],
             ),
           ),
@@ -109,7 +111,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final result = await context.pushApp<Map<String, dynamic>>(
       SelectSongsScreen(
         songs: allSongs,
-        title: 'Select Songs to Merge',
+        title: context.l10n.mergedSelectSongsTitle,
       ),
     );
     if (result != null && context.mounted) {
@@ -124,7 +126,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
           if (context.mounted) {
             appSnack(
               context,
-              'Merged ${selected.length} songs',
+              context.l10n.mergedCreatedSnack(selected.length),
               tone: AppTone.success,
             );
           }
@@ -157,12 +159,12 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
               ),
               const SizedBox(height: AppTokens.s4),
               Text(
-                'No merged songs yet',
+                context.l10n.mergedEmptyTitle,
                 style: AppTokens.paneTitle(context),
               ),
               const SizedBox(height: AppTokens.s2),
               Text(
-                'Group different versions of the same song (remixes, live versions, acoustics) so they share one spot during shuffle.',
+                context.l10n.mergedEmptyBody,
                 textAlign: TextAlign.center,
                 style: AppTokens.rowSubtitle(context),
               ),
@@ -170,7 +172,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
               FilledButton.icon(
                 onPressed: () => _openSelectSongsScreen(context, allSongs),
                 icon: const AppIcon(AppIcons.add, size: 18),
-                label: const Text('Create Merge Group'),
+                label: Text(context.l10n.mergedCreateGroupButton),
               ),
             ],
           ),
@@ -209,8 +211,8 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
               appSnack(
                 context,
                 newPriority != null
-                    ? '"$songTitle" set as priority song'
-                    : 'Priority cleared',
+                    ? context.l10n.mergedPrioritySet(songTitle)
+                    : context.l10n.mergedPriorityCleared,
                 tone: AppTone.info,
               );
             }
@@ -242,12 +244,12 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
               ),
               const SizedBox(height: AppTokens.s4),
               Text(
-                'No candidate songs found',
+                context.l10n.mergedNoCandidatesTitle,
                 style: AppTokens.paneTitle(context),
               ),
               const SizedBox(height: AppTokens.s2),
               Text(
-                'No unmerged song variants (remixes, live versions, acoustics) were detected in your library.',
+                context.l10n.mergedNoCandidatesBody,
                 textAlign: TextAlign.center,
                 style: AppTokens.rowSubtitle(context),
               ),
@@ -270,7 +272,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
             children: [
               Expanded(
                 child: Text(
-                  'Found ${candidateGroups.length} potential group${candidateGroups.length != 1 ? 's' : ''} to merge',
+                  context.l10n.mergedFoundGroups(candidateGroups.length),
                   style: AppTokens.rowSubtitle(context).copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -279,7 +281,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
               FilledButton.tonalIcon(
                 onPressed: () => _mergeAllCandidates(context, candidateGroups),
                 icon: const AppIcon(AppIcons.merge, size: 16),
-                label: const Text('Merge All'),
+                label: Text(context.l10n.mergedMergeAll),
               ),
             ],
           ),
@@ -300,7 +302,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
                   if (context.mounted) {
                     appSnack(
                       context,
-                      'Merged ${selectedFilenames.length} songs',
+                      context.l10n.mergedCreatedSnack(selectedFilenames.length),
                       tone: AppTone.success,
                     );
                   }
@@ -320,17 +322,17 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Merge All Suggestions'),
-        content: Text(
-            'Create ${candidateGroups.length} merge group${candidateGroups.length != 1 ? 's' : ''} for detected song variants?'),
+        title: Text(context.l10n.mergedMergeAllTitle),
+        content:
+            Text(context.l10n.mergedMergeAllConfirm(candidateGroups.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Merge All'),
+            child: Text(context.l10n.mergedMergeAll),
           ),
         ],
       ),
@@ -350,7 +352,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
       if (context.mounted) {
         appSnack(
           context,
-          'Created $count merge group${count != 1 ? 's' : ''}',
+          context.l10n.mergedCreatedGroupsSnack(count),
           tone: AppTone.success,
         );
       }
@@ -361,16 +363,16 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Unmerge Song'),
-        content: Text('Remove "${song.title}" from this merge group?'),
+        title: Text(context.l10n.mergedUnmergeTitle),
+        content: Text(context.l10n.mergedUnmergeConfirm(song.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Unmerge'),
+            child: Text(context.l10n.mergedUnmergeAction),
           ),
         ],
       ),
@@ -379,7 +381,11 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     if (confirmed == true && context.mounted) {
       await ref.read(userDataProvider.notifier).unmergeSong(song.filename);
       if (context.mounted) {
-        appSnack(context, '"${song.title}" unmerged', tone: AppTone.info);
+        appSnack(
+          context,
+          context.l10n.mergedUnmergedSnack(song.title),
+          tone: AppTone.info,
+        );
       }
     }
   }
@@ -389,16 +395,16 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Merge Group'),
-        content: const Text('Unmerge all songs in this group?'),
+        title: Text(context.l10n.mergedDeleteGroupTitle),
+        content: Text(context.l10n.mergedDeleteGroupConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Unmerge All'),
+            child: Text(context.l10n.mergedUnmergeAllAction),
           ),
         ],
       ),
@@ -407,7 +413,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     if (confirmed == true && context.mounted) {
       await ref.read(userDataProvider.notifier).deleteMergedGroup(groupId);
       if (context.mounted) {
-        appSnack(context, 'Merge group deleted', tone: AppTone.info);
+        appSnack(context, context.l10n.mergedGroupDeleted, tone: AppTone.info);
       }
     }
   }
@@ -457,7 +463,7 @@ class _MergeGroupCard extends ConsumerWidget {
                 const SizedBox(width: AppTokens.s2),
                 Expanded(
                   child: Text(
-                    'Merge Group',
+                    context.l10n.mergedGroupLabel,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: accent,
@@ -465,14 +471,14 @@ class _MergeGroupCard extends ConsumerWidget {
                   ),
                 ),
                 Text(
-                  '${songs.length} versions',
+                  context.l10n.mergedVersionsCount(songs.length),
                   style: AppTokens.rowSubtitle(context),
                 ),
                 const SizedBox(width: AppTokens.s2),
                 IconButton(
                   icon: const AppIcon(AppIcons.delete, size: 18),
                   onPressed: onDeleteGroup,
-                  tooltip: 'Unmerge all',
+                  tooltip: context.l10n.mergedUnmergeAllTooltip,
                 ),
               ],
             ),
@@ -521,7 +527,7 @@ class _MergeGroupCard extends ConsumerWidget {
                           borderRadius: AppTokens.brPill,
                         ),
                         child: Text(
-                          'Priority',
+                          context.l10n.mergedPriorityBadge,
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
@@ -551,13 +557,13 @@ class _MergeGroupCard extends ConsumerWidget {
                       ),
                       onPressed: () => onSetPriority(song.filename),
                       tooltip: isPriority
-                          ? 'Priority song for shuffle'
-                          : 'Set as priority song',
+                          ? context.l10n.mergedPrioritySongTooltip
+                          : context.l10n.mergedSetPriorityTooltip,
                     ),
                     IconButton(
                       icon: const AppIcon(AppIcons.linkOff, size: 18),
                       onPressed: () => onUnmergeSong(song),
-                      tooltip: 'Unmerge song',
+                      tooltip: context.l10n.mergedUnmergeSongTooltip,
                     ),
                   ],
                 ),
@@ -627,7 +633,10 @@ class _CandidateGroupCardState extends State<_CandidateGroupCard> {
                   ),
                 ),
                 Text(
-                  '${_selectedFilenames.length}/${songs.length} selected',
+                  context.l10n.mergedSelectedCount(
+                    _selectedFilenames.length,
+                    songs.length,
+                  ),
                   style: AppTokens.rowSubtitle(context),
                 ),
                 const SizedBox(width: AppTokens.s3),
@@ -635,7 +644,7 @@ class _CandidateGroupCardState extends State<_CandidateGroupCard> {
                   onPressed: canMerge
                       ? () => widget.onMerge(_selectedFilenames.toList())
                       : null,
-                  child: const Text('Merge'),
+                  child: Text(context.l10n.mergedMergeAction),
                 ),
               ],
             ),

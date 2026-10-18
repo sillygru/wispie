@@ -12,6 +12,7 @@ import '../../services/audio_player_manager.dart';
 import '../../services/display_refresh_service.dart';
 import '../../services/power_state_service.dart';
 import '../../services/screen_wake_lock_service.dart';
+import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
 import '../components/player_segmented_pill.dart';
 import '../components/song_actions.dart';
@@ -477,7 +478,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
               color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
             ),
             const SizedBox(height: PlayerTokens.s3),
-            Text('Nothing playing', style: PlayerTokens.paneTitle(context)),
+            Text(context.l10n.playerNothingPlaying,
+                style: PlayerTokens.paneTitle(context)),
           ],
         ),
       ),
@@ -554,7 +556,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                           vertical: PlayerTokens.s2,
                         ),
                         child: PlayerSegmentedPill(
-                          labels: const ['Lyrics', 'Player', 'Queue'],
+                          labels: [
+                            context.l10n.playerPaneLyrics,
+                            context.l10n.playerPanePlayer,
+                            context.l10n.playerPaneQueue,
+                          ],
                           position: _pagePosition,
                           onSelected: _goToPane,
                           accent: accent,
@@ -648,7 +654,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 280),
                               child: PlayerSegmentedPill(
-                                labels: const ['Lyrics', 'Queue'],
+                                labels: [
+                                  context.l10n.playerPaneLyrics,
+                                  context.l10n.playerPaneQueue,
+                                ],
                                 position: _landscapePosition,
                                 onSelected: _selectLandscapeTab,
                                 accent: accent,
@@ -711,13 +720,13 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
             icon: const Icon(Icons.keyboard_arrow_down_rounded),
             color: Colors.white,
             onPressed: () => Navigator.of(context).maybePop(),
-            tooltip: 'Close (Esc)',
+            tooltip: context.l10n.playerCloseEsc,
           ),
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.more_vert_rounded),
             color: Colors.white,
-            tooltip: 'Song options',
+            tooltip: context.l10n.playerSongOptions,
             onPressed: () => showSongOptionsMenu(
               context,
               ref,
@@ -760,7 +769,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                   icon: const Icon(Icons.keyboard_arrow_down_rounded),
                   color: Colors.white,
                   onPressed: () => Navigator.of(context).maybePop(),
-                  tooltip: 'Close',
+                  tooltip: context.l10n.actionClose,
                 ),
                 Expanded(
                   child: Column(
@@ -786,7 +795,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                 IconButton(
                   icon: const Icon(Icons.more_vert_rounded),
                   color: Colors.white,
-                  tooltip: 'Song options',
+                  tooltip: context.l10n.playerSongOptions,
                   onPressed: () => showSongOptionsMenu(
                     context,
                     ref,
@@ -1011,7 +1020,7 @@ class _TransportDock extends ConsumerWidget {
         HopIconButton(
           icon: Icons.ios_share_rounded,
           color: disabled,
-          tooltip: 'Share',
+          tooltip: context.l10n.songMenuShare,
           onPressed: () => songActionShare(context, song),
         ),
       ],

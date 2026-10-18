@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../l10n/app_localizations.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
@@ -146,7 +146,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           decoration: InputDecoration(
                             isDense: true,
                             border: InputBorder.none,
-                            hintText: 'Search settings',
+                            hintText: context.l10n.settingsSearchHint,
                             hintStyle: AppTokens.rowSubtitle(context),
                           ),
                           style: AppTokens.rowTitle(context),
@@ -157,7 +157,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         IconButton(
                           icon: const AppIcon(AppIcons.close,
                               size: AppTokens.iconSm),
-                          tooltip: 'Clear',
+                          tooltip: context.l10n.actionClear,
                           onPressed: () {
                             _controller.clear();
                             setState(() => _query = '');
@@ -238,7 +238,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   child: Text(
                     searching
-                        ? 'Results for "${_query.trim()}"'
+                        ? context.l10n.settingsResultsFor(_query.trim())
                         : entries[_selected].$2,
                     style:
                         AppTokens.screenTitle(context).copyWith(fontSize: 22),
@@ -324,8 +324,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (results.isEmpty) {
       return AppEmptyState(
         icon: AppIcons.search,
-        title: 'No settings found',
-        message: 'Nothing matches "${_query.trim()}".',
+        title: context.l10n.settingsNoResultsTitle,
+        message: context.l10n.settingsNoResultsMessage(_query.trim()),
       );
     }
 
@@ -364,36 +364,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildGroups(BuildContext context) {
+    final l10n = context.l10n;
     Widget tile(int i, Widget Function() open) => AppSettingsTile(
           icon: _pages[i].icon,
-          title: _localizedPage(AppLocalizations.of(context), i).$1,
-          subtitle: _localizedPage(AppLocalizations.of(context), i).$2,
+          title: _localizedPage(l10n, i).$1,
+          subtitle: _localizedPage(l10n, i).$2,
           onTap: () => context.pushApp(open()),
         );
 
     return AppSettingsList(children: [
       AppSettingsGroup(
-        label: 'Listening',
+        label: l10n.settingsGroupListening,
         children: [
           tile(1, () => const PlaybackSettingsScreen()),
           tile(2, () => const LyricsSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: 'Library',
+        label: l10n.settingsGroupLibrary,
         children: [
           tile(0, () => const LibrarySettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: 'Look & Feel',
+        label: l10n.settingsGroupLookAndFeel,
         children: [
           tile(3, () => const AppearanceSettingsScreen()),
           tile(4, () => const HomeSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: 'Data',
+        label: l10n.settingsGroupData,
         children: [
           tile(5, () => const SyncSettingsScreen()),
           tile(6, () => const BackupSettingsScreen()),
@@ -401,7 +402,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
       AppSettingsGroup(
-        label: 'App',
+        label: l10n.settingsGroupApp,
         children: [
           tile(8, () => const AboutSettingsScreen()),
         ],
@@ -485,27 +486,35 @@ class LibrarySettingsScreen extends ConsumerWidget {
     return best;
   }
 
-  static String _formatFileSize(int bytes) {
-    if (bytes == 0) return 'None';
-    if (bytes < 1024) return '$bytes B';
+  static String _formatFileSize(AppLocalizations l10n, int bytes) {
+    if (bytes == 0) return l10n.settingsValueNone;
+    if (bytes < 1024) return l10n.storageSizeBytes(bytes);
     if (bytes < 1048576) {
       final kb = bytes / 1024;
-      return '${kb == kb.truncateToDouble() ? kb.toInt() : kb.toStringAsFixed(2)} KB';
+      return l10n.storageSizeKb(kb == kb.truncateToDouble()
+          ? '${kb.toInt()}'
+          : kb.toStringAsFixed(2));
     }
     final mb = bytes / 1048576;
-    return '${mb == mb.truncateToDouble() ? mb.toInt() : mb.toStringAsFixed(1)} MB';
+    return l10n.storageSizeMb(
+        mb == mb.truncateToDouble() ? '${mb.toInt()}' : mb.toStringAsFixed(1));
   }
 
-  static String _formatDuration(int ms) {
-    if (ms == 0) return 'None';
-    if (ms < 60000) return '${(ms / 1000).round()} s';
+  static String _formatDuration(AppLocalizations l10n, int ms) {
+    if (ms == 0) return l10n.settingsValueNone;
+    if (ms < 60000) {
+      return l10n.settingsDurationSeconds((ms / 1000).round());
+    }
     final min = ms ~/ 60000;
     final sec = (ms % 60000) ~/ 1000;
-    return sec == 0 ? '$min min' : '${min}m ${sec}s';
+    return sec == 0
+        ? l10n.settingsDurationMinutes(min)
+        : l10n.settingsDurationMinutesSeconds(min, sec);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
@@ -513,22 +522,22 @@ class LibrarySettingsScreen extends ConsumerWidget {
       highlightId: highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Library',
+          label: l10n.settingsGroupLibrary,
           icon: AppIcons.library,
           children: [
             AppSettingsTile(
               icon: AppIcons.folder,
               searchId: 'library.folders',
-              title: 'Music Folders',
-              subtitle: 'Manage music library folders',
+              title: l10n.settingsSearchMusicFoldersTitle,
+              subtitle: l10n.settingsSearchMusicFoldersSubtitle,
               onTap: () => context.pushApp(const FolderManagementScreen()),
             ),
             AppSettingsTile(
               icon: AppIcons.refresh,
               searchId: 'library.rescan',
-              title: 'Re-scan Library Now',
-              subtitle: 'Manually refresh all songs from disk',
-              onTap: () => appSnack(context, 'Scanning library…'),
+              title: l10n.settingsSearchRescanTitle,
+              subtitle: l10n.settingsSearchRescanSubtitle,
+              onTap: () => appSnack(context, l10n.settingsScanningLibrary),
             ),
             if (!WideLayout.isWide(context))
               StatefulBuilder(
@@ -539,8 +548,8 @@ class LibrarySettingsScreen extends ConsumerWidget {
                   builder: (context, snapshot) => AppSettingsSwitch(
                     icon: AppIcons.touchApp,
                     searchId: 'library.pull_to_refresh',
-                    title: 'Pull to Refresh',
-                    subtitle: 'Swipe down to refresh the library',
+                    title: l10n.settingsSearchPullToRefreshTitle,
+                    subtitle: l10n.settingsSearchPullToRefreshSubtitle,
                     value: snapshot.data ?? true,
                     onChanged: (val) async {
                       await ref
@@ -554,22 +563,22 @@ class LibrarySettingsScreen extends ConsumerWidget {
           ],
         ),
         AppSettingsGroup(
-          label: 'Filters',
+          label: l10n.settingsGroupFilters,
           icon: AppIcons.filterList,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.videoLibrary,
               searchId: 'library.include_videos',
-              title: 'Include Videos',
-              subtitle: 'Show video files in your song library',
+              title: l10n.settingsSearchIncludeVideosTitle,
+              subtitle: l10n.settingsSearchIncludeVideosSubtitle,
               value: settings.includeVideos,
               onChanged: notifier.setIncludeVideos,
             ),
             AppSettingsSlider(
               icon: AppIcons.dataUsage,
               searchId: 'library.min_file_size',
-              title: 'Minimum File Size',
-              valueLabel: _formatFileSize(settings.minimumFileSizeBytes),
+              title: l10n.settingsSearchMinFileSizeTitle,
+              valueLabel: _formatFileSize(l10n, settings.minimumFileSizeBytes),
               value: _nearestFileSizeIndex(settings.minimumFileSizeBytes)
                   .toDouble(),
               min: 0,
@@ -581,8 +590,9 @@ class LibrarySettingsScreen extends ConsumerWidget {
             AppSettingsSlider(
               icon: AppIcons.timer,
               searchId: 'library.min_duration',
-              title: 'Minimum Duration',
-              valueLabel: _formatDuration(settings.minimumTrackDurationMs),
+              title: l10n.settingsSearchMinDurationTitle,
+              valueLabel:
+                  _formatDuration(l10n, settings.minimumTrackDurationMs),
               value: _nearestDurationIndex(settings.minimumTrackDurationMs)
                   .toDouble(),
               min: 0,
@@ -594,14 +604,14 @@ class LibrarySettingsScreen extends ConsumerWidget {
           ],
         ),
         AppSettingsGroup(
-          label: 'Maintenance',
+          label: l10n.settingsGroupMaintenance,
           icon: AppIcons.edit,
           children: [
             AppSettingsTile(
               searchId: 'data.bulk_rename',
               icon: AppIcons.edit,
-              title: 'Bulk Rename Files',
-              subtitle: 'Rename the whole library from a format',
+              title: l10n.settingsSearchBulkRenameTitle,
+              subtitle: l10n.settingsSearchBulkRenameSubtitle,
               onTap: () => context.pushApp(const BulkRenameScreen()),
             ),
           ],
@@ -610,7 +620,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     );
     if (embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Library'),
+      appBar: AppTopBar(title: l10n.settingsPageLibraryTitle),
       body: content,
     );
   }

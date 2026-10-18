@@ -11,6 +11,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../domain/services/video_sync_policy.dart';
+import '../../../l10n/l10n.dart';
 import '../../../models/song.dart';
 import '../../../providers/providers.dart';
 import '../../../providers/settings_provider.dart';
@@ -499,7 +500,11 @@ class _VideoModeToggle extends StatelessWidget {
             isVideo ? Icons.album_rounded : Icons.movie_outlined,
             size: 18,
           ),
-          label: Text(isVideo ? 'Show artwork' : 'Show video'),
+          label: Text(
+            isVideo
+                ? context.l10n.nowPlayingShowArtwork
+                : context.l10n.nowPlayingShowVideo,
+          ),
           style: TextButton.styleFrom(
             foregroundColor: isVideo ? accent : Colors.white70,
             padding: const EdgeInsets.symmetric(

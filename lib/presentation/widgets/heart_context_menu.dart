@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../l10n/app_localizations.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../models/playlist.dart';
 import 'playlist_selector_dialog.dart';
@@ -40,6 +40,8 @@ void showHeartContextMenu({
             }
           }
 
+          final l10n = context.l10n;
+
           return SafeArea(
             child: ConstrainedBox(
               constraints: BoxConstraints(
@@ -65,8 +67,8 @@ void showHeartContextMenu({
                         color: isFavorite ? Colors.red : null,
                       ),
                       title: Text(isFavorite
-                          ? "Remove from Favorites"
-                          : "Add to Favorites"),
+                          ? l10n.songMenuRemoveFavorite
+                          : l10n.songMenuAddFavorite),
                       onTap: () {
                         ref
                             .read(userDataProvider.notifier)
@@ -76,7 +78,7 @@ void showHeartContextMenu({
                     ),
                     ListTile(
                       leading: const AppIcon(AppIcons.playlistAdd),
-                      title: const Text("Add to Playlist"),
+                      title: Text(l10n.songMenuAddToPlaylist),
                       onTap: () {
                         Navigator.pop(context);
                         _handleAddToPlaylist(context, ref, songFilename);
@@ -84,7 +86,7 @@ void showHeartContextMenu({
                     ),
                     ListTile(
                       leading: const AppIcon(AppIcons.playlistAdd),
-                      title: const Text("Add to New Playlist"),
+                      title: Text(l10n.songMenuAddToNewPlaylist),
                       onTap: () {
                         Navigator.pop(context);
                         _showNewPlaylistDialog(context, ref, songFilename);
@@ -95,7 +97,8 @@ void showHeartContextMenu({
                         leading: const AppIcon(AppIcons.playlistRemove,
                             color: Colors.red),
                         title: Text(
-                            "Remove from ${latestPlaylistWithSong.name}",
+                            l10n.heartMenuRemoveFromPlaylist(
+                                latestPlaylistWithSong.name),
                             style: const TextStyle(color: Colors.red)),
                         onTap: () {
                           Navigator.pop(context);
@@ -106,8 +109,9 @@ void showHeartContextMenu({
                     ListTile(
                       leading: AppIcon(AppIcons.heartBroken,
                           color: isSuggestLess ? Colors.grey : null),
-                      title:
-                          Text(isSuggestLess ? "Suggest more" : "Suggest less"),
+                      title: Text(isSuggestLess
+                          ? l10n.songMenuSuggestMore
+                          : l10n.songMenuSuggestLess),
                       onTap: () {
                         ref
                             .read(userDataProvider.notifier)
@@ -149,9 +153,9 @@ void _handleAddToPlaylist(
           .addSongToPlaylist(latest.id, songFilename);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Added to ${latest.name}"),
+          content: Text(context.l10n.songAddedToPlaylist(latest.name)),
           action: SnackBarAction(
-            label: "Change",
+            label: context.l10n.actionChange,
             onPressed: () {
               // Note: We don't remove from latest here because "Change" should allow managing all
               showPlaylistSelector(context, ref, songFilename);
@@ -170,9 +174,9 @@ void _handleRemoveFromPlaylist(BuildContext context, WidgetRef ref,
       .removeSongFromPlaylist(playlist.id, songFilename);
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text("Removed from ${playlist.name}"),
+      content: Text(context.l10n.heartMenuRemovedFromPlaylist(playlist.name)),
       action: SnackBarAction(
-        label: "Change",
+        label: context.l10n.actionChange,
         onPressed: () {
           // Add it back? Or just show picker.
           // The user said: "with the dialog asking us if we want to change"
@@ -186,7 +190,7 @@ void _handleRemoveFromPlaylist(BuildContext context, WidgetRef ref,
 
 void _showNewPlaylistDialog(
     BuildContext context, WidgetRef ref, String songFilename) {
-  final l10n = AppLocalizations.of(context);
+  final l10n = context.l10n;
   final controller = TextEditingController();
   showDialog(
     context: context,

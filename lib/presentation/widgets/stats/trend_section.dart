@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_surface.dart';
 import '../../tokens/app_tokens.dart';
 import '../../utils/stats_format.dart';
@@ -58,7 +59,7 @@ class _TrendSectionState extends State<TrendSection> {
               ),
               const SizedBox(width: AppTokens.s2),
               Text(
-                StatsFormat.duration(readout.listened),
+                StatsFormat.duration(readout.listened, context.l10n),
                 style: AppTokens.rowSubtitle(context)
                     .copyWith(fontWeight: FontWeight.w600),
               ),
@@ -66,7 +67,7 @@ class _TrendSectionState extends State<TrendSection> {
           ),
           const SizedBox(height: AppTokens.s1),
           Text(
-            readout.plays == 1 ? '1 play' : '${readout.plays} plays',
+            context.l10n.statsPlaysCount(readout.plays),
             style: AppTokens.meta(context),
           ),
           const SizedBox(height: AppTokens.s3),

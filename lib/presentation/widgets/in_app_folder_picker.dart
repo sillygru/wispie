@@ -9,6 +9,7 @@ import '../components/app_screen_header.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
+import '../../l10n/l10n.dart';
 
 /// Full-screen file system directory picker for choosing music folders.
 class InAppFolderPicker extends StatefulWidget {
@@ -65,36 +66,39 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
   }
 
   Future<void> _loadShortcuts() async {
+    final l10n = context.l10n;
     final list = <Map<String, String>>[];
 
     if (Platform.isAndroid) {
       const primary = '/storage/emulated/0';
       if (Directory(primary).existsSync()) {
-        list.add({'label': 'Internal Storage', 'path': primary});
+        list.add(
+            {'label': l10n.foldersShortcutInternalStorage, 'path': primary});
         final music = p.join(primary, 'Music');
         if (Directory(music).existsSync()) {
-          list.add({'label': 'Music', 'path': music});
+          list.add({'label': l10n.foldersShortcutMusic, 'path': music});
         }
         final download = p.join(primary, 'Download');
         if (Directory(download).existsSync()) {
-          list.add({'label': 'Download', 'path': download});
+          list.add({'label': l10n.foldersShortcutDownload, 'path': download});
         }
       }
       if (Directory('/storage').existsSync()) {
-        list.add({'label': 'Storage Root', 'path': '/storage'});
+        list.add(
+            {'label': l10n.foldersShortcutStorageRoot, 'path': '/storage'});
       }
     } else {
       final home =
           Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
       if (home != null && Directory(home).existsSync()) {
-        list.add({'label': 'Home', 'path': home});
+        list.add({'label': l10n.foldersShortcutHome, 'path': home});
         final music = p.join(home, 'Music');
         if (Directory(music).existsSync()) {
-          list.add({'label': 'Music', 'path': music});
+          list.add({'label': l10n.foldersShortcutMusic, 'path': music});
         }
         final download = p.join(home, 'Downloads');
         if (Directory(download).existsSync()) {
-          list.add({'label': 'Downloads', 'path': download});
+          list.add({'label': l10n.foldersShortcutDownloads, 'path': download});
         }
       }
     }
@@ -102,7 +106,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
     try {
       final docs = await getApplicationDocumentsDirectory();
       if (Directory(docs.path).existsSync()) {
-        list.add({'label': 'Documents', 'path': docs.path});
+        list.add({'label': l10n.foldersShortcutDocuments, 'path': docs.path});
       }
     } catch (_) {}
 
@@ -115,6 +119,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
   }
 
   Future<void> _loadSubfolders() async {
+    final l10n = context.l10n;
     setState(() {
       _isLoading = true;
       _accessError = null;
@@ -126,7 +131,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
         setState(() {
           _subfolders = [];
           _isLoading = false;
-          _accessError = 'Folder does not exist';
+          _accessError = l10n.foldersDoesNotExist;
         });
         return;
       }
@@ -160,7 +165,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
         setState(() {
           _subfolders = [];
           _isLoading = false;
-          _accessError = 'Permission denied or error reading folder';
+          _accessError = l10n.foldersPermissionError;
         });
       }
     }
@@ -186,23 +191,23 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New Folder'),
+        title: Text(context.l10n.foldersNewFolderTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Folder Name',
-            hintText: 'Enter folder name',
+          decoration: InputDecoration(
+            labelText: context.l10n.foldersFolderNameLabel,
+            hintText: context.l10n.foldersFolderNameHint,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Create'),
+            child: Text(context.l10n.actionCreate),
           ),
         ],
       ),
@@ -215,11 +220,11 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
 
     return AmbientScaffold(
       appBar: AppTopBar(
-        title: 'Select Music Folder',
+        title: context.l10n.homeSelectFolder,
         actions: [
           IconButton(
             icon: const AppIcon(AppIcons.folderAdd),
-            tooltip: 'New Folder',
+            tooltip: context.l10n.foldersNewFolderTitle,
             onPressed: () async {
               final name = await _showNewFolderDialog(context);
               if (name != null && name.isNotEmpty) {
@@ -232,7 +237,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
                   _navigateTo(newFolderPath);
                 } catch (e) {
                   if (context.mounted) {
-                    appSnack(context, 'Error creating folder: $e');
+                    appSnack(context, context.l10n.foldersCreateError('$e'));
                   }
                 }
               }
@@ -305,7 +310,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: AppTokens.s4),
               leading: const AppIcon(AppIcons.arrowUp),
-              title: const Text('.. (Go up)'),
+              title: Text(context.l10n.foldersGoUp),
               onTap: _navigateUp,
             ),
           Expanded(
@@ -325,9 +330,9 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
                         ),
                       )
                     : _subfolders.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
-                              'No subfolders found.\nSelect this folder if it contains your music.',
+                              context.l10n.foldersNoSubfolders,
                               textAlign: TextAlign.center,
                             ),
                           )
@@ -365,7 +370,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
                     });
                   },
                   icon: const AppIcon(AppIcons.tick),
-                  label: const Text('Select This Folder'),
+                  label: Text(context.l10n.foldersSelectThisFolder),
                 ),
               ),
             ),

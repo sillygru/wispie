@@ -40,6 +40,7 @@ import '../../models/song.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/browse_palette_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/l10n.dart';
 
 class SyncIndicator extends ConsumerWidget {
   const SyncIndicator({super.key});
@@ -101,23 +102,23 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _tabDirection = 1;
   final GlobalKey<FloatingDockState> _dockKey = GlobalKey<FloatingDockState>();
 
-  static const List<AppNavItem> _navItems = [
-    AppNavItem(
-      icon: AppIcons.home,
-      selectedIcon: AppIcons.home,
-      label: 'Home',
-    ),
-    AppNavItem(
-      icon: AppIcons.library,
-      selectedIcon: AppIcons.library,
-      label: 'Library',
-    ),
-    AppNavItem(
-      icon: AppIcons.person,
-      selectedIcon: AppIcons.person,
-      label: 'Profile',
-    ),
-  ];
+  static List<AppNavItem> _navItemsFor(AppLocalizations l10n) => [
+        AppNavItem(
+          icon: AppIcons.home,
+          selectedIcon: AppIcons.home,
+          label: l10n.shellNavHome,
+        ),
+        AppNavItem(
+          icon: AppIcons.library,
+          selectedIcon: AppIcons.library,
+          label: l10n.shellNavLibrary,
+        ),
+        AppNavItem(
+          icon: AppIcons.person,
+          selectedIcon: AppIcons.person,
+          label: l10n.shellNavProfile,
+        ),
+      ];
   bool _isDrawerOpen = false;
 
   late AnimationController _drawerController;
@@ -396,7 +397,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     : FloatingDock(
                         selectedIndex: _selectedIndex,
                         onSelected: _onTabSelected,
-                        items: _navItems,
+                        items: _navItemsFor(context.l10n),
                         key: _dockKey,
                         autoCollapse: settings.autoHideBottomBarOnScroll,
                       ),
@@ -588,16 +589,16 @@ class _WideNavRail extends StatelessWidget {
             if (onSearch != null)
               _WideNavAction(
                 icon: AppIcons.search,
-                label: 'Search',
-                tooltip: 'Search (Ctrl+K)',
+                label: context.l10n.actionSearch,
+                tooltip: context.l10n.shellSearchTooltip,
                 accent: accent,
                 onTap: onSearch!,
               ),
             if (onSettings != null)
               _WideNavAction(
                 icon: AppIcons.misc,
-                label: 'Settings',
-                tooltip: 'Settings',
+                label: context.l10n.settingsTitle,
+                tooltip: context.l10n.settingsTitle,
                 accent: accent,
                 onTap: onSettings!,
               ),
@@ -685,9 +686,9 @@ class _WideNavDestination extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = switch (index) {
-      0 => (AppIcons.home, 'Home'),
-      1 => (AppIcons.library, 'Library'),
-      _ => (AppIcons.person, 'Profile'),
+      0 => (AppIcons.home, context.l10n.shellNavHome),
+      1 => (AppIcons.library, context.l10n.shellNavLibrary),
+      _ => (AppIcons.person, context.l10n.shellNavProfile),
     };
     final iconColor = selected ? accent : AppTokens.fg(AppTokens.aTertiary);
     return Padding(
@@ -810,7 +811,7 @@ class _WideSidePanelHandle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Tooltip(
-      message: 'Show sidebar',
+      message: context.l10n.shellShowSidebar,
       child: Pressable(
         onTap: () => ref.read(_sidePanelOpenProvider.notifier).set(true),
         child: Container(
@@ -929,7 +930,7 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                     if (song == null) {
                       return Center(
                         child: Text(
-                          'Nothing playing',
+                          context.l10n.playerNothingPlaying,
                           style: PlayerTokens.meta(context),
                         ),
                       );
@@ -1018,7 +1019,7 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                 ),
               ),
               IconButton(
-                tooltip: 'Hide sidebar',
+                tooltip: context.l10n.shellHideSidebar,
                 onPressed: () =>
                     ref.read(_sidePanelOpenProvider.notifier).set(false),
                 icon: const AppIcon(AppIcons.chevronRight),
@@ -1046,7 +1047,9 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
             PlayerTokens.s1,
           ),
           child: Text(
-            upcoming.isEmpty ? 'Nothing up next' : 'Next in queue',
+            upcoming.isEmpty
+                ? context.l10n.shellNothingUpNext
+                : context.l10n.shellNextInQueue,
             style: PlayerTokens.sectionLabel(context),
           ),
         ),
@@ -1166,7 +1169,7 @@ class _SideQueueRowState extends State<_SideQueueRow> {
               if (_hover) ...[
                 if (widget.onMoveToTop != null)
                   IconButton(
-                    tooltip: 'Play next',
+                    tooltip: context.l10n.shellPlayNext,
                     visualDensity: VisualDensity.compact,
                     iconSize: 18,
                     color: muted,
@@ -1174,7 +1177,7 @@ class _SideQueueRowState extends State<_SideQueueRow> {
                     onPressed: widget.onMoveToTop,
                   ),
                 IconButton(
-                  tooltip: 'Remove from queue',
+                  tooltip: context.l10n.queueRemoveFromQueueTooltip,
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
                   color: muted,

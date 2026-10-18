@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/app_dialog.dart';
 import '../tokens/app_tokens.dart';
+import '../../l10n/l10n.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
@@ -60,16 +61,16 @@ class IndexerChoiceDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.actionCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, false),
           style: AppTokens.tonalButton,
-          child: const Text('Just Missing'),
+          child: Text(context.l10n.indexerJustMissing),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Force All'),
+          child: Text(context.l10n.indexerForceAll),
         ),
       ],
     );

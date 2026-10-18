@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
@@ -30,20 +31,20 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
+    final l10n = context.l10n;
 
     final content = AppSettingsList(
       highlightId: widget.highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Display & Timing',
+          label: l10n.lyricsGroupDisplayTiming,
           icon: AppIcons.subtitles,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.autoAwesome,
               searchId: 'lyrics.rich_sync',
-              title: 'Simulate Word Sync',
-              subtitle:
-                  'Generate word-level timing from line-synced lyrics using prosodic estimation',
+              title: l10n.lyricsSimulateWordSyncTitle,
+              subtitle: l10n.lyricsSimulateWordSyncSubtitle,
               value: settings.lyricsSimulatedRichSyncEnabled,
               onChanged: notifier.setLyricsSimulatedRichSyncEnabled,
             ),
@@ -51,9 +52,8 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
               AppSettingsSwitch(
                 icon: AppIcons.queue,
                 searchId: 'lyrics.desktop_sidebar',
-                title: 'Lyrics & Queue Sidebar',
-                subtitle:
-                    'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
+                title: l10n.lyricsDesktopSidebarTitle,
+                subtitle: l10n.lyricsDesktopSidebarSubtitle,
                 value: settings.desktopSidebarEnabled,
                 onChanged: notifier.setDesktopSidebarEnabled,
               ),
@@ -63,23 +63,22 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
               AppSettingsSwitch(
                 icon: AppIcons.screenLock,
                 searchId: 'lyrics.keep_screen_awake',
-                title: 'Keep Screen Awake on Lyrics',
-                subtitle: 'Prevent sleep while the lyrics pane is open',
+                title: l10n.lyricsKeepScreenAwakeTitle,
+                subtitle: l10n.lyricsKeepScreenAwakeSubtitle,
                 value: settings.keepScreenAwakeOnLyrics,
                 onChanged: notifier.setKeepScreenAwakeOnLyrics,
               ),
           ],
         ),
         AppSettingsGroup(
-          label: 'Translation',
+          label: l10n.lyricsGroupTranslation,
           icon: AppIcons.translate,
           children: [
             AppSettingsSwitch(
               icon: AppIcons.translate,
               searchId: 'lyrics.auto_translate',
-              title: 'Auto-Translate Lyrics',
-              subtitle:
-                  'Automatically translate lyrics using selected target language',
+              title: l10n.lyricsAutoTranslateTitle,
+              subtitle: l10n.lyricsAutoTranslateSubtitle,
               value: settings.lyricsAutoTranslate,
               onChanged: notifier.setLyricsAutoTranslate,
             ),
@@ -92,22 +91,23 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
                   color: AppTokens.accentOf(context, ref),
                   size: 40,
                 ),
-                title: 'Target Language',
-                subtitle: kSupportedTranslationLanguages[
-                        settings.lyricsTargetLanguage] ??
-                    settings.lyricsTargetLanguage.toUpperCase(),
+                title: l10n.lyricsTargetLanguageTitle,
+                subtitle: localizedLanguageName(
+                  l10n,
+                  settings.lyricsTargetLanguage,
+                ),
                 trailing: DropdownButton<String>(
                   value: kSupportedTranslationLanguages
-                          .containsKey(settings.lyricsTargetLanguage)
+                          .contains(settings.lyricsTargetLanguage)
                       ? settings.lyricsTargetLanguage
                       : 'es',
                   underline: const SizedBox.shrink(),
                   borderRadius: AppTokens.brMd,
-                  items: kSupportedTranslationLanguages.entries
+                  items: kSupportedTranslationLanguages
                       .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(entry.value),
+                        (code) => DropdownMenuItem(
+                          value: code,
+                          child: Text(localizedLanguageName(l10n, code)),
                         ),
                       )
                       .toList(),
@@ -126,22 +126,22 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
                   color: AppTokens.accentOf(context, ref),
                   size: 40,
                 ),
-                title: 'Translation Display',
+                title: l10n.lyricsTranslationDisplayTitle,
                 subtitle: settings.lyricsTranslationMode == 'replace'
-                    ? 'Replace base lyrics'
-                    : 'Show subtext below lyrics',
+                    ? l10n.lyricsTranslationModeReplaceSubtitle
+                    : l10n.lyricsTranslationModeSubtextSubtitle,
                 trailing: DropdownButton<String>(
                   value: settings.lyricsTranslationMode,
                   underline: const SizedBox.shrink(),
                   borderRadius: AppTokens.brMd,
-                  items: const [
+                  items: [
                     DropdownMenuItem(
                       value: 'subtext',
-                      child: Text('Subtext below'),
+                      child: Text(l10n.lyricsModeSubtext),
                     ),
                     DropdownMenuItem(
                       value: 'replace',
-                      child: Text('Replace base'),
+                      child: Text(l10n.lyricsModeReplace),
                     ),
                   ],
                   onChanged: (val) {
@@ -156,7 +156,7 @@ class _LyricsSettingsScreenState extends ConsumerState<LyricsSettingsScreen> {
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Lyrics'),
+      appBar: AppTopBar(title: l10n.settingsPageLyricsTitle),
       body: content,
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
@@ -817,7 +818,9 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                     ValueListenableBuilder<bool>(
                       valueListenable: manager.playingNotifier,
                       builder: (context, playing, _) => Tooltip(
-                        message: playing ? 'Pause' : 'Play',
+                        message: playing
+                            ? context.l10n.floatingDockPause
+                            : context.l10n.floatingDockPlay,
                         child: Pressable(
                           onTap: manager.togglePlayPause,
                           child: Container(
@@ -839,7 +842,7 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                     ),
                     const SizedBox(width: AppTokens.s1),
                     Tooltip(
-                      message: 'Next',
+                      message: context.l10n.floatingDockNext,
                       child: Pressable(
                         onTap: () {
                           TrackSwipeSwitcher.hint(1);

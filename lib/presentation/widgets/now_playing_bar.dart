@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'album_art_image.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
@@ -177,6 +178,7 @@ class _NowPlayingContent extends ConsumerWidget {
     final BorderRadius borderRadius =
         docked ? BorderRadius.zero : AppTokens.brLg;
     final Color accent = AppTokens.accentOf(context, ref);
+    final l10n = context.l10n;
 
     final bool desktopBar = scrubbable && !compact;
     final audioManager = ref.read(audioPlayerManagerProvider);
@@ -205,7 +207,8 @@ class _NowPlayingContent extends ConsumerWidget {
     );
 
     final Widget favoriteButton = Tooltip(
-      message: favorite ? 'Remove from favorites' : 'Add to favorites',
+      message:
+          favorite ? l10n.songMenuRemoveFavorite : l10n.songMenuAddFavorite,
       child: FavoriteHeartButton(
         filename: metadata.id,
         title: metadata.title,
@@ -219,7 +222,7 @@ class _NowPlayingContent extends ConsumerWidget {
     final Widget shuffle = ValueListenableBuilder<bool>(
       valueListenable: audioManager.shuffleNotifier,
       builder: (context, shuffling, _) => Tooltip(
-        message: 'Shuffle (hold for a new shuffle)',
+        message: l10n.nowPlayingBarShuffleTooltip,
         child: Pressable(
           onTap: audioManager.toggleShuffle,
           onLongPress: audioManager.newShuffleQueue,
@@ -287,7 +290,7 @@ class _NowPlayingContent extends ConsumerWidget {
               // the one strong colour block in the bar.
               final double disc = compact ? 34 : 42;
               return Tooltip(
-                message: playing ? 'Pause' : 'Play',
+                message: playing ? l10n.songListPause : l10n.songListPlay,
                 child: Pressable(
                   onTap: () => audioManager.togglePlayPause(),
                   child: Container(
@@ -406,7 +409,7 @@ class _NowPlayingContent extends ConsumerWidget {
                                         .copyWith(fontSize: titleSize),
                                   ),
                                   Text(
-                                    m.$1.artist ?? 'Unknown Artist',
+                                    m.$1.artist ?? l10n.metaUnknownArtist,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: AppTokens.rowSubtitle(context)

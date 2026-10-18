@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -153,10 +154,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         data: (allSongs) => rootPathAsync.when(
           data: (musicRoot) {
             if (musicRoot == null) {
-              return const AppEmptyState(
+              return AppEmptyState(
                 icon: AppIcons.folderOff,
-                title: 'No music folder yet',
-                message: 'Select a music folder in Home to fill this out.',
+                title: context.l10n.libraryNoMusicFolderTitle,
+                message: context.l10n.libraryNoMusicFolderMessage,
               );
             }
             return _buildFolderView(
@@ -174,7 +175,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           loading: () => const AppLoading(),
           error: (e, s) => AppEmptyState(
             icon: AppIcons.error,
-            title: 'Could not find your music folder',
+            title: context.l10n.libraryFolderErrorTitle,
             message: '$e',
             tone: AppTone.danger,
           ),
@@ -182,7 +183,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         loading: () => const AppLoading(),
         error: (e, s) => AppEmptyState(
           icon: AppIcons.error,
-          title: isRoot ? 'Could not load library' : 'Could not open folder',
+          title: isRoot
+              ? context.l10n.libraryLoadErrorTitle
+              : context.l10n.libraryOpenFolderErrorTitle,
           message: '$e',
           tone: AppTone.danger,
         ),
@@ -198,7 +201,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       if (hasContent) return buildFolderTab();
 
       return AmbientScaffold(
-        appBar: AppTopBar(title: widget.relativePath ?? 'Library'),
+        appBar:
+            AppTopBar(title: widget.relativePath ?? context.l10n.libraryTitle),
         body: buildFolderTab(),
       );
     }
@@ -233,7 +237,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 final wideHeader = WideLayout.isWide(context);
                 return [
                   AppSliverHeader(
-                    title: 'Library',
+                    title: context.l10n.libraryTitle,
                     isScrolled: innerBoxIsScrolled,
                     floating: !wideHeader,
                     snap: !wideHeader,
@@ -245,7 +249,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           children: [
                             const SortMenu(),
                             HeaderShuffleButton(
-                              tooltip: 'Shuffle all',
+                              tooltip: context.l10n.actionShuffleAll,
                               onShufflePressed: () {
                                 if (songs.isNotEmpty) {
                                   audioManager.shuffleAndPlay(songs,
@@ -271,7 +275,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     ],
                     bottom: AppSegmentedTabs(
                       controller: DefaultTabController.of(context),
-                      labels: const ['Folders', 'Artists', 'Albums'],
+                      labels: [
+                        context.l10n.libraryFoldersTab,
+                        context.l10n.libraryArtistsTab,
+                        context.l10n.libraryAlbumsTab,
+                      ],
                       accent: AppTokens.accentOf(context, ref),
                     ),
                   ),
@@ -288,7 +296,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 loading: () => const AppLoading(),
                 error: (e, s) => AppEmptyState(
                   icon: AppIcons.error,
-                  title: 'Could not load library',
+                  title: context.l10n.libraryLoadErrorTitle,
                   message: '$e',
                   tone: AppTone.danger,
                 ),
@@ -391,7 +399,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 icon: AppIcons.favorite,
                 color: AppTokens.danger,
               ),
-              title: 'Favorites',
+              title: context.l10n.libraryFavorites,
               subtitleWidget: CollectionDurationDisplay(
                 songs: favSongs,
                 showSongCount: true,
@@ -404,7 +412,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   return;
                 }
                 context.pushApp(
-                  SongListScreen(title: 'Favorites', songs: favSongs),
+                  SongListScreen(
+                    title: context.l10n.libraryFavorites,
+                    songs: favSongs,
+                  ),
                 );
               },
             ),
@@ -424,16 +435,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 icon: AppIcons.merge,
                 color: AppTokens.accentOf(context, ref),
               ),
-              title: 'Merged Songs',
-              subtitle: '$mergedCount group${mergedCount != 1 ? 's' : ''}',
+              title: context.l10n.libraryMergedSongs,
+              subtitle: context.l10n.libraryMergedGroupsCount(mergedCount),
               trailing: IconButton(
                 icon: const AppIcon(AppIcons.add),
-                tooltip: 'Create new merge group',
+                tooltip: context.l10n.libraryCreateMergeGroupTooltip,
                 onPressed: () async {
                   final result = await context.pushApp<Map<String, dynamic>>(
                     SelectSongsScreen(
                       songs: allSongs,
-                      title: 'Select Songs to Merge',
+                      title: context.l10n.librarySelectSongsToMerge,
                     ),
                   );
                   if (result != null && context.mounted) {
@@ -448,7 +459,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         if (context.mounted) {
                           appSnack(
                             context,
-                            'Merged ${selected.length} songs',
+                            context.l10n.libraryMergedCount(selected.length),
                             tone: AppTone.success,
                           );
                         }
@@ -484,7 +495,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               title: playlist.name,
               builder: (sheetContext) => AppSheetAction(
                 icon: AppIcons.delete,
-                label: 'Delete playlist',
+                label: context.l10n.libraryDeletePlaylist,
                 isDanger: true,
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -517,7 +528,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ),
                 trailing: IconButton(
                   icon: const AppIcon(AppIcons.moreVert),
-                  tooltip: 'Playlist options',
+                  tooltip: context.l10n.libraryPlaylistOptions,
                   onPressed: showPlaylistOptions,
                 ),
                 isActive: inlineCollections && _collection == playlist.id,
@@ -566,7 +577,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             ),
             trailing: IconButton(
               icon: const AppIcon(AppIcons.moreVert),
-              tooltip: 'Folder options',
+              tooltip: context.l10n.libraryFolderOptions,
               onPressed: showFolderOptions,
             ),
             onTap: () {
@@ -608,15 +619,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           return WideContentCenter(
             child: Column(
               children: [
-                _wideToolbar('Filter folders, playlists, songs...'),
+                _wideToolbar(context.l10n.libraryFilterAllHint),
                 Expanded(
                   child: query.isEmpty
                       ? const SizedBox.shrink()
                       : AppEmptyState(
                           icon: AppIcons.searchOff,
-                          title: 'No matches',
-                          message:
-                              'Nothing in your library matches "${_filter.trim()}".',
+                          title: context.l10n.libraryNoMatchesTitle,
+                          message: context.l10n
+                              .libraryNoMatchesMessage(_filter.trim()),
                         ),
                 ),
               ],
@@ -627,9 +638,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           child: Column(
             children: [
               _wideToolbar(
-                'Filter folders, playlists, songs...',
-                trailing:
-                    '${tableSongs.length} ${tableSongs.length == 1 ? 'track' : 'tracks'}',
+                context.l10n.libraryFilterAllHint,
+                trailing: context.l10n.libraryTrackCount(tableSongs.length),
               ),
               Expanded(
                 child: Padding(
@@ -662,9 +672,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                     icon: AppIcons.library,
                                     color: AppTokens.accentOf(context, ref),
                                   ),
-                                  title: 'All',
-                                  subtitle: '${immediateSongs.length} '
-                                      '${immediateSongs.length == 1 ? 'track' : 'tracks'}',
+                                  title: context.l10n.libraryAll,
+                                  subtitle: context.l10n
+                                      .libraryTrackCount(immediateSongs.length),
                                   isActive: _collection == null,
                                   onTap: () => selectCollection(null),
                                 ),
@@ -739,7 +749,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               physics: const BouncingScrollPhysics(),
               slivers: [
                 AppSliverHeader(
-                  title: widget.relativePath ?? 'Library',
+                  title: widget.relativePath ?? context.l10n.libraryTitle,
                   isScrolled: isScrolled,
                   large: false,
                   floating: !wideFolders,
@@ -750,7 +760,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     if (content.allSongsInFolder.isNotEmpty)
                       IconButton(
                         icon: const AppIcon(AppIcons.shuffle),
-                        tooltip: 'Shuffle folder',
+                        tooltip: context.l10n.libraryShuffleFolderTooltip,
                         onPressed: () => audioManager.shuffleAndPlay(
                           content.allSongsInFolder,
                           isRestricted: true,
@@ -762,9 +772,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   SliverToBoxAdapter(child: _breadcrumbBar()),
                   SliverToBoxAdapter(
                     child: _wideToolbar(
-                      'Filter folders, songs...',
+                      context.l10n.libraryFilterSongsHint,
                       trailing:
-                          '${visibleSongs.length} ${visibleSongs.length == 1 ? 'track' : 'tracks'}',
+                          context.l10n.libraryTrackCount(visibleSongs.length),
                     ),
                   ),
                   if (itemCount == 0)
@@ -774,9 +784,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           ? const SizedBox.shrink()
                           : AppEmptyState(
                               icon: AppIcons.searchOff,
-                              title: 'No matches',
-                              message:
-                                  'Nothing in this folder matches "${_filter.trim()}".',
+                              title: context.l10n.libraryNoMatchesTitle,
+                              message: context.l10n
+                                  .libraryFolderNoMatchesMessage(
+                                      _filter.trim()),
                             ),
                     )
                   else
@@ -891,7 +902,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             if (_filter.isNotEmpty)
               IconButton(
                 icon: const AppIcon(AppIcons.close, size: AppTokens.iconSm),
-                tooltip: 'Clear',
+                tooltip: context.l10n.actionClear,
                 onPressed: () {
                   _filterController.clear();
                   setState(() => _filter = '');
@@ -950,7 +961,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         IconButton(
                           icon: const AppIcon(AppIcons.close,
                               size: AppTokens.iconSm),
-                          tooltip: 'Clear',
+                          tooltip: context.l10n.actionClear,
                           onPressed: () {
                             _filterController.clear();
                             setState(() => _filter = '');
@@ -984,7 +995,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       return const SizedBox.shrink();
     }
     final segments = p.split(relative);
-    final crumbs = ['Library', ...segments];
+    final crumbs = [context.l10n.libraryTitle, ...segments];
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
@@ -1059,7 +1070,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       keys: artists,
       songsFor: (artist) => artistMap[artist] ?? const [],
       subtitleFor: collectionSummary,
-      emptyTitle: 'No artists yet',
+      emptyTitle: context.l10n.libraryNoArtistsTitle,
       isArtist: true,
     );
   }
@@ -1073,7 +1084,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       songsFor: (album) => albumMap[album] ?? const [],
       subtitleFor: (songs) =>
           '${songs.first.artist} · ${collectionSummary(songs)}',
-      emptyTitle: 'No albums yet',
+      emptyTitle: context.l10n.libraryNoAlbumsTitle,
       isAlbum: true,
     );
   }
@@ -1101,12 +1112,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       if (wideGrid && gridQuery.isNotEmpty) {
         return Column(
           children: [
-            _filterBar('Filter artists, albums...'),
+            _filterBar(context.l10n.libraryFilterCollectionsHint),
             Expanded(
               child: AppEmptyState(
                 icon: AppIcons.searchOff,
-                title: 'No matches',
-                message: 'Nothing here matches "${_filter.trim()}".',
+                title: context.l10n.libraryNoMatchesTitle,
+                message: context.l10n
+                    .libraryCollectionNoMatchesMessage(_filter.trim()),
               ),
             ),
           ],
@@ -1115,7 +1127,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       return AppEmptyState(
         icon: AppIcons.library,
         title: emptyTitle,
-        message: 'Scan a music folder to fill this out.',
+        message: context.l10n.libraryScanToFillMessage,
       );
     }
 
@@ -1187,7 +1199,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     if (wideGrid) {
       return Column(
         children: [
-          _filterBar('Filter artists, albums...'),
+          _filterBar(context.l10n.libraryFilterCollectionsHint),
           Expanded(
             child: NotificationListener<ScrollNotification>(
               onNotification: handleScrollNotification,

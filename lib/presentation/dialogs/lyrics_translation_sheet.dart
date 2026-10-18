@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_icon.dart';
 import '../components/app_sheet.dart';
@@ -23,35 +24,67 @@ class LyricsTranslationConfig {
   });
 }
 
-const Map<String, String> kSupportedTranslationLanguages = {
-  'es': 'Spanish',
-  'en': 'English',
-  'fr': 'French',
-  'de': 'German',
-  'it': 'Italian',
-  'ja': 'Japanese',
-  'zh': 'Chinese',
-  'ko': 'Korean',
-  'pt': 'Portuguese',
-  'ru': 'Russian',
-  'hi': 'Hindi',
-  'ar': 'Arabic',
-  'nl': 'Dutch',
-  'pl': 'Polish',
-  'tr': 'Turkish',
-  'vi': 'Vietnamese',
-  'uk': 'Ukrainian',
-  'sv': 'Swedish',
-  'id': 'Indonesian',
-  'th': 'Thai',
-  'cs': 'Czech',
-  'el': 'Greek',
-  'hu': 'Hungarian',
-  'ro': 'Romanian',
-  'da': 'Danish',
-  'fi': 'Finnish',
-  'no': 'Norwegian',
-};
+const List<String> kSupportedTranslationLanguages = [
+  'es',
+  'en',
+  'fr',
+  'de',
+  'it',
+  'ja',
+  'zh',
+  'ko',
+  'pt',
+  'ru',
+  'hi',
+  'ar',
+  'nl',
+  'pl',
+  'tr',
+  'vi',
+  'uk',
+  'sv',
+  'id',
+  'th',
+  'cs',
+  'el',
+  'hu',
+  'ro',
+  'da',
+  'fi',
+  'no',
+];
+
+String localizedLanguageName(AppLocalizations l10n, String code) =>
+    switch (code) {
+      'es' => l10n.languageSpanish,
+      'en' => l10n.languageEnglish,
+      'fr' => l10n.languageFrench,
+      'de' => l10n.languageGerman,
+      'it' => l10n.languageItalian,
+      'ja' => l10n.languageJapanese,
+      'zh' => l10n.languageChinese,
+      'ko' => l10n.languageKorean,
+      'pt' => l10n.languagePortuguese,
+      'ru' => l10n.languageRussian,
+      'hi' => l10n.languageHindi,
+      'ar' => l10n.languageArabic,
+      'nl' => l10n.languageDutch,
+      'pl' => l10n.languagePolish,
+      'tr' => l10n.languageTurkish,
+      'vi' => l10n.languageVietnamese,
+      'uk' => l10n.languageUkrainian,
+      'sv' => l10n.languageSwedish,
+      'id' => l10n.languageIndonesian,
+      'th' => l10n.languageThai,
+      'cs' => l10n.languageCzech,
+      'el' => l10n.languageGreek,
+      'hu' => l10n.languageHungarian,
+      'ro' => l10n.languageRomanian,
+      'da' => l10n.languageDanish,
+      'fi' => l10n.languageFinnish,
+      'no' => l10n.languageNorwegian,
+      _ => code.toUpperCase(),
+    };
 
 Future<LyricsTranslationConfig?> showLyricsTranslationSheet(
   BuildContext context, {
@@ -60,7 +93,7 @@ Future<LyricsTranslationConfig?> showLyricsTranslationSheet(
 }) {
   return showAppSheet<LyricsTranslationConfig>(
     context,
-    title: 'Translate lyrics',
+    title: context.l10n.lyricsTranslateTitle,
     builder: (context) => _LyricsTranslationSheet(
       hasCachedTranslation: hasCachedTranslation,
     ),
@@ -128,10 +161,13 @@ class _LyricsTranslationSheetState
 
   @override
   Widget build(BuildContext context) {
-    final filteredLangs = kSupportedTranslationLanguages.entries.where((entry) {
+    final l10n = context.l10n;
+    final filteredLangs = kSupportedTranslationLanguages.where((code) {
       if (_filterQuery.isEmpty) return true;
-      return entry.value.toLowerCase().contains(_filterQuery) ||
-          entry.key.toLowerCase().contains(_filterQuery);
+      return localizedLanguageName(l10n, code)
+              .toLowerCase()
+              .contains(_filterQuery) ||
+          code.toLowerCase().contains(_filterQuery);
     }).toList();
 
     return SingleChildScrollView(
@@ -146,7 +182,7 @@ class _LyricsTranslationSheetState
         children: [
           // Display Mode Selector
           Text(
-            'Display mode',
+            l10n.lyricsDisplayMode,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -158,8 +194,8 @@ class _LyricsTranslationSheetState
             children: [
               Expanded(
                 child: _buildModeTile(
-                  title: 'Subtext below',
-                  subtitle: 'Show translation under lyrics',
+                  title: l10n.lyricsModeSubtext,
+                  subtitle: l10n.lyricsModeSubtextDescription,
                   value: 'subtext',
                   icon: AppIcons.subtitles,
                 ),
@@ -167,8 +203,8 @@ class _LyricsTranslationSheetState
               const SizedBox(width: AppTokens.s3),
               Expanded(
                 child: _buildModeTile(
-                  title: 'Replace base',
-                  subtitle: 'Replace original lyrics entirely',
+                  title: l10n.lyricsModeReplace,
+                  subtitle: l10n.lyricsModeReplaceDescription,
                   value: 'replace',
                   icon: AppIcons.swapHoriz,
                 ),
@@ -185,12 +221,12 @@ class _LyricsTranslationSheetState
                 _autoTranslate = val;
               });
             },
-            title: const Text(
-              'Auto-translate all songs',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            title: Text(
+              l10n.lyricsAutoTranslateAllTitle,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
             ),
             subtitle: Text(
-              'Automatically translate lyrics using selected language',
+              l10n.lyricsAutoTranslateAllSubtitle,
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.white.withValues(alpha: 0.6),
@@ -202,7 +238,7 @@ class _LyricsTranslationSheetState
 
           // Target Language Picker Section
           Text(
-            'Target language',
+            l10n.lyricsTargetLanguageLabel,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -213,7 +249,7 @@ class _LyricsTranslationSheetState
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search language...',
+              hintText: l10n.lyricsSearchLanguageHint,
               prefixIcon: const Padding(
                 padding: EdgeInsets.all(12.0),
                 child: AppIcon(AppIcons.search, size: 20),
@@ -243,14 +279,14 @@ class _LyricsTranslationSheetState
                 child: ListView.builder(
                   itemCount: filteredLangs.length,
                   itemBuilder: (context, index) {
-                    final entry = filteredLangs[index];
-                    final isSelected = entry.key == _selectedLanguage;
+                    final code = filteredLangs[index];
+                    final isSelected = code == _selectedLanguage;
 
                     return ListTile(
                       dense: true,
                       selected: isSelected,
                       title: Text(
-                        entry.value,
+                        localizedLanguageName(l10n, code),
                         style: TextStyle(
                           fontWeight:
                               isSelected ? FontWeight.w700 : FontWeight.w400,
@@ -260,7 +296,7 @@ class _LyricsTranslationSheetState
                         ),
                       ),
                       subtitle: Text(
-                        entry.key.toUpperCase(),
+                        code.toUpperCase(),
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.white.withValues(alpha: 0.5),
@@ -275,7 +311,7 @@ class _LyricsTranslationSheetState
                           : null,
                       onTap: () {
                         setState(() {
-                          _selectedLanguage = entry.key;
+                          _selectedLanguage = code;
                         });
                       },
                     );
@@ -294,7 +330,7 @@ class _LyricsTranslationSheetState
                   onPressed: () =>
                       _saveAndClose(translateNow: false, clearCache: true),
                   icon: const AppIcon(AppIcons.delete, size: 18),
-                  label: const Text('Clear cache'),
+                  label: Text(l10n.lyricsClearCache),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.redAccent,
                     side: BorderSide.none,
@@ -307,7 +343,7 @@ class _LyricsTranslationSheetState
                 child: FilledButton.icon(
                   onPressed: () => _saveAndClose(translateNow: true),
                   icon: const AppIcon(AppIcons.translate, size: 18),
-                  label: const Text('Translate now'),
+                  label: Text(l10n.lyricsTranslateNow),
                 ),
               ),
             ],

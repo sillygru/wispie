@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/database_service.dart';
@@ -78,11 +79,11 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
 
     return Scaffold(
       appBar: AppTopBar(
-        title: 'Song History',
+        title: context.l10n.playHistoryTitle,
         actions: [
           IconButton(
             onPressed: _loadHistory,
-            tooltip: 'Refresh',
+            tooltip: context.l10n.actionRefresh,
             icon: const AppIcon(AppIcons.refresh),
           ),
         ],
@@ -92,26 +93,26 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
           : _error != null
               ? AppEmptyState(
                   icon: AppIcons.error,
-                  title: 'Could not load history',
+                  title: context.l10n.historyLoadError,
                   message: _error,
                   tone: AppTone.danger,
                 )
               : _events.isEmpty
-                  ? const AppEmptyState(
+                  ? AppEmptyState(
                       icon: AppIcons.clock,
-                      title: 'No play history yet',
-                      message: 'Start listening to build your history.',
+                      title: context.l10n.playHistoryEmptyTitle,
+                      message: context.l10n.playHistoryEmptyMessage,
                     )
                   : Column(
                       children: [
-                        _buildLegend(),
-                        Expanded(child: _buildHistoryList(songsAsync)),
+                        _buildLegend(context),
+                        Expanded(child: _buildHistoryList(context, songsAsync)),
                       ],
                     ),
     );
   }
 
-  Widget _buildLegend() {
+  Widget _buildLegend(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(
         vertical: AppTokens.s3,
@@ -120,9 +121,11 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildLegendItem(AppIcons.play, AppTokens.success, 'Listen'),
+          _buildLegendItem(
+              AppIcons.play, AppTokens.success, context.l10n.playHistoryListen),
           const SizedBox(width: AppTokens.s5),
-          _buildLegendItem(AppIcons.skipNext, AppTokens.warning, 'Skip'),
+          _buildLegendItem(AppIcons.skipNext, AppTokens.warning,
+              context.l10n.playHistorySkip),
         ],
       ),
     );
@@ -142,7 +145,8 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     );
   }
 
-  Widget _buildHistoryList(AsyncValue<List<Song>> songsAsync) {
+  Widget _buildHistoryList(
+      BuildContext context, AsyncValue<List<Song>> songsAsync) {
     final songMap = songsAsync.when(
       data: (songs) => {for (var s in songs) s.filename: s},
       loading: () => <String, Song>{},
@@ -173,13 +177,15 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
         itemCount: sortedDates.length,
         itemBuilder: (context, index) {
           final dateKey = sortedDates[index];
-          return _buildDateSection(dateKey, groupedEvents[dateKey]!, songMap);
+          return _buildDateSection(
+              context, dateKey, groupedEvents[dateKey]!, songMap);
         },
       ),
     );
   }
 
   Widget _buildDateSection(
+    BuildContext context,
     String dateKey,
     List<Map<String, dynamic>> events,
     Map<String, Song> songMap,
@@ -196,11 +202,11 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
 
     String dateLabel;
     if (date == today) {
-      dateLabel = 'Today';
+      dateLabel = context.l10n.historyDayToday;
     } else if (date == yesterday) {
-      dateLabel = 'Yesterday';
+      dateLabel = context.l10n.historyDayYesterday;
     } else {
-      dateLabel = _formatDate(date);
+      dateLabel = _formatDate(context, date);
     }
 
     final totalSeconds = events.fold<int>(0, (sum, event) {
@@ -211,9 +217,9 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     final mins = (totalSeconds % 3600) ~/ 60;
     String durationStr;
     if (hours > 0) {
-      durationStr = '${hours}h ${mins}m';
+      durationStr = context.l10n.playHistoryDurationHours(hours, mins);
     } else {
-      durationStr = '${mins}m';
+      durationStr = context.l10n.playHistoryDurationMinutes(mins);
     }
 
     return Column(
@@ -221,18 +227,21 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
       children: [
         AppSectionHeader(
           label: dateLabel,
-          actionLabel: '${events.length} plays · $durationStr',
+          actionLabel:
+              context.l10n.playHistorySummary(events.length, durationStr),
         ),
-        ...events.map((event) => _buildHistoryItem(event, songMap)),
+        ...events.map((event) => _buildHistoryItem(context, event, songMap)),
       ],
     );
   }
 
   Widget _buildHistoryItem(
+    BuildContext context,
     Map<String, dynamic> event,
     Map<String, Song> songMap,
   ) {
-    final filename = event['song_filename'] as String? ?? 'Unknown';
+    final filename = event['song_filename'] as String? ??
+        context.l10n.playHistoryUnknownSong;
     final song = songMap[filename];
     final timestamp = (event['timestamp'] as num?)?.toDouble() ?? 0;
     final date =
@@ -246,7 +255,8 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
         '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 
     final statusColor = isSkip ? AppTokens.warning : AppTokens.success;
-    final statusText = isSkip ? 'Skip' : 'Listen';
+    final statusText =
+        isSkip ? context.l10n.playHistorySkip : context.l10n.playHistoryListen;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
@@ -259,7 +269,7 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
           ),
         ),
         title: song?.title ?? _getFileNameWithoutExt(filename),
-        subtitle: song?.artist ?? 'Unknown Artist',
+        subtitle: song?.artist ?? context.l10n.metaUnknownArtist,
         trailing: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -278,22 +288,23 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  String _formatDate(BuildContext context, DateTime date) {
+    final l10n = context.l10n;
+    final month = switch (date.month) {
+      1 => l10n.monthShortJan,
+      2 => l10n.monthShortFeb,
+      3 => l10n.monthShortMar,
+      4 => l10n.monthShortApr,
+      5 => l10n.monthShortMay,
+      6 => l10n.monthShortJun,
+      7 => l10n.monthShortJul,
+      8 => l10n.monthShortAug,
+      9 => l10n.monthShortSep,
+      10 => l10n.monthShortOct,
+      11 => l10n.monthShortNov,
+      _ => l10n.monthShortDec,
+    };
+    return l10n.playHistoryDate(month, date.day, date.year);
   }
 
   String _getFileNameWithoutExt(String filename) {

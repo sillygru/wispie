@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../models/shuffle_config.dart';
 import '../../providers/providers.dart';
 import '../components/app_surface.dart';
@@ -53,7 +54,7 @@ class _CustomShuffleSettingsScreenState
       );
       _hasChanges = true;
     });
-    appSnack(context, 'Settings reset to defaults');
+    appSnack(context, context.l10n.shuffleResetDone);
   }
 
   void _saveSettings() {
@@ -65,7 +66,7 @@ class _CustomShuffleSettingsScreenState
     setState(() {
       _hasChanges = false;
     });
-    appSnack(context, 'Settings saved');
+    appSnack(context, context.l10n.shuffleSaved);
   }
 
   Future<bool> _onWillPop() async {
@@ -74,16 +75,16 @@ class _CustomShuffleSettingsScreenState
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Unsaved Changes'),
-        content: const Text('Do you want to save your changes?'),
+        title: Text(context.l10n.shuffleUnsavedTitle),
+        content: Text(context.l10n.shuffleUnsavedMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Discard'),
+            child: Text(context.l10n.shuffleDiscard),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
+            child: Text(context.l10n.shuffleSave),
           ),
         ],
       ),
@@ -110,18 +111,18 @@ class _CustomShuffleSettingsScreenState
       },
       child: AmbientScaffold(
         appBar: AppTopBar(
-          title: 'Custom Shuffle Settings',
+          title: context.l10n.shuffleTitle,
           actions: [
             TextButton.icon(
               onPressed: _resetToDefaults,
               icon: const AppIcon(AppIcons.refresh, size: 20),
-              label: const Text('Reset'),
+              label: Text(context.l10n.shuffleReset),
             ),
             if (_hasChanges)
               TextButton.icon(
                 onPressed: _saveSettings,
                 icon: const AppIcon(AppIcons.save, size: 20),
-                label: const Text('Save'),
+                label: Text(context.l10n.shuffleSave),
               ),
           ],
         ),
@@ -146,7 +147,7 @@ class _CustomShuffleSettingsScreenState
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Changes will apply to next queue',
+                            context.l10n.shuffleNextQueueNote,
                             style: TextStyle(
                               color: Theme.of(context)
                                   .colorScheme
@@ -159,15 +160,14 @@ class _CustomShuffleSettingsScreenState
                   ),
                 ),
               if (_hasChanges) const SizedBox(height: 16),
-              _buildSectionTitle('Basic Settings'),
+              _buildSectionTitle(context.l10n.shuffleBasicSettings),
               AppSurface(
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
                     SwitchListTile(
-                      title: const Text('Avoid Repeating Songs'),
-                      subtitle: const Text(
-                          'Reduce chance of playing recently played songs'),
+                      title: Text(context.l10n.shuffleAvoidSongsTitle),
+                      subtitle: Text(context.l10n.shuffleAvoidSongsSubtitle),
                       value: config.avoidRepeatingSongs,
                       onChanged: (value) {
                         _updateConfig(
@@ -176,9 +176,8 @@ class _CustomShuffleSettingsScreenState
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
-                      title: const Text('Avoid Repeating Artists'),
-                      subtitle: const Text(
-                          'Reduce chance of playing same artist consecutively'),
+                      title: Text(context.l10n.shuffleAvoidArtistsTitle),
+                      subtitle: Text(context.l10n.shuffleAvoidArtistsSubtitle),
                       value: config.avoidRepeatingArtists,
                       onChanged: (value) {
                         _updateConfig(
@@ -187,9 +186,8 @@ class _CustomShuffleSettingsScreenState
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
-                      title: const Text('Avoid Repeating Albums'),
-                      subtitle: const Text(
-                          'Reduce chance of playing same album consecutively'),
+                      title: Text(context.l10n.shuffleAvoidAlbumsTitle),
+                      subtitle: Text(context.l10n.shuffleAvoidAlbumsSubtitle),
                       value: config.avoidRepeatingAlbums,
                       onChanged: (value) {
                         _updateConfig(
@@ -201,11 +199,11 @@ class _CustomShuffleSettingsScreenState
               ),
               const SizedBox(height: 24),
               ListTile(
-                title: const Text(
-                  'Advanced Settings',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                title: Text(
+                  context.l10n.shuffleAdvancedTitle,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: const Text('Fine-tune individual weight values'),
+                subtitle: Text(context.l10n.shuffleAdvancedSubtitle),
                 trailing: AppIcon(
                   _showAdvanced ? AppIcons.arrowUp : AppIcons.arrowDown,
                 ),
@@ -225,12 +223,12 @@ class _CustomShuffleSettingsScreenState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Weight Values (-99 to +99)',
+                          context.l10n.shuffleWeightValuesTitle,
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '0 = neutral, negative = penalty, positive = boost',
+                          context.l10n.shuffleWeightValuesHint,
                           style: TextStyle(
                             fontSize: 12,
                             color:
@@ -239,7 +237,7 @@ class _CustomShuffleSettingsScreenState
                         ),
                         const SizedBox(height: 16),
                         _buildAdvancedSlider(
-                          label: 'Least Played Songs',
+                          label: context.l10n.shuffleWeightLeastPlayed,
                           value: config.leastPlayedWeight,
                           onChanged: (value) {
                             _updateConfig(
@@ -247,7 +245,7 @@ class _CustomShuffleSettingsScreenState
                           },
                         ),
                         _buildAdvancedSlider(
-                          label: 'Most Played Songs',
+                          label: context.l10n.shuffleWeightMostPlayed,
                           value: config.mostPlayedWeight,
                           onChanged: (value) {
                             _updateConfig(
@@ -255,7 +253,7 @@ class _CustomShuffleSettingsScreenState
                           },
                         ),
                         _buildAdvancedSlider(
-                          label: 'Favorites',
+                          label: context.l10n.shuffleWeightFavorites,
                           value: config.favoritesWeight,
                           onChanged: (value) {
                             _updateConfig(
@@ -263,7 +261,7 @@ class _CustomShuffleSettingsScreenState
                           },
                         ),
                         _buildAdvancedSlider(
-                          label: 'Suggest Less Songs',
+                          label: context.l10n.shuffleWeightSuggestLess,
                           value: config.suggestLessWeight,
                           onChanged: (value) {
                             _updateConfig(
@@ -271,7 +269,7 @@ class _CustomShuffleSettingsScreenState
                           },
                         ),
                         _buildAdvancedSlider(
-                          label: 'Songs in Playlists',
+                          label: context.l10n.shuffleWeightPlaylistSongs,
                           value: config.playlistSongsWeight,
                           onChanged: (value) {
                             _updateConfig(

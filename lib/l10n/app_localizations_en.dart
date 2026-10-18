@@ -1443,6 +1443,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'What should happen to the original?';
 
   @override
+  String get metadataReplaceRejectNoFile => 'No file was selected.';
+
+  @override
+  String get metadataReplaceRejectUnsupported =>
+      'That file is not an audio or video format this library can read.';
+
+  @override
+  String get metadataReplaceRejectSameFilename =>
+      'The replacement needs a different filename. Changing only the extension is enough.';
+
+  @override
+  String get metadataReplaceRejectInsideLibrary =>
+      'That file is inside one of your library folders. Pick a copy from somewhere outside your library.';
+
+  @override
+  String metadataReplaceRejectDestinationExists(String filename) {
+    return 'A file named \"$filename\" already sits next to the original.';
+  }
+
+  @override
+  String metadataReplaceRejectLibraryHasName(String filename) {
+    return 'Your library already has a song named \"$filename\".';
+  }
+
+  @override
   String get metadataKeepHideUpper => 'KEEP, HIDE IT';
 
   @override
@@ -2497,4 +2522,2968 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsKwShuffle => 'shuffle,personality,weights,random,explorer';
+
+  @override
+  String get setupUnableToAccessFolder => 'Unable to access selected folder';
+
+  @override
+  String get setupFolderAdded => 'Music folder added';
+
+  @override
+  String get setupFolderRemoved => 'Music folder removed';
+
+  @override
+  String get setupStoragePermissionRequired =>
+      'Storage permission is required to scan your music library.';
+
+  @override
+  String get setupEnterDisplayName => 'Please enter a display name';
+
+  @override
+  String setupSetupError(String error) {
+    return 'Setup error: $error';
+  }
+
+  @override
+  String get setupIntroTagline => 'Your music stays on your device.';
+
+  @override
+  String get setupGetStarted => 'Get started';
+
+  @override
+  String get setupPreviousStep => 'Previous step';
+
+  @override
+  String get setupSettingThingsUp => 'Setting things up';
+
+  @override
+  String get setupStartListening => 'Start listening';
+
+  @override
+  String get setupContinue => 'Continue';
+
+  @override
+  String get setupNameTitle => 'What should we call you?';
+
+  @override
+  String get setupNameSubtitle =>
+      'wispie uses your name to greet you and to sign your listening history. Nothing leaves this device either way.';
+
+  @override
+  String get setupNameHint => 'Your name';
+
+  @override
+  String setupGreeting(String name) {
+    return 'Nice to meet you, $name.';
+  }
+
+  @override
+  String get setupAppearanceTitle => 'Make it look the way you like.';
+
+  @override
+  String get setupAppearanceSubtitle =>
+      'Everything on this page also lives in Settings, so you can change it whenever you want.';
+
+  @override
+  String get setupImmersiveSubtitle =>
+      'A full-bleed cover player and gradient detail screens.';
+
+  @override
+  String get setupVisualizerSubtitle =>
+      'Bars over the artwork while you listen. Synced follows the song rather than a random pattern.';
+
+  @override
+  String get setupBeatCoverSubtitle => 'The album art breathes on every beat.';
+
+  @override
+  String get setupParticlesSubtitle =>
+      'Motes drift across the player, and each beat carries them further instead of just blinking them.';
+
+  @override
+  String get setupProgressBarTitle => 'Progress bar';
+
+  @override
+  String get setupProgressBarSubtitle =>
+      'Draw the song itself as a waveform instead of a plain line. Sound reactive makes it move as it plays.';
+
+  @override
+  String get setupFoldersTitle => 'Where is your music?';
+
+  @override
+  String get setupFoldersSubtitle =>
+      'Point wispie at the folders your songs live in. It only reads them, and you can add as many as you like.';
+
+  @override
+  String get setupStoragePermissionTitle => 'Storage permission';
+
+  @override
+  String get setupStoragePermissionSubtitle =>
+      'wispie needs it to find audio files on this device.';
+
+  @override
+  String get setupOpenSystemSettings => 'Open system settings';
+
+  @override
+  String get setupGrantPermission => 'Grant permission';
+
+  @override
+  String get setupNoFoldersTitle => 'No folders yet';
+
+  @override
+  String get setupNoFoldersSubtitle => 'Add the one that holds your songs.';
+
+  @override
+  String get setupRemoveFolderTooltip => 'Remove folder';
+
+  @override
+  String get setupAddFolder => 'Add a folder';
+
+  @override
+  String get setupSummaryMusicFolders => 'Music folders';
+
+  @override
+  String get setupReadyTitle => 'You are all set.';
+
+  @override
+  String setupReadyTitleNamed(String name) {
+    return 'You are all set, $name.';
+  }
+
+  @override
+  String get setupReadySubtitle =>
+      'Here is what we set up. You can change any of it later from Settings.';
+
+  @override
+  String get setupOn => 'On';
+
+  @override
+  String get setupOff => 'Off';
+
+  @override
+  String backupLoadError(Object error) {
+    return 'Error loading backups: $error';
+  }
+
+  @override
+  String backupCreated(Object name) {
+    return 'Backup created: $name';
+  }
+
+  @override
+  String backupCreateFailed(Object error) {
+    return 'Failed to create backup: $error';
+  }
+
+  @override
+  String backupValidateFailed(Object error) {
+    return 'Failed to validate backup: $error';
+  }
+
+  @override
+  String get backupReplaceTitle => 'DANGER: Full Data Replace';
+
+  @override
+  String backupReplaceConfirm(Object name) {
+    return 'Are you absolutely sure you want to restore from $name?';
+  }
+
+  @override
+  String get backupReplaceWarning =>
+      'WARNING: This will COMPLETELY REPLACE all your current data:';
+
+  @override
+  String get backupReplaceItemStats =>
+      '• All your current statistics and play history';
+
+  @override
+  String get backupReplaceItemFavorites => '• All your favorites and playlists';
+
+  @override
+  String get backupReplaceItemHidden =>
+      '• All your hidden songs and preferences';
+
+  @override
+  String get backupReplaceItemSettings =>
+      '• All your current settings and state';
+
+  @override
+  String get backupReplaceItemLibrary => '• Your scanned song library';
+
+  @override
+  String get backupReplaceRekeyNote =>
+      'Album art and file paths are re-linked to this device automatically after the restore. Tracks in the backup whose files are not on this device are removed from the library.';
+
+  @override
+  String get backupReplaceIrreversible =>
+      'YOUR CURRENT DATA WILL BE PERMANENTLY LOST!';
+
+  @override
+  String get backupReplaceNoUndo => 'There is NO way to undo this action.';
+
+  @override
+  String get backupReplaceConfirmAction => 'YES, REPLACE EVERYTHING';
+
+  @override
+  String get backupRestoringLabel => 'Restoring data…';
+
+  @override
+  String get backupRestoreSuccess => 'All data replaced successfully!';
+
+  @override
+  String backupRestoreFailed(Object error) {
+    return 'Failed to restore backup: $error';
+  }
+
+  @override
+  String get backupDeleteTitle => 'Delete Backup';
+
+  @override
+  String backupDeleteConfirm(Object name) {
+    return 'Are you sure you want to delete $name?';
+  }
+
+  @override
+  String get backupDeleteUpper => 'DELETE';
+
+  @override
+  String get backupDeleted => 'Backup deleted';
+
+  @override
+  String backupDeleteFailed(Object error) {
+    return 'Failed to delete backup: $error';
+  }
+
+  @override
+  String backupExportedTo(Object path) {
+    return 'Backup exported to: $path';
+  }
+
+  @override
+  String get backupNoOlderBackup => 'No older backup to compare with.';
+
+  @override
+  String get backupComparing => 'Comparing backups...';
+
+  @override
+  String backupComparisonTitle(int number) {
+    return 'Comparison with #$number';
+  }
+
+  @override
+  String get backupDiffSongs => 'Songs';
+
+  @override
+  String get backupDiffStatsRows => 'Stats Rows';
+
+  @override
+  String get backupDiffSize => 'Size';
+
+  @override
+  String get backupDiffDataAdded => 'Data Added';
+
+  @override
+  String get backupCloseUpper => 'CLOSE';
+
+  @override
+  String backupCompareError(Object error) {
+    return 'Error comparing backups: $error';
+  }
+
+  @override
+  String get backupNoChange => 'No change';
+
+  @override
+  String get backupManagementTitle => 'Backup Management';
+
+  @override
+  String get backupCreating => 'Creating...';
+
+  @override
+  String get backupCreateAction => 'Create Backup';
+
+  @override
+  String get backupEmptyTitle => 'No backups yet';
+
+  @override
+  String get backupEmptySubtitle =>
+      'Create your first backup to protect your data';
+
+  @override
+  String backupSizeLabel(Object size) {
+    return 'Size: $size';
+  }
+
+  @override
+  String get backupActionRestore => 'Restore';
+
+  @override
+  String get backupActionExport => 'Export';
+
+  @override
+  String get backupActionCompare => 'Compare';
+
+  @override
+  String get backupRestartTitle => 'Restart Required';
+
+  @override
+  String get backupRestartMessage =>
+      'Backup restore has been completed successfully.\n\nThe app needs to restart to apply all changes properly.';
+
+  @override
+  String get backupRestartNow => 'Restart Now';
+
+  @override
+  String get backupDialogTitle => 'Create Backup';
+
+  @override
+  String get backupSelectContentSubtitle => 'Select content to backup';
+
+  @override
+  String get backupContentArtistArtCache => 'Artist Art Cache';
+
+  @override
+  String get backupContentAlbumArtCache => 'Album Art Cache';
+
+  @override
+  String get backupContentDescUserStats => 'Play history, stats, merged groups';
+
+  @override
+  String get backupContentDescUserData => 'Favorites, playlists, preferences';
+
+  @override
+  String get backupContentDescUserSettings =>
+      'Theme, sort order, app preferences';
+
+  @override
+  String get backupContentDescCoverCache => 'Cached album artwork';
+
+  @override
+  String get backupContentDescLibraryCache => 'Cached metadata';
+
+  @override
+  String get backupContentDescSearchIndex => 'Search database';
+
+  @override
+  String get backupContentDescWaveformCache => 'Waveform data';
+
+  @override
+  String get backupContentDescColorCache => 'Color palettes';
+
+  @override
+  String get backupContentDescLyricsCache => 'Cached lyrics';
+
+  @override
+  String get backupContentDescArtistArtCache => 'Cached artist images';
+
+  @override
+  String get backupContentDescAlbumArtCache => 'Cached album images';
+
+  @override
+  String get backupRestoringDataTitle => 'Restoring data';
+
+  @override
+  String get importSelectTitle => 'Select Data to Restore';
+
+  @override
+  String get importSectionDatabase => 'Database';
+
+  @override
+  String get importSectionStorage => 'Storage';
+
+  @override
+  String get importSectionSettings => 'Settings';
+
+  @override
+  String get importSectionCache => 'Cache';
+
+  @override
+  String get importOptionsTitle => 'Restore Options';
+
+  @override
+  String get importReplaceDatabases => 'Replace Databases';
+
+  @override
+  String get importReplaceDatabasesSubtitle =>
+      'Clear existing data before restoring';
+
+  @override
+  String get importRestoreAction => 'Restore';
+
+  @override
+  String get importSelectAll => 'All';
+
+  @override
+  String get importSelectNone => 'None';
+
+  @override
+  String get syncEnterPassword => 'Enter your password';
+
+  @override
+  String syncAuthUnexpectedError(String error) {
+    return 'Something went wrong: $error';
+  }
+
+  @override
+  String get syncUsernameTaken => 'That username is already taken';
+
+  @override
+  String get syncModeLogIn => 'Log in';
+
+  @override
+  String get syncModeRecover => 'Recover';
+
+  @override
+  String get syncUsername => 'Username';
+
+  @override
+  String get syncEncryptionWarning =>
+      'Your data is end-to-end encrypted. If you lose both your password and recovery key, it cannot be recovered.';
+
+  @override
+  String get syncSecuringAccount => 'Securing your account...';
+
+  @override
+  String get syncCreateAccount => 'Create account';
+
+  @override
+  String get syncLogIn => 'Log in';
+
+  @override
+  String get syncRecoverAccount => 'Recover account';
+
+  @override
+  String get syncHideAdvanced => 'Hide advanced';
+
+  @override
+  String get syncAdvanced => 'Advanced';
+
+  @override
+  String get syncRecoveryKeySaved => 'Recovery key saved';
+
+  @override
+  String get syncCouldNotSaveFile => 'Could not save file';
+
+  @override
+  String get syncRecoveryKeyRevealTitle => 'Your recovery key';
+
+  @override
+  String get syncRecoveryKeyRevealBody =>
+      'This is the only way to regain access if you forget your password. It is shown once. Store it somewhere safe.';
+
+  @override
+  String get syncCopied => 'Copied';
+
+  @override
+  String get syncCopy => 'Copy';
+
+  @override
+  String get syncSaveToFile => 'Save to file';
+
+  @override
+  String get syncRecoveryKeySavedCheckbox => 'I saved my recovery key';
+
+  @override
+  String get syncContinue => 'Continue';
+
+  @override
+  String get syncUploadTitle => 'Upload your library data';
+
+  @override
+  String get syncSetupDeviceTitle => 'Set up this device';
+
+  @override
+  String get syncFreshAccountBody =>
+      'Auto-sync turns on after your data is uploaded once.';
+
+  @override
+  String get syncChooseDeviceBody =>
+      'Choose how this device joins your cloud data. Auto-sync turns on after this step.';
+
+  @override
+  String get syncEverythingNow => 'Sync everything now';
+
+  @override
+  String get syncMergeWithCloud => 'Merge this device with cloud';
+
+  @override
+  String get syncSetupNewDevice => 'Set up as new device';
+
+  @override
+  String get syncMergeExplanation =>
+      'Merging keeps both sides. Setting up as a new device erases this device\'s synced data first and is safer if this device already holds an older copy of the same history.';
+
+  @override
+  String get syncCloudReplacedTitle => 'Cloud data was replaced';
+
+  @override
+  String get syncCloudReplacedBody =>
+      'Another device overwrote the cloud. Sync is paused on this device until you choose.';
+
+  @override
+  String get syncMergeIntoCloud => 'Merge this device into the new cloud data';
+
+  @override
+  String get syncPhaseSigningIn => 'Signing in...';
+
+  @override
+  String get syncPhaseCheckingCloud => 'Checking cloud...';
+
+  @override
+  String get syncPhaseDownloadingBackup => 'Downloading backup...';
+
+  @override
+  String get syncPhaseApplyingBackup => 'Applying backup...';
+
+  @override
+  String get syncPhaseDownloadingChanges => 'Downloading changes...';
+
+  @override
+  String get syncPhaseMerging => 'Merging...';
+
+  @override
+  String get syncPhasePreparingUpload => 'Preparing upload...';
+
+  @override
+  String get syncPhaseEncrypting => 'Encrypting...';
+
+  @override
+  String get syncPhaseUploading => 'Uploading...';
+
+  @override
+  String get syncPhaseFinishing => 'Finishing up...';
+
+  @override
+  String get syncPhaseError => 'Sync failed';
+
+  @override
+  String get syncSyncing => 'Syncing...';
+
+  @override
+  String syncServerInfo(String name, String version) {
+    return '$name - API v$version';
+  }
+
+  @override
+  String syncServerInfoClosed(String name, String version) {
+    return '$name - API v$version - registration closed';
+  }
+
+  @override
+  String get syncServerUnreachable => 'Could not reach the server';
+
+  @override
+  String get syncInsecureHttpWarning =>
+      'Plain http: only use on a trusted private network';
+
+  @override
+  String get syncServerUrl => 'Server URL';
+
+  @override
+  String get syncChecking => 'Checking...';
+
+  @override
+  String get syncCheckServer => 'Check server';
+
+  @override
+  String get syncResetDefault => 'Reset to default';
+
+  @override
+  String get autoBackupRunningTitle => 'Backing Up';
+
+  @override
+  String get autoBackupRunningSubtitle => 'Creating backup...';
+
+  @override
+  String get autoBackupCompleteTitle => 'Auto-Backup Complete';
+
+  @override
+  String get autoBackupSaved => 'Backup saved';
+
+  @override
+  String get autoBackupFailedTitle => 'Auto-Backup Failed';
+
+  @override
+  String get autoBackupUnknownError => 'Unknown error';
+
+  @override
+  String get autoBackupPermissionTitle => 'Permission Required';
+
+  @override
+  String get autoBackupPermissionSubtitle => 'Auto-backup needs storage access';
+
+  @override
+  String get autoBackupGrant => 'Grant';
+
+  @override
+  String get downgradeTitle => 'Older version detected';
+
+  @override
+  String downgradeMessage(String previousVersion, String currentVersion) {
+    return 'wispie was last opened on $previousVersion, but this is $currentVersion. Your data may have been changed by a newer version and could break or be lost on this one.';
+  }
+
+  @override
+  String get downgradeQuit => 'Quit';
+
+  @override
+  String get downgradeRiskIt => 'Risk it';
+
+  @override
+  String get downgradeUpdate => 'Update';
+
+  @override
+  String get indexerSettingsGroupTitle => 'Indexer Settings';
+
+  @override
+  String get indexerPreventDuplicatesTitle => 'Prevent Duplicate Tracks';
+
+  @override
+  String get indexerPreventDuplicatesSubtitle =>
+      'Hide songs with the same filename across folders';
+
+  @override
+  String get indexerExtractFeaturedTitle => 'Extract Featured Artists';
+
+  @override
+  String get indexerExtractFeaturedSubtitle =>
+      'Move \"ft./feat.\" artists from title to artist field';
+
+  @override
+  String get indexerDatabaseOpsGroupTitle => 'Database Operations';
+
+  @override
+  String get indexerWarnRestart =>
+      'This operation requires an app restart to apply changes.';
+
+  @override
+  String get indexerCoverSearchGroupTitle => 'Cover & Search';
+
+  @override
+  String get indexerWarnRepairLinks =>
+      'Tracks whose files are no longer on this device will be removed from the library. Favourites, playlists and play counts are kept and reattach if the files come back.';
+
+  @override
+  String get indexerWarnSearchRestart =>
+      'You may need to restart the app for search index changes to fully apply.';
+
+  @override
+  String get indexerContentCachesGroupTitle => 'Content Caches';
+
+  @override
+  String get indexerRecommendationsGroupTitle => 'Recommendations';
+
+  @override
+  String get indexerTitle => 'Indexer';
+
+  @override
+  String indexerArtistsAlbumsProgress(String artists, String albums) {
+    return 'Artists $artists · Albums $albums...';
+  }
+
+  @override
+  String indexerProcessing(String progress) {
+    return 'Processing $progress...';
+  }
+
+  @override
+  String indexerError(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get indexerUnknownError => 'Unknown error';
+
+  @override
+  String get indexerCompleted => 'Completed';
+
+  @override
+  String indexerCached(int processed, int total) {
+    return '$processed/$total cached';
+  }
+
+  @override
+  String indexerCachedFailed(int processed, int total, int failed) {
+    return '$processed/$total cached ($failed failed)';
+  }
+
+  @override
+  String get indexerReadyToRebuild => 'Ready to rebuild';
+
+  @override
+  String indexerArtistsOnly(String progress) {
+    return 'Artists $progress';
+  }
+
+  @override
+  String indexerAlbumsOnly(String progress) {
+    return 'Albums $progress';
+  }
+
+  @override
+  String indexerFailedItemsQuestion(int failed) {
+    return 'This cache has $failed failed items. What would you like to do?';
+  }
+
+  @override
+  String indexerViewFailed(int failed) {
+    return 'View $failed Failed';
+  }
+
+  @override
+  String get indexerRetryFailed => 'Retry Failed';
+
+  @override
+  String get indexerForceRebuild => 'Force Rebuild';
+
+  @override
+  String indexerAlreadyCompleteQuestion(int processed, int total) {
+    return 'This cache is already complete ($processed/$total). Do you want to force rebuild it?';
+  }
+
+  @override
+  String get indexerDoIt => 'Do It';
+
+  @override
+  String indexerOptimizing(String name) {
+    return 'Optimizing $name...';
+  }
+
+  @override
+  String get indexerDoNotClose => 'Please do not close the app';
+
+  @override
+  String get indexerRestartRequiredTitle => 'Restart Required';
+
+  @override
+  String get indexerRestartRequiredMessage =>
+      'The operation has been completed successfully.\n\nThe app needs to restart to apply all changes properly.';
+
+  @override
+  String get indexerRestartNow => 'Restart Now';
+
+  @override
+  String indexerFailedItemsTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Failed Items',
+      one: '1 Failed Item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get indexerCouldNotProcess =>
+      'The following items could not be processed:';
+
+  @override
+  String indexerWarningsTitle(String name) {
+    return '$name Warnings';
+  }
+
+  @override
+  String indexerMoreItems(int count) {
+    return '... and $count more';
+  }
+
+  @override
+  String get indexerOk => 'OK';
+
+  @override
+  String get indexerJustMissing => 'Just Missing';
+
+  @override
+  String get indexerForceAll => 'Force All';
+
+  @override
+  String get beatSyncTitle => 'Beat sync';
+
+  @override
+  String get beatPlayToCalibrate => 'Play a song to calibrate.';
+
+  @override
+  String get beatAnalyzing => 'Analyzing beats...';
+
+  @override
+  String get beatNoClearBeat => 'No clear beat in this track.';
+
+  @override
+  String get beatDragInstruction =>
+      'Drag until the particle bursts land on the clicks.';
+
+  @override
+  String beatOffsetMs(int value) {
+    return '$value ms';
+  }
+
+  @override
+  String get beatResetToZero => 'Reset to 0 ms';
+
+  @override
+  String get libraryTitle => 'Library';
+
+  @override
+  String get libraryFoldersTab => 'Folders';
+
+  @override
+  String get libraryArtistsTab => 'Artists';
+
+  @override
+  String get libraryAlbumsTab => 'Albums';
+
+  @override
+  String get libraryNoMusicFolderTitle => 'No music folder yet';
+
+  @override
+  String get libraryNoMusicFolderMessage =>
+      'Select a music folder in Home to fill this out.';
+
+  @override
+  String get libraryFolderErrorTitle => 'Could not find your music folder';
+
+  @override
+  String get libraryLoadErrorTitle => 'Could not load library';
+
+  @override
+  String get libraryOpenFolderErrorTitle => 'Could not open folder';
+
+  @override
+  String get libraryNoMatchesTitle => 'No matches';
+
+  @override
+  String libraryNoMatchesMessage(String query) {
+    return 'Nothing in your library matches \"$query\".';
+  }
+
+  @override
+  String libraryFolderNoMatchesMessage(String query) {
+    return 'Nothing in this folder matches \"$query\".';
+  }
+
+  @override
+  String libraryCollectionNoMatchesMessage(String query) {
+    return 'Nothing here matches \"$query\".';
+  }
+
+  @override
+  String get libraryFavorites => 'Favorites';
+
+  @override
+  String get libraryMergedSongs => 'Merged Songs';
+
+  @override
+  String libraryMergedGroupsCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count groups',
+      one: '1 group',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get libraryCreateMergeGroupTooltip => 'Create new merge group';
+
+  @override
+  String get librarySelectSongsToMerge => 'Select Songs to Merge';
+
+  @override
+  String libraryMergedCount(int count) {
+    return 'Merged $count songs';
+  }
+
+  @override
+  String get libraryDeletePlaylist => 'Delete playlist';
+
+  @override
+  String get libraryPlaylistOptions => 'Playlist options';
+
+  @override
+  String get libraryFolderOptions => 'Folder options';
+
+  @override
+  String get libraryFilterAllHint => 'Filter folders, playlists, songs...';
+
+  @override
+  String get libraryFilterSongsHint => 'Filter folders, songs...';
+
+  @override
+  String get libraryFilterCollectionsHint => 'Filter artists, albums...';
+
+  @override
+  String libraryTrackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get libraryAll => 'All';
+
+  @override
+  String get libraryShuffleFolderTooltip => 'Shuffle folder';
+
+  @override
+  String get libraryNoArtistsTitle => 'No artists yet';
+
+  @override
+  String get libraryNoAlbumsTitle => 'No albums yet';
+
+  @override
+  String get libraryScanToFillMessage =>
+      'Scan a music folder to fill this out.';
+
+  @override
+  String get actionClear => 'Clear';
+
+  @override
+  String get actionSearch => 'Search';
+
+  @override
+  String get actionShuffleAll => 'Shuffle all';
+
+  @override
+  String get actionSeeAll => 'See All';
+
+  @override
+  String get homeFolderAccessError => 'Unable to access selected folder';
+
+  @override
+  String homeQueueCardSubtitle(String date, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$date · $_temp0';
+  }
+
+  @override
+  String homeTrackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homePlayingCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return 'Playing $_temp0';
+  }
+
+  @override
+  String get homeOpenPlayer => 'Open Player';
+
+  @override
+  String get homePlayNow => 'Play Now';
+
+  @override
+  String homePlayAfterCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks will play after the current song',
+      one: '1 track will play after the current song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get homePlayAfterCurrent => 'Play After Current Song';
+
+  @override
+  String get homeSaveToNewPlaylist => 'Save to new playlist';
+
+  @override
+  String get homeUnpin => 'Unpin';
+
+  @override
+  String get homePinRecommendation => 'Pin recommendation';
+
+  @override
+  String get homeRenameRecommendation => 'Rename recommendation';
+
+  @override
+  String get homeRenameRecommendationTitle => 'Rename Recommendation';
+
+  @override
+  String get homeRemoveRecommendation => 'Remove recommendation';
+
+  @override
+  String get homeRemoveRecommendationTitle => 'Remove recommendation?';
+
+  @override
+  String homeRemoveRecommendationMessage(String title) {
+    return 'Are you sure you want to remove \"$title\"?';
+  }
+
+  @override
+  String get homeRemove => 'Remove';
+
+  @override
+  String get homeErrorTitle => 'Something went wrong';
+
+  @override
+  String get homeTryAgain => 'Try Again';
+
+  @override
+  String get homeNoSongsTitle => 'No songs found';
+
+  @override
+  String get homeNoSongsMessage =>
+      'Select your music folder to start listening offline.';
+
+  @override
+  String get homeSelectFolder => 'Select Music Folder';
+
+  @override
+  String get homeQuickPicks => 'Quick Picks';
+
+  @override
+  String get homeRecentQueues => 'Recent Queues';
+
+  @override
+  String get homeForYou => 'For You';
+
+  @override
+  String mergedLoadError(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get mergedTitle => 'Merged Songs';
+
+  @override
+  String get mergedCreateGroupTooltip => 'Create merge group';
+
+  @override
+  String mergedGroupsTab(int count) {
+    return 'Groups ($count)';
+  }
+
+  @override
+  String mergedAutoFindTab(int count) {
+    return 'Auto-Find ($count)';
+  }
+
+  @override
+  String get mergedSelectSongsTitle => 'Select Songs to Merge';
+
+  @override
+  String mergedCreatedSnack(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Merged $count songs',
+      one: 'Merged 1 song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergedEmptyTitle => 'No merged songs yet';
+
+  @override
+  String get mergedEmptyBody =>
+      'Group different versions of the same song (remixes, live versions, acoustics) so they share one spot during shuffle.';
+
+  @override
+  String get mergedCreateGroupButton => 'Create Merge Group';
+
+  @override
+  String mergedPrioritySet(String title) {
+    return '\"$title\" set as priority song';
+  }
+
+  @override
+  String get mergedPriorityCleared => 'Priority cleared';
+
+  @override
+  String get mergedNoCandidatesTitle => 'No candidate songs found';
+
+  @override
+  String get mergedNoCandidatesBody =>
+      'No unmerged song variants (remixes, live versions, acoustics) were detected in your library.';
+
+  @override
+  String mergedFoundGroups(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Found $count potential groups to merge',
+      one: 'Found 1 potential group to merge',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergedMergeAll => 'Merge All';
+
+  @override
+  String get mergedMergeAllTitle => 'Merge All Suggestions';
+
+  @override
+  String mergedMergeAllConfirm(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Create $count merge groups for detected song variants?',
+      one: 'Create 1 merge group for detected song variants?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mergedCreatedGroupsSnack(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Created $count merge groups',
+      one: 'Created 1 merge group',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergedUnmergeTitle => 'Unmerge Song';
+
+  @override
+  String mergedUnmergeConfirm(String title) {
+    return 'Remove \"$title\" from this merge group?';
+  }
+
+  @override
+  String get mergedUnmergeAction => 'Unmerge';
+
+  @override
+  String mergedUnmergedSnack(String title) {
+    return '\"$title\" unmerged';
+  }
+
+  @override
+  String get mergedDeleteGroupTitle => 'Delete Merge Group';
+
+  @override
+  String get mergedDeleteGroupConfirm => 'Unmerge all songs in this group?';
+
+  @override
+  String get mergedUnmergeAllAction => 'Unmerge All';
+
+  @override
+  String get mergedGroupDeleted => 'Merge group deleted';
+
+  @override
+  String get mergedGroupLabel => 'Merge Group';
+
+  @override
+  String mergedVersionsCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count versions',
+      one: '1 version',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get mergedUnmergeAllTooltip => 'Unmerge all';
+
+  @override
+  String get mergedPriorityBadge => 'Priority';
+
+  @override
+  String get mergedPrioritySongTooltip => 'Priority song for shuffle';
+
+  @override
+  String get mergedSetPriorityTooltip => 'Set as priority song';
+
+  @override
+  String get mergedUnmergeSongTooltip => 'Unmerge song';
+
+  @override
+  String mergedSelectedCount(int selected, int total) {
+    return '$selected/$total selected';
+  }
+
+  @override
+  String get mergedMergeAction => 'Merge';
+
+  @override
+  String get sleepTimerTitle => 'Sleep Timer';
+
+  @override
+  String get sleepTimerModeLabel => 'Timer Mode';
+
+  @override
+  String get sleepTimerDurationLabel => 'Duration';
+
+  @override
+  String sleepTimerMinutesValue(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get sleepTimerMinSuffix => 'min';
+
+  @override
+  String get sleepTimerTracksLabel => 'Number of Tracks';
+
+  @override
+  String sleepTimerTracksValue(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get sleepTimerLoopTitle => 'Loop Current Song';
+
+  @override
+  String get sleepTimerLoopSubtitle => 'Repeat the current song for a set time';
+
+  @override
+  String get sleepTimerPlayForTimeTitle => 'Play for Time';
+
+  @override
+  String get sleepTimerPlayForTimeSubtitle => 'Stop after a specified duration';
+
+  @override
+  String get sleepTimerStopAfterCurrentTitle => 'Stop After Current';
+
+  @override
+  String get sleepTimerStopAfterCurrentSubtitle =>
+      'Stop when the current song ends';
+
+  @override
+  String get sleepTimerStopAfterTracksTitle => 'Stop After Tracks';
+
+  @override
+  String get sleepTimerStopAfterTracksSubtitle =>
+      'Stop after playing X more songs';
+
+  @override
+  String get sleepTimerNoSong => 'No song is currently playing';
+
+  @override
+  String get sleepTimerCurrentSongLabel => 'Current song';
+
+  @override
+  String get sleepTimerLetFinishTitle => 'Let current song finish';
+
+  @override
+  String get sleepTimerLetFinishSubtitle =>
+      'Wait for the current song to end before stopping';
+
+  @override
+  String get sleepTimerStopImmediatelySubtitle =>
+      'Stop immediately when timer expires';
+
+  @override
+  String get sleepTimerStart => 'Start Timer';
+
+  @override
+  String get sleepTimerCancelActive => 'Cancel Active Timer';
+
+  @override
+  String get sleepTimerCancelled => 'Sleep timer cancelled';
+
+  @override
+  String get sleepTimerFinished => 'Sleep timer finished';
+
+  @override
+  String sleepTimerLoopingFor(int minutes) {
+    return 'Looping current song for $minutes minutes';
+  }
+
+  @override
+  String sleepTimerStopIn(int minutes) {
+    return 'Music will stop in $minutes minutes';
+  }
+
+  @override
+  String get sleepTimerStopAfterCurrent => 'Will stop after current song ends';
+
+  @override
+  String sleepTimerStopAfterTracks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Will stop after $count more songs',
+      one: 'Will stop after 1 more song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get settingsSearchHint => 'Search settings';
+
+  @override
+  String get settingsValueNone => 'None';
+
+  @override
+  String settingsDurationSeconds(int seconds) {
+    return '$seconds s';
+  }
+
+  @override
+  String settingsDurationMinutes(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String settingsDurationMinutesSeconds(int minutes, int seconds) {
+    return '${minutes}m ${seconds}s';
+  }
+
+  @override
+  String get settingsGroupListening => 'Listening';
+
+  @override
+  String get settingsGroupLookAndFeel => 'Look & Feel';
+
+  @override
+  String get settingsGroupData => 'Data';
+
+  @override
+  String get settingsGroupApp => 'App';
+
+  @override
+  String get settingsGroupLibrary => 'Library';
+
+  @override
+  String get settingsGroupFilters => 'Filters';
+
+  @override
+  String get settingsGroupMaintenance => 'Maintenance';
+
+  @override
+  String get settingsScanningLibrary => 'Scanning library…';
+
+  @override
+  String settingsResultsFor(String query) {
+    return 'Results for \"$query\"';
+  }
+
+  @override
+  String get settingsNoResultsTitle => 'No settings found';
+
+  @override
+  String settingsNoResultsMessage(String query) {
+    return 'Nothing matches \"$query\".';
+  }
+
+  @override
+  String get homeSettingsGroupLists => 'Lists & Navigation';
+
+  @override
+  String get homeSettingsAutoHideBarsSubtitle =>
+      'Header and bottom dock hide on downward scroll, restore on upward scroll';
+
+  @override
+  String get homeSettingsGroupHome => 'Home screen';
+
+  @override
+  String get playbackGroupTransitions => 'Transitions';
+
+  @override
+  String get playbackGroupPlayPause => 'Play / Pause';
+
+  @override
+  String get playbackGroupAudio => 'Audio';
+
+  @override
+  String get playbackGapOff => 'Gap / Delay (off)';
+
+  @override
+  String get playbackFadeOutOff => 'Fade Out (off)';
+
+  @override
+  String get playbackFadeInOff => 'Fade In (off)';
+
+  @override
+  String playbackSecondsValue(String seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String get playbackValueOff => 'Off';
+
+  @override
+  String get playbackValueOneSecond => '1.0 s';
+
+  @override
+  String playbackValueMilliseconds(int milliseconds) {
+    return '$milliseconds ms';
+  }
+
+  @override
+  String get bulkRenameTokenCurrentName => 'Current name';
+
+  @override
+  String get bulkRenameTokenNumber => 'Number';
+
+  @override
+  String get bulkRenameTokenYear => 'Year';
+
+  @override
+  String bulkRenameAnalyzeError(String error) {
+    return 'Could not analyze the library: $error';
+  }
+
+  @override
+  String bulkRenameRenameCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Rename $count songs',
+      one: 'Rename 1 song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get bulkRenameConfirmMessage =>
+      'Files are renamed in place. Play stats, playlists and cached artwork move across with them, and the database is kept in step as each file lands.';
+
+  @override
+  String get bulkRenameNothingLeft => 'Nothing left to rename';
+
+  @override
+  String get bulkRenamePhaseStarting => 'Starting';
+
+  @override
+  String get bulkRenameTitle => 'Bulk Rename';
+
+  @override
+  String get bulkRenameFormatTitle => 'Title';
+
+  @override
+  String get bulkRenameFormatArtistTitle => 'Artist - Title';
+
+  @override
+  String get bulkRenameFormatArtistAlbumTitle => 'Artist - Album - Title';
+
+  @override
+  String get bulkRenameFormatCustom => 'Custom';
+
+  @override
+  String get bulkRenameCustomSubtitle => 'Your own arrangement';
+
+  @override
+  String get bulkRenameSectionFormat => 'FORMAT';
+
+  @override
+  String get bulkRenameSectionArrange => 'ARRANGE';
+
+  @override
+  String get bulkRenameSectionPreview => 'PREVIEW';
+
+  @override
+  String get bulkRenameEmptySegments =>
+      'Add a field below to start building a name.';
+
+  @override
+  String get bulkRenameRemoveToken => 'Remove';
+
+  @override
+  String get bulkRenameLiteralHint => 'Text, e.g. \" - \"';
+
+  @override
+  String get bulkRenameTextChip => 'Text';
+
+  @override
+  String get bulkRenameAnalyzing => 'Analyzing library';
+
+  @override
+  String bulkRenameCountToRename(int count) {
+    return '$count to rename';
+  }
+
+  @override
+  String bulkRenameSkippedCount(int count) {
+    return '$count skipped';
+  }
+
+  @override
+  String bulkRenameAndMore(int count) {
+    return 'and $count more';
+  }
+
+  @override
+  String bulkRenameChecking(int done, int total) {
+    return 'Checking names — $done of $total';
+  }
+
+  @override
+  String get bulkRenameStop => 'Stop';
+
+  @override
+  String get bulkRenameStopping => 'Stopping...';
+
+  @override
+  String get bulkRenamePleaseWait => 'Please wait';
+
+  @override
+  String bulkRenameProgressCount(int done, int total) {
+    return '$done of $total';
+  }
+
+  @override
+  String bulkRenameStopped(int count) {
+    return 'Stopped after $count songs. Their stats and cached artwork moved across; the rest were left alone.';
+  }
+
+  @override
+  String bulkRenameStoppedFailed(int count, int failed) {
+    return 'Stopped after $count songs, $failed could not be renamed.';
+  }
+
+  @override
+  String bulkRenameCompleted(int count) {
+    return 'Renamed $count songs. Stats and cached artwork moved across.';
+  }
+
+  @override
+  String bulkRenameCompletedFailed(int count, int failed) {
+    return 'Renamed $count songs, $failed could not be renamed.';
+  }
+
+  @override
+  String get bulkRenameFinishedTitle => 'Rename finished';
+
+  @override
+  String get bulkRenameSkipNoTitleText => 'No title text left after cleanup';
+
+  @override
+  String get bulkRenameSkipAlreadyNamed => 'Already named this';
+
+  @override
+  String bulkRenameSkipSameNameAs(String filename) {
+    return 'Same name as \"$filename\" in this folder';
+  }
+
+  @override
+  String get bulkRenameSkipAnotherSelected =>
+      'Another selected song has that name';
+
+  @override
+  String get bulkRenameSkipFileExists =>
+      'A file with that name is already here';
+
+  @override
+  String get shuffleResetDone => 'Settings reset to defaults';
+
+  @override
+  String get shuffleSaved => 'Settings saved';
+
+  @override
+  String get shuffleUnsavedTitle => 'Unsaved Changes';
+
+  @override
+  String get shuffleUnsavedMessage => 'Do you want to save your changes?';
+
+  @override
+  String get shuffleDiscard => 'Discard';
+
+  @override
+  String get shuffleSave => 'Save';
+
+  @override
+  String get shuffleTitle => 'Custom Shuffle Settings';
+
+  @override
+  String get shuffleReset => 'Reset';
+
+  @override
+  String get shuffleNextQueueNote => 'Changes will apply to next queue';
+
+  @override
+  String get shuffleBasicSettings => 'Basic Settings';
+
+  @override
+  String get shuffleAvoidSongsTitle => 'Avoid Repeating Songs';
+
+  @override
+  String get shuffleAvoidSongsSubtitle =>
+      'Reduce chance of playing recently played songs';
+
+  @override
+  String get shuffleAvoidArtistsTitle => 'Avoid Repeating Artists';
+
+  @override
+  String get shuffleAvoidArtistsSubtitle =>
+      'Reduce chance of playing same artist consecutively';
+
+  @override
+  String get shuffleAvoidAlbumsTitle => 'Avoid Repeating Albums';
+
+  @override
+  String get shuffleAvoidAlbumsSubtitle =>
+      'Reduce chance of playing same album consecutively';
+
+  @override
+  String get shuffleAdvancedTitle => 'Advanced Settings';
+
+  @override
+  String get shuffleAdvancedSubtitle => 'Fine-tune individual weight values';
+
+  @override
+  String get shuffleWeightValuesTitle => 'Weight Values (-99 to +99)';
+
+  @override
+  String get shuffleWeightValuesHint =>
+      '0 = neutral, negative = penalty, positive = boost';
+
+  @override
+  String get shuffleWeightLeastPlayed => 'Least Played Songs';
+
+  @override
+  String get shuffleWeightMostPlayed => 'Most Played Songs';
+
+  @override
+  String get shuffleWeightFavorites => 'Favorites';
+
+  @override
+  String get shuffleWeightSuggestLess => 'Suggest Less Songs';
+
+  @override
+  String get shuffleWeightPlaylistSongs => 'Songs in Playlists';
+
+  @override
+  String get lyricsGroupDisplayTiming => 'Display & Timing';
+
+  @override
+  String get lyricsSimulateWordSyncTitle => 'Simulate Word Sync';
+
+  @override
+  String get lyricsSimulateWordSyncSubtitle =>
+      'Generate word-level timing from line-synced lyrics using prosodic estimation';
+
+  @override
+  String get lyricsDesktopSidebarTitle => 'Lyrics & Queue Sidebar';
+
+  @override
+  String get lyricsDesktopSidebarSubtitle =>
+      'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden';
+
+  @override
+  String get lyricsKeepScreenAwakeTitle => 'Keep Screen Awake on Lyrics';
+
+  @override
+  String get lyricsKeepScreenAwakeSubtitle =>
+      'Prevent sleep while the lyrics pane is open';
+
+  @override
+  String get lyricsGroupTranslation => 'Translation';
+
+  @override
+  String get lyricsAutoTranslateTitle => 'Auto-Translate Lyrics';
+
+  @override
+  String get lyricsAutoTranslateSubtitle =>
+      'Automatically translate lyrics using selected target language';
+
+  @override
+  String get lyricsTargetLanguageTitle => 'Target Language';
+
+  @override
+  String get lyricsTranslationDisplayTitle => 'Translation Display';
+
+  @override
+  String get lyricsTranslationModeReplaceSubtitle => 'Replace base lyrics';
+
+  @override
+  String get lyricsTranslationModeSubtextSubtitle =>
+      'Show subtext below lyrics';
+
+  @override
+  String get lyricsModeSubtext => 'Subtext below';
+
+  @override
+  String get lyricsModeReplace => 'Replace base';
+
+  @override
+  String get lyricsTranslateTitle => 'Translate lyrics';
+
+  @override
+  String get lyricsDisplayMode => 'Display mode';
+
+  @override
+  String get lyricsModeSubtextDescription => 'Show translation under lyrics';
+
+  @override
+  String get lyricsModeReplaceDescription => 'Replace original lyrics entirely';
+
+  @override
+  String get lyricsAutoTranslateAllTitle => 'Auto-translate all songs';
+
+  @override
+  String get lyricsAutoTranslateAllSubtitle =>
+      'Automatically translate lyrics using selected language';
+
+  @override
+  String get lyricsTargetLanguageLabel => 'Target language';
+
+  @override
+  String get lyricsSearchLanguageHint => 'Search language...';
+
+  @override
+  String get lyricsClearCache => 'Clear cache';
+
+  @override
+  String get lyricsTranslateNow => 'Translate now';
+
+  @override
+  String get lyricsFindTitle => 'Find lyrics';
+
+  @override
+  String get lyricsNoResults =>
+      'No lyrics found. Try a different title or artist, or check your connection.';
+
+  @override
+  String get lyricsInstrumentalWarning =>
+      'Marked as instrumental. Applying this clears any lyrics stored on the file.';
+
+  @override
+  String get lyricsApplyUpper => 'APPLY';
+
+  @override
+  String get lyricsPlainText => 'Plain text';
+
+  @override
+  String get lyricsUnknownLength => 'Unknown length';
+
+  @override
+  String lyricsDurationExactMatch(String duration) {
+    return '$duration · exact match';
+  }
+
+  @override
+  String get lyricsBadgeWordSync => 'WORD SYNC';
+
+  @override
+  String get lyricsBadgeLineSync => 'LINE SYNC';
+
+  @override
+  String get lyricsBadgeInstrumental => 'INSTRUMENTAL';
+
+  @override
+  String get lyricsBadgePlain => 'PLAIN';
+
+  @override
+  String get lyricsSaved => 'Lyrics saved';
+
+  @override
+  String lyricsSaveError(Object error) {
+    return 'Could not save lyrics: $error';
+  }
+
+  @override
+  String get lyricsTranslationCleared => 'Cached translation cleared';
+
+  @override
+  String get lyricsAlreadyTranslated => 'Lyrics are already in target language';
+
+  @override
+  String get lyricsTranslated => 'Lyrics translated';
+
+  @override
+  String get lyricsTranslateError => 'Could not translate lyrics';
+
+  @override
+  String lyricsTranslationFailed(Object error) {
+    return 'Translation failed: $error';
+  }
+
+  @override
+  String get lyricsRetry => 'Retry';
+
+  @override
+  String get lyricsHideTimingTooltip => 'Hide lyric timing';
+
+  @override
+  String get lyricsAdjustTimingTooltip =>
+      'Adjust lyric timing — hold for precision controls';
+
+  @override
+  String get lyricsFindOnline => 'Find lyrics online';
+
+  @override
+  String get lyricsEmptyTitle => 'No lyrics';
+
+  @override
+  String get lyricsEmptySubtitle => 'This track has no embedded lyrics.';
+
+  @override
+  String get languageSpanish => 'Spanish';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageFrench => 'French';
+
+  @override
+  String get languageGerman => 'German';
+
+  @override
+  String get languageItalian => 'Italian';
+
+  @override
+  String get languageJapanese => 'Japanese';
+
+  @override
+  String get languageChinese => 'Chinese';
+
+  @override
+  String get languageKorean => 'Korean';
+
+  @override
+  String get languagePortuguese => 'Portuguese';
+
+  @override
+  String get languageRussian => 'Russian';
+
+  @override
+  String get languageHindi => 'Hindi';
+
+  @override
+  String get languageArabic => 'Arabic';
+
+  @override
+  String get languageDutch => 'Dutch';
+
+  @override
+  String get languagePolish => 'Polish';
+
+  @override
+  String get languageTurkish => 'Turkish';
+
+  @override
+  String get languageVietnamese => 'Vietnamese';
+
+  @override
+  String get languageUkrainian => 'Ukrainian';
+
+  @override
+  String get languageSwedish => 'Swedish';
+
+  @override
+  String get languageIndonesian => 'Indonesian';
+
+  @override
+  String get languageThai => 'Thai';
+
+  @override
+  String get languageCzech => 'Czech';
+
+  @override
+  String get languageGreek => 'Greek';
+
+  @override
+  String get languageHungarian => 'Hungarian';
+
+  @override
+  String get languageRomanian => 'Romanian';
+
+  @override
+  String get languageDanish => 'Danish';
+
+  @override
+  String get languageFinnish => 'Finnish';
+
+  @override
+  String get languageNorwegian => 'Norwegian';
+
+  @override
+  String get selectSongsTitle => 'Select Songs';
+
+  @override
+  String get selectSongsWhatIsMerging => 'What is merging?';
+
+  @override
+  String get selectSongsMergedExplanation =>
+      'Merged songs are different versions of the same song:';
+
+  @override
+  String get selectSongsBulletVersions =>
+      'Like remixes, live versions, or different quality versions';
+
+  @override
+  String get selectSongsBulletFavorites =>
+      'Favorites and \"suggest less\" are independent per song';
+
+  @override
+  String get selectSongsBulletStats =>
+      'Your play counts and stats remain unchanged';
+
+  @override
+  String get selectSongsBulletPriority =>
+      'Select a priority song (⭐) to prioritize it during shuffle';
+
+  @override
+  String get selectSongsSearchHint => 'Search songs...';
+
+  @override
+  String selectSongsSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count selected',
+      one: '1 selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get selectSongsReadyToMerge => 'Ready to merge';
+
+  @override
+  String get selectSongsPrioritySongTooltip => 'Priority song';
+
+  @override
+  String get selectSongsSetPriorityTooltip => 'Set as priority';
+
+  @override
+  String get selectSongsPriorityBadge => 'PRIORITY';
+
+  @override
+  String selectSongsMinSelection(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Select at least $count songs',
+      one: 'Select at least 1 song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String selectSongsMergeAction(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Merge $count Songs',
+      one: 'Merge 1 Song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String selectSongsSelectAction(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Select $count Songs',
+      one: 'Select 1 Song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get foldersAddedSnack => 'Music folder added';
+
+  @override
+  String get foldersRemovedSnack => 'Music folder removed';
+
+  @override
+  String get foldersSubtitle => 'Select folders containing your music files';
+
+  @override
+  String get foldersEmptyTitle => 'No folders added yet';
+
+  @override
+  String get foldersEmptyMessage => 'Add a folder to build your library.';
+
+  @override
+  String get foldersAddButton => 'Add Folder';
+
+  @override
+  String get foldersShortcutInternalStorage => 'Internal Storage';
+
+  @override
+  String get foldersShortcutMusic => 'Music';
+
+  @override
+  String get foldersShortcutDownload => 'Download';
+
+  @override
+  String get foldersShortcutStorageRoot => 'Storage Root';
+
+  @override
+  String get foldersShortcutHome => 'Home';
+
+  @override
+  String get foldersShortcutDownloads => 'Downloads';
+
+  @override
+  String get foldersShortcutDocuments => 'Documents';
+
+  @override
+  String get foldersDoesNotExist => 'Folder does not exist';
+
+  @override
+  String get foldersPermissionError =>
+      'Permission denied or error reading folder';
+
+  @override
+  String get foldersNewFolderTitle => 'New Folder';
+
+  @override
+  String get foldersFolderNameLabel => 'Folder Name';
+
+  @override
+  String get foldersFolderNameHint => 'Enter folder name';
+
+  @override
+  String foldersCreateError(String error) {
+    return 'Error creating folder: $error';
+  }
+
+  @override
+  String get foldersGoUp => '.. (Go up)';
+
+  @override
+  String get foldersGoBack => '.. (Go back)';
+
+  @override
+  String get foldersNoSubfolders =>
+      'No subfolders found.\nSelect this folder if it contains your music.';
+
+  @override
+  String get foldersSelectThisFolder => 'Select This Folder';
+
+  @override
+  String get foldersSelectDestination => 'Select Destination Folder';
+
+  @override
+  String get foldersEmptyFolder => 'Empty folder. You can select it below.';
+
+  @override
+  String foldersSelected(String name) {
+    return 'Selected: $name';
+  }
+
+  @override
+  String get foldersRoot => 'Root';
+
+  @override
+  String foldersError(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get foldersMoveFolder => 'Move Folder';
+
+  @override
+  String foldersMovedTo(String name, String path) {
+    return 'Moved $name to $path';
+  }
+
+  @override
+  String foldersMoveError(String error) {
+    return 'Error moving folder: $error';
+  }
+
+  @override
+  String get playlistsTitle => 'Playlists';
+
+  @override
+  String get playlistsSearchHint => 'Search playlists...';
+
+  @override
+  String get playlistsCreate => 'Create Playlist';
+
+  @override
+  String get playlistsNoMatches => 'No matching playlists found';
+
+  @override
+  String playlistsCreatedOn(String date) {
+    return 'Created $date';
+  }
+
+  @override
+  String get playlistsCreatedToday => 'today';
+
+  @override
+  String get playlistsCreatedYesterday => 'yesterday';
+
+  @override
+  String playlistsDaysAgo(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days ago',
+      one: '1 day ago',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String playlistsWeeksAgo(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count weeks ago',
+      one: '1 week ago',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String playlistsLoadError(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get playlistsEmptyTitle => 'No playlists yet';
+
+  @override
+  String get playlistsEmptyMessage =>
+      'Create your first playlist to get started';
+
+  @override
+  String get playlistsNameTitle => 'Playlist Name';
+
+  @override
+  String get playlistsNameHint => 'Enter playlist name';
+
+  @override
+  String get playlistsRenameTitle => 'Rename Playlist';
+
+  @override
+  String get statsTitle => 'Listening';
+
+  @override
+  String get statsLoadErrorTitle => 'Couldn\'t load your stats';
+
+  @override
+  String get statsReadingHistory => 'Reading your listening history';
+
+  @override
+  String get statsEmptyTitle => 'No listening history yet';
+
+  @override
+  String get statsEmptyMessage =>
+      'Play something and your listening habits will show up here.';
+
+  @override
+  String get statsSectionOverTime => 'Over time';
+
+  @override
+  String get statsSectionWhen => 'When you listen';
+
+  @override
+  String get statsSectionTop => 'Your top';
+
+  @override
+  String get statsSectionTaste => 'Taste';
+
+  @override
+  String get statsByHour => 'BY HOUR';
+
+  @override
+  String get statsByWeekday => 'BY WEEKDAY';
+
+  @override
+  String get statsNoListening => 'No listening recorded';
+
+  @override
+  String statsAcrossPlays(String time, String plays) {
+    return '$time across $plays';
+  }
+
+  @override
+  String get statsLibraryExplored => 'Library explored';
+
+  @override
+  String get statsPlaysFavourites => 'Plays that were favourites';
+
+  @override
+  String get statsPlaysSkipped => 'Plays skipped';
+
+  @override
+  String get statsAvgPlay => 'AVERAGE PLAY';
+
+  @override
+  String get statsOnActiveDay => 'ON AN ACTIVE DAY';
+
+  @override
+  String get statsPlaysPerActiveDay => 'PLAYS PER ACTIVE DAY';
+
+  @override
+  String get statsFirstListen => 'FIRST LISTEN';
+
+  @override
+  String statsShareOf(String share, String count) {
+    return '$share of $count';
+  }
+
+  @override
+  String get statsTopArtists => 'TOP ARTISTS';
+
+  @override
+  String get statsTopAlbums => 'TOP ALBUMS';
+
+  @override
+  String get statsTopTracks => 'TOP TRACKS';
+
+  @override
+  String get statsTimeListened => 'TIME LISTENED';
+
+  @override
+  String statsRangeWithDays(String range, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days with music on',
+      one: '1 day with music on',
+    );
+    return '$range · $_temp0';
+  }
+
+  @override
+  String get statsPlays => 'PLAYS';
+
+  @override
+  String get statsSkips => 'SKIPS';
+
+  @override
+  String get statsTracks => 'TRACKS';
+
+  @override
+  String get statsStreak => 'STREAK';
+
+  @override
+  String statsStreakBest(int count) {
+    return 'best $count';
+  }
+
+  @override
+  String statsPlaysCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count plays',
+      one: '1 play',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsActiveDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count active days',
+      one: '1 active day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsSummary(String duration, String plays, String days) {
+    return '$duration · $plays · $days';
+  }
+
+  @override
+  String get statsEmptyHint => 'Play something to start your history';
+
+  @override
+  String get statsLoadError => 'Could not load your stats';
+
+  @override
+  String statsDurationSeconds(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String statsDurationMinutes(int minutes) {
+    return '${minutes}m';
+  }
+
+  @override
+  String statsDurationHours(int hours) {
+    return '${hours}h';
+  }
+
+  @override
+  String statsDurationHoursMinutes(int hours, int minutes) {
+    return '${hours}h ${minutes}m';
+  }
+
+  @override
+  String get statsSameAsBefore => 'same as before';
+
+  @override
+  String statsHourTickAm(int hour) {
+    return '${hour}a';
+  }
+
+  @override
+  String statsHourTickPm(int hour) {
+    return '${hour}p';
+  }
+
+  @override
+  String get actionRetry => 'Retry';
+
+  @override
+  String get actionRefresh => 'Refresh';
+
+  @override
+  String get sessionDetailTitle => 'Session Details';
+
+  @override
+  String sessionStartedAt(String time) {
+    return 'Started at $time';
+  }
+
+  @override
+  String get sessionSongSingular => 'Song';
+
+  @override
+  String get sessionSongPlural => 'Songs';
+
+  @override
+  String get sessionSongsPlayed => 'Songs Played';
+
+  @override
+  String get sessionNoSongs => 'No songs recorded';
+
+  @override
+  String get sessionRepeatNow => 'Repeat Queue Now';
+
+  @override
+  String get sessionPlayAfterCurrent => 'Play After Current Song';
+
+  @override
+  String get sessionNoSongsAvailable => 'No songs available to play';
+
+  @override
+  String sessionAfterCurrentSnack(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count songs will play after the current song',
+      one: '1 song will play after the current song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sessionPlayingSnack(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Playing $count songs from this session',
+      one: 'Playing 1 song from this session',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sessionDurationMinutes(int minutes, int seconds) {
+    return '${minutes}m ${seconds}s';
+  }
+
+  @override
+  String sessionDurationSeconds(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String get sessionHistoryTitle => 'Session History';
+
+  @override
+  String get sessionLoadFailed => 'Failed to load sessions';
+
+  @override
+  String get sessionEmptyTitle => 'No Sessions Yet';
+
+  @override
+  String get sessionEmptyMessage =>
+      'Start listening to build your session history';
+
+  @override
+  String sessionSongCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count songs',
+      one: '1 song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get playHistoryTitle => 'Song History';
+
+  @override
+  String get playHistoryEmptyTitle => 'No play history yet';
+
+  @override
+  String get playHistoryEmptyMessage =>
+      'Start listening to build your history.';
+
+  @override
+  String get playHistoryListen => 'Listen';
+
+  @override
+  String get playHistorySkip => 'Skip';
+
+  @override
+  String playHistorySummary(int count, String duration) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count plays',
+      one: '1 play',
+    );
+    return '$_temp0 · $duration';
+  }
+
+  @override
+  String playHistoryDurationHours(int hours, int minutes) {
+    return '${hours}h ${minutes}m';
+  }
+
+  @override
+  String playHistoryDurationMinutes(int minutes) {
+    return '${minutes}m';
+  }
+
+  @override
+  String get playHistoryUnknownSong => 'Unknown';
+
+  @override
+  String playHistoryDate(String month, int day, int year) {
+    return '$month $day, $year';
+  }
+
+  @override
+  String get monthShortJan => 'Jan';
+
+  @override
+  String get monthShortFeb => 'Feb';
+
+  @override
+  String get monthShortMar => 'Mar';
+
+  @override
+  String get monthShortApr => 'Apr';
+
+  @override
+  String get monthShortMay => 'May';
+
+  @override
+  String get monthShortJun => 'Jun';
+
+  @override
+  String get monthShortJul => 'Jul';
+
+  @override
+  String get monthShortAug => 'Aug';
+
+  @override
+  String get monthShortSep => 'Sep';
+
+  @override
+  String get monthShortOct => 'Oct';
+
+  @override
+  String get monthShortNov => 'Nov';
+
+  @override
+  String get monthShortDec => 'Dec';
+
+  @override
+  String get searchFieldHint => 'Search songs, artists, albums...';
+
+  @override
+  String get searchEmptyTitle => 'Search your music collection';
+
+  @override
+  String get searchEmptyMessage => 'Find songs, artists, albums, and lyrics.';
+
+  @override
+  String get searchFailed => 'Could not search';
+
+  @override
+  String searchNoResults(String query) {
+    return 'No results found for \"$query\"';
+  }
+
+  @override
+  String get searchNoResultsHint =>
+      'Try different keywords or check your filters.';
+
+  @override
+  String searchArtistsSection(int count) {
+    return 'Artists ($count)';
+  }
+
+  @override
+  String searchAlbumsSection(int count) {
+    return 'Albums ($count)';
+  }
+
+  @override
+  String searchSongsSection(int count) {
+    return 'Songs ($count)';
+  }
+
+  @override
+  String searchTrackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String searchAlbumSubtitle(String artist, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+    );
+    return '$artist · $_temp0';
+  }
+
+  @override
+  String searchSongCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count songs',
+      one: '1 song',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get quickActionSuggestMore => 'Suggest more often';
+
+  @override
+  String get quickActionSuggestLess => 'Suggest less often';
+
+  @override
+  String get quickActionGoToAlbum => 'Go to album';
+
+  @override
+  String get quickActionGoToArtist => 'Go to artist';
+
+  @override
+  String get aboutChecking => 'Checking for updates…';
+
+  @override
+  String aboutUpdateAvailable(String version) {
+    return 'Update available: $version';
+  }
+
+  @override
+  String get aboutUpToDate => 'You are up to date';
+
+  @override
+  String get aboutCheckForUpdates => 'Check for updates';
+
+  @override
+  String get aboutCheckingSubtitle => 'wispie is checking GitHub Releases.';
+
+  @override
+  String get aboutUpdateAvailableSubtitle =>
+      'A newer version is available on GitHub.';
+
+  @override
+  String aboutLatestRelease(String version) {
+    return 'Latest release: $version';
+  }
+
+  @override
+  String get aboutTapToCheck => 'Tap below to check manually.';
+
+  @override
+  String aboutVersion(String version) {
+    return 'Version $version';
+  }
+
+  @override
+  String get aboutUnknown => 'Unknown';
+
+  @override
+  String get aboutCheckNow => 'Check now';
+
+  @override
+  String get aboutViewRelease => 'View release';
+
+  @override
+  String get aboutDebugGroup => 'Debug';
+
+  @override
+  String get aboutPersistWrites => 'Persist writes';
+
+  @override
+  String get aboutPersistWritesSubtitle =>
+      'Debug builds keep changes in a throwaway copy by default. Applies on next launch.';
+
+  @override
+  String get appIconMoreSoon => 'More icons coming soon';
+
+  @override
+  String get appIconDesktopNote =>
+      'Desktop launchers and file managers keep the default icon; the window and Dock icon follow your choice.';
+
+  @override
+  String get storageSettingsDiskGroup => 'Disk';
+
+  @override
+  String get storageSettingsIndexesGroup => 'Indexes & Caches';
+
+  @override
+  String get shellNavHome => 'Home';
+
+  @override
+  String get shellNavLibrary => 'Library';
+
+  @override
+  String get shellNavProfile => 'Profile';
+
+  @override
+  String get shellSearchTooltip => 'Search (Ctrl+K)';
+
+  @override
+  String get shellShowSidebar => 'Show sidebar';
+
+  @override
+  String get shellHideSidebar => 'Hide sidebar';
+
+  @override
+  String get shellNothingUpNext => 'Nothing up next';
+
+  @override
+  String get shellNextInQueue => 'Next in queue';
+
+  @override
+  String get shellPlayNext => 'Play next';
+
+  @override
+  String get playerNothingPlaying => 'Nothing playing';
+
+  @override
+  String get playerPaneLyrics => 'Lyrics';
+
+  @override
+  String get playerPanePlayer => 'Player';
+
+  @override
+  String get playerPaneQueue => 'Queue';
+
+  @override
+  String get playerCloseEsc => 'Close (Esc)';
+
+  @override
+  String get playerSongOptions => 'Song options';
+
+  @override
+  String get playerShowArtwork => 'Show artwork';
+
+  @override
+  String get playerShowVideo => 'Show video';
+
+  @override
+  String get drawerQueueHistory => 'Queue History';
+
+  @override
+  String get drawerTools => 'Tools';
+
+  @override
+  String get nowPlayingBarShuffleTooltip => 'Shuffle (hold for a new shuffle)';
+
+  @override
+  String get shuffleButtonAfterSong => 'Shuffle after current song';
+
+  @override
+  String get shuffleButtonAfterQueue => 'Shuffle after current queue';
+
+  @override
+  String shuffleButtonScanningTooltip(String percentage) {
+    return 'Scanning library ($percentage%)';
+  }
+
+  @override
+  String shuffleButtonScanningSemantics(String percentage) {
+    return 'Scanning library $percentage percent complete';
+  }
+
+  @override
+  String shuffleButtonScanningMessage(String percentage) {
+    return 'Scanning library: $percentage%';
+  }
+
+  @override
+  String heartMenuRemoveFromPlaylist(String name) {
+    return 'Remove from $name';
+  }
+
+  @override
+  String heartMenuRemovedFromPlaylist(String name) {
+    return 'Removed from $name';
+  }
+
+  @override
+  String get sortBy => 'Sort by';
+
+  @override
+  String get sortTitleAZ => 'Title (A-Z)';
+
+  @override
+  String get sortDateAdded => 'Date Added';
+
+  @override
+  String get sortSongDateOldNew => 'Song Date (Old - New)';
+
+  @override
+  String get sortSongDateNewOld => 'Song Date (New - Old)';
+
+  @override
+  String get sortMostPlayed => 'Most Played';
+
+  @override
+  String get sortRecentlyPlayed => 'Recently Played';
+
+  @override
+  String get sortRecommended => 'Recommended';
+
+  @override
+  String get searchFilterAll => 'All';
+
+  @override
+  String get searchFilterArtists => 'Artists';
+
+  @override
+  String get playlistDialogAddTo => 'Add to...';
+
+  @override
+  String get playlistDialogBulkAddTo => 'Bulk Add to...';
+
+  @override
+  String get playlistDialogUpdatedSelections => 'Updated selections';
+
+  @override
+  String get albumCardAllSongs => 'All songs';
+
+  @override
+  String dangerDialogTypeToConfirm(String text) {
+    return 'Type \"$text\" to confirm';
+  }
+
+  @override
+  String dangerDialogCountdown(String label, int seconds) {
+    return '$label ($seconds)';
+  }
+
+  @override
+  String get appDialogConfirm => 'Confirm';
+
+  @override
+  String get appDialogEnterName => 'Enter name...';
+
+  @override
+  String get transportRepeatOff => 'Repeat off';
+
+  @override
+  String get transportRepeatAll => 'Repeat all';
+
+  @override
+  String get transportRepeatOne => 'Repeat one';
+
+  @override
+  String durationSongsWithTotal(int count, String duration) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count songs',
+      one: '1 song',
+    );
+    return '$_temp0 • $duration';
+  }
+
+  @override
+  String waveformDeltaSeconds(String value) {
+    return '${value}s';
+  }
+
+  @override
+  String waveformDeltaMinutes(String minutes, String seconds) {
+    return '${minutes}m ${seconds}s';
+  }
+
+  @override
+  String get waveformDeltaZero => '0s';
+
+  @override
+  String lyricsMatchContains(String line) {
+    return 'contains \"$line\"';
+  }
+
+  @override
+  String get lyricsMatchPrefix => 'contains \"';
+
+  @override
+  String get lyricsMatchAvailable => 'Lyrics available';
+
+  @override
+  String get lyricsResumeSync => 'Resume Sync';
+
+  @override
+  String get lyricsTimingTitle => 'Lyric timing';
+
+  @override
+  String get lyricsTimingEarlier => 'Earlier';
+
+  @override
+  String get lyricsTimingLater => 'Later';
+
+  @override
+  String get lyricsTimingSyncToLine => 'Sync to this line';
+
+  @override
+  String get lyricsTimingReset => 'Reset timing';
+
+  @override
+  String lyricsTimingSnapped(String value) {
+    return 'Snapped to $value';
+  }
+
+  @override
+  String get lyricsTimingResetTooltip => 'Double-tap to reset to 0.00';
+
+  @override
+  String get nowPlayingShowArtwork => 'Show artwork';
+
+  @override
+  String get nowPlayingShowVideo => 'Show video';
+
+  @override
+  String get quickActionsTitle => 'Quick Actions';
+
+  @override
+  String get quickActionsReset => 'Reset';
+
+  @override
+  String get quickActionsResetDone => 'Reset to defaults';
+
+  @override
+  String quickActionsEnabledHeader(int count) {
+    return 'ENABLED ($count)';
+  }
+
+  @override
+  String quickActionsDisabledHeader(int count) {
+    return 'DISABLED ($count)';
+  }
+
+  @override
+  String get quickActionsPlayNext => 'Play Next';
+
+  @override
+  String get quickActionsGoToAlbum => 'Go to Album';
+
+  @override
+  String get quickActionsGoToArtist => 'Go to Artist';
+
+  @override
+  String get quickActionsMoveToFolder => 'Move to Folder';
+
+  @override
+  String get quickActionsAddToPlaylist => 'Add to Playlist';
+
+  @override
+  String get quickActionsShare => 'Share';
+
+  @override
+  String get quickActionsAddToNewPlaylist => 'Add to New Playlist';
+
+  @override
+  String get quickActionsEditMetadata => 'Edit Metadata';
+
+  @override
+  String get quickActionsFavorite => 'Favorite';
+
+  @override
+  String get quickActionsSuggestLess => 'Suggest Less';
+
+  @override
+  String get quickActionsDelete => 'Delete';
+
+  @override
+  String get quickActionsHide => 'Hide';
+
+  @override
+  String get updateAvailableTitle => 'Update Available';
+
+  @override
+  String get updateCurrentLabel => 'Current';
+
+  @override
+  String get updateNewLabel => 'New';
+
+  @override
+  String get updateAvailableBody =>
+      'A newer version of wispie is ready to download.';
+
+  @override
+  String get updateSkipVersion => 'Skip this version';
+
+  @override
+  String get updateDownload => 'Download';
+
+  @override
+  String get updateWhatsNew => 'What\'s new?';
+
+  @override
+  String get externalOpenAddToLibrary => 'Add to library';
+
+  @override
+  String get externalOpenDismiss => 'Dismiss';
+
+  @override
+  String get wideTrackTime => 'Time';
+
+  @override
+  String get floatingDockPlay => 'Play';
+
+  @override
+  String get floatingDockPause => 'Pause';
+
+  @override
+  String get floatingDockNext => 'Next';
+
+  @override
+  String get barSeekLabel => 'Seek';
 }

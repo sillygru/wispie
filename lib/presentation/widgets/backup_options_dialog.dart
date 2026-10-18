@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../../services/backup_service.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
@@ -6,17 +7,17 @@ import '../tokens/app_icons.dart';
 
 class BackupOptionsDialog extends StatefulWidget {
   final Set<BackupContentType> initialTypes;
-  final String title;
-  final String subtitle;
-  final String buttonLabel;
+  final String? title;
+  final String? subtitle;
+  final String? buttonLabel;
   final AppIconData buttonIcon;
 
   const BackupOptionsDialog({
     super.key,
     required this.initialTypes,
-    this.title = 'Create Backup',
-    this.subtitle = 'Select content to backup',
-    this.buttonLabel = 'Create',
+    this.title,
+    this.subtitle,
+    this.buttonLabel,
     this.buttonIcon = AppIcons.cloudUpload,
   });
 
@@ -31,54 +32,54 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
   String _getContentTypeName(BackupContentType type) {
     switch (type) {
       case BackupContentType.userStats:
-        return 'User Stats';
+        return context.l10n.backupContentUserStats;
       case BackupContentType.userData:
-        return 'User Data';
+        return context.l10n.backupContentUserData;
       case BackupContentType.userSettings:
-        return 'User Settings';
+        return context.l10n.backupContentUserSettings;
       case BackupContentType.coverCache:
-        return 'Cover Cache';
+        return context.l10n.backupContentCoverCache;
       case BackupContentType.libraryCache:
-        return 'Library Cache';
+        return context.l10n.backupContentLibraryCache;
       case BackupContentType.searchIndex:
-        return 'Search Index';
+        return context.l10n.backupContentSearchIndex;
       case BackupContentType.waveformCache:
-        return 'Waveform Cache';
+        return context.l10n.backupContentWaveformCache;
       case BackupContentType.colorCache:
-        return 'Color Cache';
+        return context.l10n.backupContentColorCache;
       case BackupContentType.lyricsCache:
-        return 'Lyrics Cache';
+        return context.l10n.backupContentLyricsCache;
       case BackupContentType.artistArtCache:
-        return 'Artist Art Cache';
+        return context.l10n.backupContentArtistArtCache;
       case BackupContentType.albumArtCache:
-        return 'Album Art Cache';
+        return context.l10n.backupContentAlbumArtCache;
     }
   }
 
   String _getContentTypeDescription(BackupContentType type) {
     switch (type) {
       case BackupContentType.userStats:
-        return 'Play history, stats, merged groups';
+        return context.l10n.backupContentDescUserStats;
       case BackupContentType.userData:
-        return 'Favorites, playlists, preferences';
+        return context.l10n.backupContentDescUserData;
       case BackupContentType.userSettings:
-        return 'Theme, sort order, app preferences';
+        return context.l10n.backupContentDescUserSettings;
       case BackupContentType.coverCache:
-        return 'Cached album artwork';
+        return context.l10n.backupContentDescCoverCache;
       case BackupContentType.libraryCache:
-        return 'Cached metadata';
+        return context.l10n.backupContentDescLibraryCache;
       case BackupContentType.searchIndex:
-        return 'Search database';
+        return context.l10n.backupContentDescSearchIndex;
       case BackupContentType.waveformCache:
-        return 'Waveform data';
+        return context.l10n.backupContentDescWaveformCache;
       case BackupContentType.colorCache:
-        return 'Color palettes';
+        return context.l10n.backupContentDescColorCache;
       case BackupContentType.lyricsCache:
-        return 'Cached lyrics';
+        return context.l10n.backupContentDescLyricsCache;
       case BackupContentType.artistArtCache:
-        return 'Cached artist images';
+        return context.l10n.backupContentDescArtistArtCache;
       case BackupContentType.albumArtCache:
-        return 'Cached album images';
+        return context.l10n.backupContentDescAlbumArtCache;
     }
   }
 
@@ -122,6 +123,7 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
 
     return AlertDialog(
       contentPadding: EdgeInsets.zero,
@@ -143,13 +145,13 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.title,
+                  widget.title ?? l10n.backupDialogTitle,
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  widget.subtitle,
+                  widget.subtitle ?? l10n.backupSelectContentSubtitle,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -261,7 +263,7 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
                       borderRadius: AppTokens.brSm,
                     ),
                   ),
-                  child: const Text('Cancel'),
+                  child: Text(l10n.actionCancel),
                 ),
               ),
             ),
@@ -284,7 +286,7 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
                       borderRadius: AppTokens.brSm,
                     ),
                   ),
-                  label: Text(widget.buttonLabel),
+                  label: Text(widget.buttonLabel ?? l10n.actionCreate),
                 ),
               ),
             ),

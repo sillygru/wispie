@@ -10,6 +10,7 @@ import '../components/app_screen_header.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../../l10n/l10n.dart';
 
 class FolderManagementScreen extends ConsumerStatefulWidget {
   const FolderManagementScreen({super.key});
@@ -53,7 +54,7 @@ class _FolderManagementScreenState
     final selectedPath = selection['path'] ?? '';
     if (selectedPath.isEmpty) {
       if (mounted) {
-        appSnack(context, "Unable to access selected folder");
+        appSnack(context, context.l10n.setupUnableToAccessFolder);
       }
       return;
     }
@@ -69,7 +70,7 @@ class _FolderManagementScreenState
     ref.invalidate(songsProvider);
 
     if (mounted) {
-      appSnack(context, "Music folder added");
+      appSnack(context, context.l10n.foldersAddedSnack);
     }
   }
 
@@ -85,14 +86,14 @@ class _FolderManagementScreenState
     ref.invalidate(songsProvider);
 
     if (mounted) {
-      appSnack(context, "Music folder removed");
+      appSnack(context, context.l10n.foldersRemovedSnack);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Music Folders'),
+      appBar: AppTopBar(title: context.l10n.settingsSearchMusicFoldersTitle),
       body: _isLoading
           ? const AppLoading()
           : Column(
@@ -105,16 +106,16 @@ class _FolderManagementScreenState
                     AppTokens.s3,
                   ),
                   child: Text(
-                    'Select folders containing your music files',
+                    context.l10n.foldersSubtitle,
                     style: AppTokens.rowSubtitle(context),
                   ),
                 ),
                 Expanded(
                   child: _folders.isEmpty
-                      ? const AppEmptyState(
+                      ? AppEmptyState(
                           icon: AppIcons.folder,
-                          title: 'No folders added yet',
-                          message: 'Add a folder to build your library.',
+                          title: context.l10n.foldersEmptyTitle,
+                          message: context.l10n.foldersEmptyMessage,
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(
@@ -135,7 +136,7 @@ class _FolderManagementScreenState
                               subtitle: path,
                               trailing: IconButton(
                                 icon: const AppIcon(AppIcons.delete),
-                                tooltip: 'Remove folder',
+                                tooltip: context.l10n.setupRemoveFolderTooltip,
                                 onPressed: () => _removeFolder(folder),
                               ),
                             );
@@ -150,7 +151,7 @@ class _FolderManagementScreenState
                       child: FilledButton.icon(
                         onPressed: _addFolder,
                         icon: const AppIcon(AppIcons.add),
-                        label: const Text('Add Folder'),
+                        label: Text(context.l10n.foldersAddButton),
                       ),
                     ),
                   ),

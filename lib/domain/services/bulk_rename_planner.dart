@@ -41,6 +41,26 @@ class BulkRenameSegment {
   ];
 }
 
+/// Why the planner left a song alone.
+enum BulkRenameSkipReason {
+  noTitleText,
+  alreadyNamed,
+  sameNameAs,
+  anotherSelected,
+  fileExists,
+}
+
+/// A skipped song's reason, rendered for the user by the screen.
+class BulkRenameSkip {
+  const BulkRenameSkip(this.reason, {this.conflictingFilename});
+
+  final BulkRenameSkipReason reason;
+
+  /// The name already claimed in this folder, for
+  /// [BulkRenameSkipReason.sameNameAs].
+  final String? conflictingFilename;
+}
+
 /// What the planner decided to do with one song.
 class BulkRenamePlan {
   const BulkRenamePlan({
@@ -62,11 +82,11 @@ class BulkRenamePlan {
   final String newUrl;
 
   /// Non-null means the song is left alone and [newFilename] is meaningless.
-  final String? skipReason;
+  final BulkRenameSkip? skipReason;
 
   bool get willRename => skipReason == null;
 
-  BulkRenamePlan _skipped(String reason) => BulkRenamePlan(
+  BulkRenamePlan _skipped(BulkRenameSkip reason) => BulkRenamePlan(
         song: song,
         newStem: newStem,
         newFilename: newFilename,
@@ -260,10 +280,14 @@ class BulkRenamePlanner {
     );
 
     if (stem.isEmpty) {
-      return candidate._skipped('No title text left after cleanup');
+      return candidate._skipped(
+        const BulkRenameSkip(BulkRenameSkipReason.noTitleText),
+      );
     }
     if (newFilename == song.filename) {
-      return candidate._skipped('Already named this');
+      return candidate._skipped(
+        const BulkRenameSkip(BulkRenameSkipReason.alreadyNamed),
+      );
     }
 
     // Android and iOS volumes are almost always case-insensitive, so
@@ -272,7 +296,12 @@ class BulkRenamePlanner {
     final claim = _claimKey(song.url, newFilename);
     final holder = claimed[claim];
     if (holder != null) {
-      return candidate._skipped('Same name as "$holder" in this folder');
+      return candidate._skipped(
+        BulkRenameSkip(
+          BulkRenameSkipReason.sameNameAs,
+          conflictingFilename: holder,
+        ),
+      );
     }
 
     claimed[claim] = song.filename;
@@ -316,7 +345,9 @@ class BulkRenamePlanner {
         // batch is also renaming that song away. Chaining renames would depend
         // on execution order, and `File.rename` silently replaces its target,
         // so the wrong order destroys a file outright.
-        result[i] = entry._skipped('Another selected song has that name');
+        result[i] = entry._skipped(
+          const BulkRenameSkip(BulkRenameSkipReason.anotherSelected),
+        );
       } else {
         probes.add(i);
       }
@@ -341,7 +372,9 @@ class BulkRenamePlanner {
         final index = batch[i];
         final entry = plans[index];
         result[index] = taken[i]
-            ? entry._skipped('A file with that name is already here')
+            ? entry._skipped(
+                const BulkRenameSkip(BulkRenameSkipReason.fileExists),
+              )
             : entry;
       }
 

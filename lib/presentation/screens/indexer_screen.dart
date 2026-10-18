@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/indexer_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../l10n/l10n.dart';
 import '../widgets/indexer_choice_dialog.dart';
 import '../components/app_surface.dart';
 import '../components/app_screen_header.dart';
@@ -46,23 +47,23 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         ),
         children: [
           _buildSettingsGroup(
-            title: 'Indexer Settings',
+            title: context.l10n.indexerSettingsGroupTitle,
             icon: AppIcons.manageSearch,
             children: [
               SwitchListTile(
                 secondary: const AppIcon(AppIcons.copy),
-                title: const Text('Prevent Duplicate Tracks'),
-                subtitle: const Text(
-                  'Hide songs with the same filename across folders',
+                title: Text(context.l10n.indexerPreventDuplicatesTitle),
+                subtitle: Text(
+                  context.l10n.indexerPreventDuplicatesSubtitle,
                 ),
                 value: settings.preventDuplicateTracks,
                 onChanged: (val) => notifier.setPreventDuplicateTracks(val),
               ),
               SwitchListTile(
                 secondary: const AppIcon(AppIcons.personAdd),
-                title: const Text('Extract Featured Artists'),
-                subtitle: const Text(
-                  'Move "ft./feat." artists from title to artist field',
+                title: Text(context.l10n.indexerExtractFeaturedTitle),
+                subtitle: Text(
+                  context.l10n.indexerExtractFeaturedSubtitle,
                 ),
                 value: settings.extractFeatArtists,
                 onChanged: (val) => notifier.setExtractFeatArtists(val),
@@ -70,28 +71,24 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             ],
           ),
           _buildSettingsGroup(
-            title: 'Database Operations',
+            title: context.l10n.indexerDatabaseOpsGroupTitle,
             icon: AppIcons.storage,
             children: [
               _buildOperationTile(
                 id: 'optimize_databases',
                 icon: AppIcons.storage,
-                warningMessage:
-                    'This operation requires an app restart to apply changes.',
+                warningMessage: context.l10n.indexerWarnRestart,
               ),
             ],
           ),
           _buildSettingsGroup(
-            title: 'Cover & Search',
+            title: context.l10n.indexerCoverSearchGroupTitle,
             icon: AppIcons.imageSearch,
             children: [
               _buildOperationTile(
                 id: 'repair_library_links',
                 icon: AppIcons.linkOff,
-                warningMessage:
-                    'Tracks whose files are no longer on this device will be '
-                    'removed from the library. Favourites, playlists and play '
-                    'counts are kept and reattach if the files come back.',
+                warningMessage: context.l10n.indexerWarnRepairLinks,
               ),
               _buildOperationTile(
                 id: 'rebuild_cover_caches',
@@ -100,8 +97,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               _buildOperationTile(
                 id: 'rebuild_search_indexes',
                 icon: AppIcons.search,
-                warningMessage:
-                    'You may need to restart the app for search index changes to fully apply.',
+                warningMessage: context.l10n.indexerWarnSearchRestart,
               ),
               _buildOperationTile(
                 id: 'rebuild_artist_album_art',
@@ -110,7 +106,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             ],
           ),
           _buildSettingsGroup(
-            title: 'Content Caches',
+            title: context.l10n.indexerContentCachesGroupTitle,
             icon: AppIcons.collectionsBookmark,
             children: [
               _buildOperationTile(
@@ -132,7 +128,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             ],
           ),
           _buildSettingsGroup(
-            title: 'Recommendations',
+            title: context.l10n.indexerRecommendationsGroupTitle,
             icon: AppIcons.autoAwesome,
             children: [
               _buildOperationTile(
@@ -147,7 +143,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Indexer'),
+      appBar: AppTopBar(title: context.l10n.indexerTitle),
       body: content,
     );
   }
@@ -219,33 +215,53 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     final bool hasError = operation.state == IndexerOperationState.error;
     final bool isCompleted = operation.state == IndexerOperationState.completed;
     final bool isFullyCached = operation.isFullyCached;
+    final l10n = context.l10n;
 
     String subtitle;
     if (isRunning && operation.hasSplitArtProgress) {
-      subtitle =
-          'Artists ${operation.artistProgressText} · Albums ${operation.albumProgressText}...';
+      subtitle = l10n.indexerArtistsAlbumsProgress(
+        operation.artistProgressText,
+        operation.albumProgressText,
+      );
     } else if (isRunning) {
-      subtitle = 'Processing ${operation.progressText}...';
+      subtitle = l10n.indexerProcessing(operation.progressText);
     } else if (hasError) {
-      subtitle = 'Error: ${operation.errorMessage ?? 'Unknown error'}';
+      subtitle =
+          l10n.indexerError(operation.errorMessage ?? l10n.indexerUnknownError);
     } else if (isCompleted) {
       if (operation.isDatabaseOperation ||
           operation.isRecommendationOperation) {
-        subtitle = 'Completed';
+        subtitle = l10n.indexerCompleted;
+      } else if (operation.failedCount > 0) {
+        subtitle = l10n.indexerCachedFailed(
+          operation.processedCount,
+          operation.totalCount,
+          operation.failedCount,
+        );
       } else {
-        subtitle =
-            'Completed - ${operation.processedCount}/${operation.totalCount} cached${operation.failedCount > 0 ? ' (${operation.failedCount} failed)' : ''}';
+        subtitle = l10n.indexerCached(
+          operation.processedCount,
+          operation.totalCount,
+        );
       }
     } else {
       // Not running and not completed
       if (operation.isDatabaseOperation ||
           operation.isRecommendationOperation) {
-        subtitle = 'Ready to rebuild';
+        subtitle = l10n.indexerReadyToRebuild;
       } else if (operation.processedCount == 0 && operation.totalCount > 0) {
-        subtitle = '0/${operation.totalCount} cached';
+        subtitle = l10n.indexerCached(0, operation.totalCount);
+      } else if (operation.failedCount > 0) {
+        subtitle = l10n.indexerCachedFailed(
+          operation.processedCount,
+          operation.totalCount,
+          operation.failedCount,
+        );
       } else {
-        subtitle =
-            '${operation.processedCount}/${operation.totalCount} cached${operation.failedCount > 0 ? ' (${operation.failedCount} failed)' : ''}';
+        subtitle = l10n.indexerCached(
+          operation.processedCount,
+          operation.totalCount,
+        );
       }
     }
 
@@ -301,7 +317,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           if (isRunning && operation.hasSplitArtProgress) ...[
             const SizedBox(height: 8),
             Text(
-              'Artists ${operation.artistProgressText}',
+              l10n.indexerArtistsOnly(operation.artistProgressText),
               style: TextStyle(
                 fontSize: 12,
                 color: theme.colorScheme.primary,
@@ -316,7 +332,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Albums ${operation.albumProgressText}',
+              l10n.indexerAlbumsOnly(operation.albumProgressText),
               style: TextStyle(
                 fontSize: 12,
                 color: theme.colorScheme.primary,
@@ -377,19 +393,20 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         builder: (context) => AlertDialog(
           title: Text(operation.name),
           content: Text(
-              'This cache has ${operation.failedCount} failed items. What would you like to do?'),
+              context.l10n.indexerFailedItemsQuestion(operation.failedCount)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, 'view_fails'),
-              child: Text('View ${operation.failedCount} Failed'),
+              child:
+                  Text(context.l10n.indexerViewFailed(operation.failedCount)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, 'retry_failed'),
-              child: const Text('Retry Failed'),
+              child: Text(context.l10n.indexerRetryFailed),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, 'force'),
-              child: const Text('Force Rebuild'),
+              child: Text(context.l10n.indexerForceRebuild),
             ),
           ],
         ),
@@ -419,17 +436,18 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text(operation.name),
-          content: Text(
-            'This cache is already complete (${operation.processedCount}/${operation.totalCount}). Do you want to force rebuild it?',
-          ),
+          content: Text(context.l10n.indexerAlreadyCompleteQuestion(
+            operation.processedCount,
+            operation.totalCount,
+          )),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Force Rebuild'),
+              child: Text(context.l10n.indexerForceRebuild),
             ),
           ],
         ),
@@ -489,11 +507,11 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(context.l10n.actionCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Do It'),
+              child: Text(context.l10n.indexerDoIt),
             ),
           ],
         ),
@@ -573,11 +591,13 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
-              Text('Optimizing ${operation.name.toLowerCase()}...'),
+              Text(
+                  context.l10n.indexerOptimizing(operation.name.toLowerCase())),
               const SizedBox(height: 8),
-              const Text(
-                'Please do not close the app',
-                style: TextStyle(fontSize: 12, color: AppTokens.fgTertiary),
+              Text(
+                context.l10n.indexerDoNotClose,
+                style:
+                    const TextStyle(fontSize: 12, color: AppTokens.fgTertiary),
               ),
             ],
           ),
@@ -592,18 +612,15 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         icon: const AppIcon(AppIcons.refresh, color: AppTokens.info, size: 48),
-        title: const Text('Restart Required'),
-        content: const Text(
-          'The operation has been completed successfully.\n\n'
-          'The app needs to restart to apply all changes properly.',
-        ),
+        title: Text(context.l10n.indexerRestartRequiredTitle),
+        content: Text(context.l10n.indexerRestartRequiredMessage),
         actions: [
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _restartApp();
             },
-            child: const Text('Restart Now'),
+            child: Text(context.l10n.indexerRestartNow),
           ),
         ],
       ),
@@ -615,7 +632,8 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
       context: context,
       builder: (context) => AlertDialog(
         icon: const AppIcon(AppIcons.error, color: AppTokens.danger, size: 48),
-        title: Text('${operation.failedCount} Failed Items'),
+        title:
+            Text(context.l10n.indexerFailedItemsTitle(operation.failedCount)),
         content: SizedBox(
           width: double.maxFinite,
           height: 300,
@@ -623,7 +641,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'The following items could not be processed:',
+                context.l10n.indexerCouldNotProcess,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
@@ -656,7 +674,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(context.l10n.actionClose),
           ),
         ],
       ),
@@ -690,7 +708,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
       builder: (context) => AlertDialog(
         icon:
             const AppIcon(AppIcons.warning, color: AppTokens.warning, size: 48),
-        title: Text('$operationName Warnings'),
+        title: Text(context.l10n.indexerWarningsTitle(operationName)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -698,7 +716,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'The following items could not be processed:',
+                context.l10n.indexerCouldNotProcess,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
@@ -729,7 +747,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               if (warnings.length > 10) ...[
                 const SizedBox(height: 8),
                 Text(
-                  '... and ${warnings.length - 10} more',
+                  context.l10n.indexerMoreItems(warnings.length - 10),
                   style: TextStyle(
                     color: AppTokens.fgTertiary,
                     fontStyle: FontStyle.italic,
@@ -742,7 +760,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: Text(context.l10n.indexerOk),
           ),
         ],
       ),

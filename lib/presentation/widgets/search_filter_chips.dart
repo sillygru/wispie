@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_filter.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/search_provider.dart';
 import '../components/app_chip.dart';
 import '../tokens/app_tokens.dart';
@@ -20,31 +21,31 @@ class SearchFilterChips extends ConsumerWidget {
       child: Row(
         children: [
           AppChip(
-            label: 'All',
+            label: context.l10n.searchFilterAll,
             selected: filterState.all,
             onTap: () => notifier.selectFilter(SearchFilterType.all),
           ),
           const SizedBox(width: AppTokens.s2),
           AppChip(
-            label: 'Songs',
+            label: context.l10n.gradientDetailSongs,
             selected: filterState.songs,
             onTap: () => notifier.toggleFilter(SearchFilterType.songs),
           ),
           const SizedBox(width: AppTokens.s2),
           AppChip(
-            label: 'Artists',
+            label: context.l10n.searchFilterArtists,
             selected: filterState.artists,
             onTap: () => notifier.toggleFilter(SearchFilterType.artists),
           ),
           const SizedBox(width: AppTokens.s2),
           AppChip(
-            label: 'Albums',
+            label: context.l10n.gradientDetailAlbums,
             selected: filterState.albums,
             onTap: () => notifier.toggleFilter(SearchFilterType.albums),
           ),
           const SizedBox(width: AppTokens.s2),
           AppChip(
-            label: 'Lyrics',
+            label: context.l10n.settingsPageLyricsTitle,
             selected: filterState.lyrics,
             onTap: () => notifier.toggleFilter(SearchFilterType.lyrics),
           ),
@@ -68,27 +69,27 @@ class CompactSearchFilterChips extends ConsumerWidget {
       runSpacing: AppTokens.s2,
       children: [
         AppChip(
-          label: 'All',
+          label: context.l10n.searchFilterAll,
           selected: filterState.all,
           onTap: () => notifier.selectFilter(SearchFilterType.all),
         ),
         AppChip(
-          label: 'Songs',
+          label: context.l10n.gradientDetailSongs,
           selected: filterState.songs,
           onTap: () => notifier.toggleFilter(SearchFilterType.songs),
         ),
         AppChip(
-          label: 'Artists',
+          label: context.l10n.searchFilterArtists,
           selected: filterState.artists,
           onTap: () => notifier.toggleFilter(SearchFilterType.artists),
         ),
         AppChip(
-          label: 'Albums',
+          label: context.l10n.gradientDetailAlbums,
           selected: filterState.albums,
           onTap: () => notifier.toggleFilter(SearchFilterType.albums),
         ),
         AppChip(
-          label: 'Lyrics',
+          label: context.l10n.settingsPageLyricsTitle,
           selected: filterState.lyrics,
           onTap: () => notifier.toggleFilter(SearchFilterType.lyrics),
         ),

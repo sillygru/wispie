@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/services/spectrum_bars.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/waveform_service.dart';
@@ -522,11 +523,16 @@ class _ReactiveScrubOverlay extends StatelessWidget {
                         if (absDelta >= 60) {
                           final m = absDelta ~/ 60;
                           final s = (absDelta % 60).toString().padLeft(2, '0');
-                          deltaText = '${delta >= 0 ? '+' : '-'}${m}m ${s}s';
+                          deltaText = context.l10n.waveformDeltaMinutes(
+                            '${delta >= 0 ? '+' : '-'}$m',
+                            s,
+                          );
                         } else if (delta == 0) {
-                          deltaText = '0s';
+                          deltaText = context.l10n.waveformDeltaZero;
                         } else {
-                          deltaText = '${delta > 0 ? '+' : '-'}${absDelta}s';
+                          deltaText = context.l10n.waveformDeltaSeconds(
+                            '${delta > 0 ? '+' : '-'}$absDelta',
+                          );
                         }
                         return Container(
                           padding: const EdgeInsets.symmetric(

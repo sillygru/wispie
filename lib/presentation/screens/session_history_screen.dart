@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/play_session.dart';
@@ -19,7 +20,7 @@ class SessionHistoryScreen extends ConsumerWidget {
 
     return AmbientScaffold(
       appBar: AppBar(
-        title: const Text('Session History'),
+        title: Text(context.l10n.sessionHistoryTitle),
         actions: [
           IconButton(
             onPressed: () => ref.refresh(sessionHistoryProvider),
@@ -30,7 +31,7 @@ class SessionHistoryScreen extends ConsumerWidget {
       body: sessionsAsync.when(
         data: (sessions) {
           if (sessions.isEmpty) {
-            return _buildEmptyState(colorScheme);
+            return _buildEmptyState(context, colorScheme);
           }
           return _buildSessionList(context, sessions, colorScheme);
         },
@@ -42,13 +43,13 @@ class SessionHistoryScreen extends ConsumerWidget {
               AppIcon(AppIcons.error, size: 48, color: colorScheme.error),
               const SizedBox(height: 16),
               Text(
-                'Failed to load sessions',
+                context.l10n.sessionLoadFailed,
                 style: TextStyle(color: colorScheme.error),
               ),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => ref.refresh(sessionHistoryProvider),
-                child: const Text('Retry'),
+                child: Text(context.l10n.actionRetry),
               ),
             ],
           ),
@@ -57,7 +58,7 @@ class SessionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyState(ColorScheme colorScheme) {
+  Widget _buildEmptyState(BuildContext context, ColorScheme colorScheme) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -77,7 +78,7 @@ class SessionHistoryScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'No Sessions Yet',
+            context.l10n.sessionEmptyTitle,
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -86,7 +87,7 @@ class SessionHistoryScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Start listening to build your session history',
+            context.l10n.sessionEmptyMessage,
             style: TextStyle(
               fontSize: 16,
               color: colorScheme.onSurfaceVariant,
@@ -230,7 +231,7 @@ class SessionHistoryScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${session.songCount} ${session.songCount == 1 ? 'song' : 'songs'}',
+                        context.l10n.sessionSongCount(session.songCount),
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,

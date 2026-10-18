@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../widgets/collection_cover.dart';
@@ -44,13 +45,13 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search playlists...',
+                decoration: InputDecoration(
+                  hintText: context.l10n.playlistsSearchHint,
                   border: InputBorder.none,
                 ),
                 onChanged: (value) => setState(() => _searchQuery = value),
               )
-            : const Text('Playlists'),
+            : Text(context.l10n.playlistsTitle),
         leading: _isSearching
             ? IconButton(
                 onPressed: () {
@@ -79,7 +80,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           IconButton(
             onPressed: () => _createPlaylist(context, ref, songsAsync),
             icon: const AppIcon(AppIcons.add),
-            tooltip: 'Create Playlist',
+            tooltip: context.l10n.playlistsCreate,
           ),
         ],
       ),
@@ -100,7 +101,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           }
 
           if (playlists.isEmpty && _searchQuery.isNotEmpty) {
-            return const Center(child: Text('No matching playlists found'));
+            return Center(
+              child: Text(context.l10n.playlistsNoMatches),
+            );
           }
 
           return ListView.builder(
@@ -167,7 +170,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Created ${_formatDate(playlist.createdAt)}',
+                                  context.l10n.playlistsCreatedOn(
+                                    _formatDate(context, playlist.createdAt),
+                                  ),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: colorScheme.onSurfaceVariant,
@@ -195,7 +200,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(
+          child: Text(context.l10n.playlistsLoadError('$e')),
+        ),
       ),
     );
   }
@@ -216,14 +223,14 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'No playlists yet',
+            context.l10n.playlistsEmptyTitle,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Create your first playlist to get started',
+            context.l10n.playlistsEmptyMessage,
             style: TextStyle(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -232,7 +239,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           FilledButton.icon(
             onPressed: () => _createPlaylist(context, ref, songsAsync),
             icon: const AppIcon(AppIcons.add),
-            label: const Text('Create Playlist'),
+            label: Text(context.l10n.playlistsCreate),
           ),
         ],
       ),
@@ -252,9 +259,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
       MaterialPageRoute(
         builder: (_) => SelectSongsScreen(
           songs: songs,
-          title: 'Create Playlist',
+          title: context.l10n.playlistsCreate,
           isMerging: false,
-          actionLabel: 'Create Playlist',
+          actionLabel: context.l10n.playlistsCreate,
           minSelection: 1,
         ),
       ),
@@ -285,23 +292,23 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Playlist Name'),
+        title: Text(context.l10n.playlistsNameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Enter playlist name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: context.l10n.playlistsNameHint,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Create'),
+            child: Text(context.l10n.actionCreate),
           ),
         ],
       ),
@@ -321,7 +328,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
         children: [
           AppSheetAction(
             icon: AppIcons.edit,
-            label: 'Rename',
+            label: context.l10n.actionRename,
             onTap: () {
               Navigator.pop(context);
               _showRenameDialog(context, ref, playlistId, playlistName);
@@ -329,7 +336,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
           ),
           AppSheetAction(
             icon: AppIcons.delete,
-            label: 'Delete',
+            label: context.l10n.actionDelete,
             isDanger: true,
             onTap: () {
               Navigator.pop(context);
@@ -355,7 +362,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rename Playlist'),
+        title: Text(context.l10n.playlistsRenameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -366,11 +373,11 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Rename'),
+            child: Text(context.l10n.actionRename),
           ),
         ],
       ),
@@ -383,16 +390,17 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     }
   }
 
-  String _formatDate(double timestamp) {
+  String _formatDate(BuildContext context, double timestamp) {
     final date =
         DateTime.fromMillisecondsSinceEpoch((timestamp * 1000).toInt());
     final now = DateTime.now();
     final diff = now.difference(date);
+    final l10n = context.l10n;
 
-    if (diff.inDays == 0) return 'today';
-    if (diff.inDays == 1) return 'yesterday';
-    if (diff.inDays < 7) return '${diff.inDays} days ago';
-    if (diff.inDays < 30) return '${diff.inDays ~/ 7} weeks ago';
+    if (diff.inDays == 0) return l10n.playlistsCreatedToday;
+    if (diff.inDays == 1) return l10n.playlistsCreatedYesterday;
+    if (diff.inDays < 7) return l10n.playlistsDaysAgo(diff.inDays);
+    if (diff.inDays < 30) return l10n.playlistsWeeksAgo(diff.inDays ~/ 7);
 
     return '${date.month}/${date.year}';
   }

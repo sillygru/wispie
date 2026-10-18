@@ -9,6 +9,7 @@ import '../widgets/album_art_image.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../../l10n/l10n.dart';
 
 class SelectSongsScreen extends ConsumerStatefulWidget {
   final List<Song> songs;
@@ -69,7 +70,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
 
     return AmbientScaffold(
       appBar: AppBar(
-        title: Text(widget.title ?? 'Select Songs'),
+        title: Text(widget.title ?? context.l10n.selectSongsTitle),
         actions: [
           if (_selectedFilenames.isNotEmpty)
             TextButton(
@@ -78,7 +79,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                   _selectedFilenames.clear();
                 });
               },
-              child: const Text('Clear'),
+              child: Text(context.l10n.actionClear),
             ),
         ],
       ),
@@ -108,7 +109,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'What is merging?',
+                        context.l10n.selectSongsWhatIsMerging,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: Theme.of(context).colorScheme.primary,
@@ -118,18 +119,18 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Merged songs are different versions of the same song:',
+                    context.l10n.selectSongsMergedExplanation,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 4),
-                  _buildInfoBullet(context,
-                      'Like remixes, live versions, or different quality versions'),
-                  _buildInfoBullet(context,
-                      'Favorites and "suggest less" are independent per song'),
                   _buildInfoBullet(
-                      context, 'Your play counts and stats remain unchanged'),
-                  _buildInfoBullet(context,
-                      'Select a priority song (⭐) to prioritize it during shuffle'),
+                      context, context.l10n.selectSongsBulletVersions),
+                  _buildInfoBullet(
+                      context, context.l10n.selectSongsBulletFavorites),
+                  _buildInfoBullet(
+                      context, context.l10n.selectSongsBulletStats),
+                  _buildInfoBullet(
+                      context, context.l10n.selectSongsBulletPriority),
                 ],
               ),
             ),
@@ -138,7 +139,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'Search songs...',
+                hintText: context.l10n.selectSongsSearchHint,
                 prefixIcon: const AppIcon(AppIcons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -172,7 +173,8 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${_selectedFilenames.length} selected',
+                  context.l10n
+                      .selectSongsSelectedCount(_selectedFilenames.length),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.primary,
@@ -181,7 +183,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                 const Spacer(),
                 if (widget.isMerging && _selectedFilenames.length >= 2)
                   Text(
-                    'Ready to merge',
+                    context.l10n.selectSongsReadyToMerge,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
                         ),
@@ -199,7 +201,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                         AppIcon(AppIcons.searchOff,
                             size: 48, color: AppTokens.fgTertiary),
                         const SizedBox(height: 16),
-                        Text('No songs found',
+                        Text(context.l10n.homeNoSongsTitle,
                             style: Theme.of(context).textTheme.titleMedium),
                       ],
                     ),
@@ -247,8 +249,10 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                                           .withValues(alpha: 0.4),
                                 ),
                                 tooltip: isPriority
-                                    ? 'Priority song'
-                                    : 'Set as priority',
+                                    ? context
+                                        .l10n.selectSongsPrioritySongTooltip
+                                    : context
+                                        .l10n.selectSongsSetPriorityTooltip,
                                 onPressed: () {
                                   setState(() {
                                     _priorityFilename =
@@ -288,9 +292,9 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                                         .withValues(alpha: 0.2),
                                     borderRadius: AppTokens.brSm,
                                   ),
-                                  child: const Text(
-                                    'PRIORITY',
-                                    style: TextStyle(
+                                  child: Text(
+                                    context.l10n.selectSongsPriorityBadge,
+                                    style: const TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
                                       color: AppTokens.warning,
@@ -321,7 +325,7 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8.0),
                   child: Text(
-                    'Select at least ${widget.minSelection} song${widget.minSelection > 1 ? 's' : ''}',
+                    context.l10n.selectSongsMinSelection(widget.minSelection),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context)
                               .colorScheme
@@ -344,8 +348,10 @@ class _SelectSongsScreenState extends ConsumerState<SelectSongsScreen> {
                     : null,
                 child: Text(widget.actionLabel ??
                     (widget.isMerging
-                        ? 'Merge ${_selectedFilenames.length} Songs'
-                        : 'Select ${_selectedFilenames.length} Songs')),
+                        ? context.l10n
+                            .selectSongsMergeAction(_selectedFilenames.length)
+                        : context.l10n.selectSongsSelectAction(
+                            _selectedFilenames.length))),
               ),
             ],
           ),

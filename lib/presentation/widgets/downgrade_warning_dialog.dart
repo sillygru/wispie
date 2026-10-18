@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../components/app_dialog.dart';
 
 enum DowngradeChoice { update, quit, risk }
@@ -15,22 +16,20 @@ Future<DowngradeChoice?> showDowngradeWarningDialog(
     builder: (ctx) => PopScope(
       canPop: false,
       child: AppDialog(
-        title: 'Older version detected',
-        message: 'wispie was last opened on $previousVersion, but this is '
-            '$currentVersion. Your data may have been changed by a newer '
-            'version and could break or be lost on this one.',
+        title: ctx.l10n.downgradeTitle,
+        message: ctx.l10n.downgradeMessage(previousVersion, currentVersion),
         actions: [
           AppDialogAction(
-            label: 'Quit',
+            label: ctx.l10n.downgradeQuit,
             onPressed: () => Navigator.pop(ctx, DowngradeChoice.quit),
           ),
           AppDialogAction(
-            label: 'Risk it',
+            label: ctx.l10n.downgradeRiskIt,
             isDanger: true,
             onPressed: () => Navigator.pop(ctx, DowngradeChoice.risk),
           ),
           AppDialogAction(
-            label: 'Update',
+            label: ctx.l10n.downgradeUpdate,
             isPrimary: true,
             onPressed: () => Navigator.pop(ctx, DowngradeChoice.update),
           ),

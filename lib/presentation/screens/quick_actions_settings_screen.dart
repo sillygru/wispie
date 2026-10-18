@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../models/quick_action_config.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_surface.dart';
@@ -43,32 +44,32 @@ class _QuickActionsSettingsScreenState
     ref.read(settingsProvider.notifier).setQuickActionConfig(config);
   }
 
-  String _getActionLabel(QuickAction action) {
+  String _getActionLabel(QuickAction action, AppLocalizations l10n) {
     switch (action) {
       case QuickAction.playNext:
-        return 'Play Next';
+        return l10n.quickActionsPlayNext;
       case QuickAction.goToAlbum:
-        return 'Go to Album';
+        return l10n.quickActionsGoToAlbum;
       case QuickAction.goToArtist:
-        return 'Go to Artist';
+        return l10n.quickActionsGoToArtist;
       case QuickAction.moveToFolder:
-        return 'Move to Folder';
+        return l10n.quickActionsMoveToFolder;
       case QuickAction.addToPlaylist:
-        return 'Add to Playlist';
+        return l10n.quickActionsAddToPlaylist;
       case QuickAction.share:
-        return 'Share';
+        return l10n.quickActionsShare;
       case QuickAction.addToNewPlaylist:
-        return 'Add to New Playlist';
+        return l10n.quickActionsAddToNewPlaylist;
       case QuickAction.editMetadata:
-        return 'Edit Metadata';
+        return l10n.quickActionsEditMetadata;
       case QuickAction.toggleFavorite:
-        return 'Favorite';
+        return l10n.quickActionsFavorite;
       case QuickAction.toggleSuggestLess:
-        return 'Suggest Less';
+        return l10n.quickActionsSuggestLess;
       case QuickAction.delete:
-        return 'Delete';
+        return l10n.quickActionsDelete;
       case QuickAction.hide:
-        return 'Hide';
+        return l10n.quickActionsHide;
     }
   }
 
@@ -114,11 +115,12 @@ class _QuickActionsSettingsScreenState
       _enabledActions = Set.from(QuickActionConfig.defaultEnabled);
     });
     _saveConfig();
-    appSnack(context, 'Reset to defaults');
+    appSnack(context, context.l10n.quickActionsResetDone);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final enabledActions = _orderedActions
         .where((action) => _enabledActions.contains(action))
         .toList();
@@ -128,11 +130,11 @@ class _QuickActionsSettingsScreenState
 
     return AmbientScaffold(
       appBar: AppTopBar(
-        title: 'Quick Actions',
+        title: l10n.quickActionsTitle,
         actions: [
           TextButton(
             onPressed: _resetToDefaults,
-            child: const Text('Reset'),
+            child: Text(l10n.quickActionsReset),
           ),
         ],
       ),
@@ -158,7 +160,7 @@ class _QuickActionsSettingsScreenState
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'ENABLED (${enabledActions.length})',
+                        l10n.quickActionsEnabledHeader(enabledActions.length),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -215,7 +217,7 @@ class _QuickActionsSettingsScreenState
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'DISABLED (${disabledActions.length})',
+                        l10n.quickActionsDisabledHeader(disabledActions.length),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -267,7 +269,7 @@ class _QuickActionsSettingsScreenState
       child: ListTile(
         leading: _getActionIcon(action, enabled),
         title: Text(
-          _getActionLabel(action),
+          _getActionLabel(action, context.l10n),
           style: TextStyle(
             color: enabled
                 ? Theme.of(context).colorScheme.onSurface

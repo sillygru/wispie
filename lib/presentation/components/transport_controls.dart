@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import '../../models/queue_item.dart';
 import '../../models/song.dart';
 import '../../services/audio_player_manager.dart';
+import '../../l10n/l10n.dart';
 import '../tokens/player_tokens.dart';
 import 'pressable.dart';
 import 'track_swipe_switcher.dart';
@@ -416,9 +417,9 @@ class _RepeatToggleButtonState extends State<RepeatToggleButton> {
     final bool on = mode != LoopMode.off;
     return Tooltip(
       message: switch (mode) {
-        LoopMode.off => 'Repeat off',
-        LoopMode.all => 'Repeat all',
-        LoopMode.one => 'Repeat one',
+        LoopMode.off => context.l10n.transportRepeatOff,
+        LoopMode.all => context.l10n.transportRepeatAll,
+        LoopMode.one => context.l10n.transportRepeatOne,
       },
       child: Pressable(
         haptic: PressHaptic.selection,

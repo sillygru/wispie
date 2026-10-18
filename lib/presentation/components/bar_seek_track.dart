@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../l10n/l10n.dart';
+
 /// The bottom bar's progress hairline. Passive by default; with [interactive]
 /// set it seeks — press to jump there, drag to scrub.
 class BarSeekTrack extends StatefulWidget {
@@ -160,7 +162,7 @@ class _BarSeekTrackState extends State<BarSeekTrack> {
 
         return Semantics(
           slider: true,
-          label: 'Seek',
+          label: context.l10n.barSeekLabel,
           child: MouseRegion(
             cursor: SystemMouseCursors.precise,
             child: GestureDetector(

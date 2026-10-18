@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../tokens/player_tokens.dart';
 
 /// Floating pill button shown when autoscroll is paused, allowing the user
@@ -66,7 +67,7 @@ class LyricsResumeButton extends StatelessWidget {
                     ),
                     const SizedBox(width: PlayerTokens.s2),
                     Text(
-                      'Resume Sync',
+                      context.l10n.lyricsResumeSync,
                       style: PlayerTokens.meta(context).copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,

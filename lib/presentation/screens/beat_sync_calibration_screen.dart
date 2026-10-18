@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../../l10n/l10n.dart';
 import '../../services/audio_player_manager.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_icon.dart';
@@ -88,11 +89,11 @@ class _BeatSyncCalibrationScreenState
     super.dispose();
   }
 
-  String _statusText(Song? song) {
-    if (song == null) return 'Play a song to calibrate.';
-    if (_analyzing) return 'Analyzing beats...';
-    if (!_motion.hasBeatMap) return 'No clear beat in this track.';
-    return 'Drag until the particle bursts land on the clicks.';
+  String _statusText(AppLocalizations l10n, Song? song) {
+    if (song == null) return l10n.beatPlayToCalibrate;
+    if (_analyzing) return l10n.beatAnalyzing;
+    if (!_motion.hasBeatMap) return l10n.beatNoClearBeat;
+    return l10n.beatDragInstruction;
   }
 
   @override
@@ -101,7 +102,7 @@ class _BeatSyncCalibrationScreenState
     final theme = Theme.of(context);
 
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Beat sync'),
+      appBar: AppTopBar(title: context.l10n.beatSyncTitle),
       body: Stack(
         children: [
           Positioned.fill(
@@ -125,7 +126,7 @@ class _BeatSyncCalibrationScreenState
                           ),
                         const SizedBox(height: AppTokens.s2),
                         Text(
-                          _statusText(song),
+                          _statusText(context.l10n, song),
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyLarge,
                         ),
@@ -134,7 +135,9 @@ class _BeatSyncCalibrationScreenState
                           valueListenable: _manager.playingNotifier,
                           builder: (context, playing, _) => IconButton.filled(
                             iconSize: AppTokens.iconLg,
-                            tooltip: playing ? 'Pause' : 'Play',
+                            tooltip: playing
+                                ? context.l10n.songListPause
+                                : context.l10n.songListPlay,
                             onPressed:
                                 song == null ? null : _manager.togglePlayPause,
                             icon: AppIcon(
@@ -148,7 +151,7 @@ class _BeatSyncCalibrationScreenState
                   ),
                   const Spacer(),
                   Text(
-                    '$_offsetMs ms',
+                    context.l10n.beatOffsetMs(_offsetMs),
                     style: theme.textTheme.headlineSmall,
                   ),
                   Slider(
@@ -158,12 +161,12 @@ class _BeatSyncCalibrationScreenState
                     divisions: (SettingsNotifier.maxMotionLatencyMs -
                             SettingsNotifier.minMotionLatencyMs) ~/
                         10,
-                    label: '$_offsetMs ms',
+                    label: context.l10n.beatOffsetMs(_offsetMs),
                     onChanged: (value) => _setOffset(value.round()),
                   ),
                   TextButton(
                     onPressed: _offsetMs == 0 ? null : () => _setOffset(0),
-                    child: const Text('Reset to 0 ms'),
+                    child: Text(context.l10n.beatResetToZero),
                   ),
                 ],
               ),

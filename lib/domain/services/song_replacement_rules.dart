@@ -31,11 +31,25 @@ class ReplacementAccepted extends ReplacementCheck {
   });
 }
 
-/// The candidate cannot be used. [reason] is written for the user verbatim.
-class ReplacementRejected extends ReplacementCheck {
-  final String reason;
+/// Why a candidate replacement cannot be used.
+enum ReplacementRejectReason {
+  noFileSelected,
+  unsupportedFormat,
+  sameFilename,
+  insideLibrary,
+  destinationExists,
+  libraryHasName,
+}
 
-  const ReplacementRejected(this.reason);
+/// The candidate cannot be used. [reason] and [filename] are rendered for the
+/// user by the presentation layer.
+class ReplacementRejected extends ReplacementCheck {
+  final ReplacementRejectReason reason;
+
+  /// The filename the message refers to, when the rejection has one.
+  final String? filename;
+
+  const ReplacementRejected(this.reason, {this.filename});
 }
 
 /// The rules a replacement file has to satisfy.
@@ -99,37 +113,40 @@ class SongReplacementRules {
   }) {
     final trimmedSource = sourcePath.trim();
     if (trimmedSource.isEmpty) {
-      return const ReplacementRejected('No file was selected.');
+      return const ReplacementRejected(
+        ReplacementRejectReason.noFileSelected,
+      );
     }
 
     if (!isSupportedMediaFile) {
       return const ReplacementRejected(
-          'That file is not an audio or video format this library can read.');
+        ReplacementRejectReason.unsupportedFormat,
+      );
     }
 
     final newFilename = p.basename(trimmedSource);
     if (newFilename.isEmpty || _sameFile(newFilename, original.filename)) {
-      return const ReplacementRejected(
-          'The replacement needs a different filename. Changing only the '
-          'extension is enough.');
+      return const ReplacementRejected(ReplacementRejectReason.sameFilename);
     }
 
     if (_isInsideTrackedFolder(trimmedSource, trackedFolders)) {
-      return const ReplacementRejected(
-          'That file is inside one of your library folders. Pick a copy from '
-          'somewhere outside your library.');
+      return const ReplacementRejected(ReplacementRejectReason.insideLibrary);
     }
 
     final destination = destinationFor(original, trimmedSource);
 
     if (destinationExists) {
       return ReplacementRejected(
-          'A file named "$newFilename" already sits next to the original.');
+        ReplacementRejectReason.destinationExists,
+        filename: newFilename,
+      );
     }
 
     if (libraryFilenames.any((f) => _sameFile(f, newFilename))) {
       return ReplacementRejected(
-          'Your library already has a song named "$newFilename".');
+        ReplacementRejectReason.libraryHasName,
+        filename: newFilename,
+      );
     }
 
     return ReplacementAccepted(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/services/lyrics_timing_offset.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_feedback.dart';
 import '../../components/app_sheet.dart';
 import '../../tokens/player_tokens.dart';
@@ -23,7 +24,7 @@ Future<void> showLyricsTimingSheet(
 }) {
   return showAppSheet<void>(
     context,
-    title: 'Lyric timing',
+    title: context.l10n.lyricsTimingTitle,
     builder: (context) => _LyricsTimingSheet(
       controller: controller,
       accent: accent,
@@ -118,8 +119,14 @@ class _LyricsTimingSheet extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Earlier', style: PlayerTokens.meta(context)),
-                  Text('Later', style: PlayerTokens.meta(context)),
+                  Text(
+                    context.l10n.lyricsTimingEarlier,
+                    style: PlayerTokens.meta(context),
+                  ),
+                  Text(
+                    context.l10n.lyricsTimingLater,
+                    style: PlayerTokens.meta(context),
+                  ),
                 ],
               ),
               const SizedBox(height: PlayerTokens.s3),
@@ -138,7 +145,7 @@ class _LyricsTimingSheet extends StatelessWidget {
               FilledButton.icon(
                 onPressed: canSync ? () => _syncHere(context) : null,
                 icon: const Icon(Icons.my_location_rounded),
-                label: const Text('Sync to this line'),
+                label: Text(context.l10n.lyricsTimingSyncToLine),
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: PlayerTokens.onAccent(accent),
@@ -147,7 +154,7 @@ class _LyricsTimingSheet extends StatelessWidget {
               const SizedBox(height: PlayerTokens.s2),
               TextButton(
                 onPressed: controller.seconds == 0 ? null : controller.reset,
-                child: const Text('Reset timing'),
+                child: Text(context.l10n.lyricsTimingReset),
               ),
             ],
           ),
@@ -161,7 +168,9 @@ class _LyricsTimingSheet extends StatelessWidget {
     if (!synced) return;
     appSnack(
       context,
-      'Snapped to ${formatLyricsTimingOffset(controller.seconds, showUnit: true)}',
+      context.l10n.lyricsTimingSnapped(
+        formatLyricsTimingOffset(controller.seconds, showUnit: true),
+      ),
       tone: AppTone.success,
     );
   }

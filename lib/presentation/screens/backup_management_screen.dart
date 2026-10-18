@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
+import '../../l10n/l10n.dart';
 import '../../services/backup_service.dart';
 import '../../services/database_service.dart';
 import '../../services/import_options.dart';
@@ -56,7 +57,7 @@ class _BackupManagementScreenState
         _isLoading = false;
       });
       if (mounted) {
-        appSnack(context, 'Error loading backups: $e');
+        appSnack(context, context.l10n.backupLoadError('$e'));
       }
     }
   }
@@ -77,11 +78,11 @@ class _BackupManagementScreenState
       await _loadBackups();
 
       if (mounted) {
-        appSnack(context, 'Backup created: $backupFilename');
+        appSnack(context, context.l10n.backupCreated(backupFilename));
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Failed to create backup: $e');
+        appSnack(context, context.l10n.backupCreateFailed('$e'));
       }
     } finally {
       setState(() {
@@ -115,7 +116,7 @@ class _BackupManagementScreenState
           await BackupService.instance.validateBackupFile(backupInfo.file);
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Failed to validate backup: $e');
+        appSnack(context, context.l10n.backupValidateFailed('$e'));
       }
       return;
     }
@@ -143,46 +144,43 @@ class _BackupManagementScreenState
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('DANGER: Full Data Replace'),
+          title: Text(context.l10n.backupReplaceTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                  'Are you absolutely sure you want to restore from ${backupInfo.displayName}?'),
+              Text(context.l10n.backupReplaceConfirm(backupInfo.displayName)),
               const SizedBox(height: 16),
-              const Text(
-                'WARNING: This will COMPLETELY REPLACE all your current data:',
-                style: TextStyle(
+              Text(
+                context.l10n.backupReplaceWarning,
+                style: const TextStyle(
                     fontWeight: FontWeight.bold, color: AppTokens.danger),
               ),
               const SizedBox(height: 8),
-              const Text('• All your current statistics and play history'),
-              const Text('• All your favorites and playlists'),
-              const Text('• All your hidden songs and preferences'),
-              const Text('• All your current settings and state'),
-              const Text('• Your scanned song library'),
+              Text(context.l10n.backupReplaceItemStats),
+              Text(context.l10n.backupReplaceItemFavorites),
+              Text(context.l10n.backupReplaceItemHidden),
+              Text(context.l10n.backupReplaceItemSettings),
+              Text(context.l10n.backupReplaceItemLibrary),
               const SizedBox(height: 8),
-              const Text(
-                'Album art and file paths are re-linked to this device '
-                'automatically after the restore. Tracks in the backup whose '
-                'files are not on this device are removed from the library.',
-                style: TextStyle(fontSize: 13),
+              Text(
+                context.l10n.backupReplaceRekeyNote,
+                style: const TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'YOUR CURRENT DATA WILL BE PERMANENTLY LOST!',
-                style: TextStyle(
+              Text(
+                context.l10n.backupReplaceIrreversible,
+                style: const TextStyle(
                     fontWeight: FontWeight.bold, color: AppTokens.danger),
               ),
               const SizedBox(height: 8),
-              const Text('There is NO way to undo this action.'),
+              Text(context.l10n.backupReplaceNoUndo),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('CANCEL'),
+              child: Text(context.l10n.backupCancelUpper),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
@@ -190,7 +188,7 @@ class _BackupManagementScreenState
                 backgroundColor: AppTokens.danger,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('YES, REPLACE EVERYTHING'),
+              child: Text(context.l10n.backupReplaceConfirmAction),
             ),
           ],
         ),
@@ -199,8 +197,9 @@ class _BackupManagementScreenState
       if (confirmed != true) return;
     }
 
+    if (!mounted) return;
     final progress = ValueNotifier<ImportProgress>(
-      const ImportProgress(progress: 0, label: 'Restoring data…'),
+      ImportProgress(progress: 0, label: context.l10n.backupRestoringLabel),
     );
 
     if (mounted) {
@@ -229,8 +228,8 @@ class _BackupManagementScreenState
       if (mounted) {
         Navigator.pop(context); // Pop loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All data replaced successfully!'),
+          SnackBar(
+            content: Text(context.l10n.backupRestoreSuccess),
             backgroundColor: AppTokens.success,
           ),
         );
@@ -247,7 +246,7 @@ class _BackupManagementScreenState
         Navigator.pop(context); // Pop loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to restore backup: $e'),
+            content: Text(context.l10n.backupRestoreFailed('$e')),
             backgroundColor: AppTokens.danger,
           ),
         );
@@ -259,18 +258,17 @@ class _BackupManagementScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Backup'),
-        content:
-            Text('Are you sure you want to delete ${backupInfo.displayName}?'),
+        title: Text(context.l10n.backupDeleteTitle),
+        content: Text(context.l10n.backupDeleteConfirm(backupInfo.displayName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL'),
+            child: Text(context.l10n.backupCancelUpper),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child:
-                const Text('DELETE', style: TextStyle(color: AppTokens.danger)),
+            child: Text(context.l10n.backupDeleteUpper,
+                style: const TextStyle(color: AppTokens.danger)),
           ),
         ],
       ),
@@ -283,11 +281,11 @@ class _BackupManagementScreenState
       await _loadBackups();
 
       if (mounted) {
-        appSnack(context, 'Backup deleted');
+        appSnack(context, context.l10n.backupDeleted);
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Failed to delete backup: $e');
+        appSnack(context, context.l10n.backupDeleteFailed('$e'));
       }
     }
   }
@@ -304,12 +302,12 @@ class _BackupManagementScreenState
 
       if (result != null) {
         if (mounted) {
-          appSnack(context, 'Backup exported to: $result');
+          appSnack(context, context.l10n.backupExportedTo(result));
         }
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, 'Failed to export backup: $e');
+        appSnack(context, context.l10n.backupExportFailed('$e'));
       }
     }
   }
@@ -320,7 +318,7 @@ class _BackupManagementScreenState
     final index = _backups.indexOf(backupInfo);
     if (index == -1 || index == _backups.length - 1) {
       if (mounted) {
-        appSnack(context, 'No older backup to compare with.');
+        appSnack(context, context.l10n.backupNoOlderBackup);
       }
       return;
     }
@@ -331,12 +329,12 @@ class _BackupManagementScreenState
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
+        builder: (context) => AlertDialog(
           content: Row(
             children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Comparing backups...'),
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Text(context.l10n.backupComparing),
             ],
           ),
         ),
@@ -355,19 +353,21 @@ class _BackupManagementScreenState
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text('Comparison with #${oldBackup.number}'),
+            title: Text(context.l10n.backupComparisonTitle(oldBackup.number)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildDiffRow('Songs', diff.songCountDiff),
+                _buildDiffRow(context.l10n.backupDiffSongs, diff.songCountDiff),
                 const Divider(),
-                _buildDiffRow('Stats Rows', diff.statsRowsDiff),
+                _buildDiffRow(
+                    context.l10n.backupDiffStatsRows, diff.statsRowsDiff),
                 const Divider(),
-                _buildDiffRow('Size', diff.sizeBytesDiff, isBytes: true),
+                _buildDiffRow(context.l10n.backupDiffSize, diff.sizeBytesDiff,
+                    isBytes: true),
                 if (diff.sizeBytesDiff > 0) ...[
                   const Divider(),
                   ListTile(
-                    title: const Text('Data Added'),
+                    title: Text(context.l10n.backupDiffDataAdded),
                     trailing: Text(
                       _formatBytes(diff.sizeBytesDiff),
                       style: const TextStyle(
@@ -381,7 +381,7 @@ class _BackupManagementScreenState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('CLOSE'),
+                child: Text(context.l10n.backupCloseUpper),
               ),
             ],
           ),
@@ -390,7 +390,7 @@ class _BackupManagementScreenState
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Pop loading dialog
-        appSnack(context, 'Error comparing backups: $e');
+        appSnack(context, context.l10n.backupCompareError('$e'));
       }
     }
   }
@@ -406,7 +406,7 @@ class _BackupManagementScreenState
       diffText = '${isBytes ? _formatBytes(diff) : diff}';
       color = AppTokens.danger;
     } else {
-      diffText = 'No change';
+      diffText = context.l10n.backupNoChange;
       color = AppTokens.fgTertiary;
     }
 
@@ -433,7 +433,7 @@ class _BackupManagementScreenState
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Backup Management'),
+      appBar: AppTopBar(title: context.l10n.backupManagementTitle),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : WideContentCenter(
@@ -456,8 +456,8 @@ class _BackupManagementScreenState
                                   )
                                 : const AppIcon(AppIcons.cloudUpload),
                             label: Text(_isCreatingBackup
-                                ? 'Creating...'
-                                : 'Create Backup'),
+                                ? context.l10n.backupCreating
+                                : context.l10n.backupCreateAction),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
@@ -499,7 +499,7 @@ class _BackupManagementScreenState
           ),
           const SizedBox(height: 16),
           Text(
-            'No backups yet',
+            context.l10n.backupEmptyTitle,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   color: Theme.of(context)
                       .colorScheme
@@ -509,7 +509,7 @@ class _BackupManagementScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            'Create your first backup to protect your data',
+            context.l10n.backupEmptySubtitle,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context)
                       .colorScheme
@@ -538,7 +538,7 @@ class _BackupManagementScreenState
           ),
         ),
         title: Text(backup.displayName),
-        subtitle: Text('Size: ${backup.formattedSize}'),
+        subtitle: Text(context.l10n.backupSizeLabel(backup.formattedSize)),
         trailing: PopupMenuButton<String>(
           onSelected: (value) {
             switch (value) {
@@ -557,43 +557,44 @@ class _BackupManagementScreenState
             }
           },
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'restore',
               child: Row(
                 children: [
-                  AppIcon(AppIcons.restore),
-                  SizedBox(width: 8),
-                  Text('Restore'),
+                  const AppIcon(AppIcons.restore),
+                  const SizedBox(width: 8),
+                  Text(context.l10n.backupActionRestore),
                 ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'export',
               child: Row(
                 children: [
-                  AppIcon(AppIcons.upload),
-                  SizedBox(width: 8),
-                  Text('Export'),
+                  const AppIcon(AppIcons.upload),
+                  const SizedBox(width: 8),
+                  Text(context.l10n.backupActionExport),
                 ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'compare',
               child: Row(
                 children: [
-                  AppIcon(AppIcons.swapHoriz),
-                  SizedBox(width: 8),
-                  Text('Compare'),
+                  const AppIcon(AppIcons.swapHoriz),
+                  const SizedBox(width: 8),
+                  Text(context.l10n.backupActionCompare),
                 ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'delete',
               child: Row(
                 children: [
-                  AppIcon(AppIcons.delete, color: AppTokens.danger),
-                  SizedBox(width: 8),
-                  Text('Delete', style: TextStyle(color: AppTokens.danger)),
+                  const AppIcon(AppIcons.delete, color: AppTokens.danger),
+                  const SizedBox(width: 8),
+                  Text(context.l10n.actionDelete,
+                      style: const TextStyle(color: AppTokens.danger)),
                 ],
               ),
             ),
@@ -609,18 +610,15 @@ class _BackupManagementScreenState
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         icon: const AppIcon(AppIcons.refresh, color: AppTokens.info, size: 48),
-        title: const Text('Restart Required'),
-        content: const Text(
-          'Backup restore has been completed successfully.\n\n'
-          'The app needs to restart to apply all changes properly.',
-        ),
+        title: Text(context.l10n.backupRestartTitle),
+        content: Text(context.l10n.backupRestartMessage),
         actions: [
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _restartApp();
             },
-            child: const Text('Restart Now'),
+            child: Text(context.l10n.backupRestartNow),
           ),
         ],
       ),

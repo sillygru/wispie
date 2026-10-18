@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_surface.dart';
 import '../../tokens/app_tokens.dart';
 import '../../utils/stats_format.dart';
@@ -35,8 +36,8 @@ class _RhythmSectionState extends State<RhythmSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _HistogramCard(
-          title: 'BY HOUR',
-          readout: _hourReadout(),
+          title: context.l10n.statsByHour,
+          readout: _hourReadout(context.l10n),
           chart: BarSeriesChart(
             values: [
               for (final bucket in widget.insights.byHour)
@@ -44,7 +45,7 @@ class _RhythmSectionState extends State<RhythmSection> {
             ],
             labels: [
               for (var hour = 0; hour < 24; hour++)
-                hour % 6 == 0 ? StatsFormat.hourTick(hour) : '',
+                hour % 6 == 0 ? StatsFormat.hourTick(hour, context.l10n) : '',
             ],
             peakIndex: widget.insights.peakHour,
             selectedIndex: _hour,
@@ -54,14 +55,16 @@ class _RhythmSectionState extends State<RhythmSection> {
         ),
         const SizedBox(height: AppTokens.s3),
         _HistogramCard(
-          title: 'BY WEEKDAY',
-          readout: _weekdayReadout(),
+          title: context.l10n.statsByWeekday,
+          readout: _weekdayReadout(context.l10n),
           chart: BarSeriesChart(
             values: [
               for (final bucket in widget.insights.byWeekday)
                 bucket.listened.inMilliseconds.toDouble(),
             ],
-            labels: const ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
+            labels: [
+              for (var day = 0; day < 7; day++) StatsFormat.weekdayInitial(day),
+            ],
             peakIndex: widget.insights.peakWeekday,
             selectedIndex: _weekday,
             accent: widget.accent,
@@ -75,26 +78,31 @@ class _RhythmSectionState extends State<RhythmSection> {
 
   /// Falls back to the busiest hour when nothing is selected, so the card
   /// always says something.
-  String _hourReadout() {
+  String _hourReadout(AppLocalizations l10n) {
     final buckets = widget.insights.byHour;
     final index = _hour ?? widget.insights.peakHour;
     if (index == null || index >= buckets.length) {
-      return 'No listening recorded';
+      return l10n.statsNoListening;
     }
     final bucket = buckets[index];
-    return '${StatsFormat.hour(index)} · '
-        '${StatsFormat.hoursMinutes(bucket.listened)} across ${bucket.plays} plays';
+    return '${StatsFormat.hour(index)} · ${_across(bucket, l10n)}';
   }
 
-  String _weekdayReadout() {
+  String _weekdayReadout(AppLocalizations l10n) {
     final buckets = widget.insights.byWeekday;
     final index = _weekday ?? widget.insights.peakWeekday;
     if (index == null || index >= buckets.length) {
-      return 'No listening recorded';
+      return l10n.statsNoListening;
     }
     final bucket = buckets[index];
-    return '${StatsFormat.weekday(index)} · '
-        '${StatsFormat.hoursMinutes(bucket.listened)} across ${bucket.plays} plays';
+    return '${StatsFormat.weekday(index)} · ${_across(bucket, l10n)}';
+  }
+
+  String _across(HistogramBucket bucket, AppLocalizations l10n) {
+    return l10n.statsAcrossPlays(
+      StatsFormat.hoursMinutes(bucket.listened, l10n),
+      l10n.statsPlaysCount(bucket.plays),
+    );
   }
 }
 

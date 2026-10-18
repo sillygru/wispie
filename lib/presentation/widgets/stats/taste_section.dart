@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_surface.dart';
 import '../../tokens/app_icons.dart';
 import '../../tokens/app_tokens.dart';
@@ -35,15 +36,15 @@ class TasteSection extends StatelessWidget {
           child: Column(
             children: [
               ShareMeter(
-                label: 'Library explored',
-                value: _exploredLabel(),
+                label: context.l10n.statsLibraryExplored,
+                value: _exploredLabel(context.l10n),
                 share: insights.exploredShare,
                 accent: accent,
                 icon: AppIcons.explore,
               ),
               const SizedBox(height: AppTokens.s5),
               ShareMeter(
-                label: 'Plays that were favourites',
+                label: context.l10n.statsPlaysFavourites,
                 value: StatsFormat.percent(insights.favoriteShare),
                 share: insights.favoriteShare,
                 accent: accent,
@@ -51,7 +52,7 @@ class TasteSection extends StatelessWidget {
               ),
               const SizedBox(height: AppTokens.s5),
               ShareMeter(
-                label: 'Plays skipped',
+                label: context.l10n.statsPlaysSkipped,
                 value: StatsFormat.percent(insights.skipRate),
                 share: insights.skipRate,
                 accent: accent,
@@ -72,22 +73,31 @@ class TasteSection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _Fact(
-                label: 'AVERAGE PLAY',
-                value: StatsFormat.duration(insights.averagePlay),
+                label: context.l10n.statsAvgPlay,
+                value: StatsFormat.duration(
+                  insights.averagePlay,
+                  context.l10n,
+                ),
               ),
               const SizedBox(height: AppTokens.s3),
               _Fact(
-                label: 'ON AN ACTIVE DAY',
-                value: StatsFormat.duration(insights.averageDay),
+                label: context.l10n.statsOnActiveDay,
+                value: StatsFormat.duration(
+                  insights.averageDay,
+                  context.l10n,
+                ),
               ),
               const SizedBox(height: AppTokens.s3),
               _Fact(
-                label: 'PLAYS PER ACTIVE DAY',
+                label: context.l10n.statsPlaysPerActiveDay,
                 value: '${insights.averagePlaysPerDay}',
               ),
               if (firstListen != null) ...[
                 const SizedBox(height: AppTokens.s3),
-                _Fact(label: 'FIRST LISTEN', value: firstListen!),
+                _Fact(
+                  label: context.l10n.statsFirstListen,
+                  value: firstListen!,
+                ),
               ],
             ],
           ),
@@ -98,10 +108,13 @@ class TasteSection extends StatelessWidget {
 
   /// Both counts, not just the percentage: "38%" of an unknown library size is
   /// a very different claim from "38%" of 4,000 tracks.
-  String _exploredLabel() {
+  String _exploredLabel(AppLocalizations l10n) {
     final share = StatsFormat.percent(insights.exploredShare);
     if (insights.librarySize == 0) return share;
-    return '$share of ${StatsFormat.compactCount(insights.librarySize)}';
+    return l10n.statsShareOf(
+      share,
+      StatsFormat.compactCount(insights.librarySize),
+    );
   }
 
   String? get firstListen => StatsFormat.firstListen(insights);

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/models/search_result.dart';
+import '../../l10n/l10n.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
@@ -20,7 +21,7 @@ class LyricsMatchWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textSpans = _buildTextSpans();
+    final textSpans = _buildTextSpans(context.l10n);
 
     return Container(
       margin: const EdgeInsets.only(top: 4),
@@ -55,13 +56,13 @@ class LyricsMatchWidget extends StatelessWidget {
   }
 
   /// Builds the text spans with the matched portion in bold
-  List<TextSpan> _buildTextSpans() {
+  List<TextSpan> _buildTextSpans(AppLocalizations l10n) {
     final spans = <TextSpan>[];
     final fullLine = lyricsMatch.fullLine;
     final query = searchQuery.toLowerCase().trim();
 
     if (query.isEmpty) {
-      spans.add(TextSpan(text: 'contains "$fullLine"'));
+      spans.add(TextSpan(text: l10n.lyricsMatchContains(fullLine)));
       return spans;
     }
 
@@ -71,7 +72,7 @@ class LyricsMatchWidget extends StatelessWidget {
 
     if (matchIndex == -1) {
       // No match found, just show the full line
-      spans.add(TextSpan(text: 'contains "$fullLine"'));
+      spans.add(TextSpan(text: l10n.lyricsMatchContains(fullLine)));
       return spans;
     }
 
@@ -79,7 +80,7 @@ class LyricsMatchWidget extends StatelessWidget {
     final matchEnd = matchIndex + query.length;
 
     // "contains " prefix
-    spans.add(const TextSpan(text: 'contains "'));
+    spans.add(TextSpan(text: l10n.lyricsMatchPrefix));
 
     // Text before the match
     if (matchIndex > 0) {
@@ -118,7 +119,7 @@ class CompactLyricsMatchWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final displayText = _buildDisplayText();
+    final displayText = _buildDisplayText(context.l10n);
 
     return Container(
       margin: const EdgeInsets.only(top: 2),
@@ -146,19 +147,19 @@ class CompactLyricsMatchWidget extends StatelessWidget {
     );
   }
 
-  String _buildDisplayText() {
+  String _buildDisplayText(AppLocalizations l10n) {
     final fullLine = lyricsMatch.fullLine;
     final query = searchQuery.toLowerCase().trim();
 
     if (query.isEmpty) {
-      return 'contains "$fullLine"';
+      return l10n.lyricsMatchContains(fullLine);
     }
 
     final lowerLine = fullLine.toLowerCase();
     final matchIndex = lowerLine.indexOf(query);
 
     if (matchIndex == -1) {
-      return 'contains "$fullLine"';
+      return l10n.lyricsMatchContains(fullLine);
     }
 
     // Truncate if too long
@@ -175,7 +176,7 @@ class CompactLyricsMatchWidget extends StatelessWidget {
       if (end < fullLine.length) displayLine = '$displayLine...';
     }
 
-    return 'contains "$displayLine"';
+    return l10n.lyricsMatchContains(displayLine);
   }
 }
 
@@ -188,7 +189,7 @@ class LyricsAvailableIndicator extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Tooltip(
-      message: 'Lyrics available',
+      message: context.l10n.lyricsMatchAvailable,
       child: AppIcon(
         AppIcons.lyrics,
         size: 16,

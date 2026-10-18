@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_icon.dart';
@@ -23,7 +24,7 @@ class SortMenu extends ConsumerWidget {
       icon: const AppIcon(AppIcons.sort, size: 20),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
-      tooltip: 'Sort by',
+      tooltip: context.l10n.sortBy,
       onSelected: (order) {
         final override = onSelected;
         if (override != null) {
@@ -36,47 +37,47 @@ class SortMenu extends ConsumerWidget {
         CheckedPopupMenuItem(
           value: SongSortOrder.title,
           checked: effectiveSort == SongSortOrder.title,
-          child: const Text('Title (A-Z)'),
+          child: Text(context.l10n.sortTitleAZ),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.artist,
           checked: effectiveSort == SongSortOrder.artist,
-          child: const Text('Artist'),
+          child: Text(context.l10n.metadataArtistLabel),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.album,
           checked: effectiveSort == SongSortOrder.album,
-          child: const Text('Album'),
+          child: Text(context.l10n.metadataAlbumLabel),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.dateAdded,
           checked: effectiveSort == SongSortOrder.dateAdded,
-          child: const Text('Date Added'),
+          child: Text(context.l10n.sortDateAdded),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.songDateOldNew,
           checked: effectiveSort == SongSortOrder.songDateOldNew,
-          child: const Text('Song Date (Old - New)'),
+          child: Text(context.l10n.sortSongDateOldNew),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.songDateNewOld,
           checked: effectiveSort == SongSortOrder.songDateNewOld,
-          child: const Text('Song Date (New - Old)'),
+          child: Text(context.l10n.sortSongDateNewOld),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.playCount,
           checked: effectiveSort == SongSortOrder.playCount,
-          child: const Text('Most Played'),
+          child: Text(context.l10n.sortMostPlayed),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.recentlyPlayed,
           checked: effectiveSort == SongSortOrder.recentlyPlayed,
-          child: const Text('Recently Played'),
+          child: Text(context.l10n.sortRecentlyPlayed),
         ),
         CheckedPopupMenuItem(
           value: SongSortOrder.recommended,
           checked: effectiveSort == SongSortOrder.recommended,
-          child: const Text('Recommended'),
+          child: Text(context.l10n.sortRecommended),
         ),
       ],
     );

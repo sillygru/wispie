@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../l10n/l10n.dart';
 import '../../../providers/insights_provider.dart';
 import '../../components/app_icon.dart';
 import '../../components/app_list_row.dart';
@@ -26,13 +27,16 @@ class InsightsSummaryRow extends ConsumerWidget {
     final accent = AppTokens.accentOf(context, ref);
     final insights = ref.watch(listeningInsightsProvider);
 
+    final l10n = context.l10n;
     final subtitle = switch (insights) {
-      AsyncData(value: final data) when !data.isEmpty =>
-        '${StatsFormat.duration(data.listened)} · ${data.plays} plays · '
-            '${data.activeDays} active ${data.activeDays == 1 ? 'day' : 'days'}',
-      AsyncData() => 'Play something to start your history',
-      AsyncError() => 'Could not load your stats',
-      _ => 'Reading your listening history',
+      AsyncData(value: final data) when !data.isEmpty => l10n.statsSummary(
+          StatsFormat.duration(data.listened, l10n),
+          l10n.statsPlaysCount(data.plays),
+          l10n.statsActiveDays(data.activeDays),
+        ),
+      AsyncData() => l10n.statsEmptyHint,
+      AsyncError() => l10n.statsLoadError,
+      _ => l10n.statsReadingHistory,
     };
 
     return AppSurface(
@@ -40,7 +44,7 @@ class InsightsSummaryRow extends ConsumerWidget {
       padding: EdgeInsets.zero,
       child: AppListRow(
         leading: AppRowIcon(icon: AppIcons.analytics, color: accent),
-        title: 'Listening',
+        title: l10n.statsTitle,
         subtitle: subtitle,
         trailing: AppIcon(
           AppIcons.chevronRight,

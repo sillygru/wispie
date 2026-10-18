@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_result.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../../providers/providers.dart';
@@ -342,7 +343,7 @@ class ArtistSearchResultItem extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${songs.length} song${songs.length != 1 ? 's' : ''}',
+                        context.l10n.searchSongCount(songs.length),
                         style: TextStyle(
                           fontSize: 13,
                           color: theme.colorScheme.onSurfaceVariant,
@@ -428,7 +429,7 @@ class AlbumSearchResultItem extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        '${songs.length} song${songs.length != 1 ? 's' : ''}',
+                        context.l10n.searchSongCount(songs.length),
                         style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant

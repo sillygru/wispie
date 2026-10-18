@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../domain/services/lyrics_timing_offset.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/pressable.dart';
 import '../../tokens/player_tokens.dart';
 
@@ -285,7 +286,7 @@ class _LyricsTimingReadoutState extends State<LyricsTimingReadout>
       // Only the double tap, no single-tap handler: a bare tap on the number
       // should not look interactive unless it does something.
       child: Tooltip(
-        message: 'Double-tap to reset to 0.00',
+        message: context.l10n.lyricsTimingResetTooltip,
         // Subscribes to the controller itself rather than relying on whichever
         // surface happens to wrap it. Both current callers are inside an
         // AnimatedBuilder over the same controller, but a readout that only

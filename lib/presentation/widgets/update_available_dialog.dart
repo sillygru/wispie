@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/l10n.dart';
 import '../../services/update_service.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
@@ -13,6 +14,7 @@ Future<void> showUpdateAvailableDialog(
 }) async {
   final theme = Theme.of(context);
   final colorScheme = theme.colorScheme;
+  final l10n = context.l10n;
 
   await showDialog<void>(
     context: context,
@@ -45,7 +47,7 @@ Future<void> showUpdateAvailableDialog(
 
             // Title
             Text(
-              'Update Available',
+              l10n.updateAvailableTitle,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -64,7 +66,7 @@ Future<void> showUpdateAvailableDialog(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _VersionChip(
-                    label: 'Current',
+                    label: l10n.updateCurrentLabel,
                     version: currentVersion,
                     colorScheme: colorScheme,
                     isBold: false,
@@ -78,7 +80,7 @@ Future<void> showUpdateAvailableDialog(
                     ),
                   ),
                   _VersionChip(
-                    label: 'New',
+                    label: l10n.updateNewLabel,
                     version: newVersion,
                     colorScheme: colorScheme,
                     isBold: true,
@@ -90,7 +92,7 @@ Future<void> showUpdateAvailableDialog(
 
             // Description
             Text(
-              'A newer version of wispie is ready to download.',
+              l10n.updateAvailableBody,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -115,7 +117,7 @@ Future<void> showUpdateAvailableDialog(
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Skip this version'),
+                    child: Text(l10n.updateSkipVersion),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -134,7 +136,7 @@ Future<void> showUpdateAvailableDialog(
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Download'),
+                    child: Text(l10n.updateDownload),
                   ),
                 ),
               ],
@@ -153,7 +155,7 @@ Future<void> showUpdateAvailableDialog(
                 color: colorScheme.primary,
               ),
               label: Text(
-                "What's new?",
+                l10n.updateWhatsNew,
                 style: TextStyle(
                   color: colorScheme.primary,
                   fontWeight: FontWeight.w600,

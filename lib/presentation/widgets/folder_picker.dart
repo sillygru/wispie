@@ -8,6 +8,7 @@ import 'collection_cover.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../../l10n/l10n.dart';
 
 class FolderPicker extends ConsumerStatefulWidget {
   final String rootPath;
@@ -37,23 +38,23 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New Folder'),
+        title: Text(context.l10n.foldersNewFolderTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Folder Name',
-            hintText: 'Enter folder name',
+          decoration: InputDecoration(
+            labelText: context.l10n.foldersFolderNameLabel,
+            hintText: context.l10n.foldersFolderNameHint,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.actionCancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Create'),
+            child: Text(context.l10n.actionCreate),
           ),
         ],
       ),
@@ -84,7 +85,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
     final songsAsyncValue = ref.watch(songsProvider);
 
     return AlertDialog(
-      title: const Text('Select Destination Folder'),
+      title: Text(context.l10n.foldersSelectDestination),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -116,7 +117,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                           Expanded(
                             child: ListTile(
                               leading: const AppIcon(AppIcons.arrowBack),
-                              title: const Text('.. (Go back)'),
+                              title: Text(context.l10n.foldersGoBack),
                               onTap: () {
                                 setState(() {
                                   final parts = p.split(_currentRelativePath);
@@ -132,7 +133,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                           ),
                         IconButton(
                           icon: const AppIcon(AppIcons.folderAdd),
-                          tooltip: 'New Folder',
+                          tooltip: context.l10n.foldersNewFolderTitle,
                           onPressed: () async {
                             final name = await _showNewFolderDialog(context);
                             if (name != null && name.isNotEmpty) {
@@ -161,8 +162,8 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                                 });
                               } catch (e) {
                                 if (context.mounted) {
-                                  appSnack(
-                                      context, 'Error creating folder: $e');
+                                  appSnack(context,
+                                      context.l10n.foldersCreateError('$e'));
                                 }
                               }
                             }
@@ -172,9 +173,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                     ),
                     Expanded(
                       child: sortedSubFolders.isEmpty
-                          ? const Center(
-                              child: Text(
-                                  "Empty folder. You can select it below."))
+                          ? Center(child: Text(context.l10n.foldersEmptyFolder))
                           : ListView.builder(
                               itemCount: sortedSubFolders.length,
                               itemBuilder: (context, index) {
@@ -201,7 +200,10 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text(
-                        'Selected: ${_currentRelativePath.isEmpty ? "Root" : _currentRelativePath}',
+                        context.l10n.foldersSelected(
+                            _currentRelativePath.isEmpty
+                                ? context.l10n.foldersRoot
+                                : _currentRelativePath),
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -211,13 +213,13 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, s) => Center(child: Text('Error: $e')),
+          error: (e, s) => Center(child: Text(context.l10n.foldersError('$e'))),
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.actionCancel),
         ),
         FilledButton(
           onPressed: () {
@@ -226,7 +228,7 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
                 : p.join(widget.rootPath, _currentRelativePath);
             Navigator.pop(context, targetPath);
           },
-          child: const Text('Select This Folder'),
+          child: Text(context.l10n.foldersSelectThisFolder),
         ),
       ],
     );

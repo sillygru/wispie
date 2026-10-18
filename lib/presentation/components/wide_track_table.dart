@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
@@ -78,17 +79,30 @@ class WideTrackTableHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(flex: 3, child: Text('Title', style: style)),
+          Expanded(
+            flex: 3,
+            child: Text(context.l10n.metadataTitleLabel, style: style),
+          ),
           const SizedBox(width: AppTokens.s3),
-          Expanded(flex: 2, child: Text('Artist', style: style)),
+          Expanded(
+            flex: 2,
+            child: Text(context.l10n.metadataArtistLabel, style: style),
+          ),
           if (showAlbum) ...[
             const SizedBox(width: AppTokens.s3),
-            Expanded(flex: 2, child: Text('Album', style: style)),
+            Expanded(
+              flex: 2,
+              child: Text(context.l10n.metadataAlbumLabel, style: style),
+            ),
           ],
           const SizedBox(width: AppTokens.s3),
           SizedBox(
             width: 52,
-            child: Text('Time', style: style, textAlign: TextAlign.right),
+            child: Text(
+              context.l10n.wideTrackTime,
+              style: style,
+              textAlign: TextAlign.right,
+            ),
           ),
           const SizedBox(width: 76),
         ],

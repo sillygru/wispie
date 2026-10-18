@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../components/pressable.dart';
@@ -80,8 +81,8 @@ class AlbumCardSelector extends ConsumerWidget {
           itemBuilder: (context, index) {
             if (index == 0) {
               return _AlbumCard(
-                title: 'All songs',
-                subtitle: _trackCount(allSongs.length),
+                title: context.l10n.albumCardAllSongs,
+                subtitle: context.l10n.snapshotTrackCount(allSongs.length),
                 cover: CollectionCover(
                   songs: allSongs,
                 ),
@@ -110,7 +111,7 @@ class AlbumCardSelector extends ConsumerWidget {
                 : CollectionCover(songs: albumSongs);
             return _AlbumCard(
               title: album,
-              subtitle: _trackCount(albumSongs.length),
+              subtitle: context.l10n.snapshotTrackCount(albumSongs.length),
               cover: cover,
               isSelected: selected == album,
               accent: accent,
@@ -121,9 +122,6 @@ class AlbumCardSelector extends ConsumerWidget {
       ),
     );
   }
-
-  static String _trackCount(int count) =>
-      '$count track${count == 1 ? '' : 's'}';
 }
 
 class _AlbumCard extends StatelessWidget {

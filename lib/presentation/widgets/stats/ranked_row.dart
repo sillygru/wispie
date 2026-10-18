@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_list_row.dart';
 import '../../components/pressable.dart';
 import '../../tokens/app_tokens.dart';
@@ -118,9 +119,12 @@ class RankedRow extends StatelessWidget {
   String _subtitle(BuildContext context) {
     final parts = <String>[
       if (entry.detail != null) entry.detail!,
-      if (entry.listened > Duration.zero) StatsFormat.duration(entry.listened),
+      if (entry.listened > Duration.zero)
+        StatsFormat.duration(entry.listened, context.l10n),
     ];
-    return parts.isEmpty ? '${entry.plays} plays' : parts.join(' · ');
+    return parts.isEmpty
+        ? context.l10n.statsPlaysCount(entry.plays)
+        : parts.join(' · ');
   }
 }
 

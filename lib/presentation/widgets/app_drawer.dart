@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../components/app_icon.dart';
@@ -87,6 +88,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
   @override
   Widget build(BuildContext context) {
     final accent = AppTokens.accentOf(context, ref);
+    final l10n = context.l10n;
 
     final updateAvailable = ref.watch(
       updateCheckProvider.select((state) => state.hasUpdate),
@@ -142,8 +144,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               AppTokens.s3,
                             ),
                             children: [
-                              const AppSectionHeader(
-                                label: 'Library',
+                              AppSectionHeader(
+                                label: l10n.libraryTitle,
                                 padding: EdgeInsets.fromLTRB(
                                   AppTokens.s2,
                                   AppTokens.s2,
@@ -153,7 +155,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.favorite,
-                                label: 'Favorites',
+                                label: l10n.libraryFavorites,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () async {
@@ -167,7 +169,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                                       .toList();
                                   if (context.mounted) {
                                     _navigateTo(SongListScreen(
-                                      title: 'Favorites',
+                                      title: l10n.libraryFavorites,
                                       songs: favSongs,
                                     ));
                                   }
@@ -175,7 +177,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.queue,
-                                label: 'Playlists',
+                                label: l10n.playlistsTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () =>
@@ -183,20 +185,20 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.album,
-                                label: 'Albums',
+                                label: l10n.libraryAlbumsTab,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () => _openLibrarySubTab(2),
                               ),
                               _buildNavItem(
                                 icon: AppIcons.person,
-                                label: 'Artists',
+                                label: l10n.libraryArtistsTab,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () => _openLibrarySubTab(1),
                               ),
-                              const AppSectionHeader(
-                                label: 'History',
+                              AppSectionHeader(
+                                label: l10n.queueTabHistory,
                                 padding: EdgeInsets.fromLTRB(
                                   AppTokens.s2,
                                   AppTokens.s3,
@@ -206,14 +208,14 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.analytics,
-                                label: 'Listening',
+                                label: l10n.statsTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () => _navigateTo(const StatsScreen()),
                               ),
                               _buildNavItem(
                                 icon: AppIcons.clock,
-                                label: 'Song History',
+                                label: l10n.playHistoryTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () =>
@@ -221,7 +223,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.queuePlayNext,
-                                label: 'Session History',
+                                label: l10n.sessionHistoryTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () =>
@@ -229,13 +231,13 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.queue,
-                                label: 'Queue History',
+                                label: l10n.drawerQueueHistory,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: _openQueueHistory,
                               ),
-                              const AppSectionHeader(
-                                label: 'Tools',
+                              AppSectionHeader(
+                                label: l10n.drawerTools,
                                 padding: EdgeInsets.fromLTRB(
                                   AppTokens.s2,
                                   AppTokens.s3,
@@ -245,14 +247,14 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.bedtime,
-                                label: 'Sleep Timer',
+                                label: l10n.sleepTimerTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () =>
                                     _navigateTo(const SleepTimerScreen()),
                               ),
-                              const AppSectionHeader(
-                                label: 'App',
+                              AppSectionHeader(
+                                label: l10n.settingsGroupApp,
                                 padding: EdgeInsets.fromLTRB(
                                   AppTokens.s2,
                                   AppTokens.s3,
@@ -262,7 +264,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.settings,
-                                label: 'Settings',
+                                label: l10n.settingsTitle,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () =>

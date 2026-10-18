@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../domain/models/listening_insights.dart';
+import '../../../l10n/l10n.dart';
 import '../../components/app_surface.dart';
 import '../../tokens/app_tokens.dart';
 import '../album_art_image.dart';
@@ -27,14 +28,14 @@ class TopListsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _RankedBlock(
-          label: 'TOP ARTISTS',
+          label: context.l10n.statsTopArtists,
           entries: insights.topArtists,
           accent: accent,
         ),
         if (insights.topAlbums.isNotEmpty) ...[
           const SizedBox(height: AppTokens.s4),
           _RankedBlock(
-            label: 'TOP ALBUMS',
+            label: context.l10n.statsTopAlbums,
             entries: insights.topAlbums,
             accent: accent,
           ),
@@ -42,7 +43,7 @@ class TopListsSection extends StatelessWidget {
         if (insights.topSongs.isNotEmpty) ...[
           const SizedBox(height: AppTokens.s4),
           _RankedBlock(
-            label: 'TOP TRACKS',
+            label: context.l10n.statsTopTracks,
             entries: insights.topSongs,
             accent: accent,
             leadingBuilder: (entry, _) => RankedArtwork(

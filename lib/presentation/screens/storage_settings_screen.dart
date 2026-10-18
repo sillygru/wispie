@@ -3,6 +3,7 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
+import '../../l10n/l10n.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
 import 'indexer_screen.dart';
@@ -20,31 +21,32 @@ class StorageSettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final content = AppSettingsList(
       highlightId: highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Disk',
+          label: l10n.storageSettingsDiskGroup,
           icon: AppIcons.storage,
           children: [
             AppSettingsTile(
               searchId: 'data.storage',
               icon: AppIcons.storage,
-              title: 'Manage Storage',
-              subtitle: 'Disk usage and data management',
+              title: l10n.storageManageTitle,
+              subtitle: l10n.settingsSearchManageStorageSubtitle,
               onTap: () => context.pushApp(const StorageManagementScreen()),
             ),
           ],
         ),
         AppSettingsGroup(
-          label: 'Indexes & Caches',
+          label: l10n.storageSettingsIndexesGroup,
           icon: AppIcons.dataObject,
           children: [
             AppSettingsTile(
               searchId: 'data.indexer',
               icon: AppIcons.dataObject,
-              title: 'Indexer',
-              subtitle: 'Rebuild indexes and caches',
+              title: l10n.settingsSearchIndexerTitle,
+              subtitle: l10n.settingsSearchIndexerSubtitle,
               onTap: () => context.pushApp(const IndexerScreen()),
             ),
           ],
@@ -53,7 +55,7 @@ class StorageSettingsScreen extends ConsumerWidget {
     );
     if (embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Storage'),
+      appBar: AppTopBar(title: l10n.settingsPageStorageTitle),
       body: content,
     );
   }

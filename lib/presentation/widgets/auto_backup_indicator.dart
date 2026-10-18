@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../services/auto_backup_service.dart';
 import '../tokens/app_tokens.dart';
@@ -95,8 +96,8 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
         context,
         key: const Key('auto_backup_running'),
         icon: AppIcons.cloudUpload,
-        title: 'Backing Up',
-        subtitle: 'Creating backup...',
+        title: context.l10n.autoBackupRunningTitle,
+        subtitle: context.l10n.autoBackupRunningSubtitle,
         iconColor: AppTokens.info,
         showSpinner: true,
         onDismiss: _handleDismiss,
@@ -113,8 +114,8 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
         context,
         key: ValueKey('auto_backup_success_${lastResult.hashCode}'),
         icon: AppIcons.checkCircle,
-        title: 'Auto-Backup Complete',
-        subtitle: lastResult.backupFilename ?? 'Backup saved',
+        title: context.l10n.autoBackupCompleteTitle,
+        subtitle: lastResult.backupFilename ?? context.l10n.autoBackupSaved,
         iconColor: AppTokens.success,
         showSpinner: false,
         onDismiss: _handleDismiss,
@@ -124,8 +125,9 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
         context,
         key: ValueKey('auto_backup_failed_${lastResult.hashCode}'),
         icon: AppIcons.error,
-        title: 'Auto-Backup Failed',
-        subtitle: lastResult.errorMessage ?? 'Unknown error',
+        title: context.l10n.autoBackupFailedTitle,
+        subtitle:
+            lastResult.errorMessage ?? context.l10n.autoBackupUnknownError,
         iconColor: AppTokens.danger,
         showSpinner: false,
         onDismiss: _handleDismiss,
@@ -352,7 +354,7 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Permission Required',
+                        context.l10n.autoBackupPermissionTitle,
                         style: theme.textTheme.labelLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -361,7 +363,7 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Auto-backup needs storage access',
+                        context.l10n.autoBackupPermissionSubtitle,
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant,
@@ -385,9 +387,10 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
                       borderRadius: AppTokens.brSm,
                     ),
                   ),
-                  child: const Text(
-                    'Grant',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  child: Text(
+                    context.l10n.autoBackupGrant,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                 ),
                 if (onDismiss != null) ...[

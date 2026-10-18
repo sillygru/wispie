@@ -19,6 +19,25 @@ import '../dialogs/lyrics_search_sheet.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
+String _replacementRejectLabel(
+  AppLocalizations l10n,
+  ReplacementRejected rejected,
+) =>
+    switch (rejected.reason) {
+      ReplacementRejectReason.noFileSelected =>
+        l10n.metadataReplaceRejectNoFile,
+      ReplacementRejectReason.unsupportedFormat =>
+        l10n.metadataReplaceRejectUnsupported,
+      ReplacementRejectReason.sameFilename =>
+        l10n.metadataReplaceRejectSameFilename,
+      ReplacementRejectReason.insideLibrary =>
+        l10n.metadataReplaceRejectInsideLibrary,
+      ReplacementRejectReason.destinationExists =>
+        l10n.metadataReplaceRejectDestinationExists(rejected.filename ?? ''),
+      ReplacementRejectReason.libraryHasName =>
+        l10n.metadataReplaceRejectLibraryHasName(rejected.filename ?? ''),
+    };
+
 class EditMetadataScreen extends ConsumerStatefulWidget {
   final Song song;
 
@@ -392,7 +411,8 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
     final ReplacementAccepted accepted;
     switch (check) {
       case ReplacementRejected rejected:
-        appSnack(context, rejected.reason, tone: AppTone.warning);
+        appSnack(context, _replacementRejectLabel(l10n, rejected),
+            tone: AppTone.warning);
         return;
       case ReplacementAccepted ok:
         accepted = ok;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../components/app_dialog.dart';
 import '../tokens/app_tokens.dart';
 
@@ -68,7 +69,7 @@ class _DangerConfirmDialogState extends State<DangerConfirmDialog> {
   @override
   Widget build(BuildContext context) {
     final label = _remaining > 0
-        ? '${widget.confirmLabel} ($_remaining)'
+        ? context.l10n.dangerDialogCountdown(widget.confirmLabel, _remaining)
         : widget.confirmLabel;
     return AppDialog(
       title: widget.title,
@@ -84,7 +85,8 @@ class _DangerConfirmDialogState extends State<DangerConfirmDialog> {
                 controller: _typed,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  labelText: 'Type "${widget.requireTypedText}" to confirm',
+                  labelText: context.l10n
+                      .dangerDialogTypeToConfirm(widget.requireTypedText!),
                 ),
               ),
             ],
@@ -94,7 +96,8 @@ class _DangerConfirmDialogState extends State<DangerConfirmDialog> {
                 controller: _password,
                 obscureText: true,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(labelText: 'Password'),
+                decoration:
+                    InputDecoration(labelText: context.l10n.syncPassword),
               ),
             ],
             if (widget.checkboxLabel != null)
@@ -110,7 +113,7 @@ class _DangerConfirmDialogState extends State<DangerConfirmDialog> {
       ),
       actions: [
         AppDialogAction(
-          label: 'Cancel',
+          label: context.l10n.actionCancel,
           onPressed: () => Navigator.of(context).pop(),
         ),
         AppDialogAction(

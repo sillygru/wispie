@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/l10n.dart';
 import '../../providers/open_files_provider.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -90,7 +91,7 @@ class ExternalOpenBanner extends ConsumerWidget {
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    child: const Text('Add to library'),
+                    child: Text(context.l10n.externalOpenAddToLibrary),
                   ),
                 ],
                 IconButton(
@@ -105,7 +106,7 @@ class ExternalOpenBanner extends ConsumerWidget {
                   icon: AppIcon(AppIcons.close, size: 15, color: accent),
                   padding: const EdgeInsets.all(AppTokens.s2),
                   constraints: const BoxConstraints(),
-                  tooltip: 'Dismiss',
+                  tooltip: context.l10n.externalOpenDismiss,
                 ),
               ],
             ),
