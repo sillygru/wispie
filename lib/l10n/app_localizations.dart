@@ -95,7 +95,8 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
-    Locale('pt')
+    Locale('pt'),
+    Locale('pt', 'PT')
   ];
 
   /// Language label shared by the language picker row/sheet and the settings group header
@@ -109,6 +110,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Follow system language'**
   String get settingsLanguageSystem;
+
+  /// Name of this language written in this language, shown untranslated in the language picker so speakers can find their own language. Do not translate into another language.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get languageNativeName;
 
   /// Settings label shared by the settings hub, profile entries, app drawer, and restore dialog section
   ///
@@ -8565,6 +8572,18 @@ class _AppLocalizationsDelegate
 }
 
 AppLocalizations lookupAppLocalizations(Locale locale) {
+  // Lookup logic when language+country codes are specified.
+  switch (locale.languageCode) {
+    case 'pt':
+      {
+        switch (locale.countryCode) {
+          case 'PT':
+            return AppLocalizationsPtPt();
+        }
+        break;
+      }
+  }
+
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
     case 'en':
