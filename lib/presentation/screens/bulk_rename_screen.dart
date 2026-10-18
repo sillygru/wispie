@@ -563,10 +563,10 @@ class _FormatSection extends StatelessWidget {
   final VoidCallback onEdit;
 
   static List<String> _labels(AppLocalizations l10n) => [
-        l10n.bulkRenameFormatTitle,
+        l10n.metadataTitleLabel,
         l10n.bulkRenameFormatArtistTitle,
         l10n.bulkRenameFormatArtistAlbumTitle,
-        l10n.bulkRenameFormatCustom,
+        l10n.appearanceIntensityCustom,
       ];
 
   @override
@@ -762,7 +762,7 @@ class _SegmentRow extends StatelessWidget {
         ),
         IconButton(
           icon: const AppIcon(AppIcons.close, size: AppTokens.iconSm),
-          tooltip: context.l10n.bulkRenameRemoveToken,
+          tooltip: context.l10n.queueActionRemove,
           color: AppTokens.fgTertiary,
           onPressed: onRemove,
         ),

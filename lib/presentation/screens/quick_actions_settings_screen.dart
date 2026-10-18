@@ -47,29 +47,29 @@ class _QuickActionsSettingsScreenState
   String _getActionLabel(QuickAction action, AppLocalizations l10n) {
     switch (action) {
       case QuickAction.playNext:
-        return l10n.quickActionsPlayNext;
+        return l10n.songMenuPlayNext;
       case QuickAction.goToAlbum:
         return l10n.quickActionsGoToAlbum;
       case QuickAction.goToArtist:
         return l10n.quickActionsGoToArtist;
       case QuickAction.moveToFolder:
-        return l10n.quickActionsMoveToFolder;
+        return l10n.songMenuMoveToFolder;
       case QuickAction.addToPlaylist:
-        return l10n.quickActionsAddToPlaylist;
+        return l10n.songMenuAddToPlaylist;
       case QuickAction.share:
-        return l10n.quickActionsShare;
+        return l10n.songMenuShare;
       case QuickAction.addToNewPlaylist:
-        return l10n.quickActionsAddToNewPlaylist;
+        return l10n.songMenuAddToNewPlaylist;
       case QuickAction.editMetadata:
-        return l10n.quickActionsEditMetadata;
+        return l10n.songMenuEditMetadata;
       case QuickAction.toggleFavorite:
-        return l10n.quickActionsFavorite;
+        return l10n.bulkFavorite;
       case QuickAction.toggleSuggestLess:
-        return l10n.quickActionsSuggestLess;
+        return l10n.songMenuSuggestLess;
       case QuickAction.delete:
-        return l10n.quickActionsDelete;
+        return l10n.actionDelete;
       case QuickAction.hide:
-        return l10n.quickActionsHide;
+        return l10n.actionHide;
     }
   }
 
@@ -115,7 +115,7 @@ class _QuickActionsSettingsScreenState
       _enabledActions = Set.from(QuickActionConfig.defaultEnabled);
     });
     _saveConfig();
-    appSnack(context, context.l10n.quickActionsResetDone);
+    appSnack(context, context.l10n.shuffleResetDone);
   }
 
   @override
@@ -134,7 +134,7 @@ class _QuickActionsSettingsScreenState
         actions: [
           TextButton(
             onPressed: _resetToDefaults,
-            child: Text(l10n.quickActionsReset),
+            child: Text(l10n.shuffleReset),
           ),
         ],
       ),

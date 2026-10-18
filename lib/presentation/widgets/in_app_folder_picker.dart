@@ -91,7 +91,7 @@ class _InAppFolderPickerState extends State<InAppFolderPicker> {
       final home =
           Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
       if (home != null && Directory(home).existsSync()) {
-        list.add({'label': l10n.foldersShortcutHome, 'path': home});
+        list.add({'label': l10n.shellNavHome, 'path': home});
         final music = p.join(home, 'Music');
         if (Directory(music).existsSync()) {
           list.add({'label': l10n.foldersShortcutMusic, 'path': music});

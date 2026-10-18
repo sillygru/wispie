@@ -819,8 +819,8 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                       valueListenable: manager.playingNotifier,
                       builder: (context, playing, _) => Tooltip(
                         message: playing
-                            ? context.l10n.floatingDockPause
-                            : context.l10n.floatingDockPlay,
+                            ? context.l10n.songListPause
+                            : context.l10n.songListPlay,
                         child: Pressable(
                           onTap: manager.togglePlayPause,
                           child: Container(

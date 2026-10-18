@@ -120,7 +120,7 @@ class _LyricsTimingSheet extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    context.l10n.lyricsTimingEarlier,
+                    context.l10n.historyDayEarlier,
                     style: PlayerTokens.meta(context),
                   ),
                   Text(

@@ -29,7 +29,7 @@ Future<DowngradeChoice?> showDowngradeWarningDialog(
             onPressed: () => Navigator.pop(ctx, DowngradeChoice.risk),
           ),
           AppDialogAction(
-            label: ctx.l10n.downgradeUpdate,
+            label: ctx.l10n.profileUpdate,
             isPrimary: true,
             onPressed: () => Navigator.pop(ctx, DowngradeChoice.update),
           ),

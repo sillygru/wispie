@@ -80,7 +80,7 @@ Future<void> showUpdateAvailableDialog(
                     ),
                   ),
                   _VersionChip(
-                    label: l10n.updateNewLabel,
+                    label: l10n.metadataFixNew,
                     version: newVersion,
                     colorScheme: colorScheme,
                     isBold: true,
@@ -136,7 +136,7 @@ Future<void> showUpdateAvailableDialog(
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: Text(l10n.updateDownload),
+                    child: Text(l10n.foldersShortcutDownload),
                   ),
                 ),
               ],

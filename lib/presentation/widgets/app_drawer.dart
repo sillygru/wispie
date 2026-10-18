@@ -185,14 +185,14 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                               ),
                               _buildNavItem(
                                 icon: AppIcons.album,
-                                label: l10n.libraryAlbumsTab,
+                                label: l10n.gradientDetailAlbums,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () => _openLibrarySubTab(2),
                               ),
                               _buildNavItem(
                                 icon: AppIcons.person,
-                                label: l10n.libraryArtistsTab,
+                                label: l10n.searchFilterArtists,
                                 iconSize: iconSize,
                                 fontSize: textFontSize,
                                 onTap: () => _openLibrarySubTab(1),

@@ -84,7 +84,7 @@ class _CustomShuffleSettingsScreenState
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(context.l10n.shuffleSave),
+            child: Text(context.l10n.backupSave),
           ),
         ],
       ),
@@ -122,7 +122,7 @@ class _CustomShuffleSettingsScreenState
               TextButton.icon(
                 onPressed: _saveSettings,
                 icon: const AppIcon(AppIcons.save, size: 20),
-                label: Text(context.l10n.shuffleSave),
+                label: Text(context.l10n.backupSave),
               ),
           ],
         ),
@@ -253,7 +253,7 @@ class _CustomShuffleSettingsScreenState
                           },
                         ),
                         _buildAdvancedSlider(
-                          label: context.l10n.shuffleWeightFavorites,
+                          label: context.l10n.libraryFavorites,
                           value: config.favoritesWeight,
                           onChanged: (value) {
                             _updateConfig(

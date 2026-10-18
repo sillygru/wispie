@@ -45,7 +45,7 @@ class StorageSettingsScreen extends ConsumerWidget {
             AppSettingsTile(
               searchId: 'data.indexer',
               icon: AppIcons.dataObject,
-              title: l10n.settingsSearchIndexerTitle,
+              title: l10n.indexerTitle,
               subtitle: l10n.settingsSearchIndexerSubtitle,
               onTap: () => context.pushApp(const IndexerScreen()),
             ),

@@ -213,7 +213,8 @@ class _FolderPickerState extends ConsumerState<FolderPicker> {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, s) => Center(child: Text(context.l10n.foldersError('$e'))),
+          error: (e, s) =>
+              Center(child: Text(context.l10n.songListMergeError('$e'))),
         ),
       ),
       actions: [

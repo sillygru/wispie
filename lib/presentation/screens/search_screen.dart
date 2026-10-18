@@ -324,7 +324,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     return _WideBrowseCard(
                       title: group.artistName,
                       subtitle:
-                          context.l10n.searchTrackCount(group.results.length),
+                          context.l10n.libraryTrackCount(group.results.length),
                       onTap: () => _showArtistSongs(
                         group.artistName,
                         group.results.map((r) => r.song).toList(),
@@ -486,7 +486,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           }
         }
         if (artistGroups.isNotEmpty) {
-          organized.add(_SectionHeader(context.l10n.libraryArtistsTab));
+          organized.add(_SectionHeader(context.l10n.searchFilterArtists));
           organized.addAll(
             artistGroups.entries.map((e) => _ArtistGroup(e.key, e.value)),
           );

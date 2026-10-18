@@ -162,7 +162,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     await _loadInitialFolders();
 
     if (mounted) {
-      appSnack(context, context.l10n.setupFolderAdded);
+      appSnack(context, context.l10n.foldersAddedSnack);
     }
   }
 
@@ -178,7 +178,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
     await _loadInitialFolders();
 
     if (mounted) {
-      appSnack(context, context.l10n.setupFolderRemoved);
+      appSnack(context, context.l10n.foldersRemovedSnack);
     }
   }
 
@@ -730,7 +730,7 @@ class _SetupScreenState extends ConsumerState<SetupScreen>
               value: settings.visualizerMode,
               onChanged: notifier.setVisualizerMode,
               options: [
-                (VisualizerMode.off, l10n.appearanceVisualizerOff),
+                (VisualizerMode.off, l10n.setupOff),
                 (VisualizerMode.classic, l10n.appearanceVisualizerClassic),
                 (VisualizerMode.synced, l10n.appearanceVisualizerSynced),
               ],
@@ -1066,7 +1066,7 @@ String _yesNo(AppLocalizations l10n, bool value) =>
 
 String _visualizerLabel(AppLocalizations l10n, VisualizerMode mode) =>
     switch (mode) {
-      VisualizerMode.off => l10n.appearanceVisualizerOff,
+      VisualizerMode.off => l10n.setupOff,
       VisualizerMode.classic => l10n.appearanceVisualizerClassic,
       VisualizerMode.synced => l10n.appearanceVisualizerSynced,
     };

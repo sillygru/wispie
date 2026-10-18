@@ -502,8 +502,8 @@ class _VideoModeToggle extends StatelessWidget {
           ),
           label: Text(
             isVideo
-                ? context.l10n.nowPlayingShowArtwork
-                : context.l10n.nowPlayingShowVideo,
+                ? context.l10n.playerShowArtwork
+                : context.l10n.playerShowVideo,
           ),
           style: TextButton.styleFrom(
             foregroundColor: isVideo ? accent : Colors.white70,

@@ -82,7 +82,7 @@ class AlbumCardSelector extends ConsumerWidget {
             if (index == 0) {
               return _AlbumCard(
                 title: context.l10n.albumCardAllSongs,
-                subtitle: context.l10n.snapshotTrackCount(allSongs.length),
+                subtitle: context.l10n.libraryTrackCount(allSongs.length),
                 cover: CollectionCover(
                   songs: allSongs,
                 ),
@@ -111,7 +111,7 @@ class AlbumCardSelector extends ConsumerWidget {
                 : CollectionCover(songs: albumSongs);
             return _AlbumCard(
               title: album,
-              subtitle: context.l10n.snapshotTrackCount(albumSongs.length),
+              subtitle: context.l10n.libraryTrackCount(albumSongs.length),
               cover: cover,
               isSelected: selected == album,
               accent: accent,

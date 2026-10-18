@@ -126,8 +126,7 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
         key: ValueKey('auto_backup_failed_${lastResult.hashCode}'),
         icon: AppIcons.error,
         title: context.l10n.autoBackupFailedTitle,
-        subtitle:
-            lastResult.errorMessage ?? context.l10n.autoBackupUnknownError,
+        subtitle: lastResult.errorMessage ?? context.l10n.indexerUnknownError,
         iconColor: AppTokens.danger,
         showSpinner: false,
         onDismiss: _handleDismiss,

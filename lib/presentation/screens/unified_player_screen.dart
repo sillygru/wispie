@@ -557,7 +557,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                         ),
                         child: PlayerSegmentedPill(
                           labels: [
-                            context.l10n.playerPaneLyrics,
+                            context.l10n.settingsPageLyricsTitle,
                             context.l10n.playerPanePlayer,
                             context.l10n.playerPaneQueue,
                           ],
@@ -655,7 +655,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                               constraints: const BoxConstraints(maxWidth: 280),
                               child: PlayerSegmentedPill(
                                 labels: [
-                                  context.l10n.playerPaneLyrics,
+                                  context.l10n.settingsPageLyricsTitle,
                                   context.l10n.playerPaneQueue,
                                 ],
                                 position: _landscapePosition,

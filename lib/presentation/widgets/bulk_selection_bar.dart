@@ -240,7 +240,7 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.share,
-      label: AppLocalizations.of(context).bulkShare,
+      label: AppLocalizations.of(context).songMenuShare,
       onTap: () {
         if (!context.mounted) return;
         final xFiles = songs.map((s) => XFile(s.url)).toList();

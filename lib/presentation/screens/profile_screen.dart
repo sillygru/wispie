@@ -170,11 +170,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           AppStatTile(
-                            label: l10n.syncFavorites,
+                            label: l10n.libraryFavorites,
                             value: '${userData.favorites.length}',
                           ),
                           AppStatTile(
-                            label: l10n.syncPlaylists,
+                            label: l10n.playlistsTitle,
                             value:
                                 '${userData.playlists.where((p) => !p.isRecommendation).length}',
                           ),
@@ -507,14 +507,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       children: [
                                         Expanded(
                                           child: AppStatTile(
-                                            label: l10n.syncFavorites,
+                                            label: l10n.libraryFavorites,
                                             value:
                                                 '${userData.favorites.length}',
                                           ),
                                         ),
                                         Expanded(
                                           child: AppStatTile(
-                                            label: l10n.syncPlaylists,
+                                            label: l10n.playlistsTitle,
                                             value:
                                                 '${userData.playlists.where((p) => !p.isRecommendation).length}',
                                           ),

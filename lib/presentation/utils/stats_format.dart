@@ -14,7 +14,7 @@ class StatsFormat {
   /// than "42.3h" without pretending to a precision the log does not have.
   static String duration(Duration value, AppLocalizations l10n) {
     if (value.inSeconds < 60) {
-      return l10n.statsDurationSeconds(value.inSeconds);
+      return l10n.playbackSecondsValue(value.inSeconds.toString());
     }
     if (value.inMinutes < 60) {
       return l10n.statsDurationMinutes(value.inMinutes);

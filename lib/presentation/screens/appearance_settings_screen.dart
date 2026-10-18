@@ -69,7 +69,7 @@ class _AppearanceSettingsScreenState
                   items: [
                     DropdownMenuItem(
                       value: VisualizerMode.off,
-                      child: Text(l10n.appearanceVisualizerOff),
+                      child: Text(l10n.setupOff),
                     ),
                     DropdownMenuItem(
                       value: VisualizerMode.classic,
@@ -282,7 +282,7 @@ class _AppearanceSettingsScreenState
           ],
         ),
         AppSettingsGroup(
-          label: l10n.settingsLanguageGroup,
+          label: l10n.settingsLanguageTitle,
           icon: AppIcons.translate,
           children: [
             AppSettingsAnchor(
@@ -333,7 +333,7 @@ class _AppearanceSettingsScreenState
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: AppTopBar(title: l10n.settingsAppearanceTitle),
+      appBar: AppTopBar(title: l10n.settingsPageAppearanceTitle),
       body: content,
     );
   }

@@ -38,17 +38,17 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
       case BackupContentType.userSettings:
         return context.l10n.backupContentUserSettings;
       case BackupContentType.coverCache:
-        return context.l10n.backupContentCoverCache;
+        return context.l10n.storageCoverCacheTitle;
       case BackupContentType.libraryCache:
-        return context.l10n.backupContentLibraryCache;
+        return context.l10n.storageLibraryCacheTitle;
       case BackupContentType.searchIndex:
-        return context.l10n.backupContentSearchIndex;
+        return context.l10n.storageSearchIndexTitle;
       case BackupContentType.waveformCache:
-        return context.l10n.backupContentWaveformCache;
+        return context.l10n.storageWaveformCacheTitle;
       case BackupContentType.colorCache:
-        return context.l10n.backupContentColorCache;
+        return context.l10n.storageColorCacheTitle;
       case BackupContentType.lyricsCache:
-        return context.l10n.backupContentLyricsCache;
+        return context.l10n.storageLyricsCacheTitle;
       case BackupContentType.artistArtCache:
         return context.l10n.backupContentArtistArtCache;
       case BackupContentType.albumArtCache:
@@ -145,7 +145,7 @@ class _BackupOptionsDialogState extends State<BackupOptionsDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.title ?? l10n.backupDialogTitle,
+                  widget.title ?? l10n.backupCreateAction,
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold),
                 ),

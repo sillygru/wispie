@@ -83,7 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final selectedPath = selection['path'] ?? '';
     if (selectedPath.isEmpty) {
       if (mounted) {
-        appSnack(context, context.l10n.homeFolderAccessError,
+        appSnack(context, context.l10n.setupUnableToAccessFolder,
             tone: AppTone.danger);
       }
       return;
@@ -289,7 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     const SizedBox(height: AppTokens.s4),
                   ],
                   Text(
-                    context.l10n.homeTrackCount(songs.length),
+                    context.l10n.libraryTrackCount(songs.length),
                     style: AppTokens.meta(context),
                   ),
                   const SizedBox(height: AppTokens.s4),
@@ -438,7 +438,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 title: context.l10n.homeRemoveRecommendationTitle,
                 message:
                     context.l10n.homeRemoveRecommendationMessage(currentTitle),
-                confirmLabel: context.l10n.homeRemove,
+                confirmLabel: context.l10n.queueActionRemove,
                 isDanger: true,
               );
               if (confirmed == true) {
@@ -689,7 +689,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               top: AppTokens.s2,
                             ),
                             child: Text(
-                              context.l10n.homeTrackCount(songs.length),
+                              context.l10n.libraryTrackCount(songs.length),
                               style: AppTokens.meta(context),
                             ),
                           ),

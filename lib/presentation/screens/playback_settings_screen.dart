@@ -147,7 +147,7 @@ class _PlaybackSettingsScreenState
   }
 
   static String _fadeLabel(AppLocalizations l10n, double value) {
-    if (value == 0) return l10n.playbackValueOff;
+    if (value == 0) return l10n.setupOff;
     if (value >= 1.0) return l10n.playbackValueOneSecond;
     return l10n.playbackValueMilliseconds((value * 1000).round());
   }

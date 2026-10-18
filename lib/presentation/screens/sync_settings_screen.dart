@@ -56,7 +56,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       ),
       SyncCategory.favorites: (
         AppIcons.favorite,
-        l.syncFavorites,
+        l.libraryFavorites,
         l.syncFavoritesHint
       ),
       SyncCategory.suggestless: (
@@ -71,7 +71,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       ),
       SyncCategory.playlists: (
         AppIcons.playlist,
-        l.syncPlaylists,
+        l.playlistsTitle,
         l.syncPlaylistsHint
       ),
       SyncCategory.mergedSongs: (

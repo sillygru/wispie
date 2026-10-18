@@ -112,7 +112,7 @@ class _SyncAuthCardState extends State<SyncAuthCard> {
                   label: Text(context.l10n.actionCreate)),
               ButtonSegment(
                   value: SyncAuthMode.login,
-                  label: Text(context.l10n.syncModeLogIn)),
+                  label: Text(context.l10n.syncLogIn)),
               ButtonSegment(
                   value: SyncAuthMode.recover,
                   label: Text(context.l10n.syncModeRecover)),
@@ -300,7 +300,7 @@ class _RecoveryKeyRevealState extends State<RecoveryKeyReveal> {
           ),
           FilledButton(
             onPressed: _saved ? widget.onContinue : null,
-            child: Text(context.l10n.syncContinue),
+            child: Text(context.l10n.setupContinue),
           ),
         ],
       ),

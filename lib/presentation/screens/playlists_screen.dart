@@ -201,7 +201,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Text(context.l10n.playlistsLoadError('$e')),
+          child: Text(context.l10n.songListMergeError('$e')),
         ),
       ),
     );
@@ -292,7 +292,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(context.l10n.playlistsNameTitle),
+        title: Text(context.l10n.playlistNameHint),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -362,7 +362,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(context.l10n.playlistsRenameTitle),
+        title: Text(context.l10n.songListRenamePlaylist),
         content: TextField(
           controller: controller,
           autofocus: true,

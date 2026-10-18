@@ -21,7 +21,7 @@ class SearchFilterChips extends ConsumerWidget {
       child: Row(
         children: [
           AppChip(
-            label: context.l10n.searchFilterAll,
+            label: context.l10n.libraryAll,
             selected: filterState.all,
             onTap: () => notifier.selectFilter(SearchFilterType.all),
           ),
@@ -69,7 +69,7 @@ class CompactSearchFilterChips extends ConsumerWidget {
       runSpacing: AppTokens.s2,
       children: [
         AppChip(
-          label: context.l10n.searchFilterAll,
+          label: context.l10n.libraryAll,
           selected: filterState.all,
           onTap: () => notifier.selectFilter(SearchFilterType.all),
         ),

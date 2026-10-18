@@ -51,7 +51,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
         data: (allSongs) => _buildContent(context, userData, allSongs),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            Center(child: Text(context.l10n.mergedLoadError('$e'))),
+            Center(child: Text(context.l10n.songListMergeError('$e'))),
       ),
     );
   }
@@ -111,7 +111,7 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final result = await context.pushApp<Map<String, dynamic>>(
       SelectSongsScreen(
         songs: allSongs,
-        title: context.l10n.mergedSelectSongsTitle,
+        title: context.l10n.songListSelectSongsToMerge,
       ),
     );
     if (result != null && context.mounted) {

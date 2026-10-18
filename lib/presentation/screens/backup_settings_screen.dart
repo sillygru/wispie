@@ -45,7 +45,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       };
 
   Map<int, String> _deleteOptions(AppLocalizations l10n) => {
-        0: l10n.backupDeleteNever,
+        0: l10n.syncNever,
         7: l10n.backupDeleteAfterDays(7),
         14: l10n.backupDeleteAfterDays(14),
         30: l10n.backupDeleteAfterDays(30),
@@ -292,7 +292,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                   ),
                   const Divider(height: 24),
                   _buildExportCheckbox(
-                    title: l10n.backupContentCoverCache,
+                    title: l10n.storageCoverCacheTitle,
                     subtitle: l10n.backupContentCoverCacheSubtitle,
                     value: selectedTypes.contains(BackupContentType.coverCache),
                     onChanged: (value) {
@@ -306,7 +306,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: l10n.backupContentLibraryCache,
+                    title: l10n.storageLibraryCacheTitle,
                     subtitle: l10n.backupContentLibraryCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.libraryCache),
@@ -321,7 +321,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: l10n.backupContentSearchIndex,
+                    title: l10n.storageSearchIndexTitle,
                     subtitle: l10n.backupContentSearchIndexSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.searchIndex),
@@ -336,7 +336,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: l10n.backupContentWaveformCache,
+                    title: l10n.storageWaveformCacheTitle,
                     subtitle: l10n.backupContentWaveformCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.waveformCache),
@@ -351,7 +351,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: l10n.backupContentColorCache,
+                    title: l10n.storageColorCacheTitle,
                     subtitle: l10n.backupContentColorCacheSubtitle,
                     value: selectedTypes.contains(BackupContentType.colorCache),
                     onChanged: (value) {
@@ -365,7 +365,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: l10n.backupContentLyricsCache,
+                    title: l10n.storageLyricsCacheTitle,
                     subtitle: l10n.backupContentLyricsCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.lyricsCache),

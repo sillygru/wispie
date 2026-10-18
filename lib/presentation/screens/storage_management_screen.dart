@@ -833,7 +833,7 @@ class _StorageManagementScreenState
                 child: FilledButton.icon(
                   onPressed: onClear,
                   icon: const AppIcon(AppIcons.delete),
-                  label: Text(l10n.storageClear),
+                  label: Text(l10n.actionClear),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTokens.surface(2),
                     foregroundColor:

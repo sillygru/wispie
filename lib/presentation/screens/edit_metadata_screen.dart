@@ -1027,7 +1027,7 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
           .updateLyrics(currentSong, _controller.text);
       if (mounted) {
         Navigator.pop(context);
-        appSnack(context, l10n.metadataLyricsSaved);
+        appSnack(context, l10n.lyricsSaved);
       }
     } catch (e) {
       if (mounted) {

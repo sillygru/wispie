@@ -56,7 +56,7 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
             AppSettingsTile(
               icon: AppIcons.flashOn,
               searchId: 'appearance.quick_actions',
-              title: l10n.settingsSearchQuickActionsTitle,
+              title: l10n.quickActionsTitle,
               subtitle: l10n.settingsSearchQuickActionsSubtitle,
               onTap: () => context.pushApp(const QuickActionsSettingsScreen()),
             ),
@@ -69,7 +69,7 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
             AppSettingsSwitch(
               icon: AppIcons.autoAwesome,
               searchId: 'appearance.quick_picks',
-              title: l10n.settingsSearchQuickPicksTitle,
+              title: l10n.homeQuickPicks,
               subtitle: l10n.settingsSearchQuickPicksSubtitle,
               value: settings.showQuickPicks,
               onChanged: notifier.setShowQuickPicks,
@@ -77,7 +77,7 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
             AppSettingsSwitch(
               icon: AppIcons.clock,
               searchId: 'appearance.recent_queues',
-              title: l10n.settingsSearchRecentQueuesTitle,
+              title: l10n.homeRecentQueues,
               subtitle: l10n.settingsSearchRecentQueuesSubtitle,
               value: settings.showRecentQueues,
               onChanged: notifier.setShowRecentQueues,
@@ -85,7 +85,7 @@ class _HomeSettingsScreenState extends ConsumerState<HomeSettingsScreen> {
             AppSettingsSwitch(
               icon: AppIcons.explore,
               searchId: 'appearance.for_you',
-              title: l10n.settingsSearchForYouTitle,
+              title: l10n.homeForYou,
               subtitle: l10n.settingsSearchForYouSubtitle,
               value: settings.showForYou,
               onChanged: notifier.setShowForYou,

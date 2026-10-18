@@ -111,12 +111,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
         AppNavItem(
           icon: AppIcons.library,
           selectedIcon: AppIcons.library,
-          label: l10n.shellNavLibrary,
+          label: l10n.libraryTitle,
         ),
         AppNavItem(
           icon: AppIcons.person,
           selectedIcon: AppIcons.person,
-          label: l10n.shellNavProfile,
+          label: l10n.profileTitle,
         ),
       ];
   bool _isDrawerOpen = false;
@@ -687,8 +687,8 @@ class _WideNavDestination extends StatelessWidget {
   Widget build(BuildContext context) {
     final data = switch (index) {
       0 => (AppIcons.home, context.l10n.shellNavHome),
-      1 => (AppIcons.library, context.l10n.shellNavLibrary),
-      _ => (AppIcons.person, context.l10n.shellNavProfile),
+      1 => (AppIcons.library, context.l10n.libraryTitle),
+      _ => (AppIcons.person, context.l10n.profileTitle),
     };
     final iconColor = selected ? accent : AppTokens.fg(AppTokens.aTertiary);
     return Padding(

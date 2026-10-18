@@ -286,7 +286,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         if (hasSongActions)
           _sectionCard(
             icon: AppIcons.play,
-            title: l10n.songMenuPlayback,
+            title: l10n.settingsPagePlaybackTitle,
             subtitle: l10n.songMenuPlaybackHint,
             onTap: () => _goTo(_SongMenuView.playback),
           ),
@@ -294,7 +294,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         if (hasSongActions)
           _sectionCard(
             icon: AppIcons.folder,
-            title: l10n.songMenuLibrary,
+            title: l10n.libraryTitle,
             subtitle: l10n.songMenuLibraryHint,
             onTap: () => _goTo(_SongMenuView.library),
           ),
@@ -607,8 +607,9 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
                           Text(
                             switch (_view) {
                               _SongMenuView.root => l10n.songMenuTitle,
-                              _SongMenuView.playback => l10n.songMenuPlayback,
-                              _SongMenuView.library => l10n.songMenuLibrary,
+                              _SongMenuView.playback =>
+                                l10n.settingsPagePlaybackTitle,
+                              _SongMenuView.library => l10n.libraryTitle,
                               _SongMenuView.personalize =>
                                 l10n.songMenuPersonalize,
                               _SongMenuView.danger => l10n.songMenuDanger,

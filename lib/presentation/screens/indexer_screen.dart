@@ -226,8 +226,8 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     } else if (isRunning) {
       subtitle = l10n.indexerProcessing(operation.progressText);
     } else if (hasError) {
-      subtitle =
-          l10n.indexerError(operation.errorMessage ?? l10n.indexerUnknownError);
+      subtitle = l10n.songListMergeError(
+          operation.errorMessage ?? l10n.indexerUnknownError);
     } else if (isCompleted) {
       if (operation.isDatabaseOperation ||
           operation.isRecommendationOperation) {
@@ -612,7 +612,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         icon: const AppIcon(AppIcons.refresh, color: AppTokens.info, size: 48),
-        title: Text(context.l10n.indexerRestartRequiredTitle),
+        title: Text(context.l10n.backupRestartTitle),
         content: Text(context.l10n.indexerRestartRequiredMessage),
         actions: [
           FilledButton(
@@ -620,7 +620,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               Navigator.pop(context);
               _restartApp();
             },
-            child: Text(context.l10n.indexerRestartNow),
+            child: Text(context.l10n.backupRestartNow),
           ),
         ],
       ),
@@ -747,7 +747,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               if (warnings.length > 10) ...[
                 const SizedBox(height: 8),
                 Text(
-                  context.l10n.indexerMoreItems(warnings.length - 10),
+                  context.l10n.metaMoreItems(warnings.length - 10),
                   style: TextStyle(
                     color: AppTokens.fgTertiary,
                     fontStyle: FontStyle.italic,

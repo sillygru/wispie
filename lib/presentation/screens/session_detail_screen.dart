@@ -118,7 +118,7 @@ class SessionDetailScreen extends ConsumerWidget {
                 value: '${session.songCount}',
                 label: session.songCount == 1
                     ? context.l10n.sessionSongSingular
-                    : context.l10n.sessionSongPlural,
+                    : context.l10n.gradientDetailSongs,
                 colorScheme: colorScheme,
               ),
               Container(
@@ -405,7 +405,7 @@ class SessionDetailScreen extends ConsumerWidget {
                   _repeatQueue(context, ref, events, whenSongEnds: true),
               icon: const AppIcon(AppIcons.skipNext),
               label: Text(
-                context.l10n.sessionPlayAfterCurrent,
+                context.l10n.homePlayAfterCurrent,
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
               style: FilledButton.styleFrom(
@@ -484,8 +484,8 @@ class SessionDetailScreen extends ConsumerWidget {
     final mins = (seconds / 60).floor();
     final secs = (seconds % 60).floor();
     if (mins > 0) {
-      return context.l10n.sessionDurationMinutes(mins, secs);
+      return context.l10n.settingsDurationMinutesSeconds(mins, secs);
     }
-    return context.l10n.sessionDurationSeconds(secs);
+    return context.l10n.playbackSecondsValue(secs.toString());
   }
 }

@@ -122,21 +122,21 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
               if (databaseCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  l10n.importSectionDatabase,
+                  l10n.storageDatabaseTitle,
                   databaseCategoriesAvailable,
                   AppIcons.storage,
                 ),
               if (storageCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  l10n.importSectionStorage,
+                  l10n.settingsPageStorageTitle,
                   storageCategoriesAvailable,
                   AppIcons.folder,
                 ),
               if (settingsCategoriesAvailable.isNotEmpty)
                 _buildCategorySection(
                   context,
-                  l10n.importSectionSettings,
+                  l10n.settingsTitle,
                   settingsCategoriesAvailable,
                   AppIcons.settings,
                 ),
@@ -193,7 +193,7 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
                   );
                   Navigator.of(context).pop(options);
                 },
-          child: Text(l10n.importRestoreAction),
+          child: Text(l10n.backupActionRestore),
         ),
       ],
     );
@@ -230,11 +230,11 @@ class _ImportOptionsDialogState extends State<ImportOptionsDialog> {
               const Spacer(),
               TextButton(
                 onPressed: () => _selectAll(availableCategories),
-                child: Text(context.l10n.importSelectAll),
+                child: Text(context.l10n.libraryAll),
               ),
               TextButton(
                 onPressed: () => _deselectAll(availableCategories),
-                child: Text(context.l10n.importSelectNone),
+                child: Text(context.l10n.settingsValueNone),
               ),
             ],
           ),

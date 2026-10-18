@@ -217,9 +217,9 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     final mins = (totalSeconds % 3600) ~/ 60;
     String durationStr;
     if (hours > 0) {
-      durationStr = context.l10n.playHistoryDurationHours(hours, mins);
+      durationStr = context.l10n.statsDurationHoursMinutes(hours, mins);
     } else {
-      durationStr = context.l10n.playHistoryDurationMinutes(mins);
+      durationStr = context.l10n.statsDurationMinutes(mins);
     }
 
     return Column(
@@ -240,8 +240,8 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     Map<String, dynamic> event,
     Map<String, Song> songMap,
   ) {
-    final filename = event['song_filename'] as String? ??
-        context.l10n.playHistoryUnknownSong;
+    final filename =
+        event['song_filename'] as String? ?? context.l10n.aboutUnknown;
     final song = songMap[filename];
     final timestamp = (event['timestamp'] as num?)?.toDouble() ?? 0;
     final date =

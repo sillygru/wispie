@@ -60,7 +60,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   static (String, String) _localizedPage(AppLocalizations l, int i) =>
       switch (i) {
-        0 => (l.settingsPageLibraryTitle, l.settingsPageLibrarySubtitle),
+        0 => (l.libraryTitle, l.settingsPageLibrarySubtitle),
         1 => (l.settingsPagePlaybackTitle, l.settingsPagePlaybackSubtitle),
         2 => (l.settingsPageLyricsTitle, l.settingsPageLyricsSubtitle),
         3 => (l.settingsPageAppearanceTitle, l.settingsPageAppearanceSubtitle),
@@ -374,14 +374,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return AppSettingsList(children: [
       AppSettingsGroup(
-        label: l10n.settingsGroupListening,
+        label: l10n.statsTitle,
         children: [
           tile(1, () => const PlaybackSettingsScreen()),
           tile(2, () => const LyricsSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: l10n.settingsGroupLibrary,
+        label: l10n.libraryTitle,
         children: [
           tile(0, () => const LibrarySettingsScreen()),
         ],
@@ -522,7 +522,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
       highlightId: highlightId,
       children: [
         AppSettingsGroup(
-          label: l10n.settingsGroupLibrary,
+          label: l10n.libraryTitle,
           icon: AppIcons.library,
           children: [
             AppSettingsTile(
@@ -620,7 +620,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
     );
     if (embedded) return content;
     return AmbientScaffold(
-      appBar: AppTopBar(title: l10n.settingsPageLibraryTitle),
+      appBar: AppTopBar(title: l10n.libraryTitle),
       body: content,
     );
   }

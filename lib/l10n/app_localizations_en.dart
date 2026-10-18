@@ -9,19 +9,10 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get settingsAppearanceTitle => 'Appearance';
-
-  @override
-  String get settingsLanguageGroup => 'Language';
-
-  @override
   String get settingsLanguageTitle => 'Language';
 
   @override
   String get settingsTitle => 'Settings';
-
-  @override
-  String get settingsPageLibraryTitle => 'Library';
 
   @override
   String get settingsPageLibrarySubtitle => 'Folders, filters, scanning';
@@ -271,13 +262,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get songMenuTitle => 'Song Options';
 
   @override
-  String get songMenuPlayback => 'Playback';
-
-  @override
   String get songMenuPlaybackHint => 'Queue, playlist, and share actions';
-
-  @override
-  String get songMenuLibrary => 'Library';
 
   @override
   String get songMenuLibraryHint => 'Move song and edit metadata';
@@ -427,9 +412,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get bulkShare => 'Share';
-
-  @override
   String bulkSongsCount(int count) {
     return '$count songs';
   }
@@ -486,9 +468,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get queueTabHistory => 'History';
-
-  @override
-  String get queueActionPlay => 'Play';
 
   @override
   String get queueActionMoveToTop => 'Move to top';
@@ -613,17 +592,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyDayEarlier => 'Earlier';
-
-  @override
-  String snapshotTrackCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count tracks',
-      one: '1 track',
-    );
-    return '$_temp0';
-  }
 
   @override
   String get snapshotShuffledQueue => 'Shuffled queue';
@@ -770,9 +738,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncPlayStatsHint => 'Listening history and play counts';
 
   @override
-  String get syncFavorites => 'Favorites';
-
-  @override
   String get syncFavoritesHint => 'Favorite songs';
 
   @override
@@ -783,9 +748,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncHiddenSongs => 'Hidden songs';
-
-  @override
-  String get syncPlaylists => 'Playlists';
 
   @override
   String get syncPlaylistsHint => 'All playlists';
@@ -1020,9 +982,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Bars over the artwork while playing — synced follows the song, bass on the left';
 
   @override
-  String get appearanceVisualizerOff => 'Off';
-
-  @override
   String get appearanceVisualizerClassic => 'Classic';
 
   @override
@@ -1234,9 +1193,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupFrequencyEvery7Days => 'Every 7 days';
 
   @override
-  String get backupDeleteNever => 'Never';
-
-  @override
   String backupDeleteAfterDays(int count) {
     return '$count days';
   }
@@ -1268,37 +1224,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'Theme, sort order, preferences';
 
   @override
-  String get backupContentCoverCache => 'Cover Cache';
-
-  @override
   String get backupContentCoverCacheSubtitle => 'Album artwork images';
-
-  @override
-  String get backupContentLibraryCache => 'Library Cache';
 
   @override
   String get backupContentLibraryCacheSubtitle => 'Cached song metadata';
 
   @override
-  String get backupContentSearchIndex => 'Search Index';
-
-  @override
   String get backupContentSearchIndexSubtitle => 'Indexed search data';
-
-  @override
-  String get backupContentWaveformCache => 'Waveform Cache';
 
   @override
   String get backupContentWaveformCacheSubtitle => 'Audio waveform data';
 
   @override
-  String get backupContentColorCache => 'Color Cache';
-
-  @override
   String get backupContentColorCacheSubtitle => 'Album color themes';
-
-  @override
-  String get backupContentLyricsCache => 'Lyrics Cache';
 
   @override
   String get backupContentLyricsCacheSubtitle => 'Stored lyrics data';
@@ -1575,9 +1513,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get metadataLyricsSaved => 'Lyrics saved';
-
-  @override
   String metadataLyricsSaveError(Object error) {
     return 'Error saving lyrics: $error';
   }
@@ -1779,9 +1714,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storageBlurredCacheSubtitle => 'Pre-generated blurred backgrounds';
-
-  @override
-  String get storageClear => 'Clear';
 
   @override
   String get storageClearCache => 'Clear Cache';
@@ -2008,9 +1940,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsSearchIndexerTitle => 'Indexer';
-
-  @override
   String get settingsSearchIndexerSubtitle => 'Rebuild indexes and caches';
 
   @override
@@ -2109,42 +2038,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Ease the volume down when playback stops';
 
   @override
-  String get settingsSearchRichSyncTitle => 'Simulate Word Sync';
-
-  @override
-  String get settingsSearchRichSyncSubtitle =>
-      'Generate word-level timing from line-synced lyrics using prosodic estimation';
-
-  @override
-  String get settingsSearchSidebarTitle => 'Lyrics & Queue Sidebar';
-
-  @override
-  String get settingsSearchSidebarSubtitle =>
-      'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden';
-
-  @override
-  String get settingsSearchKeepAwakeTitle => 'Keep Screen Awake on Lyrics';
-
-  @override
-  String get settingsSearchKeepAwakeSubtitle =>
-      'Prevent sleep while the lyrics pane is open';
-
-  @override
-  String get settingsSearchAutoTranslateTitle => 'Auto-Translate Lyrics';
-
-  @override
-  String get settingsSearchAutoTranslateSubtitle =>
-      'Automatically translate lyrics using selected target language';
-
-  @override
-  String get settingsSearchTargetLangTitle => 'Target Language';
-
-  @override
   String get settingsSearchTargetLangSubtitle =>
       'Language to translate lyrics into';
-
-  @override
-  String get settingsSearchTranslationModeTitle => 'Translation Display';
 
   @override
   String get settingsSearchTranslationModeSubtitle =>
@@ -2199,27 +2094,15 @@ class AppLocalizationsEn extends AppLocalizations {
       'Compensate for Bluetooth output latency';
 
   @override
-  String get settingsSearchQuickPicksTitle => 'Quick Picks';
-
-  @override
   String get settingsSearchQuickPicksSubtitle =>
       'Show quick pick recommendations';
-
-  @override
-  String get settingsSearchRecentQueuesTitle => 'Recent Queues';
 
   @override
   String get settingsSearchRecentQueuesSubtitle =>
       'Show recently played queues';
 
   @override
-  String get settingsSearchForYouTitle => 'For You';
-
-  @override
   String get settingsSearchForYouSubtitle => 'Show recommended playlists';
-
-  @override
-  String get settingsSearchQuickActionsTitle => 'Quick Actions';
 
   @override
   String get settingsSearchQuickActionsSubtitle =>
@@ -2527,12 +2410,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupUnableToAccessFolder => 'Unable to access selected folder';
 
   @override
-  String get setupFolderAdded => 'Music folder added';
-
-  @override
-  String get setupFolderRemoved => 'Music folder removed';
-
-  @override
   String get setupStoragePermissionRequired =>
       'Storage permission is required to scan your music library.';
 
@@ -2770,9 +2647,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get backupDiffSongs => 'Songs';
-
-  @override
   String get backupDiffStatsRows => 'Stats Rows';
 
   @override
@@ -2817,9 +2691,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupActionRestore => 'Restore';
 
   @override
-  String get backupActionExport => 'Export';
-
-  @override
   String get backupActionCompare => 'Compare';
 
   @override
@@ -2831,9 +2702,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupRestartNow => 'Restart Now';
-
-  @override
-  String get backupDialogTitle => 'Create Backup';
 
   @override
   String get backupSelectContentSubtitle => 'Select content to backup';
@@ -2885,15 +2753,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importSelectTitle => 'Select Data to Restore';
 
   @override
-  String get importSectionDatabase => 'Database';
-
-  @override
-  String get importSectionStorage => 'Storage';
-
-  @override
-  String get importSectionSettings => 'Settings';
-
-  @override
   String get importSectionCache => 'Cache';
 
   @override
@@ -2907,15 +2766,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Clear existing data before restoring';
 
   @override
-  String get importRestoreAction => 'Restore';
-
-  @override
-  String get importSelectAll => 'All';
-
-  @override
-  String get importSelectNone => 'None';
-
-  @override
   String get syncEnterPassword => 'Enter your password';
 
   @override
@@ -2925,9 +2775,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncUsernameTaken => 'That username is already taken';
-
-  @override
-  String get syncModeLogIn => 'Log in';
 
   @override
   String get syncModeRecover => 'Recover';
@@ -2981,9 +2828,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncRecoveryKeySavedCheckbox => 'I saved my recovery key';
-
-  @override
-  String get syncContinue => 'Continue';
 
   @override
   String get syncUploadTitle => 'Upload your library data';
@@ -3103,9 +2947,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get autoBackupFailedTitle => 'Auto-Backup Failed';
 
   @override
-  String get autoBackupUnknownError => 'Unknown error';
-
-  @override
   String get autoBackupPermissionTitle => 'Permission Required';
 
   @override
@@ -3127,9 +2968,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get downgradeRiskIt => 'Risk it';
-
-  @override
-  String get downgradeUpdate => 'Update';
 
   @override
   String get indexerSettingsGroupTitle => 'Indexer Settings';
@@ -3183,11 +3021,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String indexerProcessing(String progress) {
     return 'Processing $progress...';
-  }
-
-  @override
-  String indexerError(String error) {
-    return 'Error: $error';
   }
 
   @override
@@ -3252,14 +3085,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get indexerDoNotClose => 'Please do not close the app';
 
   @override
-  String get indexerRestartRequiredTitle => 'Restart Required';
-
-  @override
   String get indexerRestartRequiredMessage =>
       'The operation has been completed successfully.\n\nThe app needs to restart to apply all changes properly.';
-
-  @override
-  String get indexerRestartNow => 'Restart Now';
 
   @override
   String indexerFailedItemsTitle(int count) {
@@ -3279,11 +3106,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String indexerWarningsTitle(String name) {
     return '$name Warnings';
-  }
-
-  @override
-  String indexerMoreItems(int count) {
-    return '... and $count more';
   }
 
   @override
@@ -3326,12 +3148,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libraryFoldersTab => 'Folders';
 
   @override
-  String get libraryArtistsTab => 'Artists';
-
-  @override
-  String get libraryAlbumsTab => 'Albums';
-
-  @override
   String get libraryNoMusicFolderTitle => 'No music folder yet';
 
   @override
@@ -3369,9 +3185,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libraryFavorites => 'Favorites';
 
   @override
-  String get libraryMergedSongs => 'Merged Songs';
-
-  @override
   String libraryMergedGroupsCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -3384,14 +3197,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryCreateMergeGroupTooltip => 'Create new merge group';
-
-  @override
-  String get librarySelectSongsToMerge => 'Select Songs to Merge';
-
-  @override
-  String libraryMergedCount(int count) {
-    return 'Merged $count songs';
-  }
 
   @override
   String get libraryDeletePlaylist => 'Delete playlist';
@@ -3451,9 +3256,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get actionSeeAll => 'See All';
 
   @override
-  String get homeFolderAccessError => 'Unable to access selected folder';
-
-  @override
   String homeQueueCardSubtitle(String date, int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -3462,17 +3264,6 @@ class AppLocalizationsEn extends AppLocalizations {
       one: '1 track',
     );
     return '$date · $_temp0';
-  }
-
-  @override
-  String homeTrackCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count tracks',
-      one: '1 track',
-    );
-    return '$_temp0';
   }
 
   @override
@@ -3533,9 +3324,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get homeRemove => 'Remove';
-
-  @override
   String get homeErrorTitle => 'Something went wrong';
 
   @override
@@ -3561,11 +3349,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeForYou => 'For You';
 
   @override
-  String mergedLoadError(String error) {
-    return 'Error: $error';
-  }
-
-  @override
   String get mergedTitle => 'Merged Songs';
 
   @override
@@ -3580,9 +3363,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String mergedAutoFindTab(int count) {
     return 'Auto-Find ($count)';
   }
-
-  @override
-  String get mergedSelectSongsTitle => 'Select Songs to Merge';
 
   @override
   String mergedCreatedSnack(int count) {
@@ -3734,26 +3514,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sleepTimerDurationLabel => 'Duration';
 
   @override
-  String sleepTimerMinutesValue(int minutes) {
-    return '$minutes min';
-  }
-
-  @override
   String get sleepTimerMinSuffix => 'min';
 
   @override
   String get sleepTimerTracksLabel => 'Number of Tracks';
-
-  @override
-  String sleepTimerTracksValue(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count tracks',
-      one: '1 track',
-    );
-    return '$_temp0';
-  }
 
   @override
   String get sleepTimerLoopTitle => 'Loop Current Song';
@@ -3856,9 +3620,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get settingsGroupListening => 'Listening';
-
-  @override
   String get settingsGroupLookAndFeel => 'Look & Feel';
 
   @override
@@ -3866,9 +3627,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsGroupApp => 'App';
-
-  @override
-  String get settingsGroupLibrary => 'Library';
 
   @override
   String get settingsGroupFilters => 'Filters';
@@ -3926,9 +3684,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get playbackValueOff => 'Off';
-
-  @override
   String get playbackValueOneSecond => '1.0 s';
 
   @override
@@ -3975,16 +3730,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bulkRenameTitle => 'Bulk Rename';
 
   @override
-  String get bulkRenameFormatTitle => 'Title';
-
-  @override
   String get bulkRenameFormatArtistTitle => 'Artist - Title';
 
   @override
   String get bulkRenameFormatArtistAlbumTitle => 'Artist - Album - Title';
-
-  @override
-  String get bulkRenameFormatCustom => 'Custom';
 
   @override
   String get bulkRenameCustomSubtitle => 'Your own arrangement';
@@ -4001,9 +3750,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get bulkRenameEmptySegments =>
       'Add a field below to start building a name.';
-
-  @override
-  String get bulkRenameRemoveToken => 'Remove';
 
   @override
   String get bulkRenameLiteralHint => 'Text, e.g. \" - \"';
@@ -4106,9 +3852,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shuffleDiscard => 'Discard';
 
   @override
-  String get shuffleSave => 'Save';
-
-  @override
   String get shuffleTitle => 'Custom Shuffle Settings';
 
   @override
@@ -4159,9 +3902,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shuffleWeightMostPlayed => 'Most Played Songs';
-
-  @override
-  String get shuffleWeightFavorites => 'Favorites';
 
   @override
   String get shuffleWeightSuggestLess => 'Suggest Less Songs';
@@ -4314,9 +4054,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String lyricsTranslationFailed(Object error) {
     return 'Translation failed: $error';
   }
-
-  @override
-  String get lyricsRetry => 'Retry';
 
   @override
   String get lyricsHideTimingTooltip => 'Hide lyric timing';
@@ -4531,9 +4268,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get foldersShortcutStorageRoot => 'Storage Root';
 
   @override
-  String get foldersShortcutHome => 'Home';
-
-  @override
   String get foldersShortcutDownloads => 'Downloads';
 
   @override
@@ -4586,11 +4320,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get foldersRoot => 'Root';
-
-  @override
-  String foldersError(String error) {
-    return 'Error: $error';
-  }
 
   @override
   String get foldersMoveFolder => 'Move Folder';
@@ -4651,11 +4380,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String playlistsLoadError(String error) {
-    return 'Error: $error';
-  }
-
-  @override
   String get playlistsEmptyTitle => 'No playlists yet';
 
   @override
@@ -4663,13 +4387,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Create your first playlist to get started';
 
   @override
-  String get playlistsNameTitle => 'Playlist Name';
-
-  @override
   String get playlistsNameHint => 'Enter playlist name';
-
-  @override
-  String get playlistsRenameTitle => 'Rename Playlist';
 
   @override
   String get statsTitle => 'Listening';
@@ -4813,11 +4531,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statsLoadError => 'Could not load your stats';
 
   @override
-  String statsDurationSeconds(int seconds) {
-    return '${seconds}s';
-  }
-
-  @override
   String statsDurationMinutes(int minutes) {
     return '${minutes}m';
   }
@@ -4863,9 +4576,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sessionSongSingular => 'Song';
 
   @override
-  String get sessionSongPlural => 'Songs';
-
-  @override
   String get sessionSongsPlayed => 'Songs Played';
 
   @override
@@ -4873,9 +4583,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sessionRepeatNow => 'Repeat Queue Now';
-
-  @override
-  String get sessionPlayAfterCurrent => 'Play After Current Song';
 
   @override
   String get sessionNoSongsAvailable => 'No songs available to play';
@@ -4903,16 +4610,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String sessionDurationMinutes(int minutes, int seconds) {
-    return '${minutes}m ${seconds}s';
-  }
-
-  @override
-  String sessionDurationSeconds(int seconds) {
-    return '${seconds}s';
-  }
-
-  @override
   String get sessionHistoryTitle => 'Session History';
 
   @override
@@ -4924,17 +4621,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sessionEmptyMessage =>
       'Start listening to build your session history';
-
-  @override
-  String sessionSongCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count songs',
-      one: '1 song',
-    );
-    return '$_temp0';
-  }
 
   @override
   String get playHistoryTitle => 'Song History';
@@ -4962,19 +4648,6 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0 · $duration';
   }
-
-  @override
-  String playHistoryDurationHours(int hours, int minutes) {
-    return '${hours}h ${minutes}m';
-  }
-
-  @override
-  String playHistoryDurationMinutes(int minutes) {
-    return '${minutes}m';
-  }
-
-  @override
-  String get playHistoryUnknownSong => 'Unknown';
 
   @override
   String playHistoryDate(String month, int day, int year) {
@@ -5054,17 +4727,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String searchTrackCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count tracks',
-      one: '1 track',
-    );
-    return '$_temp0';
-  }
-
-  @override
   String searchAlbumSubtitle(String artist, int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -5073,17 +4735,6 @@ class AppLocalizationsEn extends AppLocalizations {
       one: '1 track',
     );
     return '$artist · $_temp0';
-  }
-
-  @override
-  String searchSongCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count songs',
-      one: '1 song',
-    );
-    return '$_temp0';
   }
 
   @override
@@ -5168,12 +4819,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shellNavHome => 'Home';
 
   @override
-  String get shellNavLibrary => 'Library';
-
-  @override
-  String get shellNavProfile => 'Profile';
-
-  @override
   String get shellSearchTooltip => 'Search (Ctrl+K)';
 
   @override
@@ -5193,9 +4838,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get playerNothingPlaying => 'Nothing playing';
-
-  @override
-  String get playerPaneLyrics => 'Lyrics';
 
   @override
   String get playerPanePlayer => 'Player';
@@ -5280,9 +4922,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sortRecommended => 'Recommended';
 
   @override
-  String get searchFilterAll => 'All';
-
-  @override
   String get searchFilterArtists => 'Artists';
 
   @override
@@ -5334,13 +4973,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String waveformDeltaSeconds(String value) {
-    return '${value}s';
+  String waveformDeltaMinutes(String minutes, String seconds) {
+    return '${minutes}m ${seconds}s';
   }
 
   @override
-  String waveformDeltaMinutes(String minutes, String seconds) {
-    return '${minutes}m ${seconds}s';
+  String waveformDeltaSeconds(String value) {
+    return '${value}s';
   }
 
   @override
@@ -5364,9 +5003,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lyricsTimingTitle => 'Lyric timing';
 
   @override
-  String get lyricsTimingEarlier => 'Earlier';
-
-  @override
   String get lyricsTimingLater => 'Later';
 
   @override
@@ -5384,16 +5020,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get lyricsTimingResetTooltip => 'Double-tap to reset to 0.00';
 
   @override
-  String get nowPlayingShowArtwork => 'Show artwork';
-
-  @override
-  String get nowPlayingShowVideo => 'Show video';
-
-  @override
   String get quickActionsTitle => 'Quick Actions';
-
-  @override
-  String get quickActionsReset => 'Reset';
 
   @override
   String get quickActionsResetDone => 'Reset to defaults';
@@ -5409,40 +5036,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get quickActionsPlayNext => 'Play Next';
-
-  @override
   String get quickActionsGoToAlbum => 'Go to Album';
 
   @override
   String get quickActionsGoToArtist => 'Go to Artist';
-
-  @override
-  String get quickActionsMoveToFolder => 'Move to Folder';
-
-  @override
-  String get quickActionsAddToPlaylist => 'Add to Playlist';
-
-  @override
-  String get quickActionsShare => 'Share';
-
-  @override
-  String get quickActionsAddToNewPlaylist => 'Add to New Playlist';
-
-  @override
-  String get quickActionsEditMetadata => 'Edit Metadata';
-
-  @override
-  String get quickActionsFavorite => 'Favorite';
-
-  @override
-  String get quickActionsSuggestLess => 'Suggest Less';
-
-  @override
-  String get quickActionsDelete => 'Delete';
-
-  @override
-  String get quickActionsHide => 'Hide';
 
   @override
   String get updateAvailableTitle => 'Update Available';
@@ -5451,17 +5048,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateCurrentLabel => 'Current';
 
   @override
-  String get updateNewLabel => 'New';
-
-  @override
   String get updateAvailableBody =>
       'A newer version of wispie is ready to download.';
 
   @override
   String get updateSkipVersion => 'Skip this version';
-
-  @override
-  String get updateDownload => 'Download';
 
   @override
   String get updateWhatsNew => 'What\'s new?';
@@ -5474,12 +5065,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get wideTrackTime => 'Time';
-
-  @override
-  String get floatingDockPlay => 'Play';
-
-  @override
-  String get floatingDockPause => 'Pause';
 
   @override
   String get floatingDockNext => 'Next';

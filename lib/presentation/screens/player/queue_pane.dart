@@ -415,7 +415,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             children: [
               Icon(Icons.play_arrow_rounded, size: 20),
               SizedBox(width: PlayerTokens.s2),
-              Text(l10n.queueActionPlay),
+              Text(l10n.songListPlay),
             ],
           ),
         ),
@@ -1377,7 +1377,7 @@ class _SnapshotCard extends ConsumerWidget {
     final total = DurationFormatter.formatTotalCompact(tracks);
     final count = snapshot.songFilenames.length;
     final meta = [
-      AppLocalizations.of(context).snapshotTrackCount(count),
+      AppLocalizations.of(context).libraryTrackCount(count),
       if (total.isNotEmpty) total,
     ].join(AppLocalizations.of(context).queueMetaSeparator);
 

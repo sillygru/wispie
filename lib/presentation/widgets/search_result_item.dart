@@ -343,7 +343,7 @@ class ArtistSearchResultItem extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        context.l10n.searchSongCount(songs.length),
+                        context.l10n.queueSongCount(songs.length),
                         style: TextStyle(
                           fontSize: 13,
                           color: theme.colorScheme.onSurfaceVariant,
@@ -429,7 +429,7 @@ class AlbumSearchResultItem extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        context.l10n.searchSongCount(songs.length),
+                        context.l10n.queueSongCount(songs.length),
                         style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant

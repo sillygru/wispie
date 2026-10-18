@@ -231,7 +231,7 @@ class SessionHistoryScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        context.l10n.sessionSongCount(session.songCount),
+                        context.l10n.queueSongCount(session.songCount),
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,

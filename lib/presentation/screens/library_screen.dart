@@ -277,8 +277,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       controller: DefaultTabController.of(context),
                       labels: [
                         context.l10n.libraryFoldersTab,
-                        context.l10n.libraryArtistsTab,
-                        context.l10n.libraryAlbumsTab,
+                        context.l10n.searchFilterArtists,
+                        context.l10n.gradientDetailAlbums,
                       ],
                       accent: AppTokens.accentOf(context, ref),
                     ),
@@ -435,7 +435,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 icon: AppIcons.merge,
                 color: AppTokens.accentOf(context, ref),
               ),
-              title: context.l10n.libraryMergedSongs,
+              title: context.l10n.mergedTitle,
               subtitle: context.l10n.libraryMergedGroupsCount(mergedCount),
               trailing: IconButton(
                 icon: const AppIcon(AppIcons.add),
@@ -444,7 +444,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   final result = await context.pushApp<Map<String, dynamic>>(
                     SelectSongsScreen(
                       songs: allSongs,
-                      title: context.l10n.librarySelectSongsToMerge,
+                      title: context.l10n.songListSelectSongsToMerge,
                     ),
                   );
                   if (result != null && context.mounted) {
@@ -459,7 +459,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         if (context.mounted) {
                           appSnack(
                             context,
-                            context.l10n.libraryMergedCount(selected.length),
+                            context.l10n.songListMergedSongs(selected.length),
                             tone: AppTone.success,
                           );
                         }

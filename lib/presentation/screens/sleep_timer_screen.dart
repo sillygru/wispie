@@ -66,7 +66,7 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
               _mode == SleepTimerMode.loopCurrent) ...[
             _buildStepperSection(
               label: context.l10n.sleepTimerDurationLabel,
-              valueLabel: context.l10n.sleepTimerMinutesValue(_minutes),
+              valueLabel: context.l10n.settingsDurationMinutes(_minutes),
               accent: accent,
               options: _minuteOptions,
               selected: _minutes,
@@ -80,7 +80,7 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
           if (_mode == SleepTimerMode.stopAfterTracks)
             _buildStepperSection(
               label: context.l10n.sleepTimerTracksLabel,
-              valueLabel: context.l10n.sleepTimerTracksValue(_tracks),
+              valueLabel: context.l10n.libraryTrackCount(_tracks),
               accent: accent,
               options: _trackOptions,
               selected: _tracks,

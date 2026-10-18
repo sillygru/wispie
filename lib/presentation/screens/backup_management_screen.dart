@@ -357,7 +357,8 @@ class _BackupManagementScreenState
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildDiffRow(context.l10n.backupDiffSongs, diff.songCountDiff),
+                _buildDiffRow(
+                    context.l10n.gradientDetailSongs, diff.songCountDiff),
                 const Divider(),
                 _buildDiffRow(
                     context.l10n.backupDiffStatsRows, diff.statsRowsDiff),
@@ -573,7 +574,7 @@ class _BackupManagementScreenState
                 children: [
                   const AppIcon(AppIcons.upload),
                   const SizedBox(width: 8),
-                  Text(context.l10n.backupActionExport),
+                  Text(context.l10n.metadataExport),
                 ],
               ),
             ),

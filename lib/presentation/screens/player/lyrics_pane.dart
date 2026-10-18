@@ -1154,7 +1154,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           context,
           context.l10n.lyricsTranslationFailed('$e'),
           tone: AppTone.danger,
-          actionLabel: context.l10n.lyricsRetry,
+          actionLabel: context.l10n.actionRetry,
           onAction: () => _performTranslation(lang),
           duration: const Duration(seconds: 5),
         );

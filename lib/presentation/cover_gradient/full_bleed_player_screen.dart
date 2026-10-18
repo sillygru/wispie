@@ -590,7 +590,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                 ),
                 child: PlayerSegmentedPill(
                   labels: <String>[
-                    context.l10n.playerPaneLyrics,
+                    context.l10n.settingsPageLyricsTitle,
                     context.l10n.playerPanePlayer,
                     context.l10n.playerPaneQueue,
                   ],
@@ -661,7 +661,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                             constraints: const BoxConstraints(maxWidth: 280),
                             child: PlayerSegmentedPill(
                               labels: <String>[
-                                context.l10n.playerPaneLyrics,
+                                context.l10n.settingsPageLyricsTitle,
                                 context.l10n.playerPaneQueue,
                               ],
                               position: _landscapePosition,

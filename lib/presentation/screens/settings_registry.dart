@@ -52,7 +52,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     // ------------------------------------------------------------------ pages
     SettingsDestination(
       icon: AppIcons.library,
-      title: l.settingsPageLibraryTitle,
+      title: l.libraryTitle,
       subtitle: l.settingsPageLibrarySubtitle,
       breadcrumb: l.settingsTitle,
       keywords: _kw(l.settingsKwLibrary),
@@ -116,7 +116,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     ),
     SettingsDestination(
       icon: AppIcons.dataObject,
-      title: l.settingsSearchIndexerTitle,
+      title: l.indexerTitle,
       subtitle: l.settingsSearchIndexerSubtitle,
       breadcrumb: l.settingsCrumbStorage,
       keywords: _kw(l.settingsKwIndexer),
@@ -214,8 +214,8 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.rich_sync',
       icon: AppIcons.autoAwesome,
-      title: l.settingsSearchRichSyncTitle,
-      subtitle: l.settingsSearchRichSyncSubtitle,
+      title: l.lyricsSimulateWordSyncTitle,
+      subtitle: l.lyricsSimulateWordSyncSubtitle,
       breadcrumb: l.settingsCrumbLyricsTiming,
       keywords: _kw(l.settingsKwRichSync),
       open: () => const LyricsSettingsScreen(highlightId: 'lyrics.rich_sync'),
@@ -223,8 +223,8 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.desktop_sidebar',
       icon: AppIcons.queue,
-      title: l.settingsSearchSidebarTitle,
-      subtitle: l.settingsSearchSidebarSubtitle,
+      title: l.lyricsDesktopSidebarTitle,
+      subtitle: l.lyricsDesktopSidebarSubtitle,
       breadcrumb: l.settingsCrumbLyricsTiming,
       keywords: _kw(l.settingsKwSidebar),
       open: () =>
@@ -233,8 +233,8 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.keep_screen_awake',
       icon: AppIcons.screenLock,
-      title: l.settingsSearchKeepAwakeTitle,
-      subtitle: l.settingsSearchKeepAwakeSubtitle,
+      title: l.lyricsKeepScreenAwakeTitle,
+      subtitle: l.lyricsKeepScreenAwakeSubtitle,
       breadcrumb: l.settingsCrumbLyricsTiming,
       keywords: _kw(l.settingsKwKeepAwake),
       open: () =>
@@ -243,8 +243,8 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.auto_translate',
       icon: AppIcons.translate,
-      title: l.settingsSearchAutoTranslateTitle,
-      subtitle: l.settingsSearchAutoTranslateSubtitle,
+      title: l.lyricsAutoTranslateTitle,
+      subtitle: l.lyricsAutoTranslateSubtitle,
       breadcrumb: l.settingsCrumbLyricsTranslation,
       keywords: _kw(l.settingsKwAutoTranslate),
       open: () =>
@@ -253,7 +253,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.target_lang',
       icon: AppIcons.translate,
-      title: l.settingsSearchTargetLangTitle,
+      title: l.lyricsTargetLanguageTitle,
       subtitle: l.settingsSearchTargetLangSubtitle,
       breadcrumb: l.settingsCrumbLyricsTranslation,
       keywords: _kw(l.settingsKwTargetLang),
@@ -262,7 +262,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'lyrics.translation_mode',
       icon: AppIcons.subtitles,
-      title: l.settingsSearchTranslationModeTitle,
+      title: l.lyricsTranslationDisplayTitle,
       subtitle: l.settingsSearchTranslationModeSubtitle,
       breadcrumb: l.settingsCrumbLyricsTranslation,
       keywords: _kw(l.settingsKwTranslationMode),
@@ -487,7 +487,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'appearance.quick_picks',
       icon: AppIcons.autoAwesome,
-      title: l.settingsSearchQuickPicksTitle,
+      title: l.homeQuickPicks,
       subtitle: l.settingsSearchQuickPicksSubtitle,
       breadcrumb: l.settingsCrumbHomeScreen,
       keywords: _kw(l.settingsKwQuickPicks),
@@ -497,7 +497,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'appearance.recent_queues',
       icon: AppIcons.clock,
-      title: l.settingsSearchRecentQueuesTitle,
+      title: l.homeRecentQueues,
       subtitle: l.settingsSearchRecentQueuesSubtitle,
       breadcrumb: l.settingsCrumbHomeScreen,
       keywords: _kw(l.settingsKwRecentQueues),
@@ -507,7 +507,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'appearance.for_you',
       icon: AppIcons.explore,
-      title: l.settingsSearchForYouTitle,
+      title: l.homeForYou,
       subtitle: l.settingsSearchForYouSubtitle,
       breadcrumb: l.settingsCrumbHomeScreen,
       keywords: _kw(l.settingsKwForYou),
@@ -516,7 +516,7 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
     SettingsDestination(
       anchorId: 'appearance.quick_actions',
       icon: AppIcons.flashOn,
-      title: l.settingsSearchQuickActionsTitle,
+      title: l.quickActionsTitle,
       subtitle: l.settingsSearchQuickActionsSubtitle,
       breadcrumb: l.settingsCrumbHomeLists,
       keywords: _kw(l.settingsKwQuickActions),
