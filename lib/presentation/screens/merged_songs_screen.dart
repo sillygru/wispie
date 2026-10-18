@@ -67,37 +67,40 @@ class _MergedSongsScreenState extends ConsumerState<MergedSongsScreen>
     final mergedCount = userData.mergedGroups.length;
     final candidateCount = candidateGroups.length;
 
-    return NestedScrollView(
-      headerSliverBuilder: (context, innerBoxIsScrolled) {
-        return [
-          SliverToBoxAdapter(
-            child: AppTopBar(
-              title: 'Merged Songs',
-              actions: [
-                IconButton(
-                  icon: const AppIcon(AppIcons.add),
-                  tooltip: 'Create merge group',
-                  onPressed: () => _openSelectSongsScreen(context, allSongs),
-                ),
-              ],
-              bottom: AppSegmentedTabs(
-                controller: _tabController,
-                labels: [
-                  'Groups ($mergedCount)',
-                  'Auto-Find ($candidateCount)',
-                ],
+    const topBarHeight = kToolbarHeight + 52;
+    return Column(
+      children: [
+        // AppBar needs a bounded height, which a Column does not provide.
+        SizedBox(
+          height: topBarHeight + MediaQuery.paddingOf(context).top,
+          child: AppTopBar(
+            title: 'Merged Songs',
+            actions: [
+              IconButton(
+                icon: const AppIcon(AppIcons.add),
+                tooltip: 'Create merge group',
+                onPressed: () => _openSelectSongsScreen(context, allSongs),
               ),
+            ],
+            bottom: AppSegmentedTabs(
+              controller: _tabController,
+              labels: [
+                'Groups ($mergedCount)',
+                'Auto-Find ($candidateCount)',
+              ],
             ),
           ),
-        ];
-      },
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildActiveGroupsTab(context, userData, allSongs),
-          _buildAutoFindTab(context, userData, candidateGroups),
-        ],
-      ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildActiveGroupsTab(context, userData, allSongs),
+              _buildAutoFindTab(context, userData, candidateGroups),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -2,38 +2,59 @@ import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/providers.dart';
+import '../../providers/settings_provider.dart';
+import '../../services/storage_service.dart';
+import '../components/app_icon.dart';
+import '../components/app_list_row.dart';
+import '../tokens/app_tokens.dart';
+import '../widgets/backup_options_dialog.dart';
 import '../../services/backup_service.dart';
 import '../../services/import_options.dart';
 import '../../presentation/widgets/import_options_dialog.dart';
 import '../../presentation/widgets/import_progress_dialog.dart';
 import 'backup_management_screen.dart';
-import 'bulk_rename_screen.dart';
-import 'storage_management_screen.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../components/app_feedback.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
 
-class DataManagementSettingsScreen extends ConsumerStatefulWidget {
+class BackupSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
   final String? highlightId;
 
   /// When true, renders content only for the wide master-detail pane.
   final bool embedded;
 
-  const DataManagementSettingsScreen(
+  const BackupSettingsScreen(
       {super.key, this.highlightId, this.embedded = false});
 
   @override
-  ConsumerState<DataManagementSettingsScreen> createState() =>
-      _DataManagementSettingsScreenState();
+  ConsumerState<BackupSettingsScreen> createState() =>
+      _BackupSettingsScreenState();
 }
 
-class _DataManagementSettingsScreenState
-    extends ConsumerState<DataManagementSettingsScreen> {
+class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
+  static const _frequencyOptions = {
+    0: 'Disabled',
+    24: 'Every 24 hours',
+    48: 'Every 48 hours',
+    72: 'Every 3 days',
+    168: 'Every 7 days',
+  };
+
+  static const _deleteOptions = {
+    0: 'Never',
+    7: '7 days',
+    14: '14 days',
+    30: '30 days',
+    90: '90 days',
+  };
+
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+
     final content = AppSettingsList(
       highlightId: widget.highlightId,
       children: [
@@ -77,28 +98,41 @@ class _DataManagementSettingsScreenState
           ],
         ),
         AppSettingsGroup(
-          label: 'Library Maintenance',
-          icon: AppIcons.edit,
+          label: 'Automatic Backups',
+          icon: AppIcons.cloudUpload,
           children: [
-            AppSettingsTile(
-              searchId: 'data.bulk_rename',
-              icon: AppIcons.edit,
-              title: 'Bulk Rename Files',
-              subtitle: 'Rename the whole library from a format',
-              onTap: () => context.pushApp(const BulkRenameScreen()),
+            _dropdownRow(
+              searchId: 'data.auto_backup',
+              icon: AppIcons.cloudUpload,
+              title: 'Auto Backup',
+              subtitle: 'How often a backup is taken',
+              value: settings.autoBackupFrequencyHours,
+              options: _frequencyOptions,
+              onChanged: (val) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setAutoBackupFrequencyHours(val);
+                await ref
+                    .read(autoBackupProvider.notifier)
+                    .setFrequencyHours(val);
+              },
             ),
-          ],
-        ),
-        AppSettingsGroup(
-          label: 'Storage',
-          icon: AppIcons.storage,
-          children: [
-            AppSettingsTile(
-              searchId: 'data.storage',
-              icon: AppIcons.storage,
-              title: 'Manage Storage',
-              subtitle: 'Disk usage and data management',
-              onTap: () => context.pushApp(const StorageManagementScreen()),
+            _contentTypeRow(context, ref),
+            _dropdownRow(
+              searchId: 'data.auto_delete_backups',
+              icon: AppIcons.delete,
+              title: 'Auto-Delete Old Backups',
+              subtitle: 'Discard backups older than this',
+              value: settings.autoBackupDeleteAfterDays,
+              options: _deleteOptions,
+              onChanged: (val) async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setAutoBackupDeleteAfterDays(val);
+                await ref
+                    .read(autoBackupProvider.notifier)
+                    .setDeleteAfterDays(val);
+              },
             ),
           ],
         ),
@@ -106,8 +140,82 @@ class _DataManagementSettingsScreenState
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Data Management'),
+      appBar: const AppTopBar(title: 'Backup & Restore'),
       body: content,
+    );
+  }
+
+  Widget _contentTypeRow(BuildContext context, WidgetRef ref) {
+    final accent = AppTokens.accentOf(context, ref);
+
+    return AppSettingsAnchor(
+      id: 'data.auto_backup_content',
+      child: AppListRow(
+        dense: true,
+        leading: AppRowIcon(icon: AppIcons.tune, color: accent, size: 40),
+        title: 'Auto Backup Content',
+        subtitle: 'What data is included in automatic backups',
+        trailing: AppIcon(AppIcons.chevronRight,
+            color: Theme.of(context).colorScheme.onSurfaceVariant),
+        onTap: () => _configureAutoContent(context),
+      ),
+    );
+  }
+
+  Future<void> _configureAutoContent(BuildContext context) async {
+    final storage = StorageService();
+    final initialTypes = await storage.loadAutoBackupContentTypes();
+
+    if (!context.mounted) return;
+
+    final options = await showDialog<BackupOptions>(
+      context: context,
+      builder: (context) => BackupOptionsDialog(
+        initialTypes: initialTypes,
+        title: 'Auto Backup Content',
+        subtitle: 'Select content for automatic backups',
+        buttonLabel: 'Save',
+        buttonIcon: AppIcons.save,
+      ),
+    );
+
+    if (options != null) {
+      await storage.saveAutoBackupContentTypes(options.contentTypes);
+    }
+  }
+
+  Widget _dropdownRow({
+    required String searchId,
+    required AppIconData icon,
+    required String title,
+    required String subtitle,
+    required int value,
+    required Map<int, String> options,
+    required ValueChanged<int> onChanged,
+  }) {
+    final accent = AppTokens.accentOf(context, ref);
+
+    return AppSettingsAnchor(
+      id: searchId,
+      child: AppListRow(
+        dense: true,
+        leading: AppRowIcon(icon: icon, color: accent, size: 40),
+        title: title,
+        subtitle: subtitle,
+        trailing: DropdownButton<int>(
+          value: value,
+          underline: const SizedBox.shrink(),
+          borderRadius: AppTokens.brMd,
+          style: AppTokens.rowSubtitle(context).copyWith(color: Colors.white),
+          items: options.entries
+              .map((entry) =>
+                  DropdownMenuItem(value: entry.key, child: Text(entry.value)))
+              .toList(),
+          onChanged: (val) {
+            if (val != null) onChanged(val);
+          },
+        ),
+      ),
     );
   }
 

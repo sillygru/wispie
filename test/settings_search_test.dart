@@ -49,10 +49,10 @@ void main() {
       expect(results.first.title, startsWith('Backup'));
       expect(
         results.map((e) => e.anchorId),
-        containsAll(['misc.auto_backup', 'data.export']),
+        containsAll(['data.auto_backup', 'data.export']),
       );
       expect(
-        results.indexWhere((e) => e.anchorId == 'misc.auto_backup'),
+        results.indexWhere((e) => e.anchorId == 'data.auto_backup'),
         lessThan(results.indexWhere((e) => e.anchorId == 'data.export')),
       );
     });
@@ -66,7 +66,7 @@ void main() {
     test('search is case-insensitive', () {
       expect(
         find('BACKUP').map((e) => e.anchorId),
-        contains('misc.auto_backup'),
+        contains('data.auto_backup'),
       );
     });
 

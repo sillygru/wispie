@@ -2,13 +2,9 @@ import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
-import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
-import '../dialogs/lyrics_translation_sheet.dart';
 import '../tokens/app_icons.dart';
-import '../tokens/app_tokens.dart';
-import '../utils/wide_layout.dart';
 
 class PlaybackSettingsScreen extends ConsumerStatefulWidget {
   /// Row to reveal when opened from settings search.
@@ -41,140 +37,6 @@ class _PlaybackSettingsScreenState
     final content = AppSettingsList(
       highlightId: widget.highlightId,
       children: [
-        AppSettingsGroup(
-          label: 'Lyrics',
-          icon: AppIcons.subtitles,
-          children: [
-            AppSettingsSwitch(
-              icon: AppIcons.autoAwesome,
-              searchId: 'playback.lyrics_rich_sync',
-              title: 'Simulate Word Sync',
-              subtitle:
-                  'Generate word-level timing from line-synced lyrics using prosodic estimation',
-              value: settings.lyricsSimulatedRichSyncEnabled,
-              onChanged: notifier.setLyricsSimulatedRichSyncEnabled,
-            ),
-            if (WideLayout.isWide(context))
-              AppSettingsSwitch(
-                icon: AppIcons.queue,
-                searchId: 'playback.desktop_sidebar',
-                title: 'Lyrics & Queue Sidebar',
-                subtitle:
-                    'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
-                value: settings.desktopSidebarEnabled,
-                onChanged: notifier.setDesktopSidebarEnabled,
-              ),
-            // Screen-wakelock is a phone concern; desktops manage sleep
-            // at the OS level.
-            if (!WideLayout.isWide(context))
-              AppSettingsSwitch(
-                icon: AppIcons.screenLock,
-                searchId: 'playback.keep_screen_awake',
-                title: 'Keep Screen Awake on Lyrics',
-                subtitle: 'Prevent sleep while the lyrics pane is open',
-                value: settings.keepScreenAwakeOnLyrics,
-                onChanged: notifier.setKeepScreenAwakeOnLyrics,
-              ),
-            AppSettingsSwitch(
-              icon: AppIcons.translate,
-              searchId: 'playback.lyrics_auto_translate',
-              title: 'Auto-Translate Lyrics',
-              subtitle:
-                  'Automatically translate lyrics using selected target language',
-              value: settings.lyricsAutoTranslate,
-              onChanged: notifier.setLyricsAutoTranslate,
-            ),
-            AppSettingsAnchor(
-              id: 'playback.lyrics_target_lang',
-              child: AppListRow(
-                dense: true,
-                leading: AppRowIcon(
-                  icon: AppIcons.translate,
-                  color: AppTokens.accentOf(context, ref),
-                  size: 40,
-                ),
-                title: 'Target Language',
-                subtitle: kSupportedTranslationLanguages[
-                        settings.lyricsTargetLanguage] ??
-                    settings.lyricsTargetLanguage.toUpperCase(),
-                trailing: DropdownButton<String>(
-                  value: kSupportedTranslationLanguages
-                          .containsKey(settings.lyricsTargetLanguage)
-                      ? settings.lyricsTargetLanguage
-                      : 'es',
-                  underline: const SizedBox.shrink(),
-                  borderRadius: AppTokens.brMd,
-                  items: kSupportedTranslationLanguages.entries
-                      .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(entry.value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) notifier.setLyricsTargetLanguage(val);
-                  },
-                ),
-              ),
-            ),
-            AppSettingsAnchor(
-              id: 'playback.lyrics_translation_mode',
-              child: AppListRow(
-                dense: true,
-                leading: AppRowIcon(
-                  icon: AppIcons.subtitles,
-                  color: AppTokens.accentOf(context, ref),
-                  size: 40,
-                ),
-                title: 'Translation Display',
-                subtitle: settings.lyricsTranslationMode == 'replace'
-                    ? 'Replace base lyrics'
-                    : 'Show subtext below lyrics',
-                trailing: DropdownButton<String>(
-                  value: settings.lyricsTranslationMode,
-                  underline: const SizedBox.shrink(),
-                  borderRadius: AppTokens.brMd,
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'subtext',
-                      child: Text('Subtext below'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'replace',
-                      child: Text('Replace base'),
-                    ),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) notifier.setLyricsTranslationMode(val);
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-        AppSettingsGroup(
-          label: 'Audio',
-          icon: AppIcons.playCircle,
-          children: [
-            AppSettingsSwitch(
-              icon: AppIcons.volumeOff,
-              searchId: 'playback.auto_pause_mute',
-              title: 'Auto-Pause on Mute',
-              subtitle: 'Pause playback when volume reaches 0',
-              value: settings.autoPauseOnVolumeZero,
-              onChanged: notifier.setAutoPauseOnVolumeZero,
-            ),
-            AppSettingsSwitch(
-              icon: AppIcons.volumeUp,
-              searchId: 'playback.auto_resume_unmute',
-              title: 'Auto-Resume on Unmute',
-              subtitle: 'Resume playback when volume is restored',
-              value: settings.autoResumeOnVolumeRestore,
-              onChanged: notifier.setAutoResumeOnVolumeRestore,
-            ),
-          ],
-        ),
         AppSettingsGroup(
           label: 'Transitions',
           icon: AppIcons.swapHoriz,
@@ -239,6 +101,28 @@ class _PlaybackSettingsScreenState
               max: 1,
               divisions: 20,
               onChanged: notifier.setPauseFadeDuration,
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Audio',
+          icon: AppIcons.playCircle,
+          children: [
+            AppSettingsSwitch(
+              icon: AppIcons.volumeOff,
+              searchId: 'playback.auto_pause_mute',
+              title: 'Auto-Pause on Mute',
+              subtitle: 'Pause playback when volume reaches 0',
+              value: settings.autoPauseOnVolumeZero,
+              onChanged: notifier.setAutoPauseOnVolumeZero,
+            ),
+            AppSettingsSwitch(
+              icon: AppIcons.volumeUp,
+              searchId: 'playback.auto_resume_unmute',
+              title: 'Auto-Resume on Unmute',
+              subtitle: 'Resume playback when volume is restored',
+              value: settings.autoResumeOnVolumeRestore,
+              onChanged: notifier.setAutoResumeOnVolumeRestore,
             ),
           ],
         ),

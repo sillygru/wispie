@@ -12,13 +12,16 @@ import '../tokens/app_tokens.dart';
 import '../../domain/services/settings_search_service.dart';
 import 'settings_registry.dart';
 import '../routes/app_page_route.dart';
+import 'bulk_rename_screen.dart';
 import 'folder_management_screen.dart';
+import '../../providers/providers.dart';
 import 'playback_settings_screen.dart';
 import 'appearance_settings_screen.dart';
-import 'data_management_settings_screen.dart';
-import 'misc_settings_screen.dart';
+import 'backup_settings_screen.dart';
 import 'about_settings_screen.dart';
-import 'indexer_screen.dart';
+import 'home_settings_screen.dart';
+import 'lyrics_settings_screen.dart';
+import 'storage_settings_screen.dart';
 import 'sync_settings_screen.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
@@ -40,16 +43,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _selected = 0;
   String? _detailHighlight;
 
-  static const _categoryTitles = [
-    'Library',
-    'Playback',
-    'Appearance',
-    'Sync',
-    'Data Management',
-    'Indexer',
-    'Misc',
-    'About',
+  static const _pages = [
+    _Page(AppIcons.library, 'Library', 'Folders, filters, scanning'),
+    _Page(AppIcons.playCircle, 'Playback', 'Transitions, fades, audio'),
+    _Page(AppIcons.subtitles, 'Lyrics', 'Word sync, translation, sidebar'),
+    _Page(AppIcons.palette, 'Appearance', 'Now playing, motion, app icon'),
+    _Page(AppIcons.home, 'Home & Navigation',
+        'Home sections, lists, quick actions'),
+    _Page(AppIcons.cloudUpload, 'Sync', 'Encrypted cross-device sync'),
+    _Page(AppIcons.upload, 'Backup & Restore',
+        'Export, import, automatic backups'),
+    _Page(AppIcons.storage, 'Storage', 'Disk usage, indexes, caches'),
+    _Page(AppIcons.info, 'About', 'Version, updates, release notes'),
   ];
+
+  static final _categoryTitles = [for (final p in _pages) p.title];
 
   @override
   void dispose() {
@@ -157,24 +165,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// rendered content-only via [embedded], so mobile behaviour is untouched.
   /// Search stays in the split: results replace the right pane, not the row.
   Widget _buildMasterDetail(BuildContext context, {bool searching = false}) {
-    final entries = [
-      (AppIcons.library, 'Library', 'Music folders, scanning'),
-      (AppIcons.playCircle, 'Playback', 'Audio settings, transitions'),
-      (AppIcons.palette, 'Appearance', 'Theme, display options'),
-      (AppIcons.cloudUpload, 'Sync', 'Encrypted cross-device sync'),
-      (
-        AppIcons.storage,
-        'Data Management',
-        'Backup, restore, storage, optimize'
-      ),
-      (
-        AppIcons.dataObject,
-        'Indexer',
-        'Manage and rebuild all app indexes and caches'
-      ),
-      (AppIcons.misc, 'Misc', 'Privacy, behavior'),
-      (AppIcons.info, 'About', 'Version, updates, release notes'),
-    ];
+    final entries = [for (final p in _pages) (p.icon, p.title, p.subtitle)];
     return WideContentCenter(
       maxWidth: WideLayout.maxContentWidth,
       child: Row(
@@ -235,63 +226,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       : IndexedStack(
                           index: _selected,
                           children: [
-                            KeyedSubtree(
-                              key: ValueKey(
-                                  'settings-detail-0-$_detailHighlight'),
-                              child: LibrarySettingsScreen(
-                                highlightId:
-                                    _selected == 0 ? _detailHighlight : null,
-                                embedded: true,
+                            for (final (i, build)
+                                in <(int, Widget Function(String?))>[
+                              (
+                                0,
+                                (h) => LibrarySettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
-                            ),
-                            KeyedSubtree(
-                              key: ValueKey(
-                                  'settings-detail-1-$_detailHighlight'),
-                              child: PlaybackSettingsScreen(
-                                highlightId:
-                                    _selected == 1 ? _detailHighlight : null,
-                                embedded: true,
+                              (
+                                1,
+                                (h) => PlaybackSettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
-                            ),
-                            KeyedSubtree(
-                              key: ValueKey(
-                                  'settings-detail-2-$_detailHighlight'),
-                              child: AppearanceSettingsScreen(
-                                highlightId:
-                                    _selected == 2 ? _detailHighlight : null,
-                                embedded: true,
+                              (
+                                2,
+                                (h) => LyricsSettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
-                            ),
-                            const KeyedSubtree(
-                              key: ValueKey('settings-detail-3'),
-                              child: SyncSettingsScreen(embedded: true),
-                            ),
-                            KeyedSubtree(
-                              key: ValueKey(
-                                  'settings-detail-4-$_detailHighlight'),
-                              child: DataManagementSettingsScreen(
-                                highlightId:
-                                    _selected == 4 ? _detailHighlight : null,
-                                embedded: true,
+                              (
+                                3,
+                                (h) => AppearanceSettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
-                            ),
-                            const KeyedSubtree(
-                              key: ValueKey('settings-detail-5'),
-                              child: IndexerScreen(embedded: true),
-                            ),
-                            KeyedSubtree(
-                              key: ValueKey(
-                                  'settings-detail-6-$_detailHighlight'),
-                              child: MiscSettingsScreen(
-                                highlightId:
-                                    _selected == 6 ? _detailHighlight : null,
-                                embedded: true,
+                              (
+                                4,
+                                (h) => HomeSettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
-                            ),
-                            const KeyedSubtree(
-                              key: ValueKey('settings-detail-7'),
-                              child: AboutSettingsScreen(embedded: true),
-                            ),
+                              (
+                                5,
+                                (_) => const SyncSettingsScreen(embedded: true)
+                              ),
+                              (
+                                6,
+                                (h) => BackupSettingsScreen(
+                                    highlightId: h, embedded: true)
+                              ),
+                              (
+                                7,
+                                (h) => StorageSettingsScreen(
+                                    highlightId: h, embedded: true)
+                              ),
+                              (
+                                8,
+                                (_) => const AboutSettingsScreen(embedded: true)
+                              ),
+                            ])
+                              KeyedSubtree(
+                                key: ValueKey(
+                                    'settings-detail-$i-$_detailHighlight'),
+                                child: build(
+                                    _selected == i ? _detailHighlight : null),
+                              ),
                           ],
                         ),
                 ),
@@ -351,77 +337,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildGroups(BuildContext context) {
+    Widget tile(int i, Widget Function() open) => AppSettingsTile(
+          icon: _pages[i].icon,
+          title: _pages[i].title,
+          subtitle: _pages[i].subtitle,
+          onTap: () => context.pushApp(open()),
+        );
+
     return AppSettingsList(children: [
       AppSettingsGroup(
-        label: 'Setup',
+        label: 'Listening',
         children: [
-          AppSettingsTile(
-            icon: AppIcons.library,
-            title: 'Library',
-            subtitle: 'Music folders, scanning',
-            onTap: () => context.pushApp(const LibrarySettingsScreen()),
-          ),
-          AppSettingsTile(
-            icon: AppIcons.playCircle,
-            title: 'Playback',
-            subtitle: 'Audio settings, transitions',
-            onTap: () => context.pushApp(const PlaybackSettingsScreen()),
-          ),
-          AppSettingsTile(
-            icon: AppIcons.palette,
-            title: 'Appearance',
-            subtitle: 'Theme, display options',
-            onTap: () => context.pushApp(const AppearanceSettingsScreen()),
-          ),
+          tile(1, () => const PlaybackSettingsScreen()),
+          tile(2, () => const LyricsSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: 'Sync',
+        label: 'Library',
         children: [
-          AppSettingsTile(
-            icon: AppIcons.cloudUpload,
-            title: 'Sync',
-            subtitle: 'Encrypted cross-device sync',
-            onTap: () => context.pushApp(const SyncSettingsScreen()),
-          ),
+          tile(0, () => const LibrarySettingsScreen()),
+        ],
+      ),
+      AppSettingsGroup(
+        label: 'Look & Feel',
+        children: [
+          tile(3, () => const AppearanceSettingsScreen()),
+          tile(4, () => const HomeSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
         label: 'Data',
         children: [
-          AppSettingsTile(
-            icon: AppIcons.storage,
-            title: 'Data Management',
-            subtitle: 'Backup, restore, storage, optimize',
-            onTap: () => context.pushApp(const DataManagementSettingsScreen()),
-          ),
-          AppSettingsTile(
-            icon: AppIcons.dataObject,
-            title: 'Indexer',
-            subtitle: 'Manage and rebuild all app indexes and caches',
-            onTap: () => context.pushApp(const IndexerScreen()),
-          ),
+          tile(5, () => const SyncSettingsScreen()),
+          tile(6, () => const BackupSettingsScreen()),
+          tile(7, () => const StorageSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
-        label: 'About',
+        label: 'App',
         children: [
-          AppSettingsTile(
-            icon: AppIcons.misc,
-            title: 'Misc',
-            subtitle: 'Privacy, behavior',
-            onTap: () => context.pushApp(const MiscSettingsScreen()),
-          ),
-          AppSettingsTile(
-            icon: AppIcons.info,
-            title: 'About',
-            subtitle: 'Version, updates, release notes',
-            onTap: () => context.pushApp(const AboutSettingsScreen()),
-          ),
+          tile(8, () => const AboutSettingsScreen()),
         ],
       ),
     ]);
   }
+}
+
+class _Page {
+  final AppIconData icon;
+  final String title;
+  final String subtitle;
+  const _Page(this.icon, this.title, this.subtitle);
 }
 
 class LibrarySettingsScreen extends ConsumerWidget {
@@ -537,6 +503,27 @@ class LibrarySettingsScreen extends ConsumerWidget {
               subtitle: 'Manually refresh all songs from disk',
               onTap: () => appSnack(context, 'Scanning library…'),
             ),
+            if (!WideLayout.isWide(context))
+              StatefulBuilder(
+                builder: (context, setState) => FutureBuilder<bool>(
+                  future: ref
+                      .read(storageServiceProvider)
+                      .getPullToRefreshEnabled(),
+                  builder: (context, snapshot) => AppSettingsSwitch(
+                    icon: AppIcons.touchApp,
+                    searchId: 'library.pull_to_refresh',
+                    title: 'Pull to Refresh',
+                    subtitle: 'Swipe down to refresh the library',
+                    value: snapshot.data ?? true,
+                    onChanged: (val) async {
+                      await ref
+                          .read(storageServiceProvider)
+                          .setPullToRefreshEnabled(val);
+                      setState(() {});
+                    },
+                  ),
+                ),
+              ),
           ],
         ),
         AppSettingsGroup(
@@ -576,6 +563,19 @@ class LibrarySettingsScreen extends ConsumerWidget {
               divisions: _durationSteps.length - 1,
               onChanged: (val) => notifier
                   .setMinimumTrackDurationMs(_durationSteps[val.round()]),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
+          label: 'Maintenance',
+          icon: AppIcons.edit,
+          children: [
+            AppSettingsTile(
+              searchId: 'data.bulk_rename',
+              icon: AppIcons.edit,
+              title: 'Bulk Rename Files',
+              subtitle: 'Rename the whole library from a format',
+              onTap: () => context.pushApp(const BulkRenameScreen()),
             ),
           ],
         ),

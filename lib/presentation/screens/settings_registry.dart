@@ -6,13 +6,16 @@ import 'about_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'backup_management_screen.dart';
 import 'custom_shuffle_settings_screen.dart';
-import 'data_management_settings_screen.dart';
+import 'backup_settings_screen.dart';
 import 'folder_management_screen.dart';
+import 'home_settings_screen.dart';
 import 'indexer_screen.dart';
-import 'misc_settings_screen.dart';
+import 'lyrics_settings_screen.dart';
+import 'storage_settings_screen.dart';
 import 'playback_settings_screen.dart';
 import 'quick_actions_settings_screen.dart';
 import 'settings_screen.dart';
+import 'sync_settings_screen.dart';
 import 'storage_management_screen.dart';
 
 /// A registry entry that also knows how to draw itself and where to go.
@@ -46,7 +49,7 @@ final List<SettingsDestination> settingsRegistry = [
   SettingsDestination(
     icon: AppIcons.library,
     title: 'Library',
-    subtitle: 'Music folders, scanning',
+    subtitle: 'Folders, filters, scanning',
     breadcrumb: 'Settings',
     keywords: const ['scan', 'folders', 'filters', 'songs'],
     open: () => const LibrarySettingsScreen(),
@@ -54,42 +57,66 @@ final List<SettingsDestination> settingsRegistry = [
   SettingsDestination(
     icon: AppIcons.playCircle,
     title: 'Playback',
-    subtitle: 'Audio settings, transitions',
+    subtitle: 'Transitions, fades, audio',
     breadcrumb: 'Settings',
     keywords: const ['audio', 'sound', 'transitions'],
     open: () => const PlaybackSettingsScreen(),
   ),
   SettingsDestination(
+    icon: AppIcons.subtitles,
+    title: 'Lyrics',
+    subtitle: 'Word sync, translation, sidebar',
+    breadcrumb: 'Settings',
+    keywords: const ['lyrics', 'translate', 'karaoke', 'subtitles'],
+    open: () => const LyricsSettingsScreen(),
+  ),
+  SettingsDestination(
+    icon: AppIcons.home,
+    title: 'Home & Navigation',
+    subtitle: 'Home sections, lists, quick actions',
+    breadcrumb: 'Settings',
+    keywords: const ['home', 'quick picks', 'gestures', 'bars', 'layout'],
+    open: () => const HomeSettingsScreen(),
+  ),
+  SettingsDestination(
+    icon: AppIcons.storage,
+    title: 'Storage',
+    subtitle: 'Disk usage, indexes, caches',
+    breadcrumb: 'Settings',
+    keywords: const ['disk', 'space', 'cache', 'indexer', 'cleanup'],
+    open: () => const StorageSettingsScreen(),
+  ),
+  SettingsDestination(
     icon: AppIcons.palette,
     title: 'Appearance',
-    subtitle: 'Theme, display options',
+    subtitle: 'Now playing, motion, app icon',
     breadcrumb: 'Settings',
     keywords: const ['theme', 'colour', 'color', 'display', 'look'],
     open: () => const AppearanceSettingsScreen(),
   ),
   SettingsDestination(
-    icon: AppIcons.storage,
-    title: 'Data Management',
-    subtitle: 'Backup, restore, storage, optimize',
+    icon: AppIcons.cloudUpload,
+    title: 'Sync',
+    subtitle: 'Encrypted cross-device sync',
     breadcrumb: 'Settings',
-    keywords: const ['backup', 'restore', 'export', 'import'],
-    open: () => const DataManagementSettingsScreen(),
+    keywords: const ['cloud', 'account', 'devices', 'encrypted'],
+    open: () => const SyncSettingsScreen(),
+  ),
+  SettingsDestination(
+    icon: AppIcons.storage,
+    title: 'Backup & Restore',
+    subtitle: 'Export, import, automatic backups',
+    breadcrumb: 'Settings',
+    keywords: const ['backup', 'restore', 'export', 'import', 'data'],
+    open: () => const BackupSettingsScreen(),
   ),
   SettingsDestination(
     icon: AppIcons.dataObject,
     title: 'Indexer',
-    subtitle: 'Manage and rebuild all app indexes and caches',
-    breadcrumb: 'Settings',
+    subtitle: 'Rebuild indexes and caches',
+    breadcrumb: 'Settings › Storage',
     keywords: const ['index', 'rebuild', 'cache', 'reindex'],
     open: () => const IndexerScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.misc,
-    title: 'Misc',
-    subtitle: 'Privacy, behavior',
-    breadcrumb: 'Settings',
-    keywords: const ['privacy', 'behaviour', 'other'],
-    open: () => const MiscSettingsScreen(),
   ),
   SettingsDestination(
     icon: AppIcons.info,
@@ -181,72 +208,64 @@ final List<SettingsDestination> settingsRegistry = [
     ),
   ),
   SettingsDestination(
-    anchorId: 'playback.lyrics_rich_sync',
+    anchorId: 'lyrics.rich_sync',
     icon: AppIcons.autoAwesome,
     title: 'Simulate Word Sync',
     subtitle:
         'Generate word-level timing from line-synced lyrics using prosodic estimation',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Display & Timing',
     keywords: const ['lyrics', 'richsync', 'karaoke', 'word', 'sync'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.lyrics_rich_sync',
-    ),
+    open: () => const LyricsSettingsScreen(highlightId: 'lyrics.rich_sync'),
   ),
   SettingsDestination(
-    anchorId: 'playback.desktop_sidebar',
+    anchorId: 'lyrics.desktop_sidebar',
     icon: AppIcons.queue,
     title: 'Lyrics & Queue Sidebar',
     subtitle:
         'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Display & Timing',
     keywords: const ['sidebar', 'panel', 'desktop', 'queue', 'lyrics'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.desktop_sidebar',
-    ),
+    open: () =>
+        const LyricsSettingsScreen(highlightId: 'lyrics.desktop_sidebar'),
   ),
   SettingsDestination(
-    anchorId: 'playback.keep_screen_awake',
+    anchorId: 'lyrics.keep_screen_awake',
     icon: AppIcons.screenLock,
     title: 'Keep Screen Awake on Lyrics',
     subtitle: 'Prevent sleep while the lyrics pane is open',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Display & Timing',
     keywords: const ['sleep', 'wakelock', 'display', 'lyrics'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.keep_screen_awake',
-    ),
+    open: () =>
+        const LyricsSettingsScreen(highlightId: 'lyrics.keep_screen_awake'),
   ),
   SettingsDestination(
-    anchorId: 'playback.lyrics_auto_translate',
+    anchorId: 'lyrics.auto_translate',
     icon: AppIcons.translate,
     title: 'Auto-Translate Lyrics',
     subtitle: 'Automatically translate lyrics using selected target language',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Translation',
     keywords: const ['translate', 'translation', 'language', 'lyrics', 'auto'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.lyrics_auto_translate',
-    ),
+    open: () =>
+        const LyricsSettingsScreen(highlightId: 'lyrics.auto_translate'),
   ),
   SettingsDestination(
-    anchorId: 'playback.lyrics_target_lang',
+    anchorId: 'lyrics.target_lang',
     icon: AppIcons.translate,
     title: 'Target Language',
     subtitle: 'Language to translate lyrics into',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Translation',
     keywords: const ['translate', 'language', 'spanish', 'english', 'japanese'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.lyrics_target_lang',
-    ),
+    open: () => const LyricsSettingsScreen(highlightId: 'lyrics.target_lang'),
   ),
   SettingsDestination(
-    anchorId: 'playback.lyrics_translation_mode',
+    anchorId: 'lyrics.translation_mode',
     icon: AppIcons.subtitles,
     title: 'Translation Display',
     subtitle: 'Show subtext below lyrics or replace base lyrics',
-    breadcrumb: 'Settings › Playback › Lyrics',
+    breadcrumb: 'Settings › Lyrics › Translation',
     keywords: const ['translate', 'mode', 'subtext', 'replace', 'display'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.lyrics_translation_mode',
-    ),
+    open: () =>
+        const LyricsSettingsScreen(highlightId: 'lyrics.translation_mode'),
   ),
   SettingsDestination(
     anchorId: 'playback.gap',
@@ -301,7 +320,7 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.waves,
     title: 'Audio Visualizer',
     subtitle: 'Off, classic bars, or bars synced to the song',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Appearance › Now Playing',
     keywords: const ['wave', 'animation', 'spectrum', 'bars', 'sync', 'bass'],
     open: () =>
         const AppearanceSettingsScreen(highlightId: 'appearance.visualizer'),
@@ -311,7 +330,7 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.graphicEq,
     title: 'Progress Bar Style',
     subtitle: 'Standard, waveform, or sound-reactive progress bar',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Appearance › Now Playing',
     keywords: const ['seek', 'progress', 'wave', 'reactive', 'spectrum'],
     open: () =>
         const AppearanceSettingsScreen(highlightId: 'appearance.waveform'),
@@ -321,7 +340,7 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.touchApp,
     title: 'Waveform Scrubbing Haptics',
     subtitle: 'Haptic feedback for each bar while seeking',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Appearance › Now Playing',
     keywords: const [
       'vibrate',
       'haptic',
@@ -338,28 +357,27 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.timer,
     title: 'Show Song Duration',
     subtitle: 'Display duration in song lists',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
     keywords: const ['length', 'time', 'lists'],
     open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.song_duration'),
+        const HomeSettingsScreen(highlightId: 'appearance.song_duration'),
   ),
   SettingsDestination(
     anchorId: 'appearance.auto_hide_bars',
     icon: AppIcons.swapVert,
     title: 'Auto-Hide Bars',
     subtitle: 'Header and bottom dock hide on downward scroll',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
     keywords: const ['navigation', 'dock', 'header', 'scroll', 'hide'],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.auto_hide_bars',
-    ),
+    open: () =>
+        const HomeSettingsScreen(highlightId: 'appearance.auto_hide_bars'),
   ),
   SettingsDestination(
     anchorId: 'appearance.cover_sizing',
     icon: AppIcons.photoSize,
     title: 'Player Cover Sizing',
     subtitle: 'Auto-fit or preserve source aspect ratio',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Appearance › Now Playing',
     keywords: const ['artwork', 'album art', 'aspect', 'crop'],
     open: () =>
         const AppearanceSettingsScreen(highlightId: 'appearance.cover_sizing'),
@@ -369,7 +387,7 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.autoAwesome,
     title: 'Immersive design',
     subtitle: 'Full-bleed player cover and gradient detail screens',
-    breadcrumb: 'Settings › Appearance › Display',
+    breadcrumb: 'Settings › Appearance › Now Playing',
     keywords: const [
       'immersive',
       'full bleed',
@@ -479,47 +497,44 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.autoAwesome,
     title: 'Quick Picks',
     subtitle: 'Show quick pick recommendations',
-    breadcrumb: 'Settings › Appearance › Home screen',
+    breadcrumb: 'Settings › Home & Navigation › Home screen',
     keywords: const ['home', 'recommendations', 'suggestions'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.quick_picks'),
+    open: () => const HomeSettingsScreen(highlightId: 'appearance.quick_picks'),
   ),
   SettingsDestination(
     anchorId: 'appearance.recent_queues',
     icon: AppIcons.clock,
     title: 'Recent Queues',
     subtitle: 'Show recently played queues',
-    breadcrumb: 'Settings › Appearance › Home screen',
+    breadcrumb: 'Settings › Home & Navigation › Home screen',
     keywords: const ['home', 'history', 'queue'],
     open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.recent_queues'),
+        const HomeSettingsScreen(highlightId: 'appearance.recent_queues'),
   ),
   SettingsDestination(
     anchorId: 'appearance.for_you',
     icon: AppIcons.explore,
     title: 'For You',
     subtitle: 'Show recommended playlists',
-    breadcrumb: 'Settings › Appearance › Home screen',
+    breadcrumb: 'Settings › Home & Navigation › Home screen',
     keywords: const ['home', 'mixes', 'recommendations'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.for_you'),
+    open: () => const HomeSettingsScreen(highlightId: 'appearance.for_you'),
   ),
   SettingsDestination(
     anchorId: 'appearance.quick_actions',
     icon: AppIcons.flashOn,
     title: 'Quick Actions',
     subtitle: 'Customize long-press actions',
-    breadcrumb: 'Settings › Appearance › Interaction',
+    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
     keywords: const ['long press', 'menu', 'shortcuts'],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.quick_actions',
-    ),
+    open: () =>
+        const HomeSettingsScreen(highlightId: 'appearance.quick_actions'),
   ),
   SettingsDestination(
     icon: AppIcons.flashOn,
     title: 'Reorder quick actions',
     subtitle: 'Choose and order the long-press actions on a song',
-    breadcrumb: 'Settings › Appearance › Quick Actions',
+    breadcrumb: 'Settings › Appearance › Lists & Navigation',
     keywords: const ['long press', 'order', 'menu', 'shortcuts'],
     open: () => const QuickActionsSettingsScreen(),
   ),
@@ -530,34 +545,34 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.upload,
     title: 'Export App Data',
     subtitle: 'Backup your stats, favorites, and playlists',
-    breadcrumb: 'Settings › Data Management › Backup & Restore',
+    breadcrumb: 'Settings › Backup & Restore',
     keywords: const ['backup', 'save', 'export'],
-    open: () => const DataManagementSettingsScreen(highlightId: 'data.export'),
+    open: () => const BackupSettingsScreen(highlightId: 'data.export'),
   ),
   SettingsDestination(
     anchorId: 'data.import',
     icon: AppIcons.download,
     title: 'Import App Data',
     subtitle: 'Restore data from a backup (replaces all)',
-    breadcrumb: 'Settings › Data Management › Backup & Restore',
+    breadcrumb: 'Settings › Backup & Restore',
     keywords: const ['restore', 'load', 'import'],
-    open: () => const DataManagementSettingsScreen(highlightId: 'data.import'),
+    open: () => const BackupSettingsScreen(highlightId: 'data.import'),
   ),
   SettingsDestination(
     anchorId: 'data.backups',
     icon: AppIcons.cloudUpload,
     title: 'Manage Backups',
     subtitle: 'Create, restore, and manage app backups',
-    breadcrumb: 'Settings › Data Management › Backup & Restore',
+    breadcrumb: 'Settings › Backup & Restore',
     keywords: const ['backup', 'restore', 'delete'],
-    open: () => const DataManagementSettingsScreen(highlightId: 'data.backups'),
+    open: () => const BackupSettingsScreen(highlightId: 'data.backups'),
   ),
   SettingsDestination(
     anchorId: 'data.bulk_rename',
     icon: AppIcons.edit,
     title: 'Bulk Rename Files',
     subtitle: 'Rename the whole library from a format',
-    breadcrumb: 'Settings › Data Management › Library Maintenance',
+    breadcrumb: 'Settings › Library › Maintenance',
     keywords: const [
       'rename',
       'filenames',
@@ -566,7 +581,7 @@ final List<SettingsDestination> settingsRegistry = [
       'format',
       'naming'
     ],
-    open: () => const DataManagementSettingsScreen(
+    open: () => const LibrarySettingsScreen(
       highlightId: 'data.bulk_rename',
     ),
   ),
@@ -575,9 +590,9 @@ final List<SettingsDestination> settingsRegistry = [
     icon: AppIcons.storage,
     title: 'Manage Storage',
     subtitle: 'Disk usage and data management',
-    breadcrumb: 'Settings › Data Management › Storage',
+    breadcrumb: 'Settings › Storage',
     keywords: const ['disk', 'space', 'cache', 'cleanup'],
-    open: () => const DataManagementSettingsScreen(highlightId: 'data.storage'),
+    open: () => const StorageSettingsScreen(highlightId: 'data.storage'),
   ),
   SettingsDestination(
     icon: AppIcons.cloudUpload,
@@ -596,44 +611,45 @@ final List<SettingsDestination> settingsRegistry = [
     open: () => const StorageManagementScreen(),
   ),
 
-  // ------------------------------------------------------------------- misc
+  // ------------------------------------------------------ automatic backups
   SettingsDestination(
-    anchorId: 'misc.auto_backup',
+    anchorId: 'data.auto_backup',
     icon: AppIcons.cloudUpload,
     title: 'Auto Backup',
     subtitle: 'How often a backup is taken',
-    breadcrumb: 'Settings › Misc › Backup',
+    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
     keywords: const ['schedule', 'frequency', 'automatic'],
-    open: () => const MiscSettingsScreen(highlightId: 'misc.auto_backup'),
+    open: () => const BackupSettingsScreen(highlightId: 'data.auto_backup'),
   ),
   SettingsDestination(
-    anchorId: 'misc.auto_backup_content',
+    anchorId: 'data.auto_backup_content',
     icon: AppIcons.tune,
     title: 'Auto Backup Content',
     subtitle: 'What data is included in automatic backups',
-    breadcrumb: 'Settings › Misc › Backup',
+    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
     keywords: const ['contents', 'categories', 'automatic'],
     open: () =>
-        const MiscSettingsScreen(highlightId: 'misc.auto_backup_content'),
+        const BackupSettingsScreen(highlightId: 'data.auto_backup_content'),
   ),
   SettingsDestination(
-    anchorId: 'misc.auto_delete_backups',
+    anchorId: 'data.auto_delete_backups',
     icon: AppIcons.delete,
     title: 'Auto-Delete Old Backups',
     subtitle: 'Discard backups older than this',
-    breadcrumb: 'Settings › Misc › Backup',
+    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
     keywords: const ['prune', 'cleanup', 'retention', 'old'],
     open: () =>
-        const MiscSettingsScreen(highlightId: 'misc.auto_delete_backups'),
+        const BackupSettingsScreen(highlightId: 'data.auto_delete_backups'),
   ),
   SettingsDestination(
-    anchorId: 'misc.pull_to_refresh',
+    anchorId: 'library.pull_to_refresh',
     icon: AppIcons.touchApp,
     title: 'Pull to Refresh',
     subtitle: 'Swipe down to refresh the library',
-    breadcrumb: 'Settings › Misc › Behavior',
+    breadcrumb: 'Settings › Library',
     keywords: const ['swipe', 'gesture', 'reload'],
-    open: () => const MiscSettingsScreen(highlightId: 'misc.pull_to_refresh'),
+    open: () =>
+        const LibrarySettingsScreen(highlightId: 'library.pull_to_refresh'),
   ),
 
   // ---------------------------------------------------------------- shuffle

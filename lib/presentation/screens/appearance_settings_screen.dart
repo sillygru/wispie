@@ -12,7 +12,6 @@ import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
 import 'app_icon_settings_screen.dart';
 import 'beat_sync_calibration_screen.dart';
-import 'quick_actions_settings_screen.dart';
 import '../tokens/app_icons.dart';
 
 class AppearanceSettingsScreen extends ConsumerStatefulWidget {
@@ -42,8 +41,8 @@ class _AppearanceSettingsScreenState
       highlightId: widget.highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Display',
-          icon: AppIcons.viewList,
+          label: 'Now Playing',
+          icon: AppIcons.playCircle,
           children: [
             AppSettingsAnchor(
               id: 'appearance.visualizer',
@@ -133,23 +132,6 @@ class _AppearanceSettingsScreenState
                 value: settings.waveformHapticsEnabled,
                 onChanged: notifier.setWaveformHapticsEnabled,
               ),
-            AppSettingsSwitch(
-              icon: AppIcons.timer,
-              searchId: 'appearance.song_duration',
-              title: 'Show Song Duration',
-              subtitle: 'Display duration in song lists',
-              value: settings.showSongDuration,
-              onChanged: notifier.setShowSongDuration,
-            ),
-            AppSettingsSwitch(
-              icon: AppIcons.swapVert,
-              searchId: 'appearance.auto_hide_bars',
-              title: 'Auto-Hide Bars',
-              subtitle:
-                  'Header and bottom dock hide on downward scroll, restore on upward scroll',
-              value: settings.autoHideBottomBarOnScroll,
-              onChanged: notifier.setAutoHideBottomBarOnScroll,
-            ),
             AppSettingsAnchor(
               id: 'appearance.cover_sizing',
               child: AppListRow(
@@ -192,20 +174,6 @@ class _AppearanceSettingsScreenState
             ),
           ],
         ),
-        if (AppIconService.supported)
-          AppSettingsGroup(
-            label: 'App icon',
-            icon: AppIcons.album,
-            children: [
-              AppSettingsTile(
-                icon: AppIcons.album,
-                searchId: 'appearance.app_icon',
-                title: 'App icon',
-                subtitle: settings.appIconStyle.label,
-                onTap: () => context.pushApp(const AppIconSettingsScreen()),
-              ),
-            ],
-          ),
         AppSettingsGroup(
           label: 'Player motion',
           icon: AppIcons.graphicEq,
@@ -311,49 +279,20 @@ class _AppearanceSettingsScreenState
             ),
           ],
         ),
-        AppSettingsGroup(
-          label: 'Home screen',
-          icon: AppIcons.home,
-          children: [
-            AppSettingsSwitch(
-              icon: AppIcons.autoAwesome,
-              searchId: 'appearance.quick_picks',
-              title: 'Quick Picks',
-              subtitle: 'Show quick pick recommendations',
-              value: settings.showQuickPicks,
-              onChanged: notifier.setShowQuickPicks,
-            ),
-            AppSettingsSwitch(
-              icon: AppIcons.clock,
-              searchId: 'appearance.recent_queues',
-              title: 'Recent Queues',
-              subtitle: 'Show recently played queues',
-              value: settings.showRecentQueues,
-              onChanged: notifier.setShowRecentQueues,
-            ),
-            AppSettingsSwitch(
-              icon: AppIcons.explore,
-              searchId: 'appearance.for_you',
-              title: 'For You',
-              subtitle: 'Show recommended playlists',
-              value: settings.showForYou,
-              onChanged: notifier.setShowForYou,
-            ),
-          ],
-        ),
-        AppSettingsGroup(
-          label: 'Interaction',
-          icon: AppIcons.touchApp,
-          children: [
-            AppSettingsTile(
-              icon: AppIcons.flashOn,
-              searchId: 'appearance.quick_actions',
-              title: 'Quick Actions',
-              subtitle: 'Customize long-press actions',
-              onTap: () => context.pushApp(const QuickActionsSettingsScreen()),
-            ),
-          ],
-        ),
+        if (AppIconService.supported)
+          AppSettingsGroup(
+            label: 'App icon',
+            icon: AppIcons.album,
+            children: [
+              AppSettingsTile(
+                icon: AppIcons.album,
+                searchId: 'appearance.app_icon',
+                title: 'App icon',
+                subtitle: settings.appIconStyle.label,
+                onTap: () => context.pushApp(const AppIconSettingsScreen()),
+              ),
+            ],
+          ),
       ],
     );
     if (widget.embedded) return content;

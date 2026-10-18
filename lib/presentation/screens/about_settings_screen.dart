@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/debug_sandbox.dart';
 import '../../services/update_service.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
@@ -134,6 +136,26 @@ class AboutSettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
+        if (kDebugMode)
+          AppSettingsGroup(
+            label: 'Debug',
+            icon: AppIcons.tune,
+            children: [
+              StatefulBuilder(
+                builder: (context, setState) => AppSettingsSwitch(
+                  icon: AppIcons.cloudUpload,
+                  title: 'Persist writes',
+                  subtitle:
+                      'Debug builds keep changes in a throwaway copy by default. Applies on next launch.',
+                  value: DebugSandbox.persistWrites,
+                  onChanged: (val) async {
+                    await DebugSandbox.setFlag('persist_writes', val);
+                    setState(() {});
+                  },
+                ),
+              ),
+            ],
+          ),
       ],
     );
     if (embedded) return content;
