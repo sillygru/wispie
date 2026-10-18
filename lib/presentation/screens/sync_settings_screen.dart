@@ -16,6 +16,7 @@ import '../../providers/sync_provider.dart';
 import '../../services/sync/changeset.dart';
 import '../../services/sync_service.dart';
 import '../../providers/settings_provider.dart';
+import '../../l10n/app_localizations.dart';
 
 enum SyncStage { loggedOut, initialChoice, epochPaused, main }
 
@@ -45,41 +46,56 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 
   SyncNotifier get _n => ref.read(syncProvider.notifier);
 
-  static const _categoryLabels = <String, (AppIconData, String, String)>{
-    SyncCategory.playStats: (
-      AppIcons.analytics,
-      'Play stats',
-      'Listening history and play counts'
-    ),
-    SyncCategory.favorites: (AppIcons.favorite, 'Favorites', 'Favorite songs'),
-    SyncCategory.suggestless: (
-      AppIcons.info,
-      'Suggest less',
-      'Songs you asked to see less of'
-    ),
-    SyncCategory.hidden: (AppIcons.folderOff, 'Hidden songs', 'Hidden songs'),
-    SyncCategory.playlists: (AppIcons.playlist, 'Playlists', 'All playlists'),
-    SyncCategory.mergedSongs: (
-      AppIcons.playlist,
-      'Merged songs',
-      'Merged song groups'
-    ),
-    SyncCategory.settings: (
-      AppIcons.settings,
-      'App settings',
-      'Theme, playback, and UI preferences'
-    ),
-    SyncCategory.artistArt: (
-      AppIcons.image,
-      'Artist art',
-      'Online artist cover choices'
-    ),
-    SyncCategory.albumArt: (
-      AppIcons.image,
-      'Album art',
-      'Online album cover choices'
-    ),
-  };
+  Map<String, (AppIconData, String, String)> get _categoryLabels {
+    final l = AppLocalizations.of(context);
+    return {
+      SyncCategory.playStats: (
+        AppIcons.analytics,
+        l.syncPlayStats,
+        l.syncPlayStatsHint
+      ),
+      SyncCategory.favorites: (
+        AppIcons.favorite,
+        l.syncFavorites,
+        l.syncFavoritesHint
+      ),
+      SyncCategory.suggestless: (
+        AppIcons.info,
+        l.syncSuggestLess,
+        l.syncSuggestLessHint
+      ),
+      SyncCategory.hidden: (
+        AppIcons.folderOff,
+        l.syncHiddenSongs,
+        l.syncHiddenSongs
+      ),
+      SyncCategory.playlists: (
+        AppIcons.playlist,
+        l.syncPlaylists,
+        l.syncPlaylistsHint
+      ),
+      SyncCategory.mergedSongs: (
+        AppIcons.playlist,
+        l.syncMergedSongs,
+        l.syncMergedSongsHint
+      ),
+      SyncCategory.settings: (
+        AppIcons.settings,
+        l.syncAppSettings,
+        l.syncAppSettingsHint
+      ),
+      SyncCategory.artistArt: (
+        AppIcons.image,
+        l.syncArtistArt,
+        l.syncArtistArtHint
+      ),
+      SyncCategory.albumArt: (
+        AppIcons.image,
+        l.syncAlbumArt,
+        l.syncAlbumArtHint
+      ),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,50 +146,56 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final content = AppSettingsList(children: children);
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Sync'),
+      appBar:
+          AppTopBar(title: AppLocalizations.of(context).settingsPageSyncTitle),
       body: content,
     );
   }
 
-  Widget _privacy() => AppSettingsGroup(
-        label: 'Privacy',
-        children: [
-          _infoTile(AppIcons.security, 'End-to-end encrypted',
-              'Your data is encrypted on this device before upload. The server only stores ciphertext and cannot read your library, history, or settings.'),
-          _infoTile(AppIcons.info, 'Recovery key',
-              'If you forget your password, only your recovery key can restore access. Nobody else can.'),
-        ],
-      );
+  Widget _privacy() {
+    final l = AppLocalizations.of(context);
+    return AppSettingsGroup(
+      label: l.syncPrivacy,
+      children: [
+        _infoTile(AppIcons.security, l.syncEncryptedTitle, l.syncEncryptedBody),
+        _infoTile(AppIcons.info, l.syncRecoveryKeyTitle, l.syncRecoveryKeyBody),
+      ],
+    );
+  }
 
-  Widget _accountGroup(SyncState st) => AppSettingsGroup(
-        label: 'Account',
-        children: [
-          AppSettingsTile(
-            icon: AppIcons.person,
-            title: st.username ?? 'Signed in',
-            subtitle: st.serverUrl ?? 'Connected',
-            trailing: TextButton(
-              onPressed: _confirmLogout,
-              child: const Text('Log out'),
-            ),
+  Widget _accountGroup(SyncState st) {
+    final l = AppLocalizations.of(context);
+    return AppSettingsGroup(
+      label: l.syncAccount,
+      children: [
+        AppSettingsTile(
+          icon: AppIcons.person,
+          title: st.username ?? l.syncSignedIn,
+          subtitle: st.serverUrl ?? l.syncConnected,
+          trailing: TextButton(
+            onPressed: _confirmLogout,
+            child: Text(l.syncLogOut),
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
   List<Widget> _mainGroups(SyncState st, bool busy) {
     final theme = Theme.of(context);
+    final l = AppLocalizations.of(context);
     _usage ??= _n.usage();
     return [
       _accountGroup(st),
       AppSettingsGroup(
-        label: 'Cloud',
+        label: l.syncCloud,
         children: [
           AppSettingsTile(
             icon: AppIcons.clock,
-            title: 'Last synced',
+            title: l.syncLastSynced,
             subtitle: st.lastSyncedAtMs != null
                 ? _formatTimestamp(st.lastSyncedAtMs! / 1000)
-                : 'Never',
+                : l.syncNever,
           ),
           FutureBuilder(
             future: _usage,
@@ -185,7 +207,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${_bytes(u.used)} of ${_bytes(u.quota)} used',
+                    Text(l.syncUsedOfQuota(_bytes(u.used), _bytes(u.quota)),
                         style: theme.textTheme.bodyMedium),
                     const SizedBox(height: AppTokens.s2),
                     LinearProgressIndicator(
@@ -200,17 +222,17 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           if (autoSyncAvailable(st.status))
             AppSettingsSwitch(
               icon: AppIcons.refresh,
-              title: 'Auto sync',
-              subtitle: 'Sync in the background while the app is open',
+              title: l.syncAutoSync,
+              subtitle: l.syncAutoSyncHint,
               value: st.autoSyncEnabled,
               onChanged: (v) => _n.setAutoSyncEnabled(v),
             ),
           AppSettingsTile(
             icon: AppIcons.syncAlt,
-            title: 'Sync now',
+            title: l.syncNow,
             subtitle: st.lastError != null
-                ? 'Last error: ${st.lastError}'
-                : 'Merge this device with the cloud',
+                ? l.syncLastError(st.lastError!)
+                : l.syncMergeDeviceHint,
             onTap: busy
                 ? null
                 : () async {
@@ -221,7 +243,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ],
       ),
       AppSettingsGroup(
-        label: 'What gets synced',
+        label: l.syncWhatGetsSynced,
         children: [
           for (final e in _categoryLabels.entries)
             AppSettingsSwitch(
@@ -239,7 +261,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ],
       ),
       AppSettingsGroup(
-        label: 'Device Stats Attribution',
+        label: l.syncDeviceStatsAttribution,
         children: [
           Padding(
             padding: const EdgeInsets.all(AppTokens.s4),
@@ -250,14 +272,14 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'This Device',
+                      l.syncThisDevice,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurface,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     Text(
-                      '${st.localPlayCount} plays',
+                      l.syncPlays(st.localPlayCount),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.primary,
                         fontWeight: FontWeight.w600,
@@ -270,14 +292,14 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Other Devices',
+                      l.syncOtherDevices,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurface,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     Text(
-                      '${st.remotePlayCount} plays',
+                      l.syncPlays(st.remotePlayCount),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.secondary,
                         fontWeight: FontWeight.w600,
@@ -290,13 +312,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Total Library Stats',
+                      l.syncTotalLibraryStats,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                     Text(
-                      '${st.totalPlayCount} plays',
+                      l.syncPlays(st.totalPlayCount),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
@@ -311,46 +333,46 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       ),
       _privacy(),
       AppSettingsGroup(
-        label: 'Danger zone',
+        label: l.syncDangerZone,
         children: [
           AppSettingsTile(
             icon: AppIcons.upload,
-            title: 'Overwrite cloud with this device',
-            subtitle: 'Replace all cloud data with what is on this device',
+            title: l.syncOverwriteCloudTile,
+            subtitle: l.syncOverwriteCloudTileHint,
             onTap: busy ? null : _confirmOverwriteCloud,
           ),
           AppSettingsTile(
             icon: AppIcons.download,
-            title: 'Replace this device with cloud',
-            subtitle: 'Erase synced data on this device and use the cloud copy',
+            title: l.syncReplaceDeviceTile,
+            subtitle: l.syncReplaceDeviceTileHint,
             onTap: busy ? null : _confirmReplaceLocal,
           ),
           AppSettingsTile(
             icon: AppIcons.security,
-            title: 'Change password',
+            title: l.syncChangePassword,
             onTap: busy ? null : _changePassword,
           ),
           AppSettingsTile(
             icon: AppIcons.security,
-            title: 'New recovery key',
-            subtitle: 'The old recovery key stops working',
+            title: l.syncNewRecoveryKey,
+            subtitle: l.syncNewRecoveryKeyHint,
             onTap: busy ? null : _newRecoveryKey,
           ),
           AppSettingsTile(
             icon: AppIcons.person,
-            title: 'Change server',
-            subtitle: 'Requires logging out first',
+            title: l.syncChangeServer,
+            subtitle: l.syncChangeServerHint,
             onTap: busy ? null : _changeServer,
           ),
           AppSettingsTile(
             icon: AppIcons.person,
-            title: 'Log out',
+            title: l.syncLogOut,
             onTap: _confirmLogout,
           ),
           AppSettingsTile(
             icon: AppIcons.deleteForever,
-            title: 'Delete cloud account',
-            subtitle: 'Removes cloud data permanently. Local data is kept',
+            title: l.syncDeleteCloudAccount,
+            subtitle: l.syncDeleteCloudAccountHint,
             isDanger: true,
             onTap: busy ? null : _deleteAccount,
           ),
@@ -368,41 +390,41 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _confirmOverwriteCloud() async {
+    final l = AppLocalizations.of(context);
     final r = await showDangerConfirm(
       context,
-      title: 'Overwrite cloud',
-      message:
-          'All data in the cloud will be replaced by this device. Other devices will be asked to choose how to continue. This device keeps its data.',
-      confirmLabel: 'Overwrite',
-      checkboxLabel: 'I understand the cloud data will be lost',
+      title: l.syncOverwriteCloud,
+      message: l.syncOverwriteCloudBody,
+      confirmLabel: l.syncOverwrite,
+      checkboxLabel: l.syncOverwriteCloudCheckbox,
     );
     if (r != null) unawaited(_n.overwriteCloud());
   }
 
   Future<void> _confirmReplaceLocal() async {
+    final l = AppLocalizations.of(context);
     final r = await showDangerConfirm(
       context,
-      title: 'Replace this device',
-      message:
-          'Synced data on this device (stats, favorites, playlists, and so on) will be erased and replaced by the cloud copy. Music files are not touched.',
-      confirmLabel: 'Replace',
-      checkboxLabel: 'I understand local synced data will be lost',
+      title: l.syncReplaceDevice,
+      message: l.syncReplaceDeviceBody,
+      confirmLabel: l.syncReplace,
+      checkboxLabel: l.syncReplaceDeviceCheckbox,
     );
     if (r != null) unawaited(_n.setUpAsNewDevice());
   }
 
   Future<void> _confirmLogout() async {
+    final l = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AppDialog(
-        title: 'Log out',
-        message:
-            'Sync stops on this device. Local and cloud data are both kept.',
+        title: l.syncLogOut,
+        message: l.syncLogOutBody,
         actions: [
           AppDialogAction(
-              label: 'Cancel', onPressed: () => Navigator.pop(c, false)),
+              label: l.actionCancel, onPressed: () => Navigator.pop(c, false)),
           AppDialogAction(
-              label: 'Log out',
+              label: l.syncLogOut,
               isPrimary: true,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -412,17 +434,17 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _changeServer() async {
+    final l = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AppDialog(
-        title: 'Change server',
-        message:
-            'You will be logged out of the current server first. Local data is kept.',
+        title: l.syncChangeServer,
+        message: l.syncChangeServerBody,
         actions: [
           AppDialogAction(
-              label: 'Cancel', onPressed: () => Navigator.pop(c, false)),
+              label: l.actionCancel, onPressed: () => Navigator.pop(c, false)),
           AppDialogAction(
-              label: 'Log out and change',
+              label: l.syncLogOutAndChange,
               isPrimary: true,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -447,7 +469,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ),
         ]),
         actions: [
-          AppDialogAction(label: 'Cancel', onPressed: () => Navigator.pop(c)),
+          AppDialogAction(
+              label: AppLocalizations.of(context).actionCancel,
+              onPressed: () => Navigator.pop(c)),
           AppDialogAction(
             label: confirm,
             isPrimary: true,
@@ -459,19 +483,22 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _changePassword() async {
-    final v = await _fields(
-        'Change password', ['Current password', 'New password'], 'Change');
+    final l = AppLocalizations.of(context);
+    final v = await _fields(l.syncChangePassword,
+        [l.syncCurrentPassword, l.syncNewPassword], l.actionChange);
     if (v == null) return;
     try {
       await _n.changePassword(v[0], v[1]);
-      if (mounted) appSnack(context, 'Password changed');
+      if (mounted) appSnack(context, l.syncPasswordChanged);
     } catch (e) {
       if (mounted) appSnack(context, '$e', tone: AppTone.danger);
     }
   }
 
   Future<void> _newRecoveryKey() async {
-    final v = await _fields('New recovery key', ['Password'], 'Generate');
+    final l = AppLocalizations.of(context);
+    final v =
+        await _fields(l.syncNewRecoveryKey, [l.syncPassword], l.syncGenerate);
     if (v == null) return;
     try {
       final key = await _n.newRecoveryKey(v[0]);
@@ -483,12 +510,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 
   Future<void> _deleteAccount() async {
     final name = ref.read(syncProvider).username ?? '';
+    final l = AppLocalizations.of(context);
     final pw = await showDangerConfirm(
       context,
-      title: 'Delete cloud account',
-      message:
-          'Your cloud account and all encrypted data on the server are deleted permanently. Data on this device is kept.',
-      confirmLabel: 'Delete',
+      title: l.syncDeleteCloudAccount,
+      message: l.syncDeleteCloudAccountBody,
+      confirmLabel: l.actionDelete,
       countdownSeconds: 10,
       requireTypedText: name,
       requirePassword: true,
@@ -514,10 +541,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final now = DateTime.now();
     final diff = now.difference(dt);
 
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    final l = AppLocalizations.of(context);
+    if (diff.inMinutes < 1) return l.syncJustNow;
+    if (diff.inMinutes < 60) return l.syncMinutesAgo(diff.inMinutes);
+    if (diff.inHours < 24) return l.syncHoursAgo(diff.inHours);
+    if (diff.inDays < 7) return l.syncDaysAgo(diff.inDays);
     return '${dt.month}/${dt.day}/${dt.year}';
   }
 }

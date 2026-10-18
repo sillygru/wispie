@@ -1012,7 +1012,7 @@ class _TransportDock extends ConsumerWidget {
           icon: Icons.ios_share_rounded,
           color: disabled,
           tooltip: 'Share',
-          onPressed: () => songActionShare(song),
+          onPressed: () => songActionShare(context, song),
         ),
       ],
     );

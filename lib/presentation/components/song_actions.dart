@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../domain/models/online_search_result.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/library_logic.dart';
@@ -35,6 +36,7 @@ void songActionToggleFavorite(
   String title, {
   bool showFeedback = true,
 }) {
+  final l10n = AppLocalizations.of(host);
   final wasFavorite = ref.read(userDataProvider).isFavorite(filename);
   ref.read(userDataProvider.notifier).toggleFavorite(filename);
   if (!showFeedback || !host.mounted) return;
@@ -42,8 +44,8 @@ void songActionToggleFavorite(
     SnackBar(
       content: Text(
         wasFavorite
-            ? 'Removed $title from favorites'
-            : 'Added $title to favorites',
+            ? l10n.songFavoriteRemoved(title)
+            : l10n.songFavoriteAdded(title),
       ),
       duration: const Duration(seconds: 1),
     ),
@@ -56,6 +58,7 @@ void songActionToggleSuggestLess(
   String filename,
   String title,
 ) {
+  final l10n = AppLocalizations.of(host);
   final wasSuggestLess = ref.read(userDataProvider).isSuggestLess(filename);
   ref.read(userDataProvider.notifier).toggleSuggestLess(filename);
   if (!host.mounted) return;
@@ -63,8 +66,8 @@ void songActionToggleSuggestLess(
     SnackBar(
       content: Text(
         wasSuggestLess
-            ? 'Will suggest $title more often'
-            : 'Will suggest $title less often',
+            ? l10n.songWillSuggestMore(title)
+            : l10n.songWillSuggestLess(title),
       ),
       duration: const Duration(seconds: 1),
     ),
@@ -72,21 +75,22 @@ void songActionToggleSuggestLess(
 }
 
 void songActionPlayNext(BuildContext host, WidgetRef ref, Song song) {
+  final l10n = AppLocalizations.of(host);
   ref.read(audioPlayerManagerProvider).playNext(song);
   if (!host.mounted) return;
   ScaffoldMessenger.of(host).showSnackBar(
     SnackBar(
-      content: Text('Added to Next Up: ${song.title}'),
+      content: Text(l10n.songAddedToNextUp(song.title)),
       duration: const Duration(seconds: 1),
     ),
   );
 }
 
-void songActionShare(Song song) {
+void songActionShare(BuildContext host, Song song) {
   SharePlus.instance.share(
     ShareParams(
       files: [XFile(song.url)],
-      text: '${song.title} by ${song.artist}',
+      text: AppLocalizations.of(host).songShareText(song.title, song.artist),
     ),
   );
 }
@@ -119,11 +123,12 @@ void songActionAddToPlaylist(
 
   ref.read(userDataProvider.notifier).addSongToPlaylist(latest.id, filename);
   if (!host.mounted) return;
+  final l10n = AppLocalizations.of(host);
   ScaffoldMessenger.of(host).showSnackBar(
     SnackBar(
-      content: Text('Added to ${latest.name}'),
+      content: Text(l10n.songAddedToPlaylist(latest.name)),
       action: SnackBarAction(
-        label: 'Change',
+        label: l10n.actionChange,
         onPressed: () => showPlaylistSelector(host, ref, filename),
       ),
     ),
@@ -135,6 +140,7 @@ void songActionAddToNewPlaylist(
   WidgetRef ref,
   String filename,
 ) {
+  final l10n = AppLocalizations.of(host);
   final controller = TextEditingController();
 
   void create(BuildContext dialogContext, String rawName) {
@@ -145,27 +151,27 @@ void songActionAddToNewPlaylist(
     if (!host.mounted) return;
     ScaffoldMessenger.of(
       host,
-    ).showSnackBar(SnackBar(content: Text('Created playlist "$name"')));
+    ).showSnackBar(SnackBar(content: Text(l10n.playlistCreated(name))));
   }
 
   showDialog<void>(
     context: host,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('New Playlist'),
+      title: Text(l10n.playlistNewTitle),
       content: TextField(
         controller: controller,
-        decoration: const InputDecoration(hintText: 'Playlist Name'),
+        decoration: InputDecoration(hintText: l10n.playlistNameHint),
         autofocus: true,
         onSubmitted: (value) => create(dialogContext, value),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: () => create(dialogContext, controller.text),
-          child: const Text('Create'),
+          child: Text(l10n.actionCreate),
         ),
       ],
     ),
@@ -187,15 +193,16 @@ void songActionRemoveFromPlaylist(
   String filename,
   String title,
 ) {
+  final l10n = AppLocalizations.of(host);
   ref
       .read(userDataProvider.notifier)
       .removeSongFromPlaylist(playlistId, filename);
   if (!host.mounted) return;
   ScaffoldMessenger.of(host).showSnackBar(
     SnackBar(
-      content: Text('Removed $title from playlist'),
+      content: Text(l10n.songRemovedFromPlaylist(title)),
       action: SnackBarAction(
-        label: 'Change',
+        label: l10n.actionChange,
         onPressed: () => showPlaylistSelector(host, ref, filename),
       ),
     ),
@@ -214,6 +221,7 @@ Future<void> songActionMoveToFolder(
   WidgetRef ref,
   Song song,
 ) async {
+  final l10n = AppLocalizations.of(host);
   final rootPath = await ref.read(storageServiceProvider).getMusicFolderPath();
   if (rootPath == null || !host.mounted) return;
 
@@ -224,22 +232,24 @@ Future<void> songActionMoveToFolder(
     await ref.read(songsProvider.notifier).moveSong(song, targetPath);
     if (!host.mounted) return;
     ScaffoldMessenger.of(host).showSnackBar(
-      SnackBar(content: Text('Moved ${song.title} to $targetPath')),
+      SnackBar(content: Text(l10n.songMovedTo(song.title, targetPath))),
     );
   } catch (e) {
     if (!host.mounted) return;
     ScaffoldMessenger.of(
       host,
-    ).showSnackBar(SnackBar(content: Text('Error moving song: $e')));
+    ).showSnackBar(SnackBar(content: Text(l10n.songMoveError('$e'))));
   }
 }
 
 Future<void> songActionHide(BuildContext host, WidgetRef ref, Song song) async {
+  final l10n = AppLocalizations.of(host);
   await ref.read(songsProvider.notifier).hideSong(song);
   if (!host.mounted) return;
   ScaffoldMessenger.of(
     host,
-  ).showSnackBar(SnackBar(content: Text('Removed ${song.title} from library')));
+  ).showSnackBar(
+      SnackBar(content: Text(l10n.songRemovedFromLibrary(song.title))));
 }
 
 Future<void> songActionDelete(
@@ -248,23 +258,22 @@ Future<void> songActionDelete(
   Song song,
 ) async {
   if (!host.mounted) return;
+  final l10n = AppLocalizations.of(host);
 
   final confirm = await showDialog<bool>(
         context: host,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Delete Song'),
-          content: Text(
-            "Are you sure you want to permanently delete '${song.title}' from your device? This cannot be undone.",
-          ),
+          title: Text(l10n.songDeleteTitle),
+          content: Text(l10n.songDeleteConfirm(song.title)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: Text(l10n.actionCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Delete Permanently'),
+              child: Text(l10n.actionDeletePermanently),
             ),
           ],
         ),
@@ -278,12 +287,12 @@ Future<void> songActionDelete(
     if (!host.mounted) return;
     ScaffoldMessenger.of(
       host,
-    ).showSnackBar(SnackBar(content: Text('Deleted ${song.title}')));
+    ).showSnackBar(SnackBar(content: Text(l10n.songDeleted(song.title))));
   } catch (e) {
     if (!host.mounted) return;
     ScaffoldMessenger.of(
       host,
-    ).showSnackBar(SnackBar(content: Text('Error deleting file: $e')));
+    ).showSnackBar(SnackBar(content: Text(l10n.songDeleteError('$e'))));
   }
 }
 
@@ -366,9 +375,10 @@ Future<void> songActionFetchMissingCover(
   WidgetRef ref,
   Song song,
 ) async {
+  final l10n = AppLocalizations.of(host);
   ScaffoldMessenger.of(host).showSnackBar(
-    const SnackBar(
-      content: Text('Searching Last.fm, Deezer and iTunes for cover art...'),
+    SnackBar(
+      content: Text(l10n.coverSearching),
       duration: Duration(seconds: 2),
     ),
   );
@@ -405,7 +415,7 @@ Future<void> songActionFetchMissingCover(
     if (coverUrl == null || coverUrl.isEmpty) {
       if (!host.mounted) return;
       ScaffoldMessenger.of(host).showSnackBar(
-        const SnackBar(content: Text('No missing cover art found online')),
+        SnackBar(content: Text(l10n.coverNoneFound)),
       );
       return;
     }
@@ -420,19 +430,19 @@ Future<void> songActionFetchMissingCover(
       if (!host.mounted) return;
       ScaffoldMessenger.of(host).showSnackBar(
         SnackBar(
-          content: Text('Updated cover art for "${song.title}" ($source)'),
+          content: Text(l10n.coverUpdated(song.title, '$source')),
         ),
       );
     } else if (host.mounted) {
       ScaffoldMessenger.of(host).showSnackBar(
-        const SnackBar(content: Text('Failed to download cover art')),
+        SnackBar(content: Text(l10n.coverDownloadFailed)),
       );
     }
   } catch (e) {
     if (!host.mounted) return;
     ScaffoldMessenger.of(
       host,
-    ).showSnackBar(SnackBar(content: Text('Error fetching cover: $e')));
+    ).showSnackBar(SnackBar(content: Text(l10n.coverFetchError('$e'))));
   }
 }
 
@@ -500,6 +510,7 @@ Future<void> _showMetadataResultsDialog(
   int skippedCount,
 ) async {
   if (updatedRecords.isEmpty && notFoundSongs.isEmpty) return;
+  final l10n = AppLocalizations.of(context);
 
   // Use a mutable list so per-song undo can remove items
   final remaining = List<_MetadataUpdateRecord>.from(updatedRecords);
@@ -514,7 +525,7 @@ Future<void> _showMetadataResultsDialog(
               children: [
                 const AppIcon(AppIcons.manageSearch, size: 22),
                 const SizedBox(width: 10),
-                const Expanded(child: Text('Metadata Fetch Results')),
+                Expanded(child: Text(l10n.metaResultsTitle)),
               ],
             ),
             content: SizedBox(
@@ -539,20 +550,20 @@ Future<void> _showMetadataResultsDialog(
                               AppIcons.checkCircle,
                               AppTokens.success,
                               '${remaining.length}',
-                              'Updated',
+                              l10n.metaStatUpdated,
                             ),
                             _statChip(
                               AppIcons.searchOff,
                               AppTokens.fgSecondary,
                               '${notFoundSongs.length}',
-                              'Not Found',
+                              l10n.metaStatNotFound,
                             ),
                             if (skippedCount > 0)
                               _statChip(
                                 AppIcons.close,
                                 AppTokens.fgTertiary,
                                 '$skippedCount',
-                                'Skipped',
+                                l10n.metaStatSkipped,
                               ),
                           ],
                         ),
@@ -563,7 +574,7 @@ Future<void> _showMetadataResultsDialog(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Updated',
+                              l10n.metaStatUpdated,
                               style: AppTokens.rowTitle(context).copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: AppTokens.success,
@@ -571,7 +582,7 @@ Future<void> _showMetadataResultsDialog(
                             ),
                             TextButton.icon(
                               icon: const AppIcon(AppIcons.restore, size: 14),
-                              label: const Text('Undo All'),
+                              label: Text(l10n.metaUndoAll),
                               style: TextButton.styleFrom(
                                 foregroundColor: AppTokens.danger,
                                 padding: const EdgeInsets.symmetric(
@@ -605,7 +616,7 @@ Future<void> _showMetadataResultsDialog(
                                 if (context.mounted) {
                                   appSnack(
                                     context,
-                                    'Reverted metadata changes for ${remaining.length} track(s)',
+                                    l10n.metaRevertedCount(remaining.length),
                                   );
                                 }
                               },
@@ -651,7 +662,7 @@ Future<void> _showMetadataResultsDialog(
                                           ),
                                           if (rec.source.isNotEmpty)
                                             Text(
-                                              'via ${rec.source}',
+                                              l10n.metaViaSource(rec.source),
                                               style: AppTokens.meta(context)
                                                   .copyWith(
                                                 color: AppTokens.fgTertiary,
@@ -670,7 +681,7 @@ Future<void> _showMetadataResultsDialog(
                                           size: 14,
                                         ),
                                         padding: EdgeInsets.zero,
-                                        tooltip: 'Undo this song',
+                                        tooltip: l10n.metaUndoSong,
                                         color: AppTokens.fgTertiary,
                                         onPressed: () async {
                                           await ref
@@ -702,7 +713,7 @@ Future<void> _showMetadataResultsDialog(
                         if (remaining.length > 20) ...[
                           const SizedBox(height: 4),
                           Text(
-                            '... and ${remaining.length - 20} more',
+                            l10n.metaMoreItems(remaining.length - 20),
                             style: AppTokens.meta(context).copyWith(
                               color: AppTokens.fgTertiary,
                               fontStyle: FontStyle.italic,
@@ -713,7 +724,7 @@ Future<void> _showMetadataResultsDialog(
                       ],
                       if (notFoundSongs.isNotEmpty) ...[
                         Text(
-                          'Could Not Find',
+                          l10n.metaCouldNotFind,
                           style: AppTokens.rowTitle(context).copyWith(
                             fontWeight: FontWeight.bold,
                             color: AppTokens.fgSecondary,
@@ -750,7 +761,7 @@ Future<void> _showMetadataResultsDialog(
                                           ),
                                           Text(
                                             song.artist.isEmpty
-                                                ? 'Unknown Artist'
+                                                ? l10n.metaUnknownArtist
                                                 : song.artist,
                                             style: AppTokens.rowSubtitle(
                                               context,
@@ -768,7 +779,7 @@ Future<void> _showMetadataResultsDialog(
                         if (notFoundSongs.length > 15) ...[
                           const SizedBox(height: 4),
                           Text(
-                            '... and ${notFoundSongs.length - 15} more',
+                            l10n.metaMoreItems(notFoundSongs.length - 15),
                             style: AppTokens.meta(context).copyWith(
                               color: AppTokens.fgTertiary,
                               fontStyle: FontStyle.italic,
@@ -784,7 +795,7 @@ Future<void> _showMetadataResultsDialog(
             actions: [
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Done'),
+                child: Text(l10n.actionDone),
               ),
             ],
           );
@@ -850,6 +861,7 @@ _MetadataFetchDialogState _showMetadataProgressDialog(
   BuildContext host,
   int total,
 ) {
+  final l10n = AppLocalizations.of(host);
   final state = _MetadataFetchDialogState(
     progress: _MetadataFetchProgress(total: total),
   );
@@ -867,11 +879,11 @@ _MetadataFetchDialogState _showMetadataProgressDialog(
             final theme = Theme.of(context);
 
             return AlertDialog(
-              title: const Row(
+              title: Row(
                 children: [
                   AppIcon(AppIcons.manageSearch, size: 22),
                   SizedBox(width: 10),
-                  Expanded(child: Text('Fetching Missing Metadata')),
+                  Expanded(child: Text(l10n.metaFetchingTitle)),
                 ],
               ),
               content: SizedBox(
@@ -905,16 +917,18 @@ _MetadataFetchDialogState _showMetadataProgressDialog(
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _miniStat('Updated', p.updated, AppTokens.success),
+                        _miniStat(
+                            l10n.metaStatUpdated, p.updated, AppTokens.success),
                         const SizedBox(width: 16),
                         _miniStat(
-                          'Not found',
+                          l10n.metaStatNotFound,
                           p.notFound,
                           AppTokens.fgSecondary,
                         ),
                         if (p.skipped > 0) ...[
                           const SizedBox(width: 16),
-                          _miniStat('Skipped', p.skipped, AppTokens.fgTertiary),
+                          _miniStat(l10n.metaStatSkipped, p.skipped,
+                              AppTokens.fgTertiary),
                         ],
                       ],
                     ),
@@ -938,7 +952,7 @@ _MetadataFetchDialogState _showMetadataProgressDialog(
                           Navigator.pop(dialogContext);
                         },
                         icon: const AppIcon(AppIcons.close, size: 16),
-                        label: const Text('Cancel'),
+                        label: Text(l10n.actionCancel),
                       ),
                     ),
                   ],
@@ -1084,6 +1098,7 @@ Future<void> songActionFetchMissingMetadataForList(
   List<Song> songs,
 ) async {
   if (songs.isEmpty) return;
+  final l10n = AppLocalizations.of(host);
 
   // Pre-filter: only process songs with truly missing metadata
   final targetSongs = songs
@@ -1102,8 +1117,8 @@ Future<void> songActionFetchMissingMetadataForList(
       appSnack(
         host,
         skippedCount > 0
-            ? 'All $skippedCount tracks already have metadata'
-            : 'No tracks with missing metadata found',
+            ? l10n.metaAllHaveMetadata(skippedCount)
+            : l10n.metaNoMissingMetadata,
         tone: AppTone.success,
       );
     }
@@ -1137,7 +1152,7 @@ Future<void> songActionFetchMissingMetadataForList(
     dialogState.updateProgress(
       dialogState.progress.copyWith(
         processed: processed,
-        currentSong: 'Searching batch $batchNum...',
+        currentSong: l10n.metaSearchingBatch(batchNum),
       ),
     );
 
@@ -1223,7 +1238,7 @@ Future<void> songActionFetchMissingMetadataForList(
   if (dialogState.cancelled) {
     appSnack(
       host,
-      'Metadata fetch cancelled (${updatedRecords.length} updated, ${notFoundSongs.length} not found)',
+      l10n.metaCancelledSummary(updatedRecords.length, notFoundSongs.length),
       tone: AppTone.warning,
     );
     // Still show partial results if there were updates

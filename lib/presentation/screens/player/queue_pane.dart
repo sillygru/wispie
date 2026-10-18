@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../../l10n/app_localizations.dart';
 import '../../../models/queue_item.dart';
 import '../../../models/queue_snapshot.dart';
 import '../../../models/song.dart';
@@ -146,6 +147,7 @@ class _QueuePaneState extends ConsumerState<QueuePane>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final l10n = AppLocalizations.of(context);
 
     // If auto-hide is switched off while this pane is alive, whatever is
     // hidden comes straight back — the setting wins over the current state.
@@ -171,7 +173,7 @@ class _QueuePaneState extends ConsumerState<QueuePane>
               PlayerTokens.s2,
             ),
             child: PlayerSegmentedPill(
-              labels: const ['Up Next', 'History'],
+              labels: [l10n.queueTabUpNext, l10n.queueTabHistory],
               position: _segment,
               onSelected: _select,
               accent: widget.accent,
@@ -394,6 +396,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     List<QueueItem> queue,
     QueueItem item,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final overlayBox =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;
@@ -406,27 +409,27 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       context: context,
       position: position,
       items: [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'play',
           child: Row(
             children: [
               Icon(Icons.play_arrow_rounded, size: 20),
               SizedBox(width: PlayerTokens.s2),
-              Text('Play'),
+              Text(l10n.queueActionPlay),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'top',
           child: Row(
             children: [
               Icon(Icons.vertical_align_top_rounded, size: 20),
               SizedBox(width: PlayerTokens.s2),
-              Text('Move to top'),
+              Text(l10n.queueActionMoveToTop),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'remove',
           child: Row(
             children: [
@@ -437,19 +440,19 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
               ),
               SizedBox(width: PlayerTokens.s2),
               Text(
-                'Remove',
+                l10n.queueActionRemove,
                 style: TextStyle(color: Colors.redAccent),
               ),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'more',
           child: Row(
             children: [
               Icon(Icons.more_horiz_rounded, size: 20),
               SizedBox(width: PlayerTokens.s2),
-              Text('Song options…'),
+              Text(l10n.queueActionSongOptions),
             ],
           ),
         ),
@@ -498,17 +501,16 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   }
 
   void _confirmClear(AudioPlayerManager audioManager) {
+    final l10n = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Clear Queue?'),
-        content: const Text(
-          'This will remove all upcoming songs from the current queue.',
-        ),
+        title: Text(l10n.queueClearDialogTitle),
+        content: Text(l10n.queueClearDialogMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () {
@@ -516,7 +518,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
               Navigator.pop(dialogContext);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Clear All'),
+            child: Text(l10n.queueClearAll),
           ),
         ],
       ),
@@ -526,6 +528,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   @override
   Widget build(BuildContext context) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
+    final l10n = AppLocalizations.of(context);
     final animatedWave =
         ref.watch(settingsProvider.select((s) => s.animatedSoundWaveEnabled));
     final visualizerMode =
@@ -570,8 +573,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                           slivers: [
                             if (played.isNotEmpty) ...[
                               SliverToBoxAdapter(
-                                child:
-                                    const PlayerSectionHeader(label: 'Played'),
+                                child: PlayerSectionHeader(
+                                    label: l10n.queueSectionPlayed),
                               ),
                               SliverList.builder(
                                 itemCount: played.length,
@@ -589,8 +592,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                                 ),
                               ),
                               SliverToBoxAdapter(
-                                child: const PlayerSectionHeader(
-                                    label: 'Now playing'),
+                                child: PlayerSectionHeader(
+                                    label: l10n.queueSectionNowPlaying),
                               ),
                             ],
                             if (current != null)
@@ -627,8 +630,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                               ),
                             if (upcoming.isNotEmpty) ...[
                               SliverToBoxAdapter(
-                                child:
-                                    const PlayerSectionHeader(label: 'Up next'),
+                                child: PlayerSectionHeader(
+                                    label: l10n.queueSectionUpNext),
                               ),
                               SliverReorderableList(
                                 itemCount: upcoming.length,
@@ -723,12 +726,12 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       key: ValueKey('upnext_${item.queueId}'),
       dismissKey: ValueKey('upnext_dismiss_${item.queueId}'),
       startAction: SwipeAction(
-        label: 'Add to top',
+        label: AppLocalizations.of(context).queueSwipeAddToTop,
         icon: Icons.vertical_align_top_rounded,
         color: Theme.of(context).colorScheme.primary,
       ),
-      endAction: const SwipeAction(
-        label: 'Remove',
+      endAction: SwipeAction(
+        label: AppLocalizations.of(context).queueActionRemove,
         color: AppTokens.danger,
         icon: Icons.delete_outline_rounded,
       ),
@@ -831,13 +834,14 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
               TextSpan(
                 children: [
                   TextSpan(
-                    text: '$count ${count == 1 ? 'song' : 'songs'}',
+                    text: AppLocalizations.of(context).queueSongCount(count),
                     style: PlayerTokens.trackSubtitle(context)
                         .copyWith(fontWeight: FontWeight.w700),
                   ),
                   if (remaining.isNotEmpty)
                     TextSpan(
-                      text: '  ·  $remaining',
+                      text: AppLocalizations.of(context)
+                          .queueRemainingSuffix(remaining),
                       style: PlayerTokens.meta(context),
                     ),
                 ],
@@ -847,7 +851,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             ),
           ),
           IconButton(
-            tooltip: 'Shuffle upcoming',
+            tooltip: AppLocalizations.of(context).queueShuffleUpcomingTooltip,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.shuffle_rounded, size: 20),
             color: Colors.white.withValues(alpha: PlayerTokens.aSecondary),
@@ -859,7 +863,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             },
           ),
           IconButton(
-            tooltip: 'Clear upcoming',
+            tooltip: AppLocalizations.of(context).queueClearUpcomingTooltip,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.delete_sweep_rounded, size: 20),
             color: Colors.white.withValues(alpha: PlayerTokens.aSecondary),
@@ -881,7 +885,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
           ),
           const SizedBox(height: PlayerTokens.s3),
-          Text('Queue is empty', style: PlayerTokens.paneTitle(context)),
+          Text(AppLocalizations.of(context).queueEmpty,
+              style: PlayerTokens.paneTitle(context)),
         ],
       ),
     );
@@ -978,7 +983,8 @@ class _WideUpcomingRowState extends State<_WideUpcomingRow> {
                   children: [
                     if (_hovering) ...[
                       IconButton(
-                        tooltip: 'Move to top',
+                        tooltip:
+                            AppLocalizations.of(context).queueActionMoveToTop,
                         icon: const Icon(
                           Icons.vertical_align_top_rounded,
                           size: 20,
@@ -987,7 +993,8 @@ class _WideUpcomingRowState extends State<_WideUpcomingRow> {
                         onPressed: widget.onMoveToTop,
                       ),
                       IconButton(
-                        tooltip: 'Remove from queue',
+                        tooltip: AppLocalizations.of(context)
+                            .queueRemoveFromQueueTooltip,
                         icon: const Icon(Icons.close_rounded, size: 20),
                         color: Colors.white54,
                         onPressed: widget.onRemove,
@@ -1066,7 +1073,7 @@ class _UndoBar extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              'Removed $title',
+              AppLocalizations.of(context).queueRemovedTitle(title),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: PlayerTokens.trackSubtitle(context),
@@ -1075,7 +1082,7 @@ class _UndoBar extends StatelessWidget {
           TextButton(
             onPressed: onUndo,
             style: TextButton.styleFrom(foregroundColor: accent),
-            child: const Text('Undo'),
+            child: Text(AppLocalizations.of(context).queueUndo),
           ),
         ],
       ),
@@ -1100,15 +1107,16 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
   String? _expandedId;
 
   void _confirmClearAll() {
+    final l10n = AppLocalizations.of(context);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Clear History?'),
-        content: const Text('This will delete every saved queue snapshot.'),
+        title: Text(l10n.historyClearDialogTitle),
+        content: Text(l10n.historyClearDialogMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           TextButton(
             onPressed: () {
@@ -1116,7 +1124,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
               Navigator.pop(dialogContext);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Clear All'),
+            child: Text(l10n.queueClearAll),
           ),
         ],
       ),
@@ -1138,13 +1146,16 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
         );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Restored ${songs.length} tracks')),
+      SnackBar(
+          content: Text(
+              AppLocalizations.of(context).historyRestoredCount(songs.length))),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final history = ref.watch(queueHistoryProvider);
+    final l10n = AppLocalizations.of(context);
 
     return history.when(
       loading: () => const Center(
@@ -1155,8 +1166,8 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
         ),
       ),
       error: (error, _) => Center(
-        child:
-            Text('Could not load history', style: PlayerTokens.meta(context)),
+        child: Text(AppLocalizations.of(context).historyLoadError,
+            style: PlayerTokens.meta(context)),
       ),
       data: (snapshots) {
         if (snapshots.isEmpty) {
@@ -1170,10 +1181,11 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
                   color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
                 ),
                 const SizedBox(height: PlayerTokens.s3),
-                Text('No past queues', style: PlayerTokens.paneTitle(context)),
+                Text(AppLocalizations.of(context).historyEmptyTitle,
+                    style: PlayerTokens.paneTitle(context)),
                 const SizedBox(height: PlayerTokens.s1),
                 Text(
-                  'Queues you play get saved here automatically.',
+                  AppLocalizations.of(context).historyEmptyMessage,
                   style: PlayerTokens.meta(context),
                 ),
               ],
@@ -1186,13 +1198,14 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
         // them — no sorting or second pass needed.
         final rows = <Object>[
           _HistoryHeader(
-            label: '${snapshots.length} saved queues',
+            label: AppLocalizations.of(context)
+                .historySavedCount(snapshots.length),
             onClearAll: _confirmClearAll,
           ),
         ];
         String? bucket;
         for (final snapshot in snapshots) {
-          final label = _dayBucket(snapshot.createdDateTime);
+          final label = _dayBucket(l10n, snapshot.createdDateTime);
           if (label != bucket) {
             bucket = label;
             rows.add(label);
@@ -1212,7 +1225,8 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
             if (row is _HistoryHeader) {
               return PlayerSectionHeader(
                 label: row.label,
-                trailingLabel: 'Clear all',
+                trailingLabel:
+                    AppLocalizations.of(context).historyClearAllTrailing,
                 trailingIcon: Icons.delete_sweep_rounded,
                 onTrailingTap: row.onClearAll,
               );
@@ -1249,17 +1263,17 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
     );
   }
 
-  static String _dayBucket(DateTime when) {
+  static String _dayBucket(AppLocalizations l10n, DateTime when) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(when.year, when.month, when.day);
     final diff = today.difference(day).inDays;
 
-    if (diff <= 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    if (diff < 7) return 'This week';
-    if (diff < 30) return 'This month';
-    return 'Earlier';
+    if (diff <= 0) return l10n.historyDayToday;
+    if (diff == 1) return l10n.historyDayYesterday;
+    if (diff < 7) return l10n.historyDayThisWeek;
+    if (diff < 30) return l10n.historyDayThisMonth;
+    return l10n.historyDayEarlier;
   }
 }
 
@@ -1363,9 +1377,9 @@ class _SnapshotCard extends ConsumerWidget {
     final total = DurationFormatter.formatTotalCompact(tracks);
     final count = snapshot.songFilenames.length;
     final meta = [
-      '$count ${count == 1 ? 'track' : 'tracks'}',
+      AppLocalizations.of(context).snapshotTrackCount(count),
       if (total.isNotEmpty) total,
-    ].join(' · ');
+    ].join(AppLocalizations.of(context).queueMetaSeparator);
 
     return Material(
       color: Colors.transparent,
@@ -1387,7 +1401,7 @@ class _SnapshotCard extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      _title(playlistName),
+                      _title(context, playlistName),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: PlayerTokens.trackTitle(context)
@@ -1446,14 +1460,17 @@ class _SnapshotCard extends ConsumerWidget {
 
   /// Stored names are timestamps unless the user renamed the snapshot, so a
   /// custom name wins, then the playlist it came from, then the source.
-  String _title(String? playlistName) {
+  String _title(BuildContext context, String? playlistName) {
     final isDefaultName = snapshot.name ==
         QueueSnapshot.defaultNameForTimestamp(snapshot.createdAt);
     if (!isDefaultName && snapshot.name.trim().isNotEmpty) return snapshot.name;
     if (playlistName != null && playlistName.trim().isNotEmpty) {
       return playlistName;
     }
-    return snapshot.source == 'shuffle' ? 'Shuffled queue' : 'Saved queue';
+    final l10n = AppLocalizations.of(context);
+    return snapshot.source == 'shuffle'
+        ? l10n.snapshotShuffledQueue
+        : l10n.snapshotSavedQueue;
   }
 
   Widget _buildTracks(BuildContext context, List<Song> tracks, int missing) {
@@ -1466,7 +1483,7 @@ class _SnapshotCard extends ConsumerWidget {
           PlayerTokens.s4,
         ),
         child: Text(
-          'None of these tracks are still in your library.',
+          AppLocalizations.of(context).snapshotEmptyTracks,
           style: PlayerTokens.meta(context),
         ),
       );
@@ -1501,16 +1518,19 @@ class _SnapshotCard extends ConsumerWidget {
               Expanded(
                 child: Text(
                   [
-                    if (hidden > 0) '+$hidden more',
-                    if (missing > 0) '$missing missing from library',
-                  ].join(' · '),
+                    if (hidden > 0)
+                      AppLocalizations.of(context).snapshotMoreHidden(hidden),
+                    if (missing > 0)
+                      AppLocalizations.of(context)
+                          .snapshotMissingCount(missing),
+                  ].join(AppLocalizations.of(context).queueMetaSeparator),
                   style: PlayerTokens.meta(context),
                 ),
               ),
               TextButton.icon(
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                label: const Text('Delete'),
+                label: Text(AppLocalizations.of(context).actionDelete),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.redAccent.withValues(alpha: 0.9),
                   textStyle: PlayerTokens.meta(context)

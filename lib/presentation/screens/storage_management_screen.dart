@@ -2,6 +2,7 @@ import 'dart:io' show exit;
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/library_repair_service.dart';
 import '../../services/storage_analysis_service.dart';
 import '../../providers/setup_provider.dart';
@@ -89,15 +90,16 @@ class _StorageManagementScreenState
     }
   }
 
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
+  String _formatSize(AppLocalizations l10n, int bytes) {
+    if (bytes < 1024) return l10n.storageSizeBytes('$bytes');
     if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      return l10n.storageSizeKb((bytes / 1024).toStringAsFixed(1));
     }
     if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+      return l10n.storageSizeMb((bytes / (1024 * 1024)).toStringAsFixed(1));
     }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    return l10n
+        .storageSizeGb((bytes / (1024 * 1024 * 1024)).toStringAsFixed(1));
   }
 
   Future<bool> _showConfirmationDialog({
@@ -108,6 +110,7 @@ class _StorageManagementScreenState
     bool requireTextInput = false,
     String? textInputHint,
   }) async {
+    final l10n = AppLocalizations.of(context);
     final confirm1 = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -116,7 +119,7 @@ class _StorageManagementScreenState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -135,18 +138,19 @@ class _StorageManagementScreenState
     if (!mounted) return false;
 
     // Second confirmation with text input
+    final word = textInputHint ?? l10n.storageDeleteKeyword;
     final controller = TextEditingController();
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final confirm2 = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Final Confirmation'),
+        title: Text(l10n.storageFinalConfirmTitle),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'To confirm, type "${textInputHint ?? 'DELETE'}" below:',
+              l10n.storageConfirmTypePrompt(word),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -154,7 +158,7 @@ class _StorageManagementScreenState
               controller: controller,
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
-                hintText: textInputHint ?? 'DELETE',
+                hintText: word,
               ),
               autofocus: true,
             ),
@@ -163,17 +167,17 @@ class _StorageManagementScreenState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () {
-              if (controller.text == (textInputHint ?? 'DELETE')) {
+              if (controller.text == word) {
                 Navigator.pop(dialogContext, true);
               } else {
                 // Use the captured scaffoldMessenger to avoid async gap issues
                 scaffoldMessenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Please type the confirmation text exactly.'),
+                  SnackBar(
+                    content: Text(l10n.storageTypeExactly),
                     backgroundColor: AppTokens.danger,
                   ),
                 );
@@ -183,7 +187,7 @@ class _StorageManagementScreenState
               backgroundColor: confirmColor,
               foregroundColor: Colors.white,
             ),
-            child: const Text('CONFIRM'),
+            child: Text(l10n.storageConfirmUpper),
           ),
         ],
       ),
@@ -193,18 +197,13 @@ class _StorageManagementScreenState
   }
 
   Future<void> _handleClearDatabase() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Database?',
-      content: 'This will permanently delete all your user data, including:\n\n'
-          '• All playlists\n'
-          '• Favorites and hidden songs\n'
-          '• Playback statistics\n'
-          '• App settings and preferences\n\n'
-          'The app will reset. This action cannot be undone.',
-      confirmText: 'Clear Database',
+      title: l10n.storageClearDatabaseTitle,
+      content: l10n.storageClearDatabaseBody,
+      confirmText: l10n.storageClearDatabaseAction,
       confirmColor: AppTokens.danger,
       requireTextInput: true,
-      textInputHint: 'DELETE',
     );
 
     if (!confirmed || !mounted) return;
@@ -224,21 +223,17 @@ class _StorageManagementScreenState
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing database: $e');
+        appSnack(context, l10n.storageClearDatabaseError('$e'));
       }
     }
   }
 
   Future<void> _handleRepairLibrary() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Repair Library Links?',
-      content:
-          'This re-links cached album art and file paths to where they actually '
-          'are on this device.\n\n'
-          'Tracks whose files are no longer here will be removed from the '
-          'library. Favourites, playlists and play counts are kept, and '
-          'reattach automatically if those files come back.',
-      confirmText: 'Repair',
+      title: l10n.storageRepairTitle,
+      content: l10n.storageRepairBody,
+      confirmText: l10n.storageRepair,
       confirmColor: AppTokens.success,
     );
 
@@ -257,17 +252,17 @@ class _StorageManagementScreenState
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error repairing library: $e');
+        appSnack(context, l10n.storageRepairError('$e'));
       }
     }
   }
 
   Future<void> _handleClearCovers() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Cover Cache?',
-      content: 'This will delete all cached album artwork.\n\n'
-          'The covers will be re-extracted from your music files the next time you browse your library.',
-      confirmText: 'Clear Covers',
+      title: l10n.storageClearCoversTitle,
+      content: l10n.storageClearCoversBody,
+      confirmText: l10n.storageClearCoversAction,
       confirmColor: AppTokens.warning,
     );
 
@@ -282,22 +277,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Cover cache cleared successfully');
+        appSnack(context, l10n.storageClearCoversSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing covers: $e');
+        appSnack(context, l10n.storageClearCoversError('$e'));
       }
     }
   }
 
   Future<void> _handleClearBackups() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Backups?',
-      content: 'This will delete all local backup files.\n\n'
-          'Make sure you have exported any important backups before proceeding.',
-      confirmText: 'Clear Backups',
+      title: l10n.storageClearBackupsTitle,
+      content: l10n.storageClearBackupsBody,
+      confirmText: l10n.storageClearBackupsAction,
       confirmColor: AppTokens.warning,
     );
 
@@ -312,22 +307,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Backups cleared successfully');
+        appSnack(context, l10n.storageClearBackupsSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing backups: $e');
+        appSnack(context, l10n.storageClearBackupsError('$e'));
       }
     }
   }
 
   Future<void> _handleClearLibraryCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Library Cache?',
-      content: 'This will clear the library cache.\n\n'
-          'Your music library will be rescanned the next time you open the app.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearLibraryTitle,
+      content: l10n.storageClearLibraryBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -342,22 +337,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Library cache cleared successfully');
+        appSnack(context, l10n.storageClearLibrarySuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing library cache: $e');
+        appSnack(context, l10n.storageClearLibraryError('$e'));
       }
     }
   }
 
   Future<void> _handleClearSearchIndex() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Search Index?',
-      content: 'This will delete the search index.\n\n'
-          'The search index will be rebuilt automatically when you rescan your library.',
-      confirmText: 'Clear Index',
+      title: l10n.storageClearSearchTitle,
+      content: l10n.storageClearSearchBody,
+      confirmText: l10n.storageClearSearchAction,
       confirmColor: AppTokens.warning,
     );
 
@@ -372,22 +367,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Search index cleared successfully');
+        appSnack(context, l10n.storageClearSearchSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing search index: $e');
+        appSnack(context, l10n.storageClearSearchError('$e'));
       }
     }
   }
 
   Future<void> _handleClearWaveformCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Waveform Cache?',
-      content: 'This will delete all cached song waveforms.\n\n'
-          'Waveforms will be regenerated the next time you view song details.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearWaveformTitle,
+      content: l10n.storageClearWaveformBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -402,23 +397,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Waveform cache cleared successfully');
+        appSnack(context, l10n.storageClearWaveformSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing waveform cache: $e');
+        appSnack(context, l10n.storageClearWaveformError('$e'));
       }
     }
   }
 
   Future<void> _handleClearBeatMapCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Beat Analysis?',
-      content: 'This will delete the cached beat maps used by the '
-          'beat-reactive player.\n\n'
-          'They are rebuilt automatically the next time each song plays.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearBeatTitle,
+      content: l10n.storageClearBeatBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -433,22 +427,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Beat analysis cache cleared successfully');
+        appSnack(context, l10n.storageClearBeatSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing beat analysis cache: $e');
+        appSnack(context, l10n.storageClearBeatError('$e'));
       }
     }
   }
 
   Future<void> _handleClearColorCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Color Cache?',
-      content: 'This will delete all cached theme colors.\n\n'
-          'Colors will be re-extracted from album art the next time songs are played.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearColorTitle,
+      content: l10n.storageClearColorBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -463,22 +457,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Color cache cleared successfully');
+        appSnack(context, l10n.storageClearColorSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing color cache: $e');
+        appSnack(context, l10n.storageClearColorError('$e'));
       }
     }
   }
 
   Future<void> _handleClearLyricsCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Lyrics Cache?',
-      content: 'This will remove cached lyrics lookups.\n\n'
-          'Lyrics will be re-read from song metadata when needed.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearLyricsTitle,
+      content: l10n.storageClearLyricsBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -493,22 +487,22 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Lyrics cache cleared successfully');
+        appSnack(context, l10n.storageClearLyricsSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing lyrics cache: $e');
+        appSnack(context, l10n.storageClearLyricsError('$e'));
       }
     }
   }
 
   Future<void> _handleClearBlurredCache() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear Blurred Background Cache?',
-      content: 'This will delete all pre-generated blurred backgrounds.\n\n'
-          'They will be re-generated the next time you trigger a rebuild in the Indexer.',
-      confirmText: 'Clear Cache',
+      title: l10n.storageClearBlurredTitle,
+      content: l10n.storageClearBlurredBody,
+      confirmText: l10n.storageClearCache,
       confirmColor: AppTokens.warning,
     );
 
@@ -523,34 +517,24 @@ class _StorageManagementScreenState
       await _loadSizes();
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Blurred background cache cleared successfully');
+        appSnack(context, l10n.storageClearBlurredSuccess);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing blurred cache: $e');
+        appSnack(context, l10n.storageClearBlurredError('$e'));
       }
     }
   }
 
   Future<void> _handleDangerousClear() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
-      title: 'Clear All App Data?',
-      content: 'This action is dangerous and cannot be undone.\n\n'
-          'It will permanently delete:\n'
-          '• All your preferences and settings\n'
-          '• Playback statistics and history\n'
-          '• Cached song covers\n'
-          '• All local backups\n'
-          '• Library cache\n'
-          '• Search index\n'
-          '• Waveform cache\n'
-          '• Lyrics cache\n\n'
-          'The app will reset.',
-      confirmText: 'Clear Everything',
+      title: l10n.storageClearAllTitle,
+      content: l10n.storageClearAllBody,
+      confirmText: l10n.storageClearAllAction,
       confirmColor: AppTokens.danger,
       requireTextInput: true,
-      textInputHint: 'DELETE',
     );
 
     if (!confirmed || !mounted) return;
@@ -565,15 +549,16 @@ class _StorageManagementScreenState
     } catch (e) {
       if (mounted) {
         setState(() => _isClearing = false);
-        appSnack(context, 'Error clearing data: $e');
+        appSnack(context, l10n.storageClearAllError('$e'));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Manage Storage'),
+      appBar: AppTopBar(title: l10n.storageManageTitle),
       body: _isLoading || _isClearing
           ? const Center(child: CircularProgressIndicator())
           : WideContentCenter(
@@ -585,8 +570,8 @@ class _StorageManagementScreenState
                   children: [
                     _buildRepairCard(),
                     _buildStorageCard(
-                      title: 'Database',
-                      subtitle: 'User data, statistics, and settings',
+                      title: l10n.storageDatabaseTitle,
+                      subtitle: l10n.storageDatabaseSubtitle,
                       size: _databaseSize,
                       icon: AppIcons.storage,
                       color: AppTokens.info,
@@ -594,24 +579,24 @@ class _StorageManagementScreenState
                       isDestructive: true,
                     ),
                     _buildStorageCard(
-                      title: 'Cover Cache',
-                      subtitle: 'Cached song album art',
+                      title: l10n.storageCoverCacheTitle,
+                      subtitle: l10n.storageCoverCacheSubtitle,
                       size: _coversSize,
                       icon: AppIcons.image,
                       color: AppTokens.info,
                       onClear: _coversSize > 0 ? _handleClearCovers : null,
                     ),
                     _buildStorageCard(
-                      title: 'Backups',
-                      subtitle: 'Local backup files',
+                      title: l10n.storageBackupsTitle,
+                      subtitle: l10n.storageBackupsSubtitle,
                       size: _backupsSize,
                       icon: AppIcons.cloudUpload,
                       color: AppTokens.warning,
                       onClear: _backupsSize > 0 ? _handleClearBackups : null,
                     ),
                     _buildStorageCard(
-                      title: 'Library Cache',
-                      subtitle: 'Cached song library data',
+                      title: l10n.storageLibraryCacheTitle,
+                      subtitle: l10n.storageLibraryCacheSubtitle,
                       size: _libraryCacheSize,
                       icon: AppIcons.library,
                       color: AppTokens.success,
@@ -620,8 +605,8 @@ class _StorageManagementScreenState
                           : null,
                     ),
                     _buildStorageCard(
-                      title: 'Search Index',
-                      subtitle: 'Search index for fast queries',
+                      title: l10n.storageSearchIndexTitle,
+                      subtitle: l10n.storageSearchIndexSubtitle,
                       size: _searchIndexSize,
                       icon: AppIcons.search,
                       color: AppTokens.success,
@@ -629,8 +614,8 @@ class _StorageManagementScreenState
                           _searchIndexSize > 0 ? _handleClearSearchIndex : null,
                     ),
                     _buildStorageCard(
-                      title: 'Waveform Cache',
-                      subtitle: 'Cached song waveforms for visualizers',
+                      title: l10n.storageWaveformCacheTitle,
+                      subtitle: l10n.storageWaveformCacheSubtitle,
                       size: _waveformCacheSize,
                       icon: AppIcons.waves,
                       color: AppTokens.info,
@@ -639,8 +624,8 @@ class _StorageManagementScreenState
                           : null,
                     ),
                     _buildStorageCard(
-                      title: 'Beat Analysis',
-                      subtitle: 'Cached beat maps for the reactive player',
+                      title: l10n.storageBeatAnalysisTitle,
+                      subtitle: l10n.storageBeatAnalysisSubtitle,
                       size: _beatMapCacheSize,
                       icon: AppIcons.graphicEq,
                       color: AppTokens.success,
@@ -649,8 +634,8 @@ class _StorageManagementScreenState
                           : null,
                     ),
                     _buildStorageCard(
-                      title: 'Color Cache',
-                      subtitle: 'Cached theme colors from album art',
+                      title: l10n.storageColorCacheTitle,
+                      subtitle: l10n.storageColorCacheSubtitle,
                       size: _colorCacheSize,
                       icon: AppIcons.palette,
                       color: AppTokens.danger,
@@ -658,8 +643,8 @@ class _StorageManagementScreenState
                           _colorCacheSize > 0 ? _handleClearColorCache : null,
                     ),
                     _buildStorageCard(
-                      title: 'Lyrics Cache',
-                      subtitle: 'Cached lyrics availability and text',
+                      title: l10n.storageLyricsCacheTitle,
+                      subtitle: l10n.storageLyricsCacheSubtitle,
                       size: _lyricsCacheSize,
                       icon: AppIcons.lyrics,
                       color: AppTokens.info,
@@ -667,8 +652,8 @@ class _StorageManagementScreenState
                           _lyricsCacheSize > 0 ? _handleClearLyricsCache : null,
                     ),
                     _buildStorageCard(
-                      title: 'Blurred Cache',
-                      subtitle: 'Pre-generated blurred backgrounds',
+                      title: l10n.storageBlurredCacheTitle,
+                      subtitle: l10n.storageBlurredCacheSubtitle,
                       size: _blurredCacheSize,
                       icon: AppIcons.blur,
                       color: AppTokens.info,
@@ -680,17 +665,17 @@ class _StorageManagementScreenState
                     const Divider(),
                     const SizedBox(height: 24),
                     ListTile(
-                      title: const Text(
-                        'Clear All User Data',
-                        style: TextStyle(
+                      title: Text(
+                        l10n.storageClearAllTile,
+                        style: const TextStyle(
                           color: AppTokens.danger,
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                         ),
                       ),
-                      subtitle: const Text(
-                        'Permanently delete all data and reset app',
-                        style: TextStyle(color: AppTokens.danger),
+                      subtitle: Text(
+                        l10n.storageClearAllTileSubtitle,
+                        style: const TextStyle(color: AppTokens.danger),
                       ),
                       leading: const AppIcon(
                         AppIcons.deleteForever,
@@ -718,6 +703,7 @@ class _StorageManagementScreenState
   /// after moving devices comes here to clear something, and repairing the
   /// links is both what they actually want and the non-destructive option.
   Widget _buildRepairCard() {
+    final l10n = AppLocalizations.of(context);
     return AppSurface(
       padding: EdgeInsets.zero,
       margin: const EdgeInsets.only(bottom: 12),
@@ -741,17 +727,16 @@ class _StorageManagementScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Repair Library Links',
-                        style: TextStyle(
+                      Text(
+                        l10n.storageRepairCardTitle,
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Missing album art after a restore or a new phone? '
-                        'This re-links artwork and file paths.',
+                        l10n.storageRepairCardBody,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 13,
@@ -768,7 +753,7 @@ class _StorageManagementScreenState
               child: FilledButton.icon(
                 onPressed: _handleRepairLibrary,
                 icon: const AppIcon(AppIcons.refresh),
-                label: const Text('Repair'),
+                label: Text(l10n.storageRepair),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTokens.surface(2),
                   foregroundColor: AppTokens.fgPrimary,
@@ -790,6 +775,7 @@ class _StorageManagementScreenState
     VoidCallback? onClear,
     bool isDestructive = false,
   }) {
+    final l10n = AppLocalizations.of(context);
     return AppSurface(
       padding: EdgeInsets.zero,
       margin: const EdgeInsets.only(bottom: 12),
@@ -832,7 +818,7 @@ class _StorageManagementScreenState
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  _formatSize(size),
+                  _formatSize(l10n, size),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -847,7 +833,7 @@ class _StorageManagementScreenState
                 child: FilledButton.icon(
                   onPressed: onClear,
                   icon: const AppIcon(AppIcons.delete),
-                  label: const Text('Clear'),
+                  label: Text(l10n.storageClear),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTokens.surface(2),
                     foregroundColor:

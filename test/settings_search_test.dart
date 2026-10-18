@@ -1,12 +1,17 @@
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wispie/domain/models/settings_entry.dart';
+import 'package:wispie/l10n/app_localizations.dart';
 import 'package:wispie/domain/services/settings_search_service.dart';
 import 'package:wispie/presentation/screens/settings_registry.dart';
 
 void main() {
   const service = SettingsSearchService();
+  final settingsRegistry = buildSettingsRegistry(
+    lookupAppLocalizations(const Locale('en')),
+  );
 
   List<SettingsEntry> find(String query) =>
       service.search(settingsRegistry, query);

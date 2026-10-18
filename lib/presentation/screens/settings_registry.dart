@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../domain/models/settings_entry.dart';
+import '../../l10n/app_localizations.dart';
 import '../tokens/app_icons.dart';
 import 'about_settings_screen.dart';
 import 'appearance_settings_screen.dart';
@@ -37,634 +38,614 @@ class SettingsDestination extends SettingsEntry {
   });
 }
 
-/// Every setting the search can reach.
+/// Every setting the search can reach, in the current language.
 ///
 /// This is hand-maintained: Dart can't enumerate widget trees, so a row and its
 /// entry are two edits. `test/settings_search_test.dart` guards the join by
 /// checking that each [SettingsEntry.anchorId] here really appears as a
 /// `searchId:` in a settings screen — a row renamed or removed without its
 /// entry fails the suite rather than silently going missing from search.
-final List<SettingsDestination> settingsRegistry = [
-  // ------------------------------------------------------------------ pages
-  SettingsDestination(
-    icon: AppIcons.library,
-    title: 'Library',
-    subtitle: 'Folders, filters, scanning',
-    breadcrumb: 'Settings',
-    keywords: const ['scan', 'folders', 'filters', 'songs'],
-    open: () => const LibrarySettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.playCircle,
-    title: 'Playback',
-    subtitle: 'Transitions, fades, audio',
-    breadcrumb: 'Settings',
-    keywords: const ['audio', 'sound', 'transitions'],
-    open: () => const PlaybackSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.subtitles,
-    title: 'Lyrics',
-    subtitle: 'Word sync, translation, sidebar',
-    breadcrumb: 'Settings',
-    keywords: const ['lyrics', 'translate', 'karaoke', 'subtitles'],
-    open: () => const LyricsSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.home,
-    title: 'Home & Navigation',
-    subtitle: 'Home sections, lists, quick actions',
-    breadcrumb: 'Settings',
-    keywords: const ['home', 'quick picks', 'gestures', 'bars', 'layout'],
-    open: () => const HomeSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.storage,
-    title: 'Storage',
-    subtitle: 'Disk usage, indexes, caches',
-    breadcrumb: 'Settings',
-    keywords: const ['disk', 'space', 'cache', 'indexer', 'cleanup'],
-    open: () => const StorageSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.palette,
-    title: 'Appearance',
-    subtitle: 'Now playing, motion, app icon',
-    breadcrumb: 'Settings',
-    keywords: const ['theme', 'colour', 'color', 'display', 'look'],
-    open: () => const AppearanceSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.cloudUpload,
-    title: 'Sync',
-    subtitle: 'Encrypted cross-device sync',
-    breadcrumb: 'Settings',
-    keywords: const ['cloud', 'account', 'devices', 'encrypted'],
-    open: () => const SyncSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.storage,
-    title: 'Backup & Restore',
-    subtitle: 'Export, import, automatic backups',
-    breadcrumb: 'Settings',
-    keywords: const ['backup', 'restore', 'export', 'import', 'data'],
-    open: () => const BackupSettingsScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.dataObject,
-    title: 'Indexer',
-    subtitle: 'Rebuild indexes and caches',
-    breadcrumb: 'Settings › Storage',
-    keywords: const ['index', 'rebuild', 'cache', 'reindex'],
-    open: () => const IndexerScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.info,
-    title: 'About',
-    subtitle: 'Version, updates, release notes',
-    breadcrumb: 'Settings',
-    keywords: const ['version', 'update', 'changelog', 'release'],
-    open: () => const AboutSettingsScreen(),
-  ),
+List<String> _kw(String csv) => csv.split(',');
 
-  // ---------------------------------------------------------------- library
-  SettingsDestination(
-    anchorId: 'library.folders',
-    icon: AppIcons.folder,
-    title: 'Music Folders',
-    subtitle: 'Manage music library folders',
-    breadcrumb: 'Settings › Library',
-    keywords: const ['directory', 'path', 'add folder', 'sources'],
-    open: () => const LibrarySettingsScreen(highlightId: 'library.folders'),
-  ),
-  SettingsDestination(
-    anchorId: 'library.rescan',
-    icon: AppIcons.refresh,
-    title: 'Re-scan Library Now',
-    subtitle: 'Manually refresh all songs from disk',
-    breadcrumb: 'Settings › Library',
-    keywords: const ['refresh', 'reload', 'sync'],
-    open: () => const LibrarySettingsScreen(highlightId: 'library.rescan'),
-  ),
-  SettingsDestination(
-    anchorId: 'library.include_videos',
-    icon: AppIcons.videoLibrary,
-    title: 'Include Videos',
-    subtitle: 'Show video files in your song library',
-    breadcrumb: 'Settings › Library › Filters',
-    keywords: const ['video', 'mp4', 'clips'],
-    open: () =>
-        const LibrarySettingsScreen(highlightId: 'library.include_videos'),
-  ),
-  SettingsDestination(
-    anchorId: 'library.min_file_size',
-    icon: AppIcons.dataUsage,
-    title: 'Minimum File Size',
-    subtitle: 'Ignore files smaller than this',
-    breadcrumb: 'Settings › Library › Filters',
-    keywords: const ['size', 'skip', 'small', 'filter'],
-    open: () =>
-        const LibrarySettingsScreen(highlightId: 'library.min_file_size'),
-  ),
-  SettingsDestination(
-    anchorId: 'library.min_duration',
-    icon: AppIcons.timer,
-    title: 'Minimum Duration',
-    subtitle: 'Ignore tracks shorter than this',
-    breadcrumb: 'Settings › Library › Filters',
-    keywords: const ['length', 'short', 'skip', 'filter', 'interlude'],
-    open: () =>
-        const LibrarySettingsScreen(highlightId: 'library.min_duration'),
-  ),
-  SettingsDestination(
-    icon: AppIcons.folder,
-    title: 'Manage music folders',
-    subtitle: 'Add, remove and rescan individual folders',
-    breadcrumb: 'Settings › Library › Music Folders',
-    keywords: const ['folder', 'directory', 'storage', 'sd card'],
-    open: () => const FolderManagementScreen(),
-  ),
+List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
+  return [
+    // ------------------------------------------------------------------ pages
+    SettingsDestination(
+      icon: AppIcons.library,
+      title: l.settingsPageLibraryTitle,
+      subtitle: l.settingsPageLibrarySubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwLibrary),
+      open: () => const LibrarySettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.playCircle,
+      title: l.settingsPagePlaybackTitle,
+      subtitle: l.settingsPagePlaybackSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwPlayback),
+      open: () => const PlaybackSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.subtitles,
+      title: l.settingsPageLyricsTitle,
+      subtitle: l.settingsPageLyricsSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwLyrics),
+      open: () => const LyricsSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.home,
+      title: l.settingsPageHomeNavigationTitle,
+      subtitle: l.settingsPageHomeNavigationSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwHome),
+      open: () => const HomeSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.storage,
+      title: l.settingsPageStorageTitle,
+      subtitle: l.settingsPageStorageSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwStorage),
+      open: () => const StorageSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.palette,
+      title: l.settingsPageAppearanceTitle,
+      subtitle: l.settingsPageAppearanceSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwAppearance),
+      open: () => const AppearanceSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.cloudUpload,
+      title: l.settingsPageSyncTitle,
+      subtitle: l.settingsPageSyncSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwSync),
+      open: () => const SyncSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.storage,
+      title: l.settingsPageBackupRestoreTitle,
+      subtitle: l.settingsPageBackupRestoreSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwBackup),
+      open: () => const BackupSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.dataObject,
+      title: l.settingsSearchIndexerTitle,
+      subtitle: l.settingsSearchIndexerSubtitle,
+      breadcrumb: l.settingsCrumbStorage,
+      keywords: _kw(l.settingsKwIndexer),
+      open: () => const IndexerScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.info,
+      title: l.settingsPageAboutTitle,
+      subtitle: l.settingsPageAboutSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwAbout),
+      open: () => const AboutSettingsScreen(),
+    ),
 
-  // --------------------------------------------------------------- playback
-  SettingsDestination(
-    anchorId: 'playback.auto_pause_mute',
-    icon: AppIcons.volumeOff,
-    title: 'Auto-Pause on Mute',
-    subtitle: 'Pause playback when volume reaches 0',
-    breadcrumb: 'Settings › Playback › Audio',
-    keywords: const ['volume', 'silent', 'mute'],
-    open: () =>
-        const PlaybackSettingsScreen(highlightId: 'playback.auto_pause_mute'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.auto_resume_unmute',
-    icon: AppIcons.volumeUp,
-    title: 'Auto-Resume on Unmute',
-    subtitle: 'Resume playback when volume is restored',
-    breadcrumb: 'Settings › Playback › Audio',
-    keywords: const ['volume', 'unmute', 'continue'],
-    open: () => const PlaybackSettingsScreen(
-      highlightId: 'playback.auto_resume_unmute',
+    // ---------------------------------------------------------------- library
+    SettingsDestination(
+      anchorId: 'library.folders',
+      icon: AppIcons.folder,
+      title: l.settingsSearchMusicFoldersTitle,
+      subtitle: l.settingsSearchMusicFoldersSubtitle,
+      breadcrumb: l.settingsCrumbLibrary,
+      keywords: _kw(l.settingsKwFolders),
+      open: () => const LibrarySettingsScreen(highlightId: 'library.folders'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.rich_sync',
-    icon: AppIcons.autoAwesome,
-    title: 'Simulate Word Sync',
-    subtitle:
-        'Generate word-level timing from line-synced lyrics using prosodic estimation',
-    breadcrumb: 'Settings › Lyrics › Display & Timing',
-    keywords: const ['lyrics', 'richsync', 'karaoke', 'word', 'sync'],
-    open: () => const LyricsSettingsScreen(highlightId: 'lyrics.rich_sync'),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.desktop_sidebar',
-    icon: AppIcons.queue,
-    title: 'Lyrics & Queue Sidebar',
-    subtitle:
-        'Show the hover expand handle to reopen the lyrics and queue sidebar once hidden',
-    breadcrumb: 'Settings › Lyrics › Display & Timing',
-    keywords: const ['sidebar', 'panel', 'desktop', 'queue', 'lyrics'],
-    open: () =>
-        const LyricsSettingsScreen(highlightId: 'lyrics.desktop_sidebar'),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.keep_screen_awake',
-    icon: AppIcons.screenLock,
-    title: 'Keep Screen Awake on Lyrics',
-    subtitle: 'Prevent sleep while the lyrics pane is open',
-    breadcrumb: 'Settings › Lyrics › Display & Timing',
-    keywords: const ['sleep', 'wakelock', 'display', 'lyrics'],
-    open: () =>
-        const LyricsSettingsScreen(highlightId: 'lyrics.keep_screen_awake'),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.auto_translate',
-    icon: AppIcons.translate,
-    title: 'Auto-Translate Lyrics',
-    subtitle: 'Automatically translate lyrics using selected target language',
-    breadcrumb: 'Settings › Lyrics › Translation',
-    keywords: const ['translate', 'translation', 'language', 'lyrics', 'auto'],
-    open: () =>
-        const LyricsSettingsScreen(highlightId: 'lyrics.auto_translate'),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.target_lang',
-    icon: AppIcons.translate,
-    title: 'Target Language',
-    subtitle: 'Language to translate lyrics into',
-    breadcrumb: 'Settings › Lyrics › Translation',
-    keywords: const ['translate', 'language', 'spanish', 'english', 'japanese'],
-    open: () => const LyricsSettingsScreen(highlightId: 'lyrics.target_lang'),
-  ),
-  SettingsDestination(
-    anchorId: 'lyrics.translation_mode',
-    icon: AppIcons.subtitles,
-    title: 'Translation Display',
-    subtitle: 'Show subtext below lyrics or replace base lyrics',
-    breadcrumb: 'Settings › Lyrics › Translation',
-    keywords: const ['translate', 'mode', 'subtext', 'replace', 'display'],
-    open: () =>
-        const LyricsSettingsScreen(highlightId: 'lyrics.translation_mode'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.gap',
-    icon: AppIcons.hourglass,
-    title: 'Gap / Delay',
-    subtitle: 'Silence between tracks',
-    breadcrumb: 'Settings › Playback › Transitions',
-    keywords: const ['pause', 'silence', 'between', 'transition'],
-    open: () => const PlaybackSettingsScreen(highlightId: 'playback.gap'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.fade_out',
-    icon: AppIcons.volumeDown,
-    title: 'Fade Out',
-    subtitle: 'Fade the outgoing track',
-    breadcrumb: 'Settings › Playback › Transitions',
-    keywords: const ['crossfade', 'gapless', 'transition', 'blend'],
-    open: () => const PlaybackSettingsScreen(highlightId: 'playback.fade_out'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.fade_in',
-    icon: AppIcons.volumeUp,
-    title: 'Fade In',
-    subtitle: 'Fade the incoming track',
-    breadcrumb: 'Settings › Playback › Transitions',
-    keywords: const ['crossfade', 'gapless', 'transition', 'blend'],
-    open: () => const PlaybackSettingsScreen(highlightId: 'playback.fade_in'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.fade_play',
-    icon: AppIcons.play,
-    title: 'Fade on Play',
-    subtitle: 'Ease the volume up when playback starts',
-    breadcrumb: 'Settings › Playback › Play / Pause',
-    keywords: const ['ramp', 'volume', 'start'],
-    open: () => const PlaybackSettingsScreen(highlightId: 'playback.fade_play'),
-  ),
-  SettingsDestination(
-    anchorId: 'playback.fade_pause',
-    icon: AppIcons.pause,
-    title: 'Fade on Pause',
-    subtitle: 'Ease the volume down when playback stops',
-    breadcrumb: 'Settings › Playback › Play / Pause',
-    keywords: const ['ramp', 'volume', 'stop'],
-    open: () =>
-        const PlaybackSettingsScreen(highlightId: 'playback.fade_pause'),
-  ),
+    SettingsDestination(
+      anchorId: 'library.rescan',
+      icon: AppIcons.refresh,
+      title: l.settingsSearchRescanTitle,
+      subtitle: l.settingsSearchRescanSubtitle,
+      breadcrumb: l.settingsCrumbLibrary,
+      keywords: _kw(l.settingsKwRescan),
+      open: () => const LibrarySettingsScreen(highlightId: 'library.rescan'),
+    ),
+    SettingsDestination(
+      anchorId: 'library.include_videos',
+      icon: AppIcons.videoLibrary,
+      title: l.settingsSearchIncludeVideosTitle,
+      subtitle: l.settingsSearchIncludeVideosSubtitle,
+      breadcrumb: l.settingsCrumbLibraryFilters,
+      keywords: _kw(l.settingsKwVideos),
+      open: () =>
+          const LibrarySettingsScreen(highlightId: 'library.include_videos'),
+    ),
+    SettingsDestination(
+      anchorId: 'library.min_file_size',
+      icon: AppIcons.dataUsage,
+      title: l.settingsSearchMinFileSizeTitle,
+      subtitle: l.settingsSearchMinFileSizeSubtitle,
+      breadcrumb: l.settingsCrumbLibraryFilters,
+      keywords: _kw(l.settingsKwMinFileSize),
+      open: () =>
+          const LibrarySettingsScreen(highlightId: 'library.min_file_size'),
+    ),
+    SettingsDestination(
+      anchorId: 'library.min_duration',
+      icon: AppIcons.timer,
+      title: l.settingsSearchMinDurationTitle,
+      subtitle: l.settingsSearchMinDurationSubtitle,
+      breadcrumb: l.settingsCrumbLibraryFilters,
+      keywords: _kw(l.settingsKwMinDuration),
+      open: () =>
+          const LibrarySettingsScreen(highlightId: 'library.min_duration'),
+    ),
+    SettingsDestination(
+      icon: AppIcons.folder,
+      title: l.settingsSearchManageFoldersTitle,
+      subtitle: l.settingsSearchManageFoldersSubtitle,
+      breadcrumb: l.settingsCrumbLibraryFolders,
+      keywords: _kw(l.settingsKwManageFolders),
+      open: () => const FolderManagementScreen(),
+    ),
 
-  // ------------------------------------------------------------- appearance
-  SettingsDestination(
-    anchorId: 'appearance.visualizer',
-    icon: AppIcons.waves,
-    title: 'Audio Visualizer',
-    subtitle: 'Off, classic bars, or bars synced to the song',
-    breadcrumb: 'Settings › Appearance › Now Playing',
-    keywords: const ['wave', 'animation', 'spectrum', 'bars', 'sync', 'bass'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.visualizer'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.waveform',
-    icon: AppIcons.graphicEq,
-    title: 'Progress Bar Style',
-    subtitle: 'Standard, waveform, or sound-reactive progress bar',
-    breadcrumb: 'Settings › Appearance › Now Playing',
-    keywords: const ['seek', 'progress', 'wave', 'reactive', 'spectrum'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.waveform'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.waveform_haptics',
-    icon: AppIcons.touchApp,
-    title: 'Waveform Scrubbing Haptics',
-    subtitle: 'Haptic feedback for each bar while seeking',
-    breadcrumb: 'Settings › Appearance › Now Playing',
-    keywords: const [
-      'vibrate',
-      'haptic',
-      'feedback',
-      'waveform',
-      'scrub',
-      'seek'
-    ],
-    open: () => const AppearanceSettingsScreen(
-        highlightId: 'appearance.waveform_haptics'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.song_duration',
-    icon: AppIcons.timer,
-    title: 'Show Song Duration',
-    subtitle: 'Display duration in song lists',
-    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
-    keywords: const ['length', 'time', 'lists'],
-    open: () =>
-        const HomeSettingsScreen(highlightId: 'appearance.song_duration'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.auto_hide_bars',
-    icon: AppIcons.swapVert,
-    title: 'Auto-Hide Bars',
-    subtitle: 'Header and bottom dock hide on downward scroll',
-    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
-    keywords: const ['navigation', 'dock', 'header', 'scroll', 'hide'],
-    open: () =>
-        const HomeSettingsScreen(highlightId: 'appearance.auto_hide_bars'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.cover_sizing',
-    icon: AppIcons.photoSize,
-    title: 'Player Cover Sizing',
-    subtitle: 'Auto-fit or preserve source aspect ratio',
-    breadcrumb: 'Settings › Appearance › Now Playing',
-    keywords: const ['artwork', 'album art', 'aspect', 'crop'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.cover_sizing'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.full_bleed_design',
-    icon: AppIcons.autoAwesome,
-    title: 'Immersive design',
-    subtitle: 'Full-bleed player cover and gradient detail screens',
-    breadcrumb: 'Settings › Appearance › Now Playing',
-    keywords: const [
-      'immersive',
-      'full bleed',
-      'player',
-      'detail',
-      'gradient',
-      'cover',
-      'design'
-    ],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.full_bleed_design',
+    // --------------------------------------------------------------- playback
+    SettingsDestination(
+      anchorId: 'playback.auto_pause_mute',
+      icon: AppIcons.volumeOff,
+      title: l.settingsSearchAutoPauseMuteTitle,
+      subtitle: l.settingsSearchAutoPauseMuteSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackAudio,
+      keywords: _kw(l.settingsKwMute),
+      open: () =>
+          const PlaybackSettingsScreen(highlightId: 'playback.auto_pause_mute'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.app_icon',
-    icon: AppIcons.album,
-    title: 'App icon',
-    subtitle: 'Choose which icon wispie uses',
-    breadcrumb: 'Settings › Appearance › App icon',
-    keywords: const ['icon', 'logo', 'launcher', 'dock', 'classic', 'new'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.app_icon'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.beat_cover',
-    icon: AppIcons.album,
-    title: 'Beat-reactive cover',
-    subtitle: 'Album art pulses with the beat (classic player only)',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['pulse', 'beat', 'artwork', 'motion'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.beat_cover'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.spin_artwork',
-    icon: AppIcons.album,
-    title: 'Spin artwork while playing',
-    subtitle: 'Artwork turns in the minimized bottom bar while a song plays',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['rotate', 'turn', 'spin', 'artwork', 'dock', 'mini'],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.spin_artwork',
+    SettingsDestination(
+      anchorId: 'playback.auto_resume_unmute',
+      icon: AppIcons.volumeUp,
+      title: l.settingsSearchAutoResumeUnmuteTitle,
+      subtitle: l.settingsSearchAutoResumeUnmuteSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackAudio,
+      keywords: _kw(l.settingsKwUnmute),
+      open: () => const PlaybackSettingsScreen(
+        highlightId: 'playback.auto_resume_unmute',
+      ),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.beat_particles',
-    icon: AppIcons.autoAwesome,
-    title: 'Beat-reactive particles',
-    subtitle: 'Floating particles that drift and breathe with the music',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['particles', 'motes', 'beat', 'motion'],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.beat_particles',
+    SettingsDestination(
+      anchorId: 'lyrics.rich_sync',
+      icon: AppIcons.autoAwesome,
+      title: l.settingsSearchRichSyncTitle,
+      subtitle: l.settingsSearchRichSyncSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTiming,
+      keywords: _kw(l.settingsKwRichSync),
+      open: () => const LyricsSettingsScreen(highlightId: 'lyrics.rich_sync'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.cover_intensity',
-    icon: AppIcons.album,
-    title: 'Cover intensity',
-    subtitle: 'How strongly the album art reacts to the beat',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['cover', 'album', 'pulse', 'subtle', 'balanced', 'bold'],
-    open: () => const AppearanceSettingsScreen(
-        highlightId: 'appearance.cover_intensity'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.particle_intensity',
-    icon: AppIcons.autoAwesome,
-    title: 'Particle density',
-    subtitle: 'How many particles and how lively they are',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const [
-      'particles',
-      'motes',
-      'density',
-      'subtle',
-      'balanced',
-      'bold'
-    ],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.particle_intensity',
+    SettingsDestination(
+      anchorId: 'lyrics.desktop_sidebar',
+      icon: AppIcons.queue,
+      title: l.settingsSearchSidebarTitle,
+      subtitle: l.settingsSearchSidebarSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTiming,
+      keywords: _kw(l.settingsKwSidebar),
+      open: () =>
+          const LyricsSettingsScreen(highlightId: 'lyrics.desktop_sidebar'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.beat_offset',
-    icon: AppIcons.syncAlt,
-    title: 'Beat sync offset',
-    subtitle: 'Compensate for Bluetooth output latency',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['bluetooth', 'latency', 'delay', 'sync', 'early'],
-    open: () =>
-        const AppearanceSettingsScreen(highlightId: 'appearance.beat_offset'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.beat_calibrate',
-    icon: AppIcons.syncAlt,
-    title: 'Calibrate beat sync',
-    subtitle: 'Line up particles with a click track by ear',
-    breadcrumb: 'Settings › Appearance › Player motion',
-    keywords: const ['calibrate', 'sync', 'latency', 'offset', 'test', 'click'],
-    open: () => const AppearanceSettingsScreen(
-      highlightId: 'appearance.beat_calibrate',
+    SettingsDestination(
+      anchorId: 'lyrics.keep_screen_awake',
+      icon: AppIcons.screenLock,
+      title: l.settingsSearchKeepAwakeTitle,
+      subtitle: l.settingsSearchKeepAwakeSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTiming,
+      keywords: _kw(l.settingsKwKeepAwake),
+      open: () =>
+          const LyricsSettingsScreen(highlightId: 'lyrics.keep_screen_awake'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.quick_picks',
-    icon: AppIcons.autoAwesome,
-    title: 'Quick Picks',
-    subtitle: 'Show quick pick recommendations',
-    breadcrumb: 'Settings › Home & Navigation › Home screen',
-    keywords: const ['home', 'recommendations', 'suggestions'],
-    open: () => const HomeSettingsScreen(highlightId: 'appearance.quick_picks'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.recent_queues',
-    icon: AppIcons.clock,
-    title: 'Recent Queues',
-    subtitle: 'Show recently played queues',
-    breadcrumb: 'Settings › Home & Navigation › Home screen',
-    keywords: const ['home', 'history', 'queue'],
-    open: () =>
-        const HomeSettingsScreen(highlightId: 'appearance.recent_queues'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.for_you',
-    icon: AppIcons.explore,
-    title: 'For You',
-    subtitle: 'Show recommended playlists',
-    breadcrumb: 'Settings › Home & Navigation › Home screen',
-    keywords: const ['home', 'mixes', 'recommendations'],
-    open: () => const HomeSettingsScreen(highlightId: 'appearance.for_you'),
-  ),
-  SettingsDestination(
-    anchorId: 'appearance.quick_actions',
-    icon: AppIcons.flashOn,
-    title: 'Quick Actions',
-    subtitle: 'Customize long-press actions',
-    breadcrumb: 'Settings › Home & Navigation › Lists & Navigation',
-    keywords: const ['long press', 'menu', 'shortcuts'],
-    open: () =>
-        const HomeSettingsScreen(highlightId: 'appearance.quick_actions'),
-  ),
-  SettingsDestination(
-    icon: AppIcons.flashOn,
-    title: 'Reorder quick actions',
-    subtitle: 'Choose and order the long-press actions on a song',
-    breadcrumb: 'Settings › Appearance › Lists & Navigation',
-    keywords: const ['long press', 'order', 'menu', 'shortcuts'],
-    open: () => const QuickActionsSettingsScreen(),
-  ),
+    SettingsDestination(
+      anchorId: 'lyrics.auto_translate',
+      icon: AppIcons.translate,
+      title: l.settingsSearchAutoTranslateTitle,
+      subtitle: l.settingsSearchAutoTranslateSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTranslation,
+      keywords: _kw(l.settingsKwAutoTranslate),
+      open: () =>
+          const LyricsSettingsScreen(highlightId: 'lyrics.auto_translate'),
+    ),
+    SettingsDestination(
+      anchorId: 'lyrics.target_lang',
+      icon: AppIcons.translate,
+      title: l.settingsSearchTargetLangTitle,
+      subtitle: l.settingsSearchTargetLangSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTranslation,
+      keywords: _kw(l.settingsKwTargetLang),
+      open: () => const LyricsSettingsScreen(highlightId: 'lyrics.target_lang'),
+    ),
+    SettingsDestination(
+      anchorId: 'lyrics.translation_mode',
+      icon: AppIcons.subtitles,
+      title: l.settingsSearchTranslationModeTitle,
+      subtitle: l.settingsSearchTranslationModeSubtitle,
+      breadcrumb: l.settingsCrumbLyricsTranslation,
+      keywords: _kw(l.settingsKwTranslationMode),
+      open: () =>
+          const LyricsSettingsScreen(highlightId: 'lyrics.translation_mode'),
+    ),
+    SettingsDestination(
+      anchorId: 'playback.gap',
+      icon: AppIcons.hourglass,
+      title: l.settingsSearchGapTitle,
+      subtitle: l.settingsSearchGapSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackTransitions,
+      keywords: _kw(l.settingsKwGap),
+      open: () => const PlaybackSettingsScreen(highlightId: 'playback.gap'),
+    ),
+    SettingsDestination(
+      anchorId: 'playback.fade_out',
+      icon: AppIcons.volumeDown,
+      title: l.settingsSearchFadeOutTitle,
+      subtitle: l.settingsSearchFadeOutSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackTransitions,
+      keywords: _kw(l.settingsKwCrossfade),
+      open: () =>
+          const PlaybackSettingsScreen(highlightId: 'playback.fade_out'),
+    ),
+    SettingsDestination(
+      anchorId: 'playback.fade_in',
+      icon: AppIcons.volumeUp,
+      title: l.settingsSearchFadeInTitle,
+      subtitle: l.settingsSearchFadeInSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackTransitions,
+      keywords: _kw(l.settingsKwCrossfade),
+      open: () => const PlaybackSettingsScreen(highlightId: 'playback.fade_in'),
+    ),
+    SettingsDestination(
+      anchorId: 'playback.fade_play',
+      icon: AppIcons.play,
+      title: l.settingsSearchFadePlayTitle,
+      subtitle: l.settingsSearchFadePlaySubtitle,
+      breadcrumb: l.settingsCrumbPlaybackPlayPause,
+      keywords: _kw(l.settingsKwFadePlay),
+      open: () =>
+          const PlaybackSettingsScreen(highlightId: 'playback.fade_play'),
+    ),
+    SettingsDestination(
+      anchorId: 'playback.fade_pause',
+      icon: AppIcons.pause,
+      title: l.settingsSearchFadePauseTitle,
+      subtitle: l.settingsSearchFadePauseSubtitle,
+      breadcrumb: l.settingsCrumbPlaybackPlayPause,
+      keywords: _kw(l.settingsKwFadePause),
+      open: () =>
+          const PlaybackSettingsScreen(highlightId: 'playback.fade_pause'),
+    ),
 
-  // ------------------------------------------------------------------- data
-  SettingsDestination(
-    anchorId: 'data.export',
-    icon: AppIcons.upload,
-    title: 'Export App Data',
-    subtitle: 'Backup your stats, favorites, and playlists',
-    breadcrumb: 'Settings › Backup & Restore',
-    keywords: const ['backup', 'save', 'export'],
-    open: () => const BackupSettingsScreen(highlightId: 'data.export'),
-  ),
-  SettingsDestination(
-    anchorId: 'data.import',
-    icon: AppIcons.download,
-    title: 'Import App Data',
-    subtitle: 'Restore data from a backup (replaces all)',
-    breadcrumb: 'Settings › Backup & Restore',
-    keywords: const ['restore', 'load', 'import'],
-    open: () => const BackupSettingsScreen(highlightId: 'data.import'),
-  ),
-  SettingsDestination(
-    anchorId: 'data.backups',
-    icon: AppIcons.cloudUpload,
-    title: 'Manage Backups',
-    subtitle: 'Create, restore, and manage app backups',
-    breadcrumb: 'Settings › Backup & Restore',
-    keywords: const ['backup', 'restore', 'delete'],
-    open: () => const BackupSettingsScreen(highlightId: 'data.backups'),
-  ),
-  SettingsDestination(
-    anchorId: 'data.bulk_rename',
-    icon: AppIcons.edit,
-    title: 'Bulk Rename Files',
-    subtitle: 'Rename the whole library from a format',
-    breadcrumb: 'Settings › Library › Maintenance',
-    keywords: const [
-      'rename',
-      'filenames',
-      'batch',
-      'bulk',
-      'format',
-      'naming'
-    ],
-    open: () => const LibrarySettingsScreen(
-      highlightId: 'data.bulk_rename',
+    // ------------------------------------------------------------- appearance
+    SettingsDestination(
+      anchorId: 'appearance.visualizer',
+      icon: AppIcons.waves,
+      title: l.appearanceVisualizerTitle,
+      subtitle: l.settingsSearchVisualizerSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwVisualizer),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.visualizer'),
     ),
-  ),
-  SettingsDestination(
-    anchorId: 'data.storage',
-    icon: AppIcons.storage,
-    title: 'Manage Storage',
-    subtitle: 'Disk usage and data management',
-    breadcrumb: 'Settings › Storage',
-    keywords: const ['disk', 'space', 'cache', 'cleanup'],
-    open: () => const StorageSettingsScreen(highlightId: 'data.storage'),
-  ),
-  SettingsDestination(
-    icon: AppIcons.cloudUpload,
-    title: 'Backups',
-    subtitle: 'Browse, restore and delete saved backups',
-    breadcrumb: 'Settings › Data Management › Manage Backups',
-    keywords: const ['backup', 'restore', 'archive'],
-    open: () => const BackupManagementScreen(),
-  ),
-  SettingsDestination(
-    icon: AppIcons.storage,
-    title: 'Storage',
-    subtitle: 'Disk usage by covers, waveforms, lyrics and caches',
-    breadcrumb: 'Settings › Data Management › Manage Storage',
-    keywords: const ['disk', 'space', 'clear cache', 'usage'],
-    open: () => const StorageManagementScreen(),
-  ),
+    SettingsDestination(
+      anchorId: 'appearance.language',
+      icon: AppIcons.translate,
+      title: l.settingsLanguageTitle,
+      subtitle: l.settingsSearchLanguageSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceLanguage,
+      keywords: _kw(l.settingsKwLanguage),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.language'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.waveform',
+      icon: AppIcons.graphicEq,
+      title: l.appearanceProgressBarTitle,
+      subtitle: l.settingsSearchProgressBarSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwProgressBar),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.waveform'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.waveform_haptics',
+      icon: AppIcons.touchApp,
+      title: l.appearanceHapticsTitle,
+      subtitle: l.appearanceHapticsSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwHaptics),
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.waveform_haptics'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.song_duration',
+      icon: AppIcons.timer,
+      title: l.settingsSearchSongDurationTitle,
+      subtitle: l.settingsSearchSongDurationSubtitle,
+      breadcrumb: l.settingsCrumbHomeLists,
+      keywords: _kw(l.settingsKwSongDuration),
+      open: () =>
+          const HomeSettingsScreen(highlightId: 'appearance.song_duration'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.auto_hide_bars',
+      icon: AppIcons.swapVert,
+      title: l.settingsSearchAutoHideBarsTitle,
+      subtitle: l.settingsSearchAutoHideBarsSubtitle,
+      breadcrumb: l.settingsCrumbHomeLists,
+      keywords: _kw(l.settingsKwAutoHide),
+      open: () =>
+          const HomeSettingsScreen(highlightId: 'appearance.auto_hide_bars'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.cover_sizing',
+      icon: AppIcons.photoSize,
+      title: l.appearanceCoverSizingTitle,
+      subtitle: l.appearanceCoverSizingSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwCoverSizing),
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.cover_sizing'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.full_bleed_design',
+      icon: AppIcons.autoAwesome,
+      title: l.appearanceImmersiveTitle,
+      subtitle: l.appearanceImmersiveSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwImmersive),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.full_bleed_design',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.app_icon',
+      icon: AppIcons.album,
+      title: l.appearanceAppIcon,
+      subtitle: l.settingsSearchAppIconSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceAppIcon,
+      keywords: _kw(l.settingsKwAppIcon),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.app_icon'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.beat_cover',
+      icon: AppIcons.album,
+      title: l.appearanceBeatCoverTitle,
+      subtitle: l.settingsSearchBeatCoverSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwBeatCover),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.beat_cover'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.spin_artwork',
+      icon: AppIcons.album,
+      title: l.appearanceSpinArtworkTitle,
+      subtitle: l.settingsSearchSpinArtworkSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwSpinArtwork),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.spin_artwork',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.beat_particles',
+      icon: AppIcons.autoAwesome,
+      title: l.appearanceParticlesTitle,
+      subtitle: l.appearanceParticlesSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwBeatParticles),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.beat_particles',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.cover_intensity',
+      icon: AppIcons.album,
+      title: l.appearanceCoverIntensityTitle,
+      subtitle: l.settingsSearchCoverIntensitySubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwCoverIntensity),
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.cover_intensity'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.particle_intensity',
+      icon: AppIcons.autoAwesome,
+      title: l.appearanceParticleDensityTitle,
+      subtitle: l.settingsSearchParticleDensitySubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwParticleDensity),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.particle_intensity',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.beat_offset',
+      icon: AppIcons.syncAlt,
+      title: l.appearanceBeatOffsetTitle,
+      subtitle: l.settingsSearchBeatOffsetSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwBeatOffset),
+      open: () =>
+          const AppearanceSettingsScreen(highlightId: 'appearance.beat_offset'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.beat_calibrate',
+      icon: AppIcons.syncAlt,
+      title: l.appearanceCalibrateTitle,
+      subtitle: l.appearanceCalibrateSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceMotion,
+      keywords: _kw(l.settingsKwCalibrate),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.beat_calibrate',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.quick_picks',
+      icon: AppIcons.autoAwesome,
+      title: l.settingsSearchQuickPicksTitle,
+      subtitle: l.settingsSearchQuickPicksSubtitle,
+      breadcrumb: l.settingsCrumbHomeScreen,
+      keywords: _kw(l.settingsKwQuickPicks),
+      open: () =>
+          const HomeSettingsScreen(highlightId: 'appearance.quick_picks'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.recent_queues',
+      icon: AppIcons.clock,
+      title: l.settingsSearchRecentQueuesTitle,
+      subtitle: l.settingsSearchRecentQueuesSubtitle,
+      breadcrumb: l.settingsCrumbHomeScreen,
+      keywords: _kw(l.settingsKwRecentQueues),
+      open: () =>
+          const HomeSettingsScreen(highlightId: 'appearance.recent_queues'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.for_you',
+      icon: AppIcons.explore,
+      title: l.settingsSearchForYouTitle,
+      subtitle: l.settingsSearchForYouSubtitle,
+      breadcrumb: l.settingsCrumbHomeScreen,
+      keywords: _kw(l.settingsKwForYou),
+      open: () => const HomeSettingsScreen(highlightId: 'appearance.for_you'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.quick_actions',
+      icon: AppIcons.flashOn,
+      title: l.settingsSearchQuickActionsTitle,
+      subtitle: l.settingsSearchQuickActionsSubtitle,
+      breadcrumb: l.settingsCrumbHomeLists,
+      keywords: _kw(l.settingsKwQuickActions),
+      open: () =>
+          const HomeSettingsScreen(highlightId: 'appearance.quick_actions'),
+    ),
+    SettingsDestination(
+      icon: AppIcons.flashOn,
+      title: l.settingsSearchReorderQuickActionsTitle,
+      subtitle: l.settingsSearchReorderQuickActionsSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceLists,
+      keywords: _kw(l.settingsKwReorderQuickActions),
+      open: () => const QuickActionsSettingsScreen(),
+    ),
 
-  // ------------------------------------------------------ automatic backups
-  SettingsDestination(
-    anchorId: 'data.auto_backup',
-    icon: AppIcons.cloudUpload,
-    title: 'Auto Backup',
-    subtitle: 'How often a backup is taken',
-    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
-    keywords: const ['schedule', 'frequency', 'automatic'],
-    open: () => const BackupSettingsScreen(highlightId: 'data.auto_backup'),
-  ),
-  SettingsDestination(
-    anchorId: 'data.auto_backup_content',
-    icon: AppIcons.tune,
-    title: 'Auto Backup Content',
-    subtitle: 'What data is included in automatic backups',
-    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
-    keywords: const ['contents', 'categories', 'automatic'],
-    open: () =>
-        const BackupSettingsScreen(highlightId: 'data.auto_backup_content'),
-  ),
-  SettingsDestination(
-    anchorId: 'data.auto_delete_backups',
-    icon: AppIcons.delete,
-    title: 'Auto-Delete Old Backups',
-    subtitle: 'Discard backups older than this',
-    breadcrumb: 'Settings › Backup & Restore › Automatic Backups',
-    keywords: const ['prune', 'cleanup', 'retention', 'old'],
-    open: () =>
-        const BackupSettingsScreen(highlightId: 'data.auto_delete_backups'),
-  ),
-  SettingsDestination(
-    anchorId: 'library.pull_to_refresh',
-    icon: AppIcons.touchApp,
-    title: 'Pull to Refresh',
-    subtitle: 'Swipe down to refresh the library',
-    breadcrumb: 'Settings › Library',
-    keywords: const ['swipe', 'gesture', 'reload'],
-    open: () =>
-        const LibrarySettingsScreen(highlightId: 'library.pull_to_refresh'),
-  ),
+    // ------------------------------------------------------------------- data
+    SettingsDestination(
+      anchorId: 'data.export',
+      icon: AppIcons.upload,
+      title: l.backupExportAppData,
+      subtitle: l.backupExportAppDataSubtitle,
+      breadcrumb: l.settingsCrumbBackup,
+      keywords: _kw(l.settingsKwExport),
+      open: () => const BackupSettingsScreen(highlightId: 'data.export'),
+    ),
+    SettingsDestination(
+      anchorId: 'data.import',
+      icon: AppIcons.download,
+      title: l.backupImportAppData,
+      subtitle: l.backupImportAppDataSubtitle,
+      breadcrumb: l.settingsCrumbBackup,
+      keywords: _kw(l.settingsKwImport),
+      open: () => const BackupSettingsScreen(highlightId: 'data.import'),
+    ),
+    SettingsDestination(
+      anchorId: 'data.backups',
+      icon: AppIcons.cloudUpload,
+      title: l.backupManageBackups,
+      subtitle: l.backupManageBackupsSubtitle,
+      breadcrumb: l.settingsCrumbBackup,
+      keywords: _kw(l.settingsKwManageBackups),
+      open: () => const BackupSettingsScreen(highlightId: 'data.backups'),
+    ),
+    SettingsDestination(
+      anchorId: 'data.bulk_rename',
+      icon: AppIcons.edit,
+      title: l.settingsSearchBulkRenameTitle,
+      subtitle: l.settingsSearchBulkRenameSubtitle,
+      breadcrumb: l.settingsCrumbLibraryMaintenance,
+      keywords: _kw(l.settingsKwBulkRename),
+      open: () => const LibrarySettingsScreen(
+        highlightId: 'data.bulk_rename',
+      ),
+    ),
+    SettingsDestination(
+      anchorId: 'data.storage',
+      icon: AppIcons.storage,
+      title: l.storageManageTitle,
+      subtitle: l.settingsSearchManageStorageSubtitle,
+      breadcrumb: l.settingsCrumbStorage,
+      keywords: _kw(l.settingsKwManageStorage),
+      open: () => const StorageSettingsScreen(highlightId: 'data.storage'),
+    ),
+    SettingsDestination(
+      icon: AppIcons.cloudUpload,
+      title: l.storageBackupsTitle,
+      subtitle: l.settingsSearchBackupsSubtitle,
+      breadcrumb: l.settingsCrumbManageBackups,
+      keywords: _kw(l.settingsKwBackups),
+      open: () => const BackupManagementScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.storage,
+      title: l.settingsPageStorageTitle,
+      subtitle: l.settingsSearchStorageUsageSubtitle,
+      breadcrumb: l.settingsCrumbManageStorage,
+      keywords: _kw(l.settingsKwStorageUsage),
+      open: () => const StorageManagementScreen(),
+    ),
 
-  // ---------------------------------------------------------------- shuffle
-  SettingsDestination(
-    icon: AppIcons.tune,
-    title: 'Configure Custom Shuffle',
-    subtitle: 'Adjust shuffle behavior settings',
-    breadcrumb: 'Profile › Shuffle',
-    keywords: const [
-      'shuffle',
-      'personality',
-      'weights',
-      'random',
-      'explorer',
-    ],
-    open: () => const CustomShuffleSettingsScreen(),
-  ),
-];
+    // ------------------------------------------------------ automatic backups
+    SettingsDestination(
+      anchorId: 'data.auto_backup',
+      icon: AppIcons.cloudUpload,
+      title: l.backupAutoBackup,
+      subtitle: l.backupAutoBackupSubtitle,
+      breadcrumb: l.settingsCrumbAutoBackups,
+      keywords: _kw(l.settingsKwAutoBackup),
+      open: () => const BackupSettingsScreen(highlightId: 'data.auto_backup'),
+    ),
+    SettingsDestination(
+      anchorId: 'data.auto_backup_content',
+      icon: AppIcons.tune,
+      title: l.backupAutoBackupContent,
+      subtitle: l.backupAutoBackupContentSubtitle,
+      breadcrumb: l.settingsCrumbAutoBackups,
+      keywords: _kw(l.settingsKwAutoBackupContent),
+      open: () =>
+          const BackupSettingsScreen(highlightId: 'data.auto_backup_content'),
+    ),
+    SettingsDestination(
+      anchorId: 'data.auto_delete_backups',
+      icon: AppIcons.delete,
+      title: l.backupAutoDeleteOld,
+      subtitle: l.backupAutoDeleteOldSubtitle,
+      breadcrumb: l.settingsCrumbAutoBackups,
+      keywords: _kw(l.settingsKwAutoDelete),
+      open: () =>
+          const BackupSettingsScreen(highlightId: 'data.auto_delete_backups'),
+    ),
+    SettingsDestination(
+      anchorId: 'library.pull_to_refresh',
+      icon: AppIcons.touchApp,
+      title: l.settingsSearchPullToRefreshTitle,
+      subtitle: l.settingsSearchPullToRefreshSubtitle,
+      breadcrumb: l.settingsCrumbLibrary,
+      keywords: _kw(l.settingsKwPullToRefresh),
+      open: () =>
+          const LibrarySettingsScreen(highlightId: 'library.pull_to_refresh'),
+    ),
+
+    // ---------------------------------------------------------------- shuffle
+    SettingsDestination(
+      icon: AppIcons.tune,
+      title: l.profileConfigureCustomShuffle,
+      subtitle: l.profileConfigureCustomShuffleSubtitle,
+      breadcrumb: l.settingsCrumbProfileShuffle,
+      keywords: _kw(l.settingsKwShuffle),
+      open: () => const CustomShuffleSettingsScreen(),
+    ),
+  ];
+}

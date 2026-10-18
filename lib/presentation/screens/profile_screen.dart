@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/providers.dart';
 import '../../providers/user_data_provider.dart';
@@ -53,19 +54,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   }
 
   Future<void> _showChangeUsernameDialog(String? current) async {
+    final l10n = AppLocalizations.of(context);
     final name = await showAppTextPrompt(
       context,
-      title: 'Change Display Name',
+      title: l10n.profileChangeName,
       initialValue: current,
-      hintText: 'New name',
-      confirmLabel: 'Update',
+      hintText: l10n.profileNewNameHint,
+      confirmLabel: l10n.profileUpdate,
     );
     if (name == null || !mounted) return;
 
     try {
       await ref.read(authProvider.notifier).setDisplayName(name);
       if (mounted) {
-        appSnack(context, 'Name updated', tone: AppTone.success);
+        appSnack(context, l10n.profileNameUpdated, tone: AppTone.success);
       }
     } catch (e) {
       if (mounted) appSnack(context, '$e', tone: AppTone.danger);
@@ -78,6 +80,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final userData = ref.watch(userDataProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final accent = AppTokens.accentOf(context, ref);
+    final l10n = AppLocalizations.of(context);
     if (WideLayout.isWide(context)) {
       return _buildWide(context, authState, userData, audioManager, accent);
     }
@@ -95,7 +98,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               controller: widget.scrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
-                AppSliverHeader(title: 'Profile', isScrolled: isScrolled),
+                AppSliverHeader(
+                    title: l10n.profileTitle, isScrolled: isScrolled),
 
                 // Identity — a plain avatar and name, sitting on the background
                 // rather than on a gradient banner.
@@ -120,7 +124,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             shape: BoxShape.circle,
                           ),
                           child: Text(
-                            (authState.username ?? 'U')
+                            (authState.username ?? l10n.profileAvatarFallback)
                                 .substring(0, 1)
                                 .toUpperCase(),
                             style: AppTokens.screenTitle(context)
@@ -134,14 +138,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                authState.username ?? 'User',
+                                authState.username ?? l10n.profileDefaultName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppTokens.screenTitle(context),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'wispie v$_appVersion',
+                                l10n.profileAppVersion(_appVersion),
                                 style: AppTokens.meta(context),
                               ),
                             ],
@@ -166,20 +170,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           AppStatTile(
-                            label: 'Favorites',
+                            label: l10n.syncFavorites,
                             value: '${userData.favorites.length}',
                           ),
                           AppStatTile(
-                            label: 'Playlists',
+                            label: l10n.syncPlaylists,
                             value:
                                 '${userData.playlists.where((p) => !p.isRecommendation).length}',
                           ),
                           AppStatTile(
-                            label: 'Hidden',
+                            label: l10n.profileHidden,
                             value: '${userData.hidden.length}',
                           ),
                           AppStatTile(
-                            label: 'Suggest-less',
+                            label: l10n.profileSuggestLess,
                             value: '${userData.suggestLess.length}',
                           ),
                         ],
@@ -202,8 +206,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
 
                 // Shuffle personality
-                const SliverToBoxAdapter(
-                  child: AppSectionHeader(label: 'Shuffle Personality'),
+                SliverToBoxAdapter(
+                  child: AppSectionHeader(label: l10n.profileShuffleSection),
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
@@ -232,33 +236,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     _hasPersonalityChanges = v != current;
                                   });
                                 },
-                                child: const Column(
+                                child: Column(
                                   children: [
                                     _PersonalityTile(
-                                      title: 'Smart',
-                                      subtitle:
-                                          'Learns your taste, trends and context. Recommended',
+                                      title: l10n.profileSmart,
+                                      subtitle: l10n.profileSmartSubtitle,
                                       value: ShufflePersonality.smart,
                                     ),
                                     _LegacyCaption(),
                                     _PersonalityTile(
-                                      title: 'Default',
-                                      subtitle: 'Balanced mix with anti-repeat',
+                                      title: l10n.profileDefault,
+                                      subtitle: l10n.profileDefaultSubtitle,
                                       value: ShufflePersonality.defaultMode,
                                     ),
                                     _PersonalityTile(
-                                      title: 'Explorer',
-                                      subtitle: 'Prioritizes new & rare songs',
+                                      title: l10n.profileExplorer,
+                                      subtitle: l10n.profileExplorerSubtitle,
                                       value: ShufflePersonality.explorer,
                                     ),
                                     _PersonalityTile(
-                                      title: 'Consistent',
-                                      subtitle: 'Favorites heavy',
+                                      title: l10n.profileConsistent,
+                                      subtitle: l10n.profileConsistentSubtitle,
                                       value: ShufflePersonality.consistent,
                                     ),
                                     _PersonalityTile(
-                                      title: 'Custom',
-                                      subtitle: 'Configure your own shuffle',
+                                      title: l10n.appearanceIntensityCustom,
+                                      subtitle: l10n.profileCustomSubtitle,
                                       value: ShufflePersonality.custom,
                                     ),
                                   ],
@@ -281,7 +284,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          'Applies to the next queue',
+                                          l10n.profileAppliesNextQueue,
                                           style: AppTokens.meta(context)
                                               .copyWith(color: accent),
                                         ),
@@ -291,7 +294,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                           _pendingPersonality = null;
                                           _hasPersonalityChanges = false;
                                         }),
-                                        child: const Text('Cancel'),
+                                        child: Text(l10n.actionCancel),
                                       ),
                                       const SizedBox(width: AppTokens.s2),
                                       FilledButton(
@@ -306,10 +309,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             _pendingPersonality = null;
                                             _hasPersonalityChanges = false;
                                           });
-                                          appSnack(context, 'Personality saved',
+                                          appSnack(context,
+                                              l10n.profilePersonalitySaved,
                                               tone: AppTone.success);
                                         },
-                                        child: const Text('Apply'),
+                                        child: Text(l10n.metadataFixApply),
                                       ),
                                     ],
                                   ),
@@ -340,8 +344,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                           children: [
                             _navRow(
                               icon: AppIcons.tune,
-                              title: 'Configure Custom Shuffle',
-                              subtitle: 'Adjust shuffle behavior settings',
+                              title: l10n.profileConfigureCustomShuffle,
+                              subtitle:
+                                  l10n.profileConfigureCustomShuffleSubtitle,
                               accent: accent,
                               onTap: () => context.pushApp(
                                 const CustomShuffleSettingsScreen(),
@@ -355,8 +360,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                 ),
 
                 // Profile / Data / App
-                const SliverToBoxAdapter(
-                  child: AppSectionHeader(label: 'Profile'),
+                SliverToBoxAdapter(
+                  child: AppSectionHeader(label: l10n.profileTitle),
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
@@ -366,24 +371,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       children: [
                         _navRow(
                           icon: AppIcons.person,
-                          title: 'Change Display Name',
-                          subtitle: 'Current: ${authState.username}',
+                          title: l10n.profileChangeName,
+                          subtitle:
+                              l10n.profileCurrentName(authState.username ?? ''),
                           accent: accent,
                           onTap: () =>
                               _showChangeUsernameDialog(authState.username),
                         ),
                         _navRow(
                           icon: AppIcons.cloudUpload,
-                          title: 'Manage Backups',
-                          subtitle: 'Create, restore, and manage app backups',
+                          title: l10n.backupManageBackups,
+                          subtitle: l10n.backupManageBackupsSubtitle,
                           accent: accent,
                           onTap: () =>
                               context.pushApp(const BackupManagementScreen()),
                         ),
                         _navRow(
                           icon: AppIcons.settings,
-                          title: 'Settings',
-                          subtitle: 'Theme & storage',
+                          title: l10n.settingsTitle,
+                          subtitle: l10n.profileThemeStorage,
                           accent: accent,
                           onTap: () => context.pushApp(const SettingsScreen()),
                         ),
@@ -412,6 +418,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     AudioPlayerManager audioManager,
     Color accent,
   ) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
@@ -425,7 +432,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
               controller: widget.scrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
-                AppSliverHeader(title: 'Profile', isScrolled: isScrolled),
+                AppSliverHeader(
+                    title: l10n.profileTitle, isScrolled: isScrolled),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -458,7 +466,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                         shape: BoxShape.circle,
                                       ),
                                       child: Text(
-                                        (authState.username ?? 'U')
+                                        (authState.username ??
+                                                l10n.profileAvatarFallback)
                                             .substring(0, 1)
                                             .toUpperCase(),
                                         style: AppTokens.screenTitle(context)
@@ -470,7 +479,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     ),
                                     const SizedBox(height: AppTokens.s3),
                                     Text(
-                                      authState.username ?? 'User',
+                                      authState.username ??
+                                          l10n.profileDefaultName,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
@@ -479,7 +489,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      'wispie v$_appVersion',
+                                      l10n.profileAppVersion(_appVersion),
                                       style: AppTokens.meta(context),
                                     ),
                                   ],
@@ -497,14 +507,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       children: [
                                         Expanded(
                                           child: AppStatTile(
-                                            label: 'Favorites',
+                                            label: l10n.syncFavorites,
                                             value:
                                                 '${userData.favorites.length}',
                                           ),
                                         ),
                                         Expanded(
                                           child: AppStatTile(
-                                            label: 'Playlists',
+                                            label: l10n.syncPlaylists,
                                             value:
                                                 '${userData.playlists.where((p) => !p.isRecommendation).length}',
                                           ),
@@ -516,13 +526,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       children: [
                                         Expanded(
                                           child: AppStatTile(
-                                            label: 'Hidden',
+                                            label: l10n.profileHidden,
                                             value: '${userData.hidden.length}',
                                           ),
                                         ),
                                         Expanded(
                                           child: AppStatTile(
-                                            label: 'Suggest-less',
+                                            label: l10n.profileSuggestLess,
                                             value:
                                                 '${userData.suggestLess.length}',
                                           ),
@@ -537,8 +547,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 children: [
                                   _navRow(
                                     icon: AppIcons.person,
-                                    title: 'Change Display Name',
-                                    subtitle: 'Current: ${authState.username}',
+                                    title: l10n.profileChangeName,
+                                    subtitle: l10n.profileCurrentName(
+                                        authState.username ?? ''),
                                     accent: accent,
                                     onTap: () => _showChangeUsernameDialog(
                                       authState.username,
@@ -546,9 +557,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                   ),
                                   _navRow(
                                     icon: AppIcons.cloudUpload,
-                                    title: 'Manage Backups',
-                                    subtitle:
-                                        'Create, restore, and manage app backups',
+                                    title: l10n.backupManageBackups,
+                                    subtitle: l10n.backupManageBackupsSubtitle,
                                     accent: accent,
                                     onTap: () => context.pushApp(
                                       const BackupManagementScreen(),
@@ -556,8 +566,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                   ),
                                   _navRow(
                                     icon: AppIcons.settings,
-                                    title: 'Settings',
-                                    subtitle: 'Theme & storage',
+                                    title: l10n.settingsTitle,
+                                    subtitle: l10n.profileThemeStorage,
                                     accent: accent,
                                     onTap: () => context.pushApp(
                                       const SettingsScreen(),
@@ -578,8 +588,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                 padding: EdgeInsets.zero,
                                 child: const InsightsSummaryRow(),
                               ),
-                              const AppSectionHeader(
-                                label: 'Shuffle Personality',
+                              AppSectionHeader(
+                                label: l10n.profileShuffleSection,
                               ),
                               ValueListenableBuilder<ShuffleState>(
                                 valueListenable:
@@ -600,9 +610,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                       SizedBox(
                                         height: 96,
                                         child: _PersonalityCard(
-                                          title: 'Smart',
-                                          subtitle:
-                                              'Learns your taste, trends and context. Recommended',
+                                          title: l10n.profileSmart,
+                                          subtitle: l10n.profileSmartSubtitle,
                                           value: ShufflePersonality.smart,
                                           groupValue: selectedValue,
                                           accent: accent,
@@ -628,9 +637,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                         ),
                                         children: [
                                           _PersonalityCard(
-                                            title: 'Default',
+                                            title: l10n.profileDefault,
                                             subtitle:
-                                                'Balanced mix with anti-repeat',
+                                                l10n.profileDefaultSubtitle,
                                             value:
                                                 ShufflePersonality.defaultMode,
                                             groupValue: selectedValue,
@@ -642,9 +651,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             }),
                                           ),
                                           _PersonalityCard(
-                                            title: 'Explorer',
+                                            title: l10n.profileExplorer,
                                             subtitle:
-                                                'Prioritizes new & rare songs',
+                                                l10n.profileExplorerSubtitle,
                                             value: ShufflePersonality.explorer,
                                             groupValue: selectedValue,
                                             accent: accent,
@@ -655,8 +664,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             }),
                                           ),
                                           _PersonalityCard(
-                                            title: 'Consistent',
-                                            subtitle: 'Favorites heavy',
+                                            title: l10n.profileConsistent,
+                                            subtitle:
+                                                l10n.profileConsistentSubtitle,
                                             value:
                                                 ShufflePersonality.consistent,
                                             groupValue: selectedValue,
@@ -668,9 +678,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             }),
                                           ),
                                           _PersonalityCard(
-                                            title: 'Custom',
+                                            title:
+                                                l10n.appearanceIntensityCustom,
                                             subtitle:
-                                                'Configure your own shuffle',
+                                                l10n.profileCustomSubtitle,
                                             value: ShufflePersonality.custom,
                                             groupValue: selectedValue,
                                             accent: accent,
@@ -703,7 +714,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                               children: [
                                                 Expanded(
                                                   child: Text(
-                                                    'Applies to the next queue',
+                                                    l10n.profileAppliesNextQueue,
                                                     style: AppTokens.meta(
                                                       context,
                                                     ).copyWith(color: accent),
@@ -718,7 +729,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                                           false;
                                                     },
                                                   ),
-                                                  child: const Text('Cancel'),
+                                                  child:
+                                                      Text(l10n.actionCancel),
                                                 ),
                                                 const SizedBox(
                                                   width: AppTokens.s2,
@@ -743,11 +755,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                                     });
                                                     appSnack(
                                                       context,
-                                                      'Personality saved',
+                                                      l10n.profilePersonalitySaved,
                                                       tone: AppTone.success,
                                                     );
                                                   },
-                                                  child: const Text('Apply'),
+                                                  child: Text(
+                                                      l10n.metadataFixApply),
                                                 ),
                                               ],
                                             ),
@@ -763,10 +776,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                                             children: [
                                               _navRow(
                                                 icon: AppIcons.tune,
-                                                title:
-                                                    'Configure Custom Shuffle',
-                                                subtitle:
-                                                    'Adjust shuffle behavior settings',
+                                                title: l10n
+                                                    .profileConfigureCustomShuffle,
+                                                subtitle: l10n
+                                                    .profileConfigureCustomShuffleSubtitle,
                                                 accent: accent,
                                                 onTap: () => context.pushApp(
                                                   const CustomShuffleSettingsScreen(),
@@ -799,16 +812,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     ShuffleState shuffleState,
     ShufflePersonality selected,
   ) {
+    final l10n = AppLocalizations.of(context);
     if (selected != ShufflePersonality.smart) return const SizedBox.shrink();
     final value = _discoveryDraft ?? shuffleState.config.discoveryLevel;
     final label = value < 0.34
-        ? 'Familiar'
+        ? l10n.profileFamiliar
         : value > 0.66
-            ? 'Discover'
-            : 'Balanced';
+            ? l10n.profileDiscover
+            : l10n.appearanceIntensityBalanced;
     return AppSettingsSlider(
       icon: AppIcons.tune,
-      title: 'Familiar to Discover',
+      title: l10n.profileFamiliarToDiscover,
       valueLabel: label,
       value: value,
       min: 0,
@@ -949,7 +963,7 @@ class _LegacyCaption extends StatelessWidget {
         AppTokens.s1,
       ),
       child: Text(
-        'Legacy: fixed behaviour, kept for compatibility',
+        AppLocalizations.of(context).profileLegacyCaption,
         style: AppTokens.meta(context),
       ),
     );

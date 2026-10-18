@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/providers.dart';
 import '../../models/playlist.dart';
 import 'playlist_selector_dialog.dart';
@@ -185,14 +186,15 @@ void _handleRemoveFromPlaylist(BuildContext context, WidgetRef ref,
 
 void _showNewPlaylistDialog(
     BuildContext context, WidgetRef ref, String songFilename) {
+  final l10n = AppLocalizations.of(context);
   final controller = TextEditingController();
   showDialog(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('New Playlist'),
+      title: Text(l10n.playlistNewTitle),
       content: TextField(
         controller: controller,
-        decoration: const InputDecoration(hintText: 'Playlist Name'),
+        decoration: InputDecoration(hintText: l10n.playlistNameHint),
         autofocus: true,
         onSubmitted: (value) {
           if (value.trim().isNotEmpty) {
@@ -201,7 +203,7 @@ void _showNewPlaylistDialog(
                 .createPlaylist(value.trim(), songFilename);
             Navigator.pop(dialogContext);
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Created playlist "$value"')),
+              SnackBar(content: Text(l10n.playlistCreated(value))),
             );
           }
         },
@@ -209,7 +211,7 @@ void _showNewPlaylistDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Cancel'),
+          child: Text(l10n.actionCancel),
         ),
         TextButton(
           onPressed: () {
@@ -220,11 +222,11 @@ void _showNewPlaylistDialog(
                   .createPlaylist(name, songFilename);
               Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Created playlist "$name"')),
+                SnackBar(content: Text(l10n.playlistCreated(name))),
               );
             }
           },
-          child: const Text('Create'),
+          child: Text(l10n.actionCreate),
         ),
       ],
     ),

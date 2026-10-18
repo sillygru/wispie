@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/quick_action_config.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
@@ -114,7 +115,7 @@ class BulkSelectionBar extends ConsumerWidget {
               children: [
                 IconButton(
                   icon: const AppIcon(AppIcons.close),
-                  tooltip: 'Done',
+                  tooltip: AppLocalizations.of(context).actionDone,
                   onPressed: () =>
                       ref.read(selectionProvider.notifier).exitSelectionMode(),
                 ),
@@ -128,7 +129,7 @@ class BulkSelectionBar extends ConsumerWidget {
                       ),
                     ),
                     TextSpan(
-                      text: ' selected',
+                      text: ' ${AppLocalizations.of(context).bulkSelected}',
                       style:
                           AppTokens.paneTitle(context).copyWith(fontSize: 18),
                     ),
@@ -144,7 +145,7 @@ class BulkSelectionBar extends ConsumerWidget {
                         .selectAll(allFilenames);
                   },
                   style: TextButton.styleFrom(foregroundColor: accent),
-                  child: const Text('Select all'),
+                  child: Text(AppLocalizations.of(context).bulkSelectAll),
                 ),
               ],
             ),
@@ -165,12 +166,13 @@ class BulkSelectionBar extends ConsumerWidget {
 
   Widget _buildFavoriteButton(
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
+    final l10n = AppLocalizations.of(context);
     final userData = ref.read(userDataProvider);
     final allFavorited = songs.every((s) => userData.isFavorite(s.filename));
 
     return _ActionButton(
       icon: allFavorited ? AppIcons.favorite : AppIcons.favorite,
-      label: allFavorited ? 'Unfavorite' : 'Favorite',
+      label: allFavorited ? l10n.bulkUnfavorite : l10n.bulkFavorite,
       color: allFavorited ? AppTokens.danger : null,
       onTap: () {
         if (!context.mounted) return;
@@ -183,8 +185,8 @@ class BulkSelectionBar extends ConsumerWidget {
         appSnack(
             context,
             allFavorited
-                ? 'Removed ${songs.length} songs from favorites'
-                : 'Added ${songs.length} songs to favorites');
+                ? l10n.bulkRemovedFromFavorites(songs.length)
+                : l10n.bulkAddedToFavorites(songs.length));
       },
     );
   }
@@ -193,7 +195,7 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.playlistAdd,
-      label: 'Playlist',
+      label: AppLocalizations.of(context).bulkPlaylist,
       onTap: () {
         if (!context.mounted) return;
         final filenames = songs.map((s) => s.filename).toList();
@@ -217,9 +219,12 @@ class BulkSelectionBar extends ConsumerWidget {
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text("Added ${songs.length} songs to ${latest.name}"),
+              content: Text(
+                AppLocalizations.of(context)
+                    .bulkAddedToPlaylist(songs.length, latest.name),
+              ),
               action: SnackBarAction(
-                label: "Change",
+                label: AppLocalizations.of(context).actionChange,
                 onPressed: () {
                   showBulkPlaylistSelector(context, ref, filenames);
                 },
@@ -235,13 +240,14 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.share,
-      label: 'Share',
+      label: AppLocalizations.of(context).bulkShare,
       onTap: () {
         if (!context.mounted) return;
         final xFiles = songs.map((s) => XFile(s.url)).toList();
         final text = songs.length == 1
-            ? '${songs[0].title} by ${songs[0].artist}'
-            : '${songs.length} songs';
+            ? AppLocalizations.of(context)
+                .songShareText(songs[0].title, songs[0].artist)
+            : AppLocalizations.of(context).bulkSongsCount(songs.length);
         SharePlus.instance.share(ShareParams(files: xFiles, text: text));
         ref.read(selectionProvider.notifier).exitSelectionMode();
       },
@@ -252,7 +258,7 @@ class BulkSelectionBar extends ConsumerWidget {
       List<Song> songs, int count, bool isCurrentlyPlaying) {
     return _ActionButton(
       icon: AppIcons.edit,
-      label: 'Metadata',
+      label: AppLocalizations.of(context).bulkMetadata,
       onTap: isCurrentlyPlaying || count != 1
           ? null
           : () {
@@ -265,13 +271,14 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.visibilityOff,
-      label: 'Hide',
+      label: AppLocalizations.of(context).actionHide,
       onTap: () async {
+        final l10n = AppLocalizations.of(context);
         final confirmed = await showAppConfirm(
           context,
-          title: 'Hide Songs',
-          message: 'Hide ${songs.length} selected songs from library?',
-          confirmLabel: 'Hide',
+          title: l10n.bulkHideTitle,
+          message: l10n.bulkHideMessage(songs.length),
+          confirmLabel: l10n.actionHide,
           isDanger: true,
         );
         if (confirmed == true) {
@@ -289,15 +296,15 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.delete,
-      label: 'Delete',
+      label: AppLocalizations.of(context).actionDelete,
       color: AppTokens.danger,
       onTap: () async {
+        final l10n = AppLocalizations.of(context);
         final confirmed = await showAppConfirm(
           context,
-          title: 'Delete Files',
-          message:
-              'Permanently delete ${songs.length} files from storage? This cannot be undone.',
-          confirmLabel: 'Delete Permanently',
+          title: l10n.bulkDeleteTitle,
+          message: l10n.bulkDeleteMessage(songs.length),
+          confirmLabel: l10n.actionDeletePermanently,
           isDanger: true,
         );
         if (confirmed == true) {
@@ -312,7 +319,7 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.queue,
-      label: 'Play Next',
+      label: AppLocalizations.of(context).songMenuPlayNext,
       onTap: () {
         if (!context.mounted) return;
         final orderedFilenames =
@@ -326,7 +333,10 @@ class BulkSelectionBar extends ConsumerWidget {
 
         ref.read(selectionProvider.notifier).exitSelectionMode();
         if (!context.mounted) return;
-        appSnack(context, 'Added ${songs.length} songs to queue');
+        appSnack(
+          context,
+          AppLocalizations.of(context).bulkAddedToQueue(songs.length),
+        );
       },
     );
   }
@@ -335,7 +345,7 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.folderMove,
-      label: 'Move',
+      label: AppLocalizations.of(context).bulkMove,
       onTap: () async {
         if (kDebugMode) {
           debugPrint("UI: Move Songs tapped for ${songs.length} songs");
@@ -369,14 +379,21 @@ class BulkSelectionBar extends ConsumerWidget {
               ref.read(selectionProvider.notifier).exitSelectionMode();
               if (!context.mounted) return;
               if (context.mounted) {
-                appSnack(context, "Moved ${songs.length} songs to $targetPath");
+                appSnack(
+                  context,
+                  AppLocalizations.of(context)
+                      .bulkMovedTo(songs.length, targetPath),
+                );
               }
             } catch (e) {
               if (kDebugMode) {
                 debugPrint("UI: ERROR during move: $e");
               }
               if (context.mounted) {
-                appSnack(context, "Error moving songs: $e");
+                appSnack(
+                  context,
+                  AppLocalizations.of(context).bulkMoveError('$e'),
+                );
               }
             }
           } else {
@@ -397,7 +414,9 @@ class BulkSelectionBar extends ConsumerWidget {
 
     return _ActionButton(
       icon: AppIcons.heartBroken,
-      label: allSuggestLess ? 'Suggest More' : 'Suggest Less',
+      label: allSuggestLess
+          ? AppLocalizations.of(context).songMenuSuggestMore
+          : AppLocalizations.of(context).songMenuSuggestLess,
       color: allSuggestLess ? AppTokens.fgTertiary : null,
       onTap: () {
         if (!context.mounted) return;
@@ -410,8 +429,9 @@ class BulkSelectionBar extends ConsumerWidget {
         appSnack(
             context,
             allSuggestLess
-                ? 'Will suggest ${songs.length} songs more'
-                : 'Will suggest ${songs.length} songs less');
+                ? AppLocalizations.of(context).bulkWillSuggestMore(songs.length)
+                : AppLocalizations.of(context)
+                    .bulkWillSuggestLess(songs.length));
       },
     );
   }
@@ -420,14 +440,15 @@ class BulkSelectionBar extends ConsumerWidget {
       BuildContext context, WidgetRef ref, List<Song> songs, int count) {
     return _ActionButton(
       icon: AppIcons.playlistAdd,
-      label: 'New Playlist',
+      label: AppLocalizations.of(context).playlistNewTitle,
       onTap: () async {
+        final l10n = AppLocalizations.of(context);
         final filenames = songs.map((s) => s.filename).toList();
         final name = await showAppTextPrompt(
           context,
-          title: 'New Playlist',
-          hintText: 'Playlist name',
-          confirmLabel: 'Create',
+          title: l10n.playlistNewTitle,
+          hintText: l10n.playlistNameHint,
+          confirmLabel: l10n.actionCreate,
         );
         if (name == null) return;
 
@@ -443,7 +464,7 @@ class BulkSelectionBar extends ConsumerWidget {
         }
         ref.read(selectionProvider.notifier).exitSelectionMode();
         if (!context.mounted) return;
-        appSnack(context, 'Created playlist "$name"');
+        appSnack(context, AppLocalizations.of(context).playlistCreated(name));
       },
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../components/song_actions.dart';
@@ -20,7 +21,7 @@ void showSongOptionsMenu(
   showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Song options',
+    barrierLabel: AppLocalizations.of(context).songMenuTitle,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (dialogContext, _, __) {
@@ -100,6 +101,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
     }
   }
 
+  AppLocalizations get l10n => AppLocalizations.of(context);
+
   void _goTo(_SongMenuView next) {
     if (!mounted) return;
     final currentIndex = _viewIndex(_view);
@@ -167,7 +170,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
     if (song == null) return;
 
     _closePopup();
-    songActionShare(song);
+    songActionShare(widget.parentContext, song);
   }
 
   void _handleRemoveFromCurrentPlaylist() {
@@ -283,23 +286,23 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         if (hasSongActions)
           _sectionCard(
             icon: AppIcons.play,
-            title: 'Playback',
-            subtitle: 'Queue, playlist, and share actions',
+            title: l10n.songMenuPlayback,
+            subtitle: l10n.songMenuPlaybackHint,
             onTap: () => _goTo(_SongMenuView.playback),
           ),
         if (hasSongActions) const SizedBox(height: AppTokens.s2),
         if (hasSongActions)
           _sectionCard(
             icon: AppIcons.folder,
-            title: 'Library',
-            subtitle: 'Move song and edit metadata',
+            title: l10n.songMenuLibrary,
+            subtitle: l10n.songMenuLibraryHint,
             onTap: () => _goTo(_SongMenuView.library),
           ),
         if (hasSongActions) const SizedBox(height: AppTokens.s2),
         _sectionCard(
           icon: AppIcons.favorite,
-          title: 'Personalize',
-          subtitle: 'Favorite and recommendation settings',
+          title: l10n.songMenuPersonalize,
+          subtitle: l10n.songMenuPersonalizeHint,
           onTap: () => _goTo(_SongMenuView.personalize),
           // Red only while the song *is* favourited — otherwise the glyph takes
           // the cover accent like the rest.
@@ -309,8 +312,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         if (hasSongActions)
           _sectionCard(
             icon: AppIcons.delete,
-            title: 'Danger Zone',
-            subtitle: 'Remove from playlist or delete song',
+            title: l10n.songMenuDanger,
+            subtitle: l10n.songMenuDangerHint,
             onTap: () => _goTo(_SongMenuView.danger),
             accent: AppTokens.danger,
           ),
@@ -324,14 +327,14 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
       children: [
         _submenuEntry(
           icon: AppIcons.queue,
-          label: 'Play Next',
-          subtitle: 'Add song to play immediately after current track',
+          label: l10n.songMenuPlayNext,
+          subtitle: l10n.songMenuPlayNextHint,
           onTap: _handlePlayNext,
         ),
         _submenuEntry(
           icon: AppIcons.queue,
-          label: 'Play Next (Allow Duplicate)',
-          subtitle: 'Add again even if already in queue',
+          label: l10n.songMenuPlayNextDuplicate,
+          subtitle: l10n.songMenuPlayNextDuplicateHint,
           onTap: () async {
             _closePopup();
             if (widget.song == null) return;
@@ -341,7 +344,10 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
             if (widget.parentContext.mounted) {
               ScaffoldMessenger.of(widget.parentContext).showSnackBar(
                 SnackBar(
-                  content: Text('Added to Next Up: ${widget.song!.title}'),
+                  content: Text(
+                    AppLocalizations.of(widget.parentContext)
+                        .songAddedToNextUp(widget.song!.title),
+                  ),
                   duration: const Duration(seconds: 1),
                 ),
               );
@@ -350,20 +356,20 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         ),
         _submenuEntry(
           icon: AppIcons.playlistAdd,
-          label: 'Add to Playlist',
-          subtitle: 'Quick add to your most recent playlist',
+          label: l10n.songMenuAddToPlaylist,
+          subtitle: l10n.songMenuAddToPlaylistHint,
           onTap: _handleAddToPlaylist,
         ),
         _submenuEntry(
           icon: AppIcons.playlistAdd,
-          label: 'Add to New Playlist',
-          subtitle: 'Create a playlist and add this song',
+          label: l10n.songMenuAddToNewPlaylist,
+          subtitle: l10n.songMenuAddToNewPlaylistHint,
           onTap: _handleAddToNewPlaylist,
         ),
         _submenuEntry(
           icon: AppIcons.share,
-          label: 'Share',
-          subtitle: 'Share the audio file externally',
+          label: l10n.songMenuShare,
+          subtitle: l10n.songMenuShareHint,
           onTap: _handleShare,
         ),
       ],
@@ -376,8 +382,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
       children: [
         _submenuEntry(
           icon: AppIcons.imageSearch,
-          label: 'Fetch Missing Cover',
-          subtitle: 'Try searching Last.fm, Deezer and iTunes for cover art',
+          label: l10n.songMenuFetchCover,
+          subtitle: l10n.songMenuFetchCoverHint,
           onTap: () async {
             final song = widget.song;
             if (song == null) return;
@@ -387,8 +393,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         ),
         _submenuEntry(
           icon: AppIcons.manageSearch,
-          label: 'Fetch Missing Metadata',
-          subtitle: 'Search online for title, artist, album and cover',
+          label: l10n.songMenuFetchMetadata,
+          subtitle: l10n.songMenuFetchMetadataHint,
           onTap: () async {
             final song = widget.song;
             if (song == null) return;
@@ -399,20 +405,20 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         ),
         _submenuEntry(
           icon: AppIcons.folderMove,
-          label: 'Move to Folder',
-          subtitle: 'Move this file to another folder',
+          label: l10n.songMenuMoveToFolder,
+          subtitle: l10n.songMenuMoveToFolderHint,
           onTap: _handleMoveToFolder,
         ),
         _submenuEntry(
           icon: AppIcons.playlistAdd,
-          label: 'Manage Playlists',
-          subtitle: 'Add or remove from playlists',
+          label: l10n.songMenuManagePlaylists,
+          subtitle: l10n.songMenuManagePlaylistsHint,
           onTap: _handleManagePlaylists,
         ),
         _submenuEntry(
           icon: AppIcons.edit,
-          label: 'Edit Metadata',
-          subtitle: 'Open metadata editor',
+          label: l10n.songMenuEditMetadata,
+          subtitle: l10n.songMenuEditMetadataHint,
           onTap: _handleEditMetadata,
         ),
       ],
@@ -429,15 +435,19 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
         _submenuEntry(
           icon: isFavorite ? AppIcons.favorite : AppIcons.favorite,
           iconColor: isFavorite ? AppTokens.danger : null,
-          label: isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
-          subtitle: 'Tune your favorite songs list',
+          label: isFavorite
+              ? l10n.songMenuRemoveFavorite
+              : l10n.songMenuAddFavorite,
+          subtitle: l10n.songMenuFavoritesHint,
           onTap: () => _toggleFavorite(isFavorite),
         ),
         _submenuEntry(
           icon: AppIcons.heartBroken,
           iconColor: isSuggestLess ? AppTokens.fgTertiary : null,
-          label: isSuggestLess ? 'Suggest More' : 'Suggest Less',
-          subtitle: 'Adjust how often this song appears in suggestions',
+          label: isSuggestLess
+              ? l10n.songMenuSuggestMore
+              : l10n.songMenuSuggestLess,
+          subtitle: l10n.songMenuSuggestHint,
           onTap: () => _toggleSuggestLess(isSuggestLess),
         ),
       ],
@@ -452,22 +462,22 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
           _submenuEntry(
             icon: AppIcons.playlistRemove,
             iconColor: AppTokens.danger,
-            label: 'Remove from Current Playlist',
-            subtitle: 'Keep file, remove playlist mapping',
+            label: l10n.songMenuRemoveFromPlaylist,
+            subtitle: l10n.songMenuRemoveFromPlaylistHint,
             onTap: _handleRemoveFromCurrentPlaylist,
           ),
         _submenuEntry(
           icon: AppIcons.visibilityOff,
           iconColor: AppTokens.fgTertiary,
-          label: 'Remove from Library',
-          subtitle: 'Keep file but hide from the library',
+          label: l10n.songMenuRemoveFromLibrary,
+          subtitle: l10n.songMenuRemoveFromLibraryHint,
           onTap: _handleHideFromLibrary,
         ),
         _submenuEntry(
           icon: AppIcons.delete,
           iconColor: AppTokens.danger,
-          label: 'Delete Permanently',
-          subtitle: 'Delete the file from the device',
+          label: l10n.actionDeletePermanently,
+          subtitle: l10n.songMenuDeleteHint,
           onTap: _handleDeleteSong,
         ),
       ],
@@ -578,7 +588,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
                       IconButton(
                         icon: const AppIcon(AppIcons.arrowBack),
                         onPressed: () => _goTo(_SongMenuView.root),
-                        tooltip: 'Back',
+                        tooltip: l10n.actionBack,
                       )
                     else
                       const SizedBox(width: 48),
@@ -596,11 +606,12 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
                           const SizedBox(height: 2),
                           Text(
                             switch (_view) {
-                              _SongMenuView.root => 'Song Options',
-                              _SongMenuView.playback => 'Playback',
-                              _SongMenuView.library => 'Library',
-                              _SongMenuView.personalize => 'Personalize',
-                              _SongMenuView.danger => 'Danger Zone',
+                              _SongMenuView.root => l10n.songMenuTitle,
+                              _SongMenuView.playback => l10n.songMenuPlayback,
+                              _SongMenuView.library => l10n.songMenuLibrary,
+                              _SongMenuView.personalize =>
+                                l10n.songMenuPersonalize,
+                              _SongMenuView.danger => l10n.songMenuDanger,
                             },
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
@@ -612,7 +623,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
                     IconButton(
                       icon: const AppIcon(AppIcons.close),
                       onPressed: _closePopup,
-                      tooltip: 'Close',
+                      tooltip: l10n.actionClose,
                     ),
                   ],
                 ),

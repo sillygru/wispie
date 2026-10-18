@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
 import '../../domain/models/online_search_result.dart';
 import '../../domain/services/song_replacement_rules.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/online_metadata_service.dart';
@@ -56,6 +57,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   Future<void> _pickImage(Song currentSong) async {
+    final l10n = AppLocalizations.of(context);
     try {
       final picked = await FilePicker.pickFile(
         type: FileType.image,
@@ -69,12 +71,12 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
             .updateSongCover(currentSong, pickedPath);
 
         if (mounted) {
-          appSnack(context, "Cover updated successfully");
+          appSnack(context, l10n.metadataCoverUpdated);
         }
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error picking image: $e");
+        appSnack(context, l10n.metadataPickImageError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -82,18 +84,19 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   Future<void> _removeImage(Song currentSong) async {
+    final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Remove Cover"),
-        content: const Text("Are you sure you want to remove the cover art?"),
+        title: Text(l10n.metadataRemoveCoverTitle),
+        content: Text(l10n.metadataRemoveCoverBody),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text("CANCEL")),
+              child: Text(l10n.backupCancelUpper)),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("REMOVE")),
+              child: Text(l10n.metadataRemoveUpper)),
         ],
       ),
     );
@@ -105,11 +108,11 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
             .read(songsProvider.notifier)
             .updateSongCover(currentSong, null);
         if (mounted) {
-          appSnack(context, "Cover removed");
+          appSnack(context, l10n.metadataCoverRemoved);
         }
       } catch (e) {
         if (mounted) {
-          appSnack(context, "Error removing cover: $e");
+          appSnack(context, l10n.metadataRemoveCoverError(e));
         }
       } finally {
         if (mounted) setState(() => _isSaving = false);
@@ -119,6 +122,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
   Future<void> _fixThumbnail(Song currentSong) async {
     if (currentSong.coverUrl == null) return;
+    final l10n = AppLocalizations.of(context);
 
     try {
       setState(() => _isSaving = true);
@@ -139,20 +143,20 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           return StatefulBuilder(
             builder: (context, setState) {
               return AlertDialog(
-                title: const Text("Fix Thumbnail Result"),
+                title: Text(l10n.metadataFixResultTitle),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text("Review the changes below:"),
+                    Text(l10n.metadataFixReviewBody),
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
                           child: Column(
                             children: [
-                              const Text("Original",
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.bold)),
+                              Text(l10n.metadataFixOriginal,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
                               ClipRRect(
                                 borderRadius: AppTokens.brSm,
@@ -180,8 +184,9 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                             children: [
                               Text(
                                   fixedOptions.length > 1
-                                      ? "New (Option ${selectedIndex + 1})"
-                                      : "New",
+                                      ? l10n.metadataFixNewOption(
+                                          selectedIndex + 1)
+                                      : l10n.metadataFixNew,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
                               const SizedBox(height: 8),
@@ -209,7 +214,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                           onPressed: () =>
                               setState(() => showAlternatives = true),
                           icon: const AppIcon(AppIcons.gridView),
-                          label: const Text("See Alternatives"),
+                          label: Text(l10n.metadataFixSeeAlternatives),
                         )
                       else
                         SizedBox(
@@ -251,12 +256,12 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, null),
-                    child: const Text("Cancel"),
+                    child: Text(l10n.actionCancel),
                   ),
                   FilledButton(
                     onPressed: () =>
                         Navigator.pop(context, fixedOptions[selectedIndex]),
-                    child: const Text("Apply"),
+                    child: Text(l10n.metadataFixApply),
                   ),
                 ],
               );
@@ -282,12 +287,12 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         } catch (_) {}
 
         if (mounted) {
-          appSnack(context, "Thumbnail fixed successfully");
+          appSnack(context, l10n.metadataFixSuccess);
         }
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error fixing thumbnail: $e");
+        appSnack(context, l10n.metadataFixError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -295,26 +300,22 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   void _showFixHelp() {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
-          children: const [
-            AppIcon(AppIcons.autoFix),
-            SizedBox(width: 8),
-            Text("Fix Thumbnail"),
+          children: [
+            const AppIcon(AppIcons.autoFix),
+            const SizedBox(width: 8),
+            Text(l10n.metadataFixThumbnail),
           ],
         ),
-        content: const Text(
-          "This tool automatically improves your album art by:\n\n"
-          "1. Detecting and removing black bars/borders (common in YouTube thumbnails)\n"
-          "2. Cropping the image to a perfect square (1:1 ratio)\n\n"
-          "Best used for converting 16:9 thumbnails into proper album covers.",
-        ),
+        content: Text(l10n.metadataFixHelpBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Got it"),
+            child: Text(l10n.metadataGotIt),
           ),
         ],
       ),
@@ -323,6 +324,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
   Future<void> _exportImage(Song currentSong) async {
     if (currentSong.coverUrl == null) return;
+    final l10n = AppLocalizations.of(context);
 
     try {
       setState(() => _isSaving = true);
@@ -333,7 +335,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           .getCoverExportBytes(currentSong);
 
       final savedUri = await FilePicker.saveFile(
-        dialogTitle: 'Export Cover',
+        dialogTitle: l10n.metadataExportCover,
         fileName:
             '${p.basenameWithoutExtension(currentSong.filename)}_cover.jpg',
         type: FileType.image,
@@ -343,12 +345,12 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       if (savedUri != null) {
         // file_picker persists [bytes] itself on every platform.
         if (mounted) {
-          appSnack(context, "Cover exported to $savedUri");
+          appSnack(context, l10n.metadataExportSuccess(savedUri));
         }
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error exporting cover: $e");
+        appSnack(context, l10n.metadataExportError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -356,33 +358,22 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   void _showReplaceHelp() {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Row(
-          children: const [
-            AppIcon(AppIcons.swapHoriz),
-            SizedBox(width: 8),
-            Text("Replace Song"),
+          children: [
+            const AppIcon(AppIcons.swapHoriz),
+            const SizedBox(width: 8),
+            Text(l10n.metadataReplaceSong),
           ],
         ),
-        content: const Text(
-          "Swaps this song's audio file for a different copy of the same song "
-          "— a better rip, a lossless version, a clean encode.\n\n"
-          "Everything wispie knows about the song moves to the new file: its "
-          "play history, favourite status, playlists, and when it joined your "
-          "library.\n\n"
-          "Its metadata is re-read from the new file, so the tags, duration and "
-          "cover art you see afterwards are the new file's own. Anything the new "
-          "file does not carry is reported as unknown rather than borrowed from "
-          "the old entry — edit it afterwards if that happens.\n\n"
-          "The replacement has to come from outside your library folders and "
-          "have a different filename. Changing only the extension is enough.",
-        ),
+        content: Text(l10n.metadataReplaceHelpBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Got it"),
+            child: Text(l10n.metadataGotIt),
           ),
         ],
       ),
@@ -390,6 +381,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   Future<void> _replaceSong(Song currentSong) async {
+    final l10n = AppLocalizations.of(context);
     final picked = await FilePicker.pickFile();
     final pickedPath = picked?.path;
     if (pickedPath == null || pickedPath.isEmpty || !mounted) return;
@@ -430,14 +422,13 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         _albumController.text = replaced.album;
       });
 
-      appSnack(context, "Replaced with ${replaced.filename}",
+      appSnack(context, l10n.metadataReplaced(replaced.filename),
           tone: AppTone.success);
     } catch (e) {
       // A UI boundary, so this reports anything rather than letting a
       // filesystem or database failure escape as a crash.
       if (mounted) {
-        appSnack(context, "Could not replace the file: $e",
-            tone: AppTone.danger);
+        appSnack(context, l10n.metadataReplaceError(e), tone: AppTone.danger);
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -463,34 +454,36 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
   Future<OriginalFileDisposition?> _askOriginalDisposition(
       Song song, ReplacementAccepted accepted) {
+    final l10n = AppLocalizations.of(context);
     return showDialog<OriginalFileDisposition>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text("Replace Song"),
+        title: Text(l10n.metadataReplaceSong),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("${song.filename}\nreplaced by ${accepted.newFilename}"),
+            Text(l10n.metadataReplaceFilesBody(
+                song.filename, accepted.newFilename)),
             const SizedBox(height: 24),
-            const Text("What should happen to the original?"),
+            Text(l10n.metadataReplaceOriginalQuestion),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("CANCEL"),
+            child: Text(l10n.backupCancelUpper),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, OriginalFileDisposition.hide),
-            child: const Text("KEEP, HIDE IT"),
+            child: Text(l10n.metadataKeepHideUpper),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, OriginalFileDisposition.delete),
             style: TextButton.styleFrom(foregroundColor: AppTokens.danger),
-            child: const Text("DELETE IT"),
+            child: Text(l10n.metadataDeleteItUpper),
           ),
         ],
       ),
@@ -498,6 +491,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   Future<void> _save() async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isSaving = true);
 
     try {
@@ -537,11 +531,11 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
       if (mounted) {
         Navigator.pop(context);
-        appSnack(context, "Metadata updated successfully");
+        appSnack(context, l10n.metadataSaved);
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error saving metadata: $e");
+        appSnack(context, l10n.metadataSaveError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -549,6 +543,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   }
 
   Future<void> _fetchCoverOnline(Song currentSong) async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isSaving = true);
     try {
       final results =
@@ -566,14 +561,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       setState(() => _isSaving = false);
 
       if (coverResults.isEmpty) {
-        appSnack(context, "No online cover art found");
+        appSnack(context, l10n.metadataNoOnlineCover);
         return;
       }
 
       final chosen = await showDialog<OnlineSearchResult>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text("Select Cover Art"),
+          title: Text(l10n.metadataSelectCoverTitle),
           content: SizedBox(
             width: double.maxFinite,
             height: 320,
@@ -589,8 +584,9 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
                   ),
-                  title: Text('${item.title} - ${item.artist}'),
-                  subtitle: Text('Source: ${item.source}'),
+                  title: Text(
+                      l10n.metadataResultTitleArtist(item.title, item.artist)),
+                  subtitle: Text(l10n.metadataSourceLabel(item.source)),
                   onTap: () => Navigator.pop(dialogContext, item),
                 );
               },
@@ -599,7 +595,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, null),
-              child: const Text("Cancel"),
+              child: Text(l10n.actionCancel),
             ),
           ],
         ),
@@ -617,16 +613,19 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         await ref
             .read(songsProvider.notifier)
             .updateSongCover(currentSong, localPath);
-        if (mounted) appSnack(context, "Cover updated from ${chosen.source}");
+        if (mounted) {
+          appSnack(context, l10n.metadataCoverUpdatedFrom(chosen.source));
+        }
       }
     } catch (e) {
-      if (mounted) appSnack(context, "Error fetching cover: $e");
+      if (mounted) appSnack(context, l10n.coverFetchError(e));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
   Future<void> _fetchMetadataOnline(Song currentSong) async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isSaving = true);
     try {
       final results =
@@ -640,14 +639,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       setState(() => _isSaving = false);
 
       if (results.isEmpty) {
-        appSnack(context, "No matching metadata found online");
+        appSnack(context, l10n.metadataNoOnlineMatch);
         return;
       }
 
       final chosen = await showDialog<OnlineSearchResult>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text("Select Online Match"),
+          title: Text(l10n.metadataSelectMatchTitle),
           content: SizedBox(
             width: double.maxFinite,
             height: 320,
@@ -667,8 +666,8 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                         )
                       : const AppIcon(AppIcons.musicNote),
                   title: Text(item.title),
-                  subtitle:
-                      Text('${item.artist} · ${item.album} (${item.source})'),
+                  subtitle: Text(l10n.metadataResultDetail(
+                      item.artist, item.album, item.source)),
                   onTap: () => Navigator.pop(dialogContext, item),
                 );
               },
@@ -677,7 +676,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, null),
-              child: const Text("Cancel"),
+              child: Text(l10n.actionCancel),
             ),
           ],
         ),
@@ -706,11 +705,11 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       }
 
       if (mounted) {
-        appSnack(context, "Metadata & cover loaded from ${chosen.source}");
+        appSnack(context, l10n.metadataLoadedFrom(chosen.source));
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error fetching metadata: $e");
+        appSnack(context, l10n.metadataFetchError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -719,6 +718,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     // Watch for updates to the song
     final songs = ref.watch(songsProvider).asData?.value ?? [];
     final currentSong = songs.firstWhere(
@@ -728,7 +728,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
 
     return AmbientScaffold(
       appBar: AppBar(
-        title: const Text("Edit Metadata"),
+        title: Text(l10n.songMenuEditMetadata),
         actions: [
           if (_isSaving)
             const Center(
@@ -740,7 +740,8 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
           else
             TextButton(
               onPressed: _save,
-              child: const Text("SAVE", style: TextStyle(color: Colors.white)),
+              child: Text(l10n.metadataSaveUpper,
+                  style: const TextStyle(color: Colors.white)),
             ),
         ],
       ),
@@ -749,7 +750,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle("Cover Art"),
+            _buildSectionTitle(l10n.metadataSectionCover),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -771,14 +772,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                       FilledButton.icon(
                         onPressed: () => _pickImage(currentSong),
                         icon: const AppIcon(AppIcons.image),
-                        label: const Text("Change Cover"),
+                        label: Text(l10n.metadataChangeCover),
                         style: AppTokens.tonalButton,
                       ),
                       const SizedBox(height: 8),
                       FilledButton.icon(
                         onPressed: () => _fetchCoverOnline(currentSong),
                         icon: const AppIcon(AppIcons.travelExplore),
-                        label: const Text("Fetch Cover Online"),
+                        label: Text(l10n.songListFetchCover),
                         style: AppTokens.tonalButton,
                       ),
                       const SizedBox(height: 8),
@@ -790,14 +791,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                                   ? null
                                   : () => _fixThumbnail(currentSong),
                               icon: const AppIcon(AppIcons.autoFix),
-                              label: const Text("Fix Thumbnail"),
+                              label: Text(l10n.metadataFixThumbnail),
                               style: AppTokens.tonalButton,
                             ),
                           ),
                           IconButton(
                             onPressed: _showFixHelp,
                             icon: const AppIcon(AppIcons.help),
-                            tooltip: "What does this do?",
+                            tooltip: l10n.metadataWhatDoesThisDo,
                           ),
                         ],
                       ),
@@ -810,7 +811,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                                   ? null
                                   : () => _exportImage(currentSong),
                               icon: const AppIcon(AppIcons.download),
-                              label: const Text("Export"),
+                              label: Text(l10n.metadataExport),
                               style: AppTokens.tonalButton,
                             ),
                           ),
@@ -821,7 +822,7 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                                   ? null
                                   : () => _removeImage(currentSong),
                               icon: const AppIcon(AppIcons.delete),
-                              label: const Text("Remove"),
+                              label: Text(l10n.queueActionRemove),
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppTokens.surface(2),
                                 foregroundColor: AppTokens.danger,
@@ -836,14 +837,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
               ],
             ),
             const SizedBox(height: 24),
-            _buildSectionTitle("File Information"),
+            _buildSectionTitle(l10n.metadataSectionFile),
             const SizedBox(height: 8),
             TextField(
               controller: _filenameController,
-              decoration: const InputDecoration(
-                labelText: "Filename (without extension)",
-                border: OutlineInputBorder(),
-                helperText: "Renaming the file will update it locally.",
+              decoration: InputDecoration(
+                labelText: l10n.metadataFilenameLabel,
+                border: const OutlineInputBorder(),
+                helperText: l10n.metadataFilenameHelper,
               ),
             ),
             const SizedBox(height: 8),
@@ -854,14 +855,14 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
                     onPressed:
                         _isSaving ? null : () => _replaceSong(currentSong),
                     icon: const AppIcon(AppIcons.swapHoriz),
-                    label: const Text("Replace Song"),
+                    label: Text(l10n.metadataReplaceSong),
                     style: AppTokens.tonalButton,
                   ),
                 ),
                 IconButton(
                   onPressed: _showReplaceHelp,
                   icon: const AppIcon(AppIcons.help),
-                  tooltip: "What does this do?",
+                  tooltip: l10n.metadataWhatDoesThisDo,
                 ),
               ],
             ),
@@ -869,45 +870,45 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildSectionTitle("Song Metadata"),
+                _buildSectionTitle(l10n.metadataSectionSong),
                 TextButton.icon(
                   onPressed: () => _fetchMetadataOnline(currentSong),
                   icon: const AppIcon(AppIcons.travelExplore, size: 16),
-                  label: const Text("Fetch Online"),
+                  label: Text(l10n.metadataFetchOnline),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: "Title",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.metadataTitleLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _artistController,
-              decoration: const InputDecoration(
-                labelText: "Artist",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.metadataArtistLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _albumController,
-              decoration: const InputDecoration(
-                labelText: "Album",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.metadataAlbumLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 32),
-            _buildSectionTitle("Additional Content"),
+            _buildSectionTitle(l10n.metadataSectionExtra),
             const SizedBox(height: 8),
             ListTile(
               leading: const AppIcon(AppIcons.lyrics),
-              title: const Text("Edit Lyrics"),
-              subtitle: const Text("View or edit embedded lyrics"),
+              title: Text(l10n.metadataEditLyrics),
+              subtitle: Text(l10n.metadataEditLyricsSubtitle),
               trailing: const AppIcon(AppIcons.chevronRight),
               shape: RoundedRectangleBorder(
                 borderRadius: AppTokens.brSm,
@@ -986,12 +987,14 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        appSnack(context, "Error loading lyrics: $e");
+        appSnack(
+            context, AppLocalizations.of(context).metadataLyricsLoadError(e));
       }
     }
   }
 
   Future<void> _save() async {
+    final l10n = AppLocalizations.of(context);
     setState(() => _isSaving = true);
     try {
       final songs = ref.read(songsProvider).asData?.value ?? const <Song>[];
@@ -1004,11 +1007,11 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
           .updateLyrics(currentSong, _controller.text);
       if (mounted) {
         Navigator.pop(context);
-        appSnack(context, "Lyrics saved");
+        appSnack(context, l10n.metadataLyricsSaved);
       }
     } catch (e) {
       if (mounted) {
-        appSnack(context, "Error saving lyrics: $e");
+        appSnack(context, l10n.metadataLyricsSaveError(e));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -1022,18 +1025,19 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
     if (chosen == null || !mounted) return;
 
     setState(() => _controller.text = chosen);
-    appSnack(context, "Lyrics loaded — press SAVE to apply");
+    appSnack(context, AppLocalizations.of(context).metadataLyricsLoaded);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return AmbientScaffold(
       appBar: AppBar(
-        title: const Text("Edit Lyrics"),
+        title: Text(l10n.metadataEditLyrics),
         actions: [
           IconButton(
             icon: const AppIcon(AppIcons.travelExplore),
-            tooltip: "Search online",
+            tooltip: l10n.metadataSearchOnline,
             onPressed: _isSaving ? null : _searchOnline,
           ),
           if (_isSaving)
@@ -1046,7 +1050,8 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
           else
             TextButton(
               onPressed: _save,
-              child: const Text("SAVE", style: TextStyle(color: Colors.white)),
+              child: Text(l10n.metadataSaveUpper,
+                  style: const TextStyle(color: Colors.white)),
             ),
         ],
       ),
@@ -1056,9 +1061,10 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  const Text(
-                    "Lyrics are embedded in the audio file. You can use [mm:ss.xx] timestamps for synced lyrics.",
-                    style: TextStyle(fontSize: 12, color: AppTokens.fgTertiary),
+                  Text(
+                    l10n.metadataLyricsHint,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTokens.fgTertiary),
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -1067,9 +1073,9 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
                       maxLines: null,
                       expands: true,
                       textAlignVertical: TextAlignVertical.top,
-                      decoration: const InputDecoration(
-                        hintText: "Enter lyrics here...",
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: l10n.metadataLyricsFieldHint,
+                        border: const OutlineInputBorder(),
                       ),
                       style: const TextStyle(fontFamily: 'monospace'),
                     ),

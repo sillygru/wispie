@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'l10n/app_localizations.dart';
+import 'providers/locale_provider.dart';
 import 'presentation/widgets/collection_accent_scope.dart';
 import 'package:flutter/services.dart'
     show HardwareKeyboard, KeyEvent, LogicalKeyboardKey, SystemNavigator;
@@ -457,6 +459,9 @@ class _WispieAppState extends ConsumerState<WispieApp>
 
     return MaterialApp(
       title: 'wispie',
+      locale: ref.watch(localeProvider),
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       navigatorObservers: [PopupScrollDismiss.observer],

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../../providers/providers.dart';
@@ -130,6 +131,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     // Full-bleed variant: single flag check for artist/album/playlist only.
     // Favorites, folders and other lists keep the legacy layout.
     final bool useFullBleed = ref.watch(
@@ -391,7 +393,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                   }
                 : null,
             icon: const AppIcon(AppIcons.shuffle),
-            label: const Text('Shuffle'),
+            label: Text(l10n.songListShuffle),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24,
@@ -427,7 +429,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                 label: AnimatedSwitcher(
                   duration: AppTokens.dFast,
                   child: Text(
-                    showPause ? 'Pause' : (isCurrent ? 'Resume' : 'Play'),
+                    showPause
+                        ? l10n.songListPause
+                        : (isCurrent ? l10n.songListResume : l10n.songListPlay),
                     key: ValueKey<String>(
                         showPause ? 'p' : (isCurrent ? 'r' : 'pl')),
                   ),
@@ -451,7 +455,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                       )
                   : null,
               icon: const AppIcon(AppIcons.manageSearch),
-              label: const Text('Fetch Missing Metadata'),
+              label: Text(l10n.songMenuFetchMetadata),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
@@ -506,23 +510,23 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                           ref,
                           sortedSongs,
                         ),
-                        tooltip: 'Fetch Missing Metadata',
+                        tooltip: l10n.songMenuFetchMetadata,
                       )
                     else if (canFetchCover)
                       IconButton(
                         icon: const AppIcon(AppIcons.imageSearch),
                         onPressed: handleFetchCover,
                         tooltip: effectiveIsArtist
-                            ? 'Fetch Artist Cover Online'
+                            ? l10n.songListFetchArtistCover
                             : (effectiveIsAlbum
-                                ? 'Fetch Album Cover Online'
-                                : 'Fetch Cover Online'),
+                                ? l10n.songListFetchAlbumCover
+                                : l10n.songListFetchCover),
                       ),
                     if (playlistId != null)
                       IconButton(
                         icon: const AppIcon(AppIcons.moreVert),
                         onPressed: () => _showPlaylistOptions(context, ref),
-                        tooltip: 'Playlist Options',
+                        tooltip: l10n.songListPlaylistOptions,
                       ),
                     if (playlistId == null &&
                         !effectiveIsArtist &&
@@ -535,7 +539,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                               await context.pushApp<Map<String, dynamic>>(
                             SelectSongsScreen(
                               songs: sortedSongs,
-                              title: 'Select Songs to Merge',
+                              title: l10n.songListSelectSongsToMerge,
                             ),
                           );
                           if (result != null && context.mounted) {
@@ -553,18 +557,19 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                                 if (context.mounted) {
                                   appSnack(
                                     context,
-                                    'Merged ${selected.length} songs',
+                                    l10n.songListMergedSongs(selected.length),
                                   );
                                 }
                               } catch (e) {
                                 if (context.mounted) {
-                                  appSnack(context, 'Error: $e');
+                                  appSnack(
+                                      context, l10n.songListMergeError('$e'));
                                 }
                               }
                             }
                           }
                         },
-                        tooltip: 'Merge Songs',
+                        tooltip: l10n.songListMergeSongs,
                       ),
                   ],
                 ),
@@ -625,11 +630,11 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     ),
                   ),
                 if (visibleSongs.isEmpty)
-                  const SliverFillRemaining(
+                  SliverFillRemaining(
                     hasScrollBody: false,
                     child: AppEmptyState(
                       icon: AppIcons.musicNote,
-                      title: 'No songs in this list',
+                      title: l10n.songListEmpty,
                     ),
                   )
                 else
@@ -668,6 +673,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
   }
 
   void _showPlaylistOptions(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     if (playlistId == null) return;
 
     showAppSheet(
@@ -677,7 +683,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
         children: [
           AppSheetAction(
             icon: AppIcons.edit,
-            label: 'Rename',
+            label: l10n.actionRename,
             onTap: () {
               Navigator.pop(sheetContext);
               _showRenameDialog(context, ref);
@@ -685,7 +691,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
           ),
           AppSheetAction(
             icon: AppIcons.delete,
-            label: 'Delete',
+            label: l10n.actionDelete,
             isDanger: true,
             onTap: () {
               Navigator.pop(sheetContext);
@@ -698,13 +704,14 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
   }
 
   Future<void> _showRenameDialog(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context);
     if (playlistId == null) return;
 
     final newName = await showAppTextPrompt(
       context,
-      title: 'Rename Playlist',
+      title: l10n.songListRenamePlaylist,
       initialValue: title,
-      confirmLabel: 'Rename',
+      confirmLabel: l10n.actionRename,
     );
     if (newName != null && newName != title) {
       ref
@@ -717,13 +724,14 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     BuildContext context,
     WidgetRef ref,
   ) async {
+    final l10n = AppLocalizations.of(context);
     if (playlistId == null) return;
 
     final confirmed = await showAppConfirm(
       context,
-      title: 'Delete Playlist',
-      message: 'Are you sure you want to delete "$title"?',
-      confirmLabel: 'Delete',
+      title: l10n.songListDeletePlaylist,
+      message: l10n.songListDeletePlaylistConfirm(title),
+      confirmLabel: l10n.actionDelete,
       isDanger: true,
     );
     if (confirmed == true && context.mounted) {
@@ -740,7 +748,8 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     String artist,
     List<Song> songs,
   ) async {
-    appSnack(context, 'Searching online for $artist artwork...');
+    final l10n = AppLocalizations.of(context);
+    appSnack(context, l10n.songListSearchingArtwork(artist));
     final onlineService = OnlineMetadataService.instance;
 
     final results = <Map<String, String>>[];
@@ -754,7 +763,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     final selected = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Select Artwork for $artist'),
+        title: Text(l10n.songListSelectArtwork(artist)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -762,14 +771,14 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: const Text('Use Song Cover Grid'),
-                subtitle: const Text('Remove custom artwork'),
+                title: Text(l10n.songListUseSongCoverGrid),
+                subtitle: Text(l10n.songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
               ListTile(
                 leading: const AppIcon(AppIcons.image),
-                title: const Text('Choose Custom Image'),
-                subtitle: const Text('Select image from device storage'),
+                title: Text(l10n.songListChooseCustomImage),
+                subtitle: Text(l10n.songListSelectFromDevice),
                 onTap: () => Navigator.pop(dialogContext, 'custom'),
               ),
               if (results.isNotEmpty) const Divider(),
@@ -782,7 +791,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
                   ),
-                  title: Text('Artwork from ${res['source']}'),
+                  title: Text(l10n.songListArtworkFrom('${res['source']}')),
                   subtitle: Text(
                     res['url']!,
                     maxLines: 1,
@@ -792,9 +801,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                 ),
               ),
               if (results.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('No online artwork options found'),
+                  child: Text(l10n.songListNoOnlineArtwork),
                 ),
             ],
           ),
@@ -802,7 +811,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, null),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
         ],
       ),
@@ -812,7 +821,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
 
     if (selected == 'reset') {
       await ref.read(artistAlbumArtProvider.notifier).removeArtistArt(artist);
-      if (context.mounted) appSnack(context, 'Reset to song cover grid');
+      if (context.mounted) appSnack(context, l10n.songListResetArtwork);
       return;
     }
 
@@ -828,13 +837,13 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               source: 'custom',
             );
         if (context.mounted) {
-          appSnack(context, 'Updated artwork for $artist');
+          appSnack(context, l10n.songListArtworkUpdated(artist));
         }
       }
       return;
     }
 
-    if (context.mounted) appSnack(context, 'Downloading artwork...');
+    if (context.mounted) appSnack(context, l10n.songListDownloadingArtwork);
     final localPath = await onlineService.downloadAndCacheCover(
       selected,
       'artist_$artist',
@@ -848,10 +857,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             source: 'online',
           );
       if (context.mounted) {
-        appSnack(context, 'Updated artwork for $artist');
+        appSnack(context, l10n.songListArtworkUpdated(artist));
       }
     } else if (context.mounted) {
-      appSnack(context, 'Failed to download artwork');
+      appSnack(context, l10n.songListArtworkDownloadFailed);
     }
   }
 
@@ -862,7 +871,8 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     String artist,
     List<Song> songs,
   ) async {
-    appSnack(context, 'Searching online for $album artwork...');
+    final l10n = AppLocalizations.of(context);
+    appSnack(context, l10n.songListSearchingArtwork(album));
     final onlineService = OnlineMetadataService.instance;
     final compositeKey = artist.isNotEmpty ? '$artist|$album' : album;
 
@@ -882,7 +892,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     final selected = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Select Artwork for $album'),
+        title: Text(l10n.songListSelectArtwork(album)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -890,14 +900,14 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: const Text('Use Song Cover Grid'),
-                subtitle: const Text('Remove custom artwork'),
+                title: Text(l10n.songListUseSongCoverGrid),
+                subtitle: Text(l10n.songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
               ListTile(
                 leading: const AppIcon(AppIcons.image),
-                title: const Text('Choose Custom Image'),
-                subtitle: const Text('Select image from device storage'),
+                title: Text(l10n.songListChooseCustomImage),
+                subtitle: Text(l10n.songListSelectFromDevice),
                 onTap: () => Navigator.pop(dialogContext, 'custom'),
               ),
               if (results.isNotEmpty) const Divider(),
@@ -910,7 +920,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
                   ),
-                  title: Text('Artwork from ${res['source']}'),
+                  title: Text(l10n.songListArtworkFrom('${res['source']}')),
                   subtitle: Text(
                     res['url']!,
                     maxLines: 1,
@@ -920,9 +930,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                 ),
               ),
               if (results.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('No online artwork options found'),
+                  child: Text(l10n.songListNoOnlineArtwork),
                 ),
             ],
           ),
@@ -930,7 +940,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, null),
-            child: const Text('Cancel'),
+            child: Text(l10n.actionCancel),
           ),
         ],
       ),
@@ -942,7 +952,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       await ref
           .read(artistAlbumArtProvider.notifier)
           .removeAlbumArt(compositeKey);
-      if (context.mounted) appSnack(context, 'Reset to song cover grid');
+      if (context.mounted) appSnack(context, l10n.songListResetArtwork);
       return;
     }
 
@@ -960,13 +970,13 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               source: 'custom',
             );
         if (context.mounted) {
-          appSnack(context, 'Updated artwork for $album');
+          appSnack(context, l10n.songListArtworkUpdated(album));
         }
       }
       return;
     }
 
-    if (context.mounted) appSnack(context, 'Downloading artwork...');
+    if (context.mounted) appSnack(context, l10n.songListDownloadingArtwork);
     final localPath = await onlineService.downloadAndCacheCover(
       selected,
       'album_$compositeKey',
@@ -982,10 +992,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             source: 'online',
           );
       if (context.mounted) {
-        appSnack(context, 'Updated artwork for $album');
+        appSnack(context, l10n.songListArtworkUpdated(album));
       }
     } else if (context.mounted) {
-      appSnack(context, 'Failed to download artwork');
+      appSnack(context, l10n.songListArtworkDownloadFailed);
     }
   }
 }

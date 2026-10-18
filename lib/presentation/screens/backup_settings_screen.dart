@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/storage_service.dart';
@@ -35,38 +36,39 @@ class BackupSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
-  static const _frequencyOptions = {
-    0: 'Disabled',
-    24: 'Every 24 hours',
-    48: 'Every 48 hours',
-    72: 'Every 3 days',
-    168: 'Every 7 days',
-  };
+  Map<int, String> _frequencyOptions(AppLocalizations l10n) => {
+        0: l10n.backupFrequencyDisabled,
+        24: l10n.backupFrequencyEvery24Hours,
+        48: l10n.backupFrequencyEvery48Hours,
+        72: l10n.backupFrequencyEvery3Days,
+        168: l10n.backupFrequencyEvery7Days,
+      };
 
-  static const _deleteOptions = {
-    0: 'Never',
-    7: '7 days',
-    14: '14 days',
-    30: '30 days',
-    90: '90 days',
-  };
+  Map<int, String> _deleteOptions(AppLocalizations l10n) => {
+        0: l10n.backupDeleteNever,
+        7: l10n.backupDeleteAfterDays(7),
+        14: l10n.backupDeleteAfterDays(14),
+        30: l10n.backupDeleteAfterDays(30),
+        90: l10n.backupDeleteAfterDays(90),
+      };
 
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    final l10n = AppLocalizations.of(context);
 
     final content = AppSettingsList(
       highlightId: widget.highlightId,
       children: [
         AppSettingsGroup(
-          label: 'Backup & Restore',
+          label: l10n.settingsPageBackupRestoreTitle,
           icon: AppIcons.cloudUpload,
           children: [
             AppSettingsTile(
               searchId: 'data.export',
               icon: AppIcons.upload,
-              title: 'Export App Data',
-              subtitle: 'Backup your stats, favorites, and playlists',
+              title: l10n.backupExportAppData,
+              subtitle: l10n.backupExportAppDataSubtitle,
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 try {
@@ -76,7 +78,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                   await BackupService.instance.exportUserData(options: options);
                 } catch (e) {
                   messenger.showSnackBar(
-                    SnackBar(content: Text('Export failed: $e')),
+                    SnackBar(content: Text(l10n.backupExportFailed('$e'))),
                   );
                 }
               },
@@ -84,30 +86,30 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             AppSettingsTile(
               searchId: 'data.import',
               icon: AppIcons.download,
-              title: 'Import App Data',
-              subtitle: 'Restore data from a backup (replaces all)',
+              title: l10n.backupImportAppData,
+              subtitle: l10n.backupImportAppDataSubtitle,
               onTap: () => _handleImport(),
             ),
             AppSettingsTile(
               searchId: 'data.backups',
               icon: AppIcons.cloudUpload,
-              title: 'Manage Backups',
-              subtitle: 'Create, restore, and manage app backups',
+              title: l10n.backupManageBackups,
+              subtitle: l10n.backupManageBackupsSubtitle,
               onTap: () => context.pushApp(const BackupManagementScreen()),
             ),
           ],
         ),
         AppSettingsGroup(
-          label: 'Automatic Backups',
+          label: l10n.backupAutomaticBackups,
           icon: AppIcons.cloudUpload,
           children: [
             _dropdownRow(
               searchId: 'data.auto_backup',
               icon: AppIcons.cloudUpload,
-              title: 'Auto Backup',
-              subtitle: 'How often a backup is taken',
+              title: l10n.backupAutoBackup,
+              subtitle: l10n.backupAutoBackupSubtitle,
               value: settings.autoBackupFrequencyHours,
-              options: _frequencyOptions,
+              options: _frequencyOptions(l10n),
               onChanged: (val) async {
                 await ref
                     .read(settingsProvider.notifier)
@@ -121,10 +123,10 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             _dropdownRow(
               searchId: 'data.auto_delete_backups',
               icon: AppIcons.delete,
-              title: 'Auto-Delete Old Backups',
-              subtitle: 'Discard backups older than this',
+              title: l10n.backupAutoDeleteOld,
+              subtitle: l10n.backupAutoDeleteOldSubtitle,
               value: settings.autoBackupDeleteAfterDays,
-              options: _deleteOptions,
+              options: _deleteOptions(l10n),
               onChanged: (val) async {
                 await ref
                     .read(settingsProvider.notifier)
@@ -140,21 +142,22 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
     );
     if (widget.embedded) return content;
     return AmbientScaffold(
-      appBar: const AppTopBar(title: 'Backup & Restore'),
+      appBar: AppTopBar(title: l10n.settingsPageBackupRestoreTitle),
       body: content,
     );
   }
 
   Widget _contentTypeRow(BuildContext context, WidgetRef ref) {
     final accent = AppTokens.accentOf(context, ref);
+    final l10n = AppLocalizations.of(context);
 
     return AppSettingsAnchor(
       id: 'data.auto_backup_content',
       child: AppListRow(
         dense: true,
         leading: AppRowIcon(icon: AppIcons.tune, color: accent, size: 40),
-        title: 'Auto Backup Content',
-        subtitle: 'What data is included in automatic backups',
+        title: l10n.backupAutoBackupContent,
+        subtitle: l10n.backupAutoBackupContentSubtitle,
         trailing: AppIcon(AppIcons.chevronRight,
             color: Theme.of(context).colorScheme.onSurfaceVariant),
         onTap: () => _configureAutoContent(context),
@@ -163,6 +166,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   }
 
   Future<void> _configureAutoContent(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final storage = StorageService();
     final initialTypes = await storage.loadAutoBackupContentTypes();
 
@@ -172,9 +176,9 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       context: context,
       builder: (context) => BackupOptionsDialog(
         initialTypes: initialTypes,
-        title: 'Auto Backup Content',
-        subtitle: 'Select content for automatic backups',
-        buttonLabel: 'Save',
+        title: l10n.backupAutoBackupContent,
+        subtitle: l10n.backupAutoBackupContentDialogSubtitle,
+        buttonLabel: l10n.backupSave,
         buttonIcon: AppIcons.save,
       ),
     );
@@ -220,6 +224,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   }
 
   Future<BackupOptions?> _showExportOptionsDialog() async {
+    final l10n = AppLocalizations.of(context);
     final selectedTypes = <BackupContentType>{
       BackupContentType.userStats,
       BackupContentType.userData,
@@ -231,20 +236,20 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text("Export Options"),
+            title: Text(l10n.backupExportOptionsTitle),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Select content to export:',
-                    style: TextStyle(fontWeight: FontWeight.w500),
+                  Text(
+                    l10n.backupExportSelectContent,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 12),
                   _buildExportCheckbox(
-                    title: 'User Stats',
-                    subtitle: 'Play counts, sessions, fun stats',
+                    title: l10n.backupContentUserStats,
+                    subtitle: l10n.backupContentUserStatsSubtitle,
                     value: selectedTypes.contains(BackupContentType.userStats),
                     onChanged: (value) {
                       setState(() {
@@ -257,8 +262,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'User Data',
-                    subtitle: 'Favorites, hidden, playlists',
+                    title: l10n.backupContentUserData,
+                    subtitle: l10n.backupContentUserDataSubtitle,
                     value: selectedTypes.contains(BackupContentType.userData),
                     onChanged: (value) {
                       setState(() {
@@ -271,8 +276,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'User Settings',
-                    subtitle: 'Theme, sort order, preferences',
+                    title: l10n.backupContentUserSettings,
+                    subtitle: l10n.backupContentUserSettingsSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.userSettings),
                     onChanged: (value) {
@@ -287,8 +292,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                   ),
                   const Divider(height: 24),
                   _buildExportCheckbox(
-                    title: 'Cover Cache',
-                    subtitle: 'Album artwork images',
+                    title: l10n.backupContentCoverCache,
+                    subtitle: l10n.backupContentCoverCacheSubtitle,
                     value: selectedTypes.contains(BackupContentType.coverCache),
                     onChanged: (value) {
                       setState(() {
@@ -301,8 +306,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'Library Cache',
-                    subtitle: 'Cached song metadata',
+                    title: l10n.backupContentLibraryCache,
+                    subtitle: l10n.backupContentLibraryCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.libraryCache),
                     onChanged: (value) {
@@ -316,8 +321,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'Search Index',
-                    subtitle: 'Indexed search data',
+                    title: l10n.backupContentSearchIndex,
+                    subtitle: l10n.backupContentSearchIndexSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.searchIndex),
                     onChanged: (value) {
@@ -331,8 +336,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'Waveform Cache',
-                    subtitle: 'Audio waveform data',
+                    title: l10n.backupContentWaveformCache,
+                    subtitle: l10n.backupContentWaveformCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.waveformCache),
                     onChanged: (value) {
@@ -346,8 +351,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'Color Cache',
-                    subtitle: 'Album color themes',
+                    title: l10n.backupContentColorCache,
+                    subtitle: l10n.backupContentColorCacheSubtitle,
                     value: selectedTypes.contains(BackupContentType.colorCache),
                     onChanged: (value) {
                       setState(() {
@@ -360,8 +365,8 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
                     },
                   ),
                   _buildExportCheckbox(
-                    title: 'Lyrics Cache',
-                    subtitle: 'Stored lyrics data',
+                    title: l10n.backupContentLyricsCache,
+                    subtitle: l10n.backupContentLyricsCacheSubtitle,
                     value:
                         selectedTypes.contains(BackupContentType.lyricsCache),
                     onChanged: (value) {
@@ -380,14 +385,14 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("CANCEL"),
+                child: Text(l10n.backupCancelUpper),
               ),
               TextButton(
                 onPressed: selectedTypes.isEmpty
                     ? null
                     : () => Navigator.pop(
                         context, BackupOptions(contentTypes: selectedTypes)),
-                child: const Text("EXPORT"),
+                child: Text(l10n.backupExportUpper),
               ),
             ],
           );
@@ -413,23 +418,20 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
   }
 
   Future<void> _handleImport() async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Import Data"),
-        content: const Text(
-          "This will replace ALL existing data with the imported data.\n\n"
-          "Your current stats, favorites, playlists, and settings will be overwritten.\n\n"
-          "This action cannot be undone.",
-        ),
+        title: Text(l10n.backupImportDataTitle),
+        content: Text(l10n.backupImportWarning),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("CANCEL"),
+            child: Text(l10n.backupCancelUpper),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("CONTINUE"),
+            child: Text(l10n.backupContinueUpper),
           ),
         ],
       ),
@@ -465,7 +467,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       }
 
       final progress = ValueNotifier<ImportProgress>(
-        const ImportProgress(progress: 0, label: 'Importing…'),
+        ImportProgress(progress: 0, label: l10n.backupImportingLabel),
       );
 
       if (mounted) {
@@ -474,7 +476,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
           barrierDismissible: false,
           builder: (context) => ImportProgressDialog(
             progress: progress,
-            title: 'Importing data',
+            title: l10n.backupImportingTitle,
           ),
         );
       }
@@ -488,7 +490,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
 
       if (mounted) {
         Navigator.pop(context);
-        appSnack(context, "Import successful!");
+        appSnack(context, l10n.backupImportSuccess);
         ref.invalidate(userDataProvider);
         ref.invalidate(songsProvider);
       }
@@ -496,7 +498,7 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
       await BackupService.instance.discardValidation(validation);
       if (mounted) {
         if (Navigator.canPop(context)) Navigator.pop(context);
-        appSnack(context, "Import failed: $e");
+        appSnack(context, l10n.backupImportFailed('$e'));
       }
     }
   }

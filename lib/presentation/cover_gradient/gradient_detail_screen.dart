@@ -19,6 +19,7 @@ import '../../services/color_extraction_service.dart';
 import '../../services/library_logic.dart';
 import '../../services/online_metadata_service.dart';
 import '../../services/passive_art_fetcher_service.dart';
+import '../../l10n/app_localizations.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -411,7 +412,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SectionHeader(
-                  title: 'Albums',
+                  title: AppLocalizations.of(context).gradientDetailAlbums,
                   trailing: selectedAlbum != null
                       ? _ClearChip(
                           onTap: () => setState(() {
@@ -438,7 +439,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         : null;
 
     final Widget songsHeader = _SectionHeader(
-      title: selectedAlbum ?? 'Songs',
+      title: selectedAlbum ?? AppLocalizations.of(context).gradientDetailSongs,
       trailing: Text(
         '${visibleSongs.length}',
         style: TextStyle(
@@ -450,11 +451,11 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     );
 
     final Widget songsSliver = visibleSongs.isEmpty
-        ? const SliverFillRemaining(
+        ? SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
               child: Text(
-                'No songs in this list',
+                AppLocalizations.of(context).songListEmpty,
                 style: TextStyle(color: Colors.white70),
               ),
             ),
@@ -675,7 +676,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         children: [
           AppSheetAction(
             icon: AppIcons.edit,
-            label: 'Rename',
+            label: AppLocalizations.of(context).actionRename,
             onTap: () {
               Navigator.pop(sheetContext);
               _showRenameDialog(context, ref);
@@ -683,7 +684,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
           ),
           AppSheetAction(
             icon: AppIcons.delete,
-            label: 'Delete',
+            label: AppLocalizations.of(context).actionDelete,
             isDanger: true,
             onTap: () {
               Navigator.pop(sheetContext);
@@ -699,9 +700,9 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     if (widget.playlistId == null) return;
     final String? newName = await showAppTextPrompt(
       context,
-      title: 'Rename Playlist',
+      title: AppLocalizations.of(context).songListRenamePlaylist,
       initialValue: widget.title,
-      confirmLabel: 'Rename',
+      confirmLabel: AppLocalizations.of(context).actionRename,
     );
     if (newName != null && newName != widget.title) {
       ref
@@ -715,9 +716,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     if (widget.playlistId == null) return;
     final bool? confirmed = await showAppConfirm(
       context,
-      title: 'Delete Playlist',
-      message: 'Are you sure you want to delete "${widget.title}"?',
-      confirmLabel: 'Delete',
+      title: AppLocalizations.of(context).songListDeletePlaylist,
+      message: AppLocalizations.of(context)
+          .songListDeletePlaylistConfirm(widget.title),
+      confirmLabel: AppLocalizations.of(context).actionDelete,
       isDanger: true,
     );
     if (confirmed == true && context.mounted) {
@@ -732,7 +734,9 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       BuildContext context, WidgetRef ref, List<Song> sortedSongs) async {
     final Map<String, Object?>? result =
         await context.pushApp<Map<String, Object?>>(
-      SelectSongsScreen(songs: sortedSongs, title: 'Select Songs to Merge'),
+      SelectSongsScreen(
+          songs: sortedSongs,
+          title: AppLocalizations.of(context).songListSelectSongsToMerge),
     );
     if (result != null && context.mounted) {
       final Object? raw = result['filenames'];
@@ -744,10 +748,13 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 priorityFilename: priority is String ? priority : null,
               );
           if (context.mounted) {
-            appSnack(context, 'Merged ${raw.length} songs');
+            appSnack(context,
+                AppLocalizations.of(context).songListMergedSongs(raw.length));
           }
         } catch (e) {
-          if (context.mounted) appSnack(context, 'Error: $e');
+          if (context.mounted)
+            appSnack(
+                context, AppLocalizations.of(context).songListMergeError('$e'));
         }
       }
     }
@@ -759,7 +766,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     String artist,
     List<Song> songs,
   ) async {
-    appSnack(context, 'Searching online for $artist artwork...');
+    appSnack(
+        context, AppLocalizations.of(context).songListSearchingArtwork(artist));
     final onlineService = OnlineMetadataService.instance;
     final List<Map<String, String>> results = <Map<String, String>>[];
     try {
@@ -769,7 +777,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final String? selected = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Select Artwork for $artist'),
+        title: Text(AppLocalizations.of(context).songListSelectArtwork(artist)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -777,14 +785,18 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: const Text('Use Song Cover Grid'),
-                subtitle: const Text('Remove custom artwork'),
+                title:
+                    Text(AppLocalizations.of(context).songListUseSongCoverGrid),
+                subtitle: Text(
+                    AppLocalizations.of(context).songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
               ListTile(
                 leading: const AppIcon(AppIcons.image),
-                title: const Text('Choose Custom Image'),
-                subtitle: const Text('Select image from device storage'),
+                title: Text(
+                    AppLocalizations.of(context).songListChooseCustomImage),
+                subtitle:
+                    Text(AppLocalizations.of(context).songListSelectFromDevice),
                 onTap: () => Navigator.pop(dialogContext, 'custom'),
               ),
               if (results.isNotEmpty) const Divider(),
@@ -797,7 +809,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
                   ),
-                  title: Text('Artwork from ${res['source']}'),
+                  title: Text(AppLocalizations.of(context)
+                      .songListArtworkFrom(res['source'] ?? '')),
                   subtitle: Text(
                     res['url'] ?? '',
                     maxLines: 1,
@@ -807,9 +820,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 ),
               ),
               if (results.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('No online artwork options found'),
+                  child: Text(
+                      AppLocalizations.of(context).songListNoOnlineArtwork),
                 ),
             ],
           ),
@@ -817,7 +831,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, null),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).actionCancel),
           ),
         ],
       ),
@@ -825,7 +839,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     if (selected == null) return;
     if (selected == 'reset') {
       await ref.read(artistAlbumArtProvider.notifier).removeArtistArt(artist);
-      if (context.mounted) appSnack(context, 'Reset to song cover grid');
+      if (context.mounted)
+        appSnack(context, AppLocalizations.of(context).songListResetArtwork);
       return;
     }
     if (selected == 'custom') {
@@ -838,12 +853,15 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
               source: 'custom',
             );
         if (context.mounted) {
-          appSnack(context, 'Updated artwork for $artist');
+          appSnack(context,
+              AppLocalizations.of(context).songListArtworkUpdated(artist));
         }
       }
       return;
     }
-    if (context.mounted) appSnack(context, 'Downloading artwork...');
+    if (context.mounted)
+      appSnack(
+          context, AppLocalizations.of(context).songListDownloadingArtwork);
     final String? localPath = await onlineService.downloadAndCacheCover(
       selected,
       'artist_$artist',
@@ -856,10 +874,12 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             source: 'online',
           );
       if (context.mounted) {
-        appSnack(context, 'Updated artwork for $artist');
+        appSnack(context,
+            AppLocalizations.of(context).songListArtworkUpdated(artist));
       }
     } else if (context.mounted) {
-      appSnack(context, 'Failed to download artwork');
+      appSnack(
+          context, AppLocalizations.of(context).songListArtworkDownloadFailed);
     }
   }
 
@@ -870,7 +890,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     String artist,
     List<Song> songs,
   ) async {
-    appSnack(context, 'Searching online for $album artwork...');
+    appSnack(
+        context, AppLocalizations.of(context).songListSearchingArtwork(album));
     final onlineService = OnlineMetadataService.instance;
     final String compositeKey = artist.isNotEmpty ? '$artist|$album' : album;
     final List<Map<String, String>> results = <Map<String, String>>[];
@@ -884,7 +905,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final String? selected = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Select Artwork for $album'),
+        title: Text(AppLocalizations.of(context).songListSelectArtwork(album)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -892,14 +913,18 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: const Text('Use Song Cover Grid'),
-                subtitle: const Text('Remove custom artwork'),
+                title:
+                    Text(AppLocalizations.of(context).songListUseSongCoverGrid),
+                subtitle: Text(
+                    AppLocalizations.of(context).songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
               ListTile(
                 leading: const AppIcon(AppIcons.image),
-                title: const Text('Choose Custom Image'),
-                subtitle: const Text('Select image from device storage'),
+                title: Text(
+                    AppLocalizations.of(context).songListChooseCustomImage),
+                subtitle:
+                    Text(AppLocalizations.of(context).songListSelectFromDevice),
                 onTap: () => Navigator.pop(dialogContext, 'custom'),
               ),
               if (results.isNotEmpty) const Divider(),
@@ -912,7 +937,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
                   ),
-                  title: Text('Artwork from ${res['source']}'),
+                  title: Text(AppLocalizations.of(context)
+                      .songListArtworkFrom(res['source'] ?? '')),
                   subtitle: Text(
                     res['url'] ?? '',
                     maxLines: 1,
@@ -922,9 +948,10 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 ),
               ),
               if (results.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
-                  child: Text('No online artwork options found'),
+                  child: Text(
+                      AppLocalizations.of(context).songListNoOnlineArtwork),
                 ),
             ],
           ),
@@ -932,7 +959,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, null),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context).actionCancel),
           ),
         ],
       ),
@@ -942,7 +969,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       await ref
           .read(artistAlbumArtProvider.notifier)
           .removeAlbumArt(compositeKey);
-      if (context.mounted) appSnack(context, 'Reset to song cover grid');
+      if (context.mounted)
+        appSnack(context, AppLocalizations.of(context).songListResetArtwork);
       return;
     }
     if (selected == 'custom') {
@@ -957,12 +985,15 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
               source: 'custom',
             );
         if (context.mounted) {
-          appSnack(context, 'Updated artwork for $album');
+          appSnack(context,
+              AppLocalizations.of(context).songListArtworkUpdated(album));
         }
       }
       return;
     }
-    if (context.mounted) appSnack(context, 'Downloading artwork...');
+    if (context.mounted)
+      appSnack(
+          context, AppLocalizations.of(context).songListDownloadingArtwork);
     final String? localPath = await onlineService.downloadAndCacheCover(
       selected,
       'album_$compositeKey',
@@ -977,10 +1008,12 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             source: 'online',
           );
       if (context.mounted) {
-        appSnack(context, 'Updated artwork for $album');
+        appSnack(context,
+            AppLocalizations.of(context).songListArtworkUpdated(album));
       }
     } else if (context.mounted) {
-      appSnack(context, 'Failed to download artwork');
+      appSnack(
+          context, AppLocalizations.of(context).songListArtworkDownloadFailed);
     }
   }
 }
@@ -1275,7 +1308,8 @@ class _DetailInfo extends ConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          '$albumCount albums',
+                          AppLocalizations.of(context)
+                              .gradientDetailAlbumCount(albumCount),
                           style: AppTokens.meta(context).copyWith(
                             color: Colors.white.withValues(alpha: 0.55),
                           ),
@@ -1287,7 +1321,7 @@ class _DetailInfo extends ConsumerWidget {
               _RoundAction(
                 size: 48,
                 iconSize: 22,
-                tooltip: 'Shuffle',
+                tooltip: AppLocalizations.of(context).songListShuffle,
                 // Tinted from the cover accent so both actions belong to the
                 // page's palette rather than the global scheme.
                 background: accent.withValues(alpha: 0.22),
@@ -1308,7 +1342,9 @@ class _DetailInfo extends ConsumerWidget {
                 builder: (context, isCurrent, playing) => _RoundAction(
                   size: 64,
                   iconSize: 30,
-                  tooltip: isCurrent && playing ? 'Pause' : 'Play',
+                  tooltip: isCurrent && playing
+                      ? AppLocalizations.of(context).songListPause
+                      : AppLocalizations.of(context).songListPlay,
                   background: accent,
                   foreground: AppTokens.onAccent(accent),
                   icon: AppIcons.play,
@@ -1341,7 +1377,7 @@ class _DetailInfo extends ConsumerWidget {
                 onPressed: () => songActionFetchMissingMetadataForList(
                     context, ref, sortedSongs),
                 icon: const AppIcon(AppIcons.manageSearch),
-                label: const Text('Fetch Missing Metadata'),
+                label: Text(AppLocalizations.of(context).songMenuFetchMetadata),
               ),
             ),
         ],
@@ -1461,7 +1497,7 @@ class _ClearChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Show all',
+              AppLocalizations.of(context).gradientDetailShowAll,
               style: AppTokens.meta(context).copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -1804,7 +1840,7 @@ class _FloatingTopBar extends StatelessWidget {
             children: [
               GlassCircleButton(
                 icon: const AppIcon(AppIcons.arrowBack, color: Colors.white),
-                tooltip: 'Back',
+                tooltip: AppLocalizations.of(context).actionBack,
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -1842,7 +1878,7 @@ class _FloatingTopBar extends StatelessWidget {
                 GlassCircleButton(
                   icon: const AppIcon(AppIcons.manageSearch,
                       color: Colors.white, size: 20),
-                  tooltip: 'Fetch Missing Metadata',
+                  tooltip: AppLocalizations.of(context).songMenuFetchMetadata,
                   onPressed: onFetchMissing,
                 )
               else if (canFetchCover)
@@ -1850,17 +1886,17 @@ class _FloatingTopBar extends StatelessWidget {
                   icon: const AppIcon(AppIcons.imageSearch,
                       color: Colors.white, size: 20),
                   tooltip: effectiveIsArtist
-                      ? 'Fetch Artist Cover Online'
+                      ? AppLocalizations.of(context).songListFetchArtistCover
                       : (effectiveIsAlbum
-                          ? 'Fetch Album Cover Online'
-                          : 'Fetch Cover Online'),
+                          ? AppLocalizations.of(context).songListFetchAlbumCover
+                          : AppLocalizations.of(context).songListFetchCover),
                   onPressed: onFetchCover,
                 ),
               if (playlistId != null)
                 GlassCircleButton(
                   icon: const AppIcon(AppIcons.moreVert,
                       color: Colors.white, size: 20),
-                  tooltip: 'Playlist Options',
+                  tooltip: AppLocalizations.of(context).songListPlaylistOptions,
                   onPressed: onPlaylistOptions,
                 ),
               if (playlistId == null &&
@@ -1870,7 +1906,7 @@ class _FloatingTopBar extends StatelessWidget {
                 GlassCircleButton(
                   icon: const AppIcon(AppIcons.merge,
                       color: Colors.white, size: 20),
-                  tooltip: 'Merge Songs',
+                  tooltip: AppLocalizations.of(context).songListMergeSongs,
                   onPressed: onMerge,
                 ),
             ],

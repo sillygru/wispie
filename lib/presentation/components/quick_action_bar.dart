@@ -144,7 +144,7 @@ class _QuickActionButton extends ConsumerWidget {
       case QuickAction.addToNewPlaylist:
         songActionAddToNewPlaylist(context, ref, song.filename);
       case QuickAction.share:
-        songActionShare(song);
+        songActionShare(context, song);
       case QuickAction.editMetadata:
         songActionEditMetadata(context, song);
       case QuickAction.moveToFolder:

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/settings_provider.dart';
@@ -57,6 +58,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _Page(AppIcons.info, 'About', 'Version, updates, release notes'),
   ];
 
+  static (String, String) _localizedPage(AppLocalizations l, int i) =>
+      switch (i) {
+        0 => (l.settingsPageLibraryTitle, l.settingsPageLibrarySubtitle),
+        1 => (l.settingsPagePlaybackTitle, l.settingsPagePlaybackSubtitle),
+        2 => (l.settingsPageLyricsTitle, l.settingsPageLyricsSubtitle),
+        3 => (l.settingsPageAppearanceTitle, l.settingsPageAppearanceSubtitle),
+        4 => (
+            l.settingsPageHomeNavigationTitle,
+            l.settingsPageHomeNavigationSubtitle
+          ),
+        5 => (l.settingsPageSyncTitle, l.settingsPageSyncSubtitle),
+        6 => (
+            l.settingsPageBackupRestoreTitle,
+            l.settingsPageBackupRestoreSubtitle
+          ),
+        7 => (l.settingsPageStorageTitle, l.settingsPageStorageSubtitle),
+        _ => (l.settingsPageAboutTitle, l.settingsPageAboutSubtitle),
+      };
+
   static final _categoryTitles = [for (final p in _pages) p.title];
 
   @override
@@ -91,7 +111,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final isWide = WideLayout.isWide(context);
     return AmbientScaffold(
       appBar: AppTopBar(
-        title: 'Settings',
+        title: AppLocalizations.of(context).settingsTitle,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Padding(
@@ -155,7 +175,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ? _buildMasterDetail(context, searching: searching)
           : WideContentCenter(
               maxWidth: WideLayout.maxNarrowWidth,
-              child: searching ? _buildResults() : _buildGroups(context),
+              child: searching ? _buildResults(context) : _buildGroups(context),
             ),
     );
   }
@@ -165,7 +185,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// rendered content-only via [embedded], so mobile behaviour is untouched.
   /// Search stays in the split: results replace the right pane, not the row.
   Widget _buildMasterDetail(BuildContext context, {bool searching = false}) {
-    final entries = [for (final p in _pages) (p.icon, p.title, p.subtitle)];
+    final l10n = AppLocalizations.of(context);
+    final entries = [
+      for (var i = 0; i < _pages.length; i++)
+        (_pages[i].icon, _localizedPage(l10n, i).$1, _localizedPage(l10n, i).$2)
+    ];
     return WideContentCenter(
       maxWidth: WideLayout.maxContentWidth,
       child: Row(
@@ -222,7 +246,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 Expanded(
                   child: searching
-                      ? _buildResults()
+                      ? _buildResults(context)
                       : IndexedStack(
                           index: _selected,
                           children: [
@@ -291,8 +315,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// Flat, breadcrumbed results — the categories are what search exists to
   /// skip, so they don't come back as headers here.
-  Widget _buildResults() {
-    final results = _search.search(settingsRegistry, _query);
+  Widget _buildResults(BuildContext context) {
+    final results = _search.search(
+      buildSettingsRegistry(AppLocalizations.of(context)),
+      _query,
+    );
 
     if (results.isEmpty) {
       return AppEmptyState(
@@ -339,8 +366,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildGroups(BuildContext context) {
     Widget tile(int i, Widget Function() open) => AppSettingsTile(
           icon: _pages[i].icon,
-          title: _pages[i].title,
-          subtitle: _pages[i].subtitle,
+          title: _localizedPage(AppLocalizations.of(context), i).$1,
+          subtitle: _localizedPage(AppLocalizations.of(context), i).$2,
           onTap: () => context.pushApp(open()),
         );
 

@@ -1868,7 +1868,7 @@ class _FullBleedControlRow extends StatelessWidget {
           icon: Icons.ios_share_rounded,
           color: idle,
           tooltip: 'Share',
-          onPressed: () => songActionShare(song),
+          onPressed: () => songActionShare(context, song),
         ),
       ],
     );
