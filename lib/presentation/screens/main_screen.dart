@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -128,7 +129,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   /// floating dock left on either side of its inset.
 
   // Gesture detection for drawer
-  static const double _edgeDragWidth = 60.0;
+  // Fraction of the screen width, so it stays reachable with a thumb.
+  static const double _edgeDragFraction = 0.28;
 
   // Track which screens have been built to enable lazy loading
   final Set<int> _builtScreens = {0};
@@ -174,7 +176,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _onHorizontalDragStart(DragStartDetails details) {
-    if (_isDrawerOpen || details.globalPosition.dx <= _edgeDragWidth) {
+    final edge = MediaQuery.sizeOf(context).width * _edgeDragFraction;
+    if (_isDrawerOpen || details.globalPosition.dx <= edge) {
       setState(() {
         _isDraggingDrawer = true;
       });
@@ -445,24 +448,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
         onHorizontalDragStart: isWide ? null : _onHorizontalDragStart,
         onHorizontalDragUpdate: isWide ? null : _onHorizontalDragUpdate,
         onHorizontalDragEnd: isWide ? null : _onHorizontalDragEnd,
+        // Start tracking at touch-down so the slop distance is not lost and
+        // the edge test uses where the finger landed.
+        dragStartBehavior: DragStartBehavior.down,
         behavior: HitTestBehavior.translucent,
         child: Stack(
           children: [
             // Drawer sits underneath the main content
             AnimatedBuilder(
               animation: _drawerController,
+              child: Positioned.fill(
+                child: AppDrawer(
+                  onClose: _closeDrawer,
+                  drawerPosition: _drawerController,
+                ),
+              ),
               builder: (context, child) {
                 final shouldShow = _isDrawerOpen ||
                     _isDraggingDrawer ||
                     _drawerController.isAnimating ||
                     _drawerController.value > 0;
                 if (!shouldShow) return const SizedBox.shrink();
-                return Positioned.fill(
-                  child: AppDrawer(
-                    onClose: _closeDrawer,
-                    drawerPosition: _drawerController.value,
-                  ),
-                );
+                return child!;
               },
             ),
             // Main content slides right to reveal the drawer

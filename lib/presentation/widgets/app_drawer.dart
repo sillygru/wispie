@@ -27,7 +27,7 @@ import '../utils/wide_layout.dart';
 /// navigates to.
 class AppDrawer extends ConsumerStatefulWidget {
   final Future<void> Function() onClose;
-  final double drawerPosition;
+  final Animation<double> drawerPosition;
 
   const AppDrawer({
     super.key,
@@ -94,12 +94,10 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
 
     // Entrance: slide in from off-screen left — no opacity animation, so the
     // background is always opaque and there is no gray-flash before the panel.
-    final animationValue = widget.drawerPosition;
     final screenWidth = MediaQuery.sizeOf(context).width;
     // One formula with the slide animation and the edge-drag math, capped on
     // wide windows and floored on narrow ones.
     final drawerWidth = WideLayout.drawerWidth(screenWidth);
-    final slideInOffset = (1.0 - animationValue) * -drawerWidth;
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -122,8 +120,9 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   ),
                   borderRadius: _panelRadius,
                 ),
-                child: Transform.translate(
-                  offset: Offset(slideInOffset, 0),
+                child: _DrawerSlide(
+                  position: widget.drawerPosition,
+                  width: drawerWidth,
                   child: SafeArea(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,6 +376,31 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Slides its child from off-screen without rebuilding it per frame.
+class _DrawerSlide extends StatelessWidget {
+  final Animation<double> position;
+  final double width;
+  final Widget child;
+
+  const _DrawerSlide({
+    required this.position,
+    required this.width,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: position,
+      child: child,
+      builder: (context, child) => Transform.translate(
+        offset: Offset((1.0 - position.value) * -width, 0),
+        child: child,
       ),
     );
   }

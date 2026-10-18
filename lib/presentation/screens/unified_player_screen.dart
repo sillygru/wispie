@@ -544,16 +544,21 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
               : Column(
                   children: [
                     _buildHeader(context, song),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: PlayerTokens.s5,
-                        vertical: PlayerTokens.s2,
-                      ),
-                      child: PlayerSegmentedPill(
-                        labels: const ['Lyrics', 'Player', 'Queue'],
-                        position: _pagePosition,
-                        onSelected: _goToPane,
-                        accent: accent,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: _onDismissDragUpdate,
+                      onVerticalDragEnd: _onDismissDragEnd,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: PlayerTokens.s5,
+                          vertical: PlayerTokens.s2,
+                        ),
+                        child: PlayerSegmentedPill(
+                          labels: const ['Lyrics', 'Player', 'Queue'],
+                          position: _pagePosition,
+                          onSelected: _goToPane,
+                          accent: accent,
+                        ),
                       ),
                     ),
                     Expanded(
@@ -566,12 +571,18 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                             accent: accent,
                             paneVisible: _lyricsVisible,
                           ),
-                          NowPlayingPane(
-                            song: song,
-                            accent: accent,
-                            motion: _motion,
-                            coverKey: _coverKey,
-                            paneVisible: _nowPlayingVisible,
+                          GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onVerticalDragUpdate: _onDismissDragUpdate,
+                            onVerticalDragEnd: _onDismissDragEnd,
+                            onVerticalDragCancel: () => _dismissDrag = 0,
+                            child: NowPlayingPane(
+                              song: song,
+                              accent: accent,
+                              motion: _motion,
+                              coverKey: _coverKey,
+                              paneVisible: _nowPlayingVisible,
+                            ),
                           ),
                           QueuePane(
                             accent: accent,
