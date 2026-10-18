@@ -2,6 +2,8 @@
   "@@locale": "en",
   "settingsLanguageTitle": "Language",
   "@settingsLanguageTitle": {"description": "Language label shared by the language picker row/sheet and the settings group header"},
+  "settingsLanguageSystem": "Follow system language",
+  "@settingsLanguageSystem": {"description": "Language picker option that uses the device language instead of a fixed app language"},
   "settingsTitle": "Settings",
   "@settingsTitle": {"description": "Settings label shared by the settings hub, profile entries, app drawer, and restore dialog section"},
   "settingsPageLibrarySubtitle": "Folders, filters, scanning",

@@ -7,6 +7,7 @@ Local-first Flutter music player. Riverpod 3, `just_audio`, two SQLite files, MV
 - **No git write commands.** NEVER run `git checkout`, `git reset`, `git revert`, `git clean`, or any file/branch-discarding operation. Parallel agents work on different files at the same time and destructive git ops destroy their work. Read-only git (`git status`, `git diff`, `git log`) is fine.
 - **No building.** Do not run `flutter build` or `flutter run` unless explicitly requested.
 - **No emojis** in code, comments, or messages.
+- **No hardcoded user-facing strings.** Every string shown to the user (labels, titles, tooltips, messages, dialogs, semantics labels) must be added to `lib/l10n/app_en.arb` and read through the generated localizations, never inlined in widgets or services. This applies to every new feature and any UI change you touch.
 - **`filename` is the primary key for all user data.** Never change this (see Architecture).
 - **Comments**: minimal, explain _why_ not _what_. No "// added this" style comments.
 - **Before finishing any code change:** `dart format .` then `flutter analyze --no-pub`, both clean.

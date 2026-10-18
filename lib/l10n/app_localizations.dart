@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
+import 'app_localizations_pt.dart';
 
 // ignore_for_file: type=lint
 
@@ -92,13 +93,22 @@ abstract class AppLocalizations {
   ];
 
   /// A list of this localizations delegate's supported locales.
-  static const List<Locale> supportedLocales = <Locale>[Locale('en')];
+  static const List<Locale> supportedLocales = <Locale>[
+    Locale('en'),
+    Locale('pt')
+  ];
 
   /// Language label shared by the language picker row/sheet and the settings group header
   ///
   /// In en, this message translates to:
   /// **'Language'**
   String get settingsLanguageTitle;
+
+  /// Language picker option that uses the device language instead of a fixed app language
+  ///
+  /// In en, this message translates to:
+  /// **'Follow system language'**
+  String get settingsLanguageSystem;
 
   /// Settings label shared by the settings hub, profile entries, app drawer, and restore dialog section
   ///
@@ -8548,7 +8558,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en'].contains(locale.languageCode);
+      <String>['en', 'pt'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -8559,6 +8569,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   switch (locale.languageCode) {
     case 'en':
       return AppLocalizationsEn();
+    case 'pt':
+      return AppLocalizationsPt();
   }
 
   throw FlutterError(

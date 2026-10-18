@@ -88,6 +88,10 @@ Also on Profile: **Explorer** (barely-played songs), **Consistent** (favorites),
 - **Storage screen** - See what covers, waveforms, lyrics and caches are taking up, and clear each one.
 - **Encrypted sync** - Optional. Sign in and your stats, favorites, playlists, merged songs, settings and art choices sync to your account. Data is encrypted on the device before upload. Syncs by category, so you can leave playlists off if you don't want them there. A recovery key is the only way back into an account if you forget the password.
 
+## Translations
+
+See how far each language has come, or help translate, at [wispie.gru0.dev/translations](https://wispie.gru0.dev/translations).
+
 ## Install
 
 Download the file for your platform from the [releases page](https://github.com/sillygru/wispie/releases/latest).

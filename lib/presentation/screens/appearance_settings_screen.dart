@@ -295,17 +295,20 @@ class _AppearanceSettingsScreenState
                   size: 40,
                 ),
                 title: l10n.settingsLanguageTitle,
-                trailing: DropdownButton<Locale>(
+                trailing: DropdownButton<Locale?>(
                   value: ref.watch(localeProvider),
                   underline: const SizedBox.shrink(),
                   borderRadius: AppTokens.brMd,
                   onChanged: (value) {
-                    if (value == null) return;
                     ref.read(localeProvider.notifier).setLocale(value);
                   },
                   items: [
-                    for (final locale in AppLocalizations.supportedLocales)
-                      DropdownMenuItem(
+                    DropdownMenuItem<Locale?>(
+                      value: null,
+                      child: Text(l10n.settingsLanguageSystem),
+                    ),
+                    for (final locale in selectableLocales)
+                      DropdownMenuItem<Locale?>(
                         value: locale,
                         child: Text(languageDisplayName(locale)),
                       ),
