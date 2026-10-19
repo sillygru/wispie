@@ -8588,6 +8588,204 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Seek'**
   String get barSeekLabel;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Optimize Databases'**
+  String get indexerOpOptimizeDatabasesTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Clean and optimize all app databases'**
+  String get indexerOpOptimizeDatabasesDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Repair Library Links'**
+  String get indexerOpRepairLinksTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Re-link album art and file paths after a restore or new device'**
+  String get indexerOpRepairLinksDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Match Songs by Audio'**
+  String get indexerOpMatchIdentityTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Fingerprint every file so renamed songs keep their favourites, playlists and stats, and match across synced devices'**
+  String get indexerOpMatchIdentityDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Cover Caches'**
+  String get indexerOpCoverCacheTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Extract and cache embedded album artwork'**
+  String get indexerOpCoverCacheDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Search Indexes'**
+  String get indexerOpSearchIndexTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild the search index for all songs'**
+  String get indexerOpSearchIndexDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Lyrics Cache'**
+  String get indexerOpLyricsCacheTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Extract and cache lyrics for all songs'**
+  String get indexerOpLyricsCacheDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Waveform Cache'**
+  String get indexerOpWaveformCacheTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Generate waveform data for all songs'**
+  String get indexerOpWaveformCacheDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild App Theme on Cover Cache'**
+  String get indexerOpColorCacheTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Extract color themes from all covers'**
+  String get indexerOpColorCacheDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Blurred Background Cache'**
+  String get indexerOpBlurredCacheTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-generate optimized blurred backgrounds'**
+  String get indexerOpBlurredCacheDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild Recommendations'**
+  String get indexerOpRecommendationsTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Force rebuild all recommendation playlists'**
+  String get indexerOpRecommendationsDesc;
+
+  /// Indexer operation name
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch Artist & Album Covers'**
+  String get indexerOpArtistAlbumArtTitle;
+
+  /// Indexer operation description
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch missing artist and album covers online, biggest collections first'**
+  String get indexerOpArtistAlbumArtDesc;
+
+  /// Status while an indexer cache is being counted
+  ///
+  /// In en, this message translates to:
+  /// **'Counting...'**
+  String get indexerCounting;
+
+  /// Status while an indexer task runs without measurable progress
+  ///
+  /// In en, this message translates to:
+  /// **'Working...'**
+  String get indexerWorking;
+
+  /// Status after the user asked a running indexer operation to stop
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping...'**
+  String get indexerStopping;
+
+  /// Progress subtitle when only a percentage is known
+  ///
+  /// In en, this message translates to:
+  /// **'Processing {percent}%'**
+  String indexerProgressPercent(int percent);
+
+  /// Progress subtitle including failures
+  ///
+  /// In en, this message translates to:
+  /// **'Processing {done}/{total} ({failed} failed)'**
+  String indexerProgressFailed(int done, int total, int failed);
+
+  /// Status and snackbar after an indexer operation was stopped
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped at {done}/{total}'**
+  String indexerStoppedAt(int done, int total);
+
+  /// Snackbar after an indexer operation finished
+  ///
+  /// In en, this message translates to:
+  /// **'Done: {processed} processed, {failed} failed'**
+  String indexerFinished(int processed, int failed);
+
+  /// Snackbar when an indexer run had no items to process
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to do, already up to date'**
+  String get indexerNothingToDo;
+
+  /// Error when the same work is already running elsewhere
+  ///
+  /// In en, this message translates to:
+  /// **'Already running in the background'**
+  String get indexerErrorBusy;
+
+  /// Error when cover fetching lost connectivity
+  ///
+  /// In en, this message translates to:
+  /// **'Went offline, the rest resumes automatically'**
+  String get indexerErrorOffline;
+
+  /// Tooltip for the button that stops a running indexer operation
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get indexerStop;
 }
 
 class _AppLocalizationsDelegate

@@ -5097,4 +5097,122 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get barSeekLabel => 'Seek';
+
+  @override
+  String get indexerOpOptimizeDatabasesTitle => 'Optimize Databases';
+
+  @override
+  String get indexerOpOptimizeDatabasesDesc =>
+      'Clean and optimize all app databases';
+
+  @override
+  String get indexerOpRepairLinksTitle => 'Repair Library Links';
+
+  @override
+  String get indexerOpRepairLinksDesc =>
+      'Re-link album art and file paths after a restore or new device';
+
+  @override
+  String get indexerOpMatchIdentityTitle => 'Match Songs by Audio';
+
+  @override
+  String get indexerOpMatchIdentityDesc =>
+      'Fingerprint every file so renamed songs keep their favourites, playlists and stats, and match across synced devices';
+
+  @override
+  String get indexerOpCoverCacheTitle => 'Rebuild Cover Caches';
+
+  @override
+  String get indexerOpCoverCacheDesc =>
+      'Extract and cache embedded album artwork';
+
+  @override
+  String get indexerOpSearchIndexTitle => 'Rebuild Search Indexes';
+
+  @override
+  String get indexerOpSearchIndexDesc =>
+      'Rebuild the search index for all songs';
+
+  @override
+  String get indexerOpLyricsCacheTitle => 'Rebuild Lyrics Cache';
+
+  @override
+  String get indexerOpLyricsCacheDesc =>
+      'Extract and cache lyrics for all songs';
+
+  @override
+  String get indexerOpWaveformCacheTitle => 'Rebuild Waveform Cache';
+
+  @override
+  String get indexerOpWaveformCacheDesc =>
+      'Generate waveform data for all songs';
+
+  @override
+  String get indexerOpColorCacheTitle => 'Rebuild App Theme on Cover Cache';
+
+  @override
+  String get indexerOpColorCacheDesc => 'Extract color themes from all covers';
+
+  @override
+  String get indexerOpBlurredCacheTitle => 'Rebuild Blurred Background Cache';
+
+  @override
+  String get indexerOpBlurredCacheDesc =>
+      'Pre-generate optimized blurred backgrounds';
+
+  @override
+  String get indexerOpRecommendationsTitle => 'Rebuild Recommendations';
+
+  @override
+  String get indexerOpRecommendationsDesc =>
+      'Force rebuild all recommendation playlists';
+
+  @override
+  String get indexerOpArtistAlbumArtTitle => 'Fetch Artist & Album Covers';
+
+  @override
+  String get indexerOpArtistAlbumArtDesc =>
+      'Fetch missing artist and album covers online, biggest collections first';
+
+  @override
+  String get indexerCounting => 'Counting...';
+
+  @override
+  String get indexerWorking => 'Working...';
+
+  @override
+  String get indexerStopping => 'Stopping...';
+
+  @override
+  String indexerProgressPercent(int percent) {
+    return 'Processing $percent%';
+  }
+
+  @override
+  String indexerProgressFailed(int done, int total, int failed) {
+    return 'Processing $done/$total ($failed failed)';
+  }
+
+  @override
+  String indexerStoppedAt(int done, int total) {
+    return 'Stopped at $done/$total';
+  }
+
+  @override
+  String indexerFinished(int processed, int failed) {
+    return 'Done: $processed processed, $failed failed';
+  }
+
+  @override
+  String get indexerNothingToDo => 'Nothing to do, already up to date';
+
+  @override
+  String get indexerErrorBusy => 'Already running in the background';
+
+  @override
+  String get indexerErrorOffline =>
+      'Went offline, the rest resumes automatically';
+
+  @override
+  String get indexerStop => 'Stop';
 }

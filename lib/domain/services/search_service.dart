@@ -302,9 +302,19 @@ class SearchService {
   /// Rebuilds the search index from a list of songs
   ///
   /// This should be called during library scanning
-  Future<void> rebuildIndex(List<Song> songs) async {
+  Future<void> rebuildIndex(
+    List<Song> songs, {
+    void Function(int done, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
     await init();
-    await _indexRepository.rebuildIndex(songs);
+    await _indexRepository.rebuildIndex(songs,
+        onProgress: onProgress, isCancelled: isCancelled);
+  }
+
+  Future<Set<String>> indexedFilenames() async {
+    await init();
+    return _indexRepository.indexedFilenames();
   }
 
   /// Updates a single song in the index

@@ -498,6 +498,33 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     });
   }
 
+  /// Library-wide art coverage, judged by the same rules a run uses to pick
+  /// keys, so the indexer's idle counts agree with what a run would fetch.
+  ({int artistTotal, int artistPending, int albumTotal, int albumPending})
+      artCoverage(List<Song> songs, ArtistAlbumArtState artState) {
+    final artists = <String>{};
+    final albums = <String>{};
+    for (final song in songs) {
+      final split = LibraryLogic.splitArtistNames(song.artist);
+      for (final name in split.isEmpty ? [song.artist] : split) {
+        final clean = OnlineMetadataService.cleanTag(name);
+        if (clean != null) artists.add(clean.toLowerCase());
+      }
+      final album = OnlineMetadataService.cleanTag(song.album);
+      if (album != null) {
+        albums
+            .add(_albumKey(album, OnlineMetadataService.cleanTag(song.artist)));
+      }
+    }
+    final missing = _collectMissingSorted(songs, artState);
+    return (
+      artistTotal: artists.length,
+      artistPending: missing.artists.length,
+      albumTotal: albums.length,
+      albumPending: missing.albums.length,
+    );
+  }
+
   /// Collects artists/albums still missing art, most-tracks-first.
   MissingArt _collectMissingSorted(
     List<Song> songs,

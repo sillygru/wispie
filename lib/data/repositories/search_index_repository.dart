@@ -95,7 +95,11 @@ class SearchIndexRepository {
   }
 
   /// Rebuilds the entire search index from a list of songs incrementally
-  Future<void> rebuildIndex(List<Song> songs) async {
+  Future<void> rebuildIndex(
+    List<Song> songs, {
+    void Function(int done, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
@@ -139,7 +143,10 @@ class SearchIndexRepository {
       final batch = txn.batch();
       int updateCount = 0;
 
+      var done = 0;
       for (final song in songs) {
+        if (isCancelled?.call() ?? false) break;
+        onProgress?.call(++done, songs.length);
         final existing = existingMap[song.filename];
         final int songMtime =
             (song.mtime != null) ? (song.mtime! * 1000).round() : 0;
@@ -216,6 +223,13 @@ class SearchIndexRepository {
 
     // Only vacuum if significant changes occurred (e.g. library cleared or many removals)
     // VACUUM is expensive and shouldn't run on every refresh.
+  }
+
+  Future<Set<String>> indexedFilenames() async {
+    await init();
+    if (_database == null || !_database!.isOpen) return {};
+    final rows = await _database!.query(_tableName, columns: ['filename']);
+    return {for (final r in rows) r['filename'] as String};
   }
 
   /// Updates or inserts a single song into the index

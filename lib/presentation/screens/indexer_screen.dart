@@ -28,7 +28,6 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
   @override
   void initState() {
     super.initState();
-    // Load counts when screen initializes
     Future.microtask(() {
       ref.read(indexerProvider.notifier).loadCounts();
     });
@@ -43,7 +42,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s4,
-          vertical: 8.0,
+          vertical: AppTokens.s2,
         ),
         children: [
           _buildSettingsGroup(
@@ -141,7 +140,7 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: AppTokens.s6),
         ],
       ),
     );
@@ -158,35 +157,22 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     required AppIconData icon,
   }) {
     final theme = Theme.of(context);
-    final List<Widget> childrenWithDividers = [];
-
-    for (int i = 0; i < children.length; i++) {
-      childrenWithDividers.add(children[i]);
-      if (i < children.length - 1) {
-        childrenWithDividers.add(
-          Divider(
-            height: 1,
-            indent: 56,
-            endIndent: 16,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        );
-      }
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 8.0, bottom: 8.0, top: 16.0),
+          padding: const EdgeInsets.only(
+            left: AppTokens.s2,
+            bottom: AppTokens.s2,
+            top: AppTokens.s4,
+          ),
           child: Row(
             children: [
               AppIcon(icon, size: 16, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppTokens.s2),
               Text(
                 title.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 12,
+                style: theme.textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: theme.colorScheme.primary,
                   letterSpacing: 1.2,
@@ -198,190 +184,226 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
         AppSurface(
           padding: EdgeInsets.zero,
           clipContent: true,
-          child: Column(
-            children: childrenWithDividers,
-          ),
+          child: Column(children: children),
         ),
       ],
     );
   }
+
+  (String, String) _labels(String id) {
+    final l = context.l10n;
+    return switch (id) {
+      IndexerOps.optimizeDatabases => (
+          l.indexerOpOptimizeDatabasesTitle,
+          l.indexerOpOptimizeDatabasesDesc
+        ),
+      IndexerOps.repairLibraryLinks => (
+          l.indexerOpRepairLinksTitle,
+          l.indexerOpRepairLinksDesc
+        ),
+      IndexerOps.matchSongIdentity => (
+          l.indexerOpMatchIdentityTitle,
+          l.indexerOpMatchIdentityDesc
+        ),
+      IndexerOps.coverCache => (
+          l.indexerOpCoverCacheTitle,
+          l.indexerOpCoverCacheDesc
+        ),
+      IndexerOps.searchIndex => (
+          l.indexerOpSearchIndexTitle,
+          l.indexerOpSearchIndexDesc
+        ),
+      IndexerOps.lyricsCache => (
+          l.indexerOpLyricsCacheTitle,
+          l.indexerOpLyricsCacheDesc
+        ),
+      IndexerOps.waveformCache => (
+          l.indexerOpWaveformCacheTitle,
+          l.indexerOpWaveformCacheDesc
+        ),
+      IndexerOps.colorCache => (
+          l.indexerOpColorCacheTitle,
+          l.indexerOpColorCacheDesc
+        ),
+      IndexerOps.blurredCache => (
+          l.indexerOpBlurredCacheTitle,
+          l.indexerOpBlurredCacheDesc
+        ),
+      IndexerOps.recommendations => (
+          l.indexerOpRecommendationsTitle,
+          l.indexerOpRecommendationsDesc
+        ),
+      _ => (l.indexerOpArtistAlbumArtTitle, l.indexerOpArtistAlbumArtDesc),
+    };
+  }
+
+  String _errorText(String? error) {
+    final l = context.l10n;
+    return switch (error) {
+      'busy' => l.indexerErrorBusy,
+      'offline' => l.indexerErrorOffline,
+      null => l.indexerUnknownError,
+      _ => l.songListMergeError(error),
+    };
+  }
+
+  String _statusText(IndexerOperation op) {
+    final l = context.l10n;
+    switch (op.state) {
+      case IndexerOperationState.stopping:
+        return l.indexerStopping;
+      case IndexerOperationState.running:
+        if (op.hasSplitArtProgress && op.runTotal > 0) {
+          return l.indexerArtistsAlbumsProgress(
+            '${op.artistRunDone}/${op.artistRunTotal}',
+            '${op.albumRunDone}/${op.albumRunTotal}',
+          );
+        }
+        if (op.runTotal > 0) {
+          return op.failedCount > 0
+              ? l.indexerProgressFailed(op.runDone, op.runTotal, op.failedCount)
+              : l.indexerProcessing('${op.runDone}/${op.runTotal}');
+        }
+        if (op.runFraction != null) {
+          return l.indexerProgressPercent((op.runFraction! * 100).round());
+        }
+        return l.indexerWorking;
+      case IndexerOperationState.error:
+        return _errorText(op.errorMessage);
+      case IndexerOperationState.cancelled:
+        return l.indexerStoppedAt(op.runDone, op.runTotal);
+      case IndexerOperationState.idle:
+      case IndexerOperationState.completed:
+        if (op.isTask) {
+          return op.state == IndexerOperationState.completed
+              ? l.indexerCompleted
+              : l.indexerReadyToRebuild;
+        }
+        if (!op.countsLoaded) return l.indexerCounting;
+        return op.failedCount > 0
+            ? l.indexerCachedFailed(op.doneCount, op.totalCount, op.failedCount)
+            : l.indexerCached(op.doneCount, op.totalCount);
+    }
+  }
+
+  Widget _progressBar(double? value) => Padding(
+        padding: const EdgeInsets.only(top: AppTokens.s1),
+        child: LinearProgressIndicator(
+          value: value,
+          backgroundColor:
+              Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: AppTokens.brPill,
+        ),
+      );
 
   Widget _buildOperationTile({
     required String id,
     required AppIconData icon,
     String? warningMessage,
   }) {
-    final operation = ref.watch(indexerProvider).operations[id];
+    final operation =
+        ref.watch(indexerProvider.select((s) => s.operations[id]));
     if (operation == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-    final bool isRunning = operation.isRunning;
-    final bool hasError = operation.state == IndexerOperationState.error;
-    final bool isCompleted = operation.state == IndexerOperationState.completed;
-    final bool isFullyCached = operation.isFullyCached;
     final l10n = context.l10n;
+    final (name, description) = _labels(id);
+    final isRunning = operation.isRunning;
+    final hasError = operation.state == IndexerOperationState.error;
+    final labelStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.w500,
+    );
 
-    String subtitle;
-    if (isRunning && operation.hasSplitArtProgress) {
-      subtitle = l10n.indexerArtistsAlbumsProgress(
-        operation.artistProgressText,
-        operation.albumProgressText,
+    final Color iconColor = hasError
+        ? AppTokens.danger
+        : (isRunning ||
+                operation.isFullyCached ||
+                operation.state == IndexerOperationState.completed)
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant;
+
+    final Widget? trailing;
+    if (isRunning) {
+      trailing = IconButton(
+        tooltip: l10n.indexerStop,
+        icon: const AppIcon(AppIcons.stop, color: AppTokens.danger),
+        onPressed: operation.state == IndexerOperationState.stopping
+            ? null
+            : () => ref.read(indexerProvider.notifier).cancelOperation(id),
       );
-    } else if (isRunning) {
-      subtitle = l10n.indexerProcessing(operation.progressText);
-    } else if (hasError) {
-      subtitle = l10n.songListMergeError(
-          operation.errorMessage ?? l10n.indexerUnknownError);
-    } else if (isCompleted) {
-      if (operation.isDatabaseOperation ||
-          operation.isRecommendationOperation) {
-        subtitle = l10n.indexerCompleted;
-      } else if (operation.failedCount > 0) {
-        subtitle = l10n.indexerCachedFailed(
-          operation.processedCount,
-          operation.totalCount,
-          operation.failedCount,
-        );
-      } else {
-        subtitle = l10n.indexerCached(
-          operation.processedCount,
-          operation.totalCount,
-        );
-      }
+    } else if (operation.failedCount > 0) {
+      trailing = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s2,
+              vertical: 2,
+            ),
+            decoration: BoxDecoration(
+              color: AppTokens.danger,
+              borderRadius: AppTokens.brSm,
+            ),
+            child: Text(
+              '${operation.failedCount}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onError,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          const AppIcon(AppIcons.chevronRight, size: 20),
+        ],
+      );
     } else {
-      // Not running and not completed
-      if (operation.isDatabaseOperation ||
-          operation.isRecommendationOperation) {
-        subtitle = l10n.indexerReadyToRebuild;
-      } else if (operation.processedCount == 0 && operation.totalCount > 0) {
-        subtitle = l10n.indexerCached(0, operation.totalCount);
-      } else if (operation.failedCount > 0) {
-        subtitle = l10n.indexerCachedFailed(
-          operation.processedCount,
-          operation.totalCount,
-          operation.failedCount,
-        );
-      } else {
-        subtitle = l10n.indexerCached(
-          operation.processedCount,
-          operation.totalCount,
-        );
-      }
-    }
-
-    // Determine icon color
-    Color iconColor;
-    if (hasError) {
-      iconColor = AppTokens.danger;
-    } else if (isCompleted) {
-      iconColor = theme.colorScheme.primary;
-    } else if (isFullyCached) {
-      iconColor = theme.colorScheme.primary;
-    } else {
-      iconColor = theme.colorScheme.onSurfaceVariant;
+      trailing = const AppIcon(AppIcons.chevronRight, size: 20);
     }
 
     return ListTile(
-      leading: AppIcon(
-        icon,
-        color: iconColor,
-      ),
-      title: Text(
-        operation.name,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
+      leading: AppIcon(icon, color: iconColor),
+      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(operation.description),
+          Text(description),
           const SizedBox(height: 2),
           Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
+            _statusText(operation),
+            style: theme.textTheme.bodySmall?.copyWith(
               color: hasError
                   ? AppTokens.danger
                   : isRunning
                       ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.7),
-              fontWeight: isRunning ? FontWeight.w500 : FontWeight.normal,
+                      : theme.colorScheme.onSurfaceVariant,
+              fontWeight: isRunning ? FontWeight.w500 : null,
             ),
           ),
-          if (isRunning &&
-              operation.totalCount > 0 &&
-              !operation.hasSplitArtProgress) ...[
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: operation.progress,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: AppTokens.brPill,
-            ),
-          ],
           if (isRunning && operation.hasSplitArtProgress) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppTokens.s2),
             Text(
-              l10n.indexerArtistsOnly(operation.artistProgressText),
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
+              l10n.indexerArtistsOnly(
+                  '${operation.artistRunDone}/${operation.artistRunTotal}'),
+              style: labelStyle,
             ),
-            const SizedBox(height: 4),
-            LinearProgressIndicator(
-              value: operation.artistProgress,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: AppTokens.brPill,
-            ),
-            const SizedBox(height: 8),
+            _progressBar(
+                operation.runTotal > 0 ? operation.artistProgress : null),
+            const SizedBox(height: AppTokens.s2),
             Text(
-              l10n.indexerAlbumsOnly(operation.albumProgressText),
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w500,
-              ),
+              l10n.indexerAlbumsOnly(
+                  '${operation.albumRunDone}/${operation.albumRunTotal}'),
+              style: labelStyle,
             ),
-            const SizedBox(height: 4),
-            LinearProgressIndicator(
-              value: operation.albumProgress,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: AppTokens.brPill,
-            ),
+            _progressBar(
+                operation.runTotal > 0 ? operation.albumProgress : null),
+          ] else if (isRunning) ...[
+            const SizedBox(height: AppTokens.s1),
+            _progressBar(operation.progress),
           ],
         ],
       ),
-      trailing: isRunning
-          ? IconButton(
-              icon: const AppIcon(AppIcons.stop, color: AppTokens.danger),
-              onPressed: () => _cancelOperation(),
-            )
-          : operation.failedCount > 0 && !isRunning
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTokens.danger,
-                        borderRadius: AppTokens.brSm,
-                      ),
-                      child: Text(
-                        '${operation.failedCount}',
-                        style: TextStyle(
-                          color: AppTokens.danger,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const AppIcon(AppIcons.chevronRight, size: 20),
-                  ],
-                )
-              : const AppIcon(AppIcons.chevronRight, size: 20),
+      trailing: trailing,
       onTap: isRunning
           ? null
           : () => _handleOperationTap(operation, warningMessage),
@@ -390,12 +412,13 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
 
   Future<void> _handleOperationTap(
       IndexerOperation operation, String? warningMessage) async {
-    // If operation has failed items (regardless of completion state), show choice dialog with failed option
+    final (name, description) = _labels(operation.id);
+
     if (operation.failedCount > 0) {
       final action = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(operation.name),
+          title: Text(name),
           content: Text(
               context.l10n.indexerFailedItemsQuestion(operation.failedCount)),
           actions: [
@@ -415,33 +438,24 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           ],
         ),
       );
-
       if (action == 'view_fails') {
         await _showFailedItemsDialog(operation);
-        return;
       } else if (action == 'retry_failed') {
-        await _retryFailedItems(operation);
-        return;
-      } else if (action != 'force') {
-        return; // Cancelled
+        await _startOperation(operation,
+            force: false, onlyItems: operation.failedItems.toSet());
+      } else if (action == 'force') {
+        await _startOperation(operation, force: true);
       }
-
-      // User chose force, continue with force=true
-      await _startOperation(operation,
-          force: true, warningMessage: warningMessage);
       return;
     }
 
-    // If operation is fully cached with no failures, show simple choice
-    if (operation.isFullyCached &&
-        !operation.isDatabaseOperation &&
-        !operation.isRepairOperation) {
+    if (operation.isFullyCached) {
       final forceRebuild = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(operation.name),
+          title: Text(name),
           content: Text(context.l10n.indexerAlreadyCompleteQuestion(
-            operation.processedCount,
+            operation.doneCount,
             operation.totalCount,
           )),
           actions: [
@@ -456,50 +470,40 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           ],
         ),
       );
-
-      if (forceRebuild != true) return;
-      await _startOperation(operation,
-          force: true, warningMessage: warningMessage);
+      if (forceRebuild == true) await _startOperation(operation, force: true);
       return;
     }
 
-    // For database or recommendation operations, just show cancel/do-it dialog
-    if (operation.isDatabaseOperation ||
-        operation.isRecommendationOperation ||
-        operation.isRepairOperation) {
+    if (operation.isTask) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(operation.name),
+          title: Text(name),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(operation.description),
+              Text(description),
               if (warningMessage != null) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: AppTokens.s4),
                 Container(
-                  padding: const EdgeInsets.all(12),
-                  // Warning reads as a tinted block, not an outlined one.
+                  padding: const EdgeInsets.all(AppTokens.s3),
                   decoration: BoxDecoration(
                     color: AppTokens.warning.withValues(alpha: 0.14),
                     borderRadius: AppTokens.brSm,
                   ),
                   child: Row(
                     children: [
-                      AppIcon(
-                        AppIcons.warning,
-                        color: AppTokens.warning,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
+                      AppIcon(AppIcons.warning,
+                          color: AppTokens.warning, size: 20),
+                      const SizedBox(width: AppTokens.s2),
                       Expanded(
                         child: Text(
                           warningMessage,
-                          style: TextStyle(
-                            color: AppTokens.warning,
-                            fontSize: 13,
-                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: AppTokens.warning),
                         ),
                       ),
                     ],
@@ -520,91 +524,106 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           ],
         ),
       );
-
-      if (confirmed != true) return;
-      await _startOperation(operation,
-          force: operation.isRecommendationOperation,
-          warningMessage: warningMessage);
+      if (confirmed == true) await _startOperation(operation, force: true);
       return;
     }
 
-    // Show normal choice dialog (Just Missing / Force All)
     final force = await showIndexerChoiceDialog(
       context,
-      title: operation.name,
-      description: operation.description,
+      title: name,
+      description: description,
       warningMessage: warningMessage,
     );
-
-    if (force == null) return; // Cancelled
-
-    await _startOperation(operation,
-        force: force, warningMessage: warningMessage);
+    if (force == null) return;
+    await _startOperation(operation, force: force);
   }
 
-  Future<void> _startOperation(IndexerOperation operation,
-      {required bool force, String? warningMessage}) async {
-    // Show progress dialog for blocking operations
+  Future<void> _startOperation(
+    IndexerOperation operation, {
+    required bool force,
+    Set<String>? onlyItems,
+  }) async {
+    final (name, _) = _labels(operation.id);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    var dialogOpen = false;
     if (operation.isBlocking) {
-      _showBlockingProgressDialog(operation);
+      dialogOpen = true;
+      _showBlockingProgressDialog(operation.id, name).whenComplete(() {
+        dialogOpen = false;
+      });
     }
 
     final result = await ref.read(indexerProvider.notifier).startOperation(
           operation.id,
           force: force,
+          onlyItems: onlyItems,
         );
 
-    // Close blocking dialog if shown
-    if (operation.isBlocking && mounted && Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
-
-    // Show restart dialog if required
-    if (result.success && operation.requiresRestart && mounted) {
-      await _showRestartDialog();
-    }
-
-    // Show warning dialog if there are warnings
-    if (result.warnings != null && result.warnings!.isNotEmpty && mounted) {
-      await _showWarningsDialog(operation.name, result.warnings!);
-    }
-
+    if (dialogOpen) navigator.pop();
     if (!mounted) return;
+
+    if (result.success && result.requiresRestart) {
+      await _showRestartDialog();
+      if (!mounted) return;
+    }
+
+    final l10n = context.l10n;
+    final String message;
+    if (result.cancelled) {
+      message = l10n.indexerStoppedAt(result.processed, result.total);
+    } else if (!result.success) {
+      message = _errorText(result.error);
+    } else if (operation.isTask) {
+      message = l10n.indexerCompleted;
+    } else if (result.total == 0) {
+      message = l10n.indexerNothingToDo;
+    } else {
+      message = l10n.indexerFinished(result.processed, result.failed);
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(result.message),
-        backgroundColor: result.success ? null : AppTokens.danger,
+        content: Text(message),
+        backgroundColor:
+            result.success || result.cancelled ? null : AppTokens.danger,
       ),
     );
   }
 
-  void _cancelOperation() {
-    ref.read(indexerProvider.notifier).cancelOperation();
-  }
-
-  void _showBlockingProgressDialog(IndexerOperation operation) {
-    showDialog(
+  Future<void> _showBlockingProgressDialog(String id, String name) {
+    return showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => PopScope(
         canPop: false,
-        child: AlertDialog(
-          title: Text(operation.name),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(
-                  context.l10n.indexerOptimizing(operation.name.toLowerCase())),
-              const SizedBox(height: 8),
-              Text(
-                context.l10n.indexerDoNotClose,
-                style:
-                    const TextStyle(fontSize: 12, color: AppTokens.fgTertiary),
+        child: Consumer(
+          builder: (context, ref, _) {
+            final op =
+                ref.watch(indexerProvider.select((s) => s.operations[id]));
+            return AlertDialog(
+              title: Text(name),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LinearProgressIndicator(
+                    value: op?.progress,
+                    borderRadius: AppTokens.brPill,
+                  ),
+                  const SizedBox(height: AppTokens.s4),
+                  Text(op == null
+                      ? context.l10n.indexerWorking
+                      : _statusText(op)),
+                  const SizedBox(height: AppTokens.s2),
+                  Text(
+                    context.l10n.indexerDoNotClose,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: AppTokens.fgTertiary),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -679,92 +698,6 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(context.l10n.actionClose),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _retryFailedItems(IndexerOperation operation) async {
-    // For now, just restart the operation with force=false to retry failed items
-    // This will re-process all missing items including the failed ones
-    final result = await ref
-        .read(indexerProvider.notifier)
-        .startOperation(operation.id, force: false);
-
-    if (result.warnings != null && result.warnings!.isNotEmpty && mounted) {
-      await _showWarningsDialog(operation.name, result.warnings!);
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.message),
-        backgroundColor: result.success ? null : AppTokens.danger,
-      ),
-    );
-  }
-
-  Future<void> _showWarningsDialog(
-      String operationName, List<String> warnings) async {
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        icon:
-            const AppIcon(AppIcons.warning, color: AppTokens.warning, size: 48),
-        title: Text(context.l10n.indexerWarningsTitle(operationName)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.l10n.indexerCouldNotProcess,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: warnings.length.clamp(0, 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('• ',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          Expanded(
-                            child: Text(
-                              warnings[index],
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (warnings.length > 10) ...[
-                const SizedBox(height: 8),
-                Text(
-                  context.l10n.metaMoreItems(warnings.length - 10),
-                  style: TextStyle(
-                    color: AppTokens.fgTertiary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(context.l10n.indexerOk),
           ),
         ],
       ),

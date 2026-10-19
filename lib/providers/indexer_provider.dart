@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../data/repositories/song_identity_repository.dart';
 import '../data/repositories/song_repository.dart';
-import '../domain/models/online_search_result.dart';
 import '../models/song.dart';
 import '../providers/artist_album_art_provider.dart';
 import '../services/cache_service.dart';
@@ -11,769 +14,569 @@ import '../services/cover_refresh_service.dart';
 import '../services/database_optimizer_service.dart';
 import '../services/database_service.dart';
 import '../services/ffmpeg_service.dart';
-import '../services/library_logic.dart';
 import '../services/library_repair_service.dart';
-import '../services/online_metadata_service.dart';
 import '../services/passive_art_fetcher_service.dart';
 import '../services/scanner_service.dart';
-import '../services/waveform_service.dart';
-import '../data/repositories/song_identity_repository.dart';
 import '../services/song_identity_service.dart';
+import '../services/waveform_service.dart';
 import 'providers.dart';
 import 'search_provider.dart';
 
-/// Represents the state of an indexer operation
 enum IndexerOperationState {
   idle,
   running,
+  stopping,
   completed,
   cancelled,
-  error,
+  error
 }
 
-/// Represents a single indexer operation with its progress.
-/// Operations that track two channels (artist + album art) use the
-/// artist*/album* counters; every other operation uses the single channel.
+class IndexerOps {
+  static const optimizeDatabases = 'optimize_databases';
+  static const repairLibraryLinks = 'repair_library_links';
+  static const matchSongIdentity = 'match_song_identity';
+  static const coverCache = 'rebuild_cover_caches';
+  static const searchIndex = 'rebuild_search_indexes';
+  static const lyricsCache = 'rebuild_lyrics_cache';
+  static const waveformCache = 'rebuild_waveform_cache';
+  static const colorCache = 'rebuild_color_cache';
+  static const blurredCache = 'rebuild_blurred_cache';
+  static const recommendations = 'rebuild_recommendations';
+  static const artistAlbumArt = 'rebuild_artist_album_art';
+
+  /// One-shot tasks: nothing to count, no "just missing" mode.
+  static const tasks = {optimizeDatabases, repairLibraryLinks, recommendations};
+  static const blocking = {optimizeDatabases, repairLibraryLinks};
+  static const all = [
+    optimizeDatabases,
+    repairLibraryLinks,
+    matchSongIdentity,
+    coverCache,
+    searchIndex,
+    lyricsCache,
+    waveformCache,
+    colorCache,
+    blurredCache,
+    recommendations,
+    artistAlbumArt,
+  ];
+}
+
+const _unset = Object();
+
+/// Coverage (`doneCount`/`totalCount`) describes what is on disk right now and
+/// is only ever written by a count pass. Run progress (`run*`) describes the
+/// current or last run. Mixing the two is what made the old bars start at
+/// numbers like 900/100.
 class IndexerOperation {
   final String id;
-  final String name;
-  final String description;
   final IndexerOperationState state;
-  final int processedCount;
+  final bool countsLoaded;
+  final int doneCount;
   final int totalCount;
-  final int targetCount;
-  final int artistProcessed;
-  final int artistTotal;
-  final int albumProcessed;
-  final int albumTotal;
-  final int failedCount;
+  final int runDone;
+  final int runTotal;
+  final double? runFraction;
+  final int artistRunDone;
+  final int artistRunTotal;
+  final int albumRunDone;
+  final int albumRunTotal;
   final List<String> failedItems;
   final String? errorMessage;
-  final bool isBlocking;
-  final bool requiresRestart;
 
   const IndexerOperation({
     required this.id,
-    required this.name,
-    required this.description,
     this.state = IndexerOperationState.idle,
-    this.processedCount = 0,
+    this.countsLoaded = false,
+    this.doneCount = 0,
     this.totalCount = 0,
-    this.targetCount = 0,
-    this.artistProcessed = 0,
-    this.artistTotal = 0,
-    this.albumProcessed = 0,
-    this.albumTotal = 0,
-    this.failedCount = 0,
+    this.runDone = 0,
+    this.runTotal = 0,
+    this.runFraction,
+    this.artistRunDone = 0,
+    this.artistRunTotal = 0,
+    this.albumRunDone = 0,
+    this.albumRunTotal = 0,
     this.failedItems = const [],
     this.errorMessage,
-    this.isBlocking = false,
-    this.requiresRestart = false,
   });
 
   IndexerOperation copyWith({
     IndexerOperationState? state,
-    int? processedCount,
+    bool? countsLoaded,
+    int? doneCount,
     int? totalCount,
-    int? targetCount,
-    int? artistProcessed,
-    int? artistTotal,
-    int? albumProcessed,
-    int? albumTotal,
-    int? failedCount,
+    int? runDone,
+    int? runTotal,
+    Object? runFraction = _unset,
+    int? artistRunDone,
+    int? artistRunTotal,
+    int? albumRunDone,
+    int? albumRunTotal,
     List<String>? failedItems,
-    String? errorMessage,
+    Object? errorMessage = _unset,
   }) {
     return IndexerOperation(
       id: id,
-      name: name,
-      description: description,
       state: state ?? this.state,
-      processedCount: processedCount ?? this.processedCount,
+      countsLoaded: countsLoaded ?? this.countsLoaded,
+      doneCount: doneCount ?? this.doneCount,
       totalCount: totalCount ?? this.totalCount,
-      targetCount: targetCount ?? this.targetCount,
-      artistProcessed: artistProcessed ?? this.artistProcessed,
-      artistTotal: artistTotal ?? this.artistTotal,
-      albumProcessed: albumProcessed ?? this.albumProcessed,
-      albumTotal: albumTotal ?? this.albumTotal,
-      failedCount: failedCount ?? this.failedCount,
+      runDone: runDone ?? this.runDone,
+      runTotal: runTotal ?? this.runTotal,
+      runFraction: identical(runFraction, _unset)
+          ? this.runFraction
+          : runFraction as double?,
+      artistRunDone: artistRunDone ?? this.artistRunDone,
+      artistRunTotal: artistRunTotal ?? this.artistRunTotal,
+      albumRunDone: albumRunDone ?? this.albumRunDone,
+      albumRunTotal: albumRunTotal ?? this.albumRunTotal,
       failedItems: failedItems ?? this.failedItems,
-      errorMessage: errorMessage ?? this.errorMessage,
-      isBlocking: isBlocking,
-      requiresRestart: requiresRestart,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
     );
   }
 
-  double get progress => targetCount > 0 ? processedCount / targetCount : 0.0;
-  double get artistProgress =>
-      artistTotal > 0 ? artistProcessed / artistTotal : 0.0;
-  double get albumProgress =>
-      albumTotal > 0 ? albumProcessed / albumTotal : 0.0;
-  bool get isRunning => state == IndexerOperationState.running;
-  String get progressText => '$processedCount/$targetCount';
-  String get artistProgressText => '$artistProcessed/$artistTotal';
-  String get albumProgressText => '$albumProcessed/$albumTotal';
-
-  /// Whether this operation reports separate artist/album progress bars.
-  bool get hasSplitArtProgress => artistTotal > 0 || albumTotal > 0;
+  bool get isTask => IndexerOps.tasks.contains(id);
+  bool get isBlocking => IndexerOps.blocking.contains(id);
+  bool get requiresRestart => id == IndexerOps.optimizeDatabases;
+  bool get isRunning =>
+      state == IndexerOperationState.running ||
+      state == IndexerOperationState.stopping;
+  bool get hasSplitArtProgress => id == IndexerOps.artistAlbumArt;
+  int get failedCount => failedItems.length;
+  int get pendingCount => math.max(0, totalCount - doneCount);
   bool get isFullyCached =>
-      processedCount > 0 && processedCount == totalCount && totalCount > 0;
-  bool get isDatabaseOperation => id == 'optimize_databases';
-  bool get isRecommendationOperation => id == 'rebuild_recommendations';
+      !isTask && countsLoaded && totalCount > 0 && doneCount >= totalCount;
 
-  /// Repair isn't a cache to fill, so it has no "just the missing ones" mode —
-  /// it always looks at every row.
-  bool get isRepairOperation => id == 'repair_library_links';
+  /// Null means indeterminate.
+  double? get progress {
+    if (runTotal > 0) return (runDone / runTotal).clamp(0.0, 1.0);
+    return runFraction?.clamp(0.0, 1.0);
+  }
+
+  static double _ratio(int a, int b) => b > 0 ? (a / b).clamp(0.0, 1.0) : 0.0;
+  double get artistProgress => _ratio(artistRunDone, artistRunTotal);
+  double get albumProgress => _ratio(albumRunDone, albumRunTotal);
 }
 
-/// State for all indexer operations
 class IndexerState {
   final Map<String, IndexerOperation> operations;
-  final bool isInitialized;
 
-  const IndexerState({
-    this.operations = const {},
-    this.isInitialized = false,
-  });
-
-  IndexerState copyWith({
-    Map<String, IndexerOperation>? operations,
-    bool? isInitialized,
-  }) {
-    return IndexerState(
-      operations: operations ?? this.operations,
-      isInitialized: isInitialized ?? this.isInitialized,
-    );
-  }
+  const IndexerState({this.operations = const {}});
 
   IndexerOperation? getOperation(String id) => operations[id];
 }
 
-/// Result of an indexer operation
 class IndexerResult {
   final bool success;
-  final String message;
-  final List<String>? warnings;
+  final bool cancelled;
+  final int processed;
+  final int total;
+  final int failed;
+  final String? error;
   final bool requiresRestart;
 
   const IndexerResult({
     required this.success,
-    required this.message,
-    this.warnings,
+    this.cancelled = false,
+    this.processed = 0,
+    this.total = 0,
+    this.failed = 0,
+    this.error,
     this.requiresRestart = false,
   });
 }
 
-/// Token for canceling operations
 class CancelToken {
   bool _isCancelled = false;
   bool get isCancelled => _isCancelled;
   void cancel() => _isCancelled = true;
 }
 
-/// Notifier for managing indexer operations
+/// Progress for one run. Emissions are throttled: per-item state pushes
+/// rebuild the whole screen and made fast passes crawl.
+class _Run {
+  final IndexerNotifier _owner;
+  final String id;
+  final CancelToken token;
+  int done = 0;
+  int total = 0;
+  final List<String> failed = [];
+  DateTime _lastEmit = DateTime.fromMillisecondsSinceEpoch(0);
+
+  _Run(this._owner, this.id, this.token);
+
+  bool get cancelled => token.isCancelled;
+
+  void start(int count) {
+    total = count;
+    done = 0;
+    flush();
+  }
+
+  void tick({String? failedItem}) {
+    if (failedItem != null) failed.add(failedItem);
+    report(done + 1, total);
+  }
+
+  void report(int newDone, int newTotal) {
+    done = newDone;
+    total = newTotal;
+    final now = DateTime.now();
+    if (done >= total || now.difference(_lastEmit).inMilliseconds >= 120) {
+      _lastEmit = now;
+      flush();
+    }
+  }
+
+  void flush() {
+    _owner._patch(
+      id,
+      (op) => op.copyWith(
+        runDone: done,
+        runTotal: total,
+        failedItems: List.unmodifiable(failed),
+      ),
+    );
+  }
+
+  IndexerResult result({String? error}) => IndexerResult(
+        success: error == null,
+        cancelled: cancelled,
+        processed: done,
+        total: total,
+        failed: failed.length,
+        error: error,
+      );
+}
+
+/// Checks run concurrently in small batches: sequential awaits over a large
+/// library took long enough to look like a stall.
+Future<List<T>> _whereAsync<T>(
+  Iterable<T> items,
+  Future<bool> Function(T) test,
+) async {
+  final list = items.toList();
+  final out = <T>[];
+  const batch = 48;
+  for (var i = 0; i < list.length; i += batch) {
+    final chunk = list.sublist(i, math.min(i + batch, list.length));
+    final hits = await Future.wait(
+      chunk.map((e) async {
+        try {
+          return await test(e);
+        } catch (_) {
+          return false;
+        }
+      }),
+    );
+    for (var j = 0; j < chunk.length; j++) {
+      if (hits[j]) out.add(chunk[j]);
+    }
+  }
+  return out;
+}
+
+Future<bool> _nonEmptyFile(String? path) async {
+  if (path == null || path.isEmpty) return false;
+  final file = File(path);
+  return await file.exists() && await file.length() > 0;
+}
+
+/// What a cache-type operation needs to do for the current library.
+class _Plan<T> {
+  final List<T> all;
+  final List<T> pending;
+  const _Plan(this.all, this.pending);
+}
+
 class IndexerNotifier extends Notifier<IndexerState> {
-  CancelToken? _currentCancelToken;
+  final Map<String, CancelToken> _tokens = {};
+  Future<void>? _counting;
 
   @override
-  IndexerState build() {
-    return _initializeOperations();
-  }
+  IndexerState build() => IndexerState(operations: {
+        for (final id in IndexerOps.all) id: IndexerOperation(id: id),
+      });
 
-  IndexerState _initializeOperations() {
-    final operations = {
-      'optimize_databases': const IndexerOperation(
-        id: 'optimize_databases',
-        name: 'Optimize Databases',
-        description: 'Clean and optimize all app databases',
-        processedCount: -1,
-        isBlocking: true,
-        requiresRestart: true,
-      ),
-      'repair_library_links': const IndexerOperation(
-        id: 'repair_library_links',
-        name: 'Repair Library Links',
-        description:
-            'Re-link album art and file paths after a restore or new device',
-        processedCount: -1,
-        isBlocking: true,
-        requiresRestart: false,
-      ),
-      'match_song_identity': const IndexerOperation(
-        id: 'match_song_identity',
-        name: 'Match Songs by Audio',
-        description:
-            'Fingerprint every file so renamed songs keep their favourites, playlists and stats, and match across synced devices',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_cover_caches': const IndexerOperation(
-        id: 'rebuild_cover_caches',
-        name: 'Rebuild Cover Caches',
-        description: 'Extract and cache album artwork',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_search_indexes': const IndexerOperation(
-        id: 'rebuild_search_indexes',
-        name: 'Rebuild Search Indexes',
-        description: 'Rebuild search index for all songs',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_lyrics_cache': const IndexerOperation(
-        id: 'rebuild_lyrics_cache',
-        name: 'Rebuild Lyrics Cache',
-        description: 'Extract and cache lyrics for all songs',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_waveform_cache': const IndexerOperation(
-        id: 'rebuild_waveform_cache',
-        name: 'Rebuild Waveform Cache',
-        description: 'Generate waveform data for all songs',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_color_cache': const IndexerOperation(
-        id: 'rebuild_color_cache',
-        name: 'Rebuild App Theme on Cover Cache',
-        description: 'Extract color themes from all covers',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_blurred_cache': const IndexerOperation(
-        id: 'rebuild_blurred_cache',
-        name: 'Rebuild Blurred Background Cache',
-        description: 'Pre-generate optimized blurred backgrounds',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_recommendations': const IndexerOperation(
-        id: 'rebuild_recommendations',
-        name: 'Rebuild Recommendations',
-        description: 'Force rebuild all recommendation playlists',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'fetch_missing_covers': const IndexerOperation(
-        id: 'fetch_missing_covers',
-        name: 'Fetch Missing Covers Online',
-        description: 'Search Deezer & iTunes for missing track covers',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'fetch_missing_metadata': const IndexerOperation(
-        id: 'fetch_missing_metadata',
-        name: 'Fetch Missing Metadata Online',
-        description:
-            'Search Deezer & iTunes for missing track metadata (title, artist, album)',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-      'rebuild_artist_album_art': const IndexerOperation(
-        id: 'rebuild_artist_album_art',
-        name: 'Fetch Artist & Album Covers',
-        description:
-            'Fetch missing artist and album covers online, biggest collections first',
-        isBlocking: false,
-        requiresRestart: false,
-      ),
-    };
-
-    return IndexerState(operations: operations, isInitialized: true);
-  }
-
-  /// Load initial counts for all operations
-  Future<void> loadCounts() async {
-    final songs = await DatabaseService.instance.getAllSongs();
-    final totalSongs = songs.length;
-
-    final coverCount = await _getCoverCacheCount(songs);
-    final lyricsCount = await _getLyricsCacheCount(songs);
-    final waveformCount = await _getWaveformCacheCount(songs);
-    final colorCount = await _getColorCacheCount(songs);
-    final blurredCount = await _getBlurredCacheCount(songs);
-    final searchCount = await _getSearchIndexCount();
-    final identityCount = await _getIdentityCount(songs);
-
-    final missingCoversCount =
-        songs.where((s) => s.coverUrl == null || s.coverUrl!.isEmpty).length;
-    final missingMetadataCount = songs
-        .where((s) =>
-            OnlineMetadataService.cleanTag(s.artist) == null ||
-            OnlineMetadataService.cleanTag(s.album) == null)
-        .length;
-
-    final artCounts = await _getArtistAlbumArtCount(songs);
-
-    final updatedOperations =
-        Map<String, IndexerOperation>.from(state.operations);
-
-    // Database operations show "Ready to optimize" with processedCount = -1
-    updatedOperations['optimize_databases'] =
-        updatedOperations['optimize_databases']!.copyWith(
-      totalCount: totalSongs,
-    );
-
-    updatedOperations['match_song_identity'] =
-        updatedOperations['match_song_identity']!.copyWith(
-      processedCount: identityCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - identityCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_cover_caches'] =
-        updatedOperations['rebuild_cover_caches']!.copyWith(
-      processedCount: coverCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - coverCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_search_indexes'] =
-        updatedOperations['rebuild_search_indexes']!.copyWith(
-      processedCount: searchCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - searchCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_lyrics_cache'] =
-        updatedOperations['rebuild_lyrics_cache']!.copyWith(
-      processedCount: lyricsCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - lyricsCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_waveform_cache'] =
-        updatedOperations['rebuild_waveform_cache']!.copyWith(
-      processedCount: waveformCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - waveformCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_color_cache'] =
-        updatedOperations['rebuild_color_cache']!.copyWith(
-      processedCount: colorCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - colorCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_blurred_cache'] =
-        updatedOperations['rebuild_blurred_cache']!.copyWith(
-      processedCount: blurredCount,
-      totalCount: totalSongs,
-      targetCount: (totalSongs - blurredCount).clamp(0, totalSongs),
-    );
-
-    updatedOperations['rebuild_recommendations'] =
-        updatedOperations['rebuild_recommendations']!.copyWith(
-      processedCount: 0,
-      totalCount: 6, // 6 recommendation types
-      targetCount: 6,
-    );
-
-    updatedOperations['fetch_missing_covers'] =
-        updatedOperations['fetch_missing_covers']!.copyWith(
-      processedCount: (totalSongs - missingCoversCount).clamp(0, totalSongs),
-      totalCount: totalSongs,
-      targetCount: missingCoversCount,
-    );
-
-    updatedOperations['fetch_missing_metadata'] =
-        updatedOperations['fetch_missing_metadata']!.copyWith(
-      processedCount: (totalSongs - missingMetadataCount).clamp(0, totalSongs),
-      totalCount: totalSongs,
-      targetCount: missingMetadataCount,
-    );
-
-    updatedOperations['rebuild_artist_album_art'] =
-        updatedOperations['rebuild_artist_album_art']!.copyWith(
-      artistProcessed: artCounts['artistCached'],
-      artistTotal: artCounts['artistTotal'],
-      albumProcessed: artCounts['albumCached'],
-      albumTotal: artCounts['albumTotal'],
-      processedCount: artCounts['artistCached']! + artCounts['albumCached']!,
-      totalCount: artCounts['artistTotal']! + artCounts['albumTotal']!,
-      targetCount: ((artCounts['artistTotal']! - artCounts['artistCached']!) +
-              (artCounts['albumTotal']! - artCounts['albumCached']!))
-          .clamp(
-        0,
-        artCounts['artistTotal']! + artCounts['albumTotal']!,
-      ),
-    );
-
-    state = state.copyWith(operations: updatedOperations);
-  }
-
-  Future<int> _getCoverCacheCount(List<Song> songs) async {
-    try {
-      int count = 0;
-      for (final song in songs) {
-        final coverUrl = song.coverUrl;
-        if (coverUrl == null || coverUrl.isEmpty) continue;
-        if (await File(coverUrl).exists()) count++;
-      }
-      return count;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getLyricsCacheCount(List<Song> songs) async {
-    try {
-      final repository = SongRepository();
-      int count = 0;
-      for (final song in songs) {
-        if (await repository.hasLyricsCacheEntry(song)) count++;
-      }
-      return count;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getWaveformCacheCount(List<Song> songs) async {
-    try {
-      final cacheService = CacheService.instance;
-      int count = 0;
-      for (final song in songs) {
-        final cacheFile =
-            await cacheService.getWaveformCacheFile(song.filename);
-        if (await cacheFile.exists()) count++;
-      }
-      return count;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getColorCacheCount(List<Song> songs) async {
-    try {
-      int count = 0;
-      for (final song in songs) {
-        if (await ColorExtractionService.hasCachedPalette(song.coverUrl)) {
-          count++;
-        }
-      }
-      return count;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getBlurredCacheCount(List<Song> songs) async {
-    try {
-      final cacheService = CacheService.instance;
-      int count = 0;
-      for (final song in songs) {
-        final cacheFile = await cacheService.getBlurredCacheFile(song.filename);
-        if (await cacheFile.exists()) count++;
-      }
-      return count;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getIdentityCount(List<Song> songs) async {
-    try {
-      final db = await DatabaseService.instance.userDataDb;
-      final known = {
-        for (final r in await SongIdentityRepository.loadAll(db)) r.filename
-      };
-      return songs.where((s) => known.contains(s.filename)).length;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<int> _getSearchIndexCount() async {
-    try {
-      final searchService = ref.read(searchServiceProvider);
-      await searchService.init();
-      final stats = await searchService.getIndexStats();
-      return stats.totalEntries;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  /// Start an operation
-  Future<IndexerResult> startOperation(String operationId,
-      {bool force = false}) async {
-    final operation = state.operations[operationId];
-    if (operation == null) {
-      return const IndexerResult(success: false, message: 'Unknown operation');
-    }
-
-    if (operation.isRunning) {
-      return const IndexerResult(
-          success: false, message: 'Operation already running');
-    }
-
-    _currentCancelToken = CancelToken();
-
-    // Calculate target count based on force parameter
-    int targetCount = operation.totalCount;
-    if (!force &&
-        !operation.isDatabaseOperation &&
-        !operation.isRepairOperation) {
-      targetCount = operation.totalCount - operation.processedCount;
-      if (targetCount < 0) targetCount = 0;
-    }
-
-    // Update operation with target count
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    operations[operationId] = operation.copyWith(
-      targetCount: targetCount,
-      failedCount: 0,
-      failedItems: [],
-    );
-    state = state.copyWith(operations: operations);
-
-    _updateOperationState(operationId, IndexerOperationState.running);
-
-    try {
-      final result = await _executeOperation(operationId, force: force);
-
-      if (_currentCancelToken?.isCancelled ?? false) {
-        _updateOperationState(operationId, IndexerOperationState.cancelled);
-        return const IndexerResult(
-            success: false, message: 'Operation cancelled');
-      }
-
-      _updateOperationState(
-        operationId,
-        result.success
-            ? IndexerOperationState.completed
-            : IndexerOperationState.error,
-        errorMessage: result.success ? null : result.message,
-      );
-
-      // Refresh counts after completion
-      await loadCounts();
-
-      return result;
-    } catch (e) {
-      _updateOperationState(operationId, IndexerOperationState.error,
-          errorMessage: e.toString());
-      return IndexerResult(success: false, message: 'Error: $e');
-    }
-  }
-
-  /// Cancel the current operation
-  void cancelOperation() {
-    _currentCancelToken?.cancel();
-  }
-
-  void _updateOperationState(String id, IndexerOperationState newState,
-      {String? errorMessage}) {
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations[id];
-    if (op != null) {
-      operations[id] = op.copyWith(state: newState, errorMessage: errorMessage);
-      state = state.copyWith(operations: operations);
-    }
-  }
-
-  void _updateProgress(String id, int processed, int targetCount) {
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations[id];
-    if (op != null) {
-      operations[id] = op.copyWith(processedCount: processed);
-      state = state.copyWith(operations: operations);
-    }
-  }
-
-  /// Updates the separate artist/album progress channels of an operation,
-  /// keeping the combined counters in sync for shared subtitle logic.
-  void _updateArtProgress(
-    String id, {
-    int? artistDone,
-    int? artistTotal,
-    int? albumDone,
-    int? albumTotal,
-  }) {
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations[id];
+  void _patch(String id, IndexerOperation Function(IndexerOperation) f) {
+    final op = state.operations[id];
     if (op == null) return;
-    final aDone = artistDone ?? op.artistProcessed;
-    final aTotal = artistTotal ?? op.artistTotal;
-    final bDone = albumDone ?? op.albumProcessed;
-    final bTotal = albumTotal ?? op.albumTotal;
-    operations[id] = op.copyWith(
-      artistProcessed: aDone,
-      artistTotal: aTotal,
-      albumProcessed: bDone,
-      albumTotal: bTotal,
-      processedCount: aDone + bDone,
-      totalCount: aTotal + bTotal,
-    );
-    state = state.copyWith(operations: operations);
+    state = IndexerState(operations: {...state.operations, id: f(op)});
   }
 
-  /// Re-reads the library after an operation wrote to the `song` table.
-  ///
-  /// Without this the rows are correct on disk but the in-memory list every
-  /// tile renders from still holds the pre-operation values, so a rebuild that
-  /// worked perfectly looks like it did nothing until the app is restarted.
-  void _invalidateLibrary() {
-    ref.invalidate(songsProvider);
-  }
+  bool get anyRunning => state.operations.values.any((o) => o.isRunning);
 
-  void _updateFailedItems(String id, List<String> failedItems) {
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations[id];
-    if (op != null) {
-      operations[id] = op.copyWith(
-        failedCount: failedItems.length,
-        failedItems: failedItems,
-      );
-      state = state.copyWith(operations: operations);
-    }
-  }
+  /// Coalesces concurrent requests so reopening the screen mid-count does not
+  /// start a second full pass.
+  Future<void> loadCounts() => _counting ??= _loadCounts().whenComplete(() {
+        _counting = null;
+      });
 
-  Future<IndexerResult> _executeOperation(String operationId,
-      {bool force = false}) async {
+  Future<void> _loadCounts() async {
     final songs = await DatabaseService.instance.getAllSongs();
-
-    switch (operationId) {
-      case 'optimize_databases':
-        return await _optimizeDatabases();
-      case 'optimize_stats_db':
-        return await _optimizeDatabases();
-      case 'optimize_user_data_db':
-        return await _optimizeDatabases();
-      case 'repair_library_links':
-        return await _repairLibraryLinks();
-      case 'match_song_identity':
-        return await _matchSongIdentity(songs, force: force);
-      case 'rebuild_cover_caches':
-        return await _rebuildCoverCaches(songs, force: force);
-      case 'rebuild_search_indexes':
-        return await _rebuildSearchIndexes(songs, force: force);
-      case 'rebuild_lyrics_cache':
-        return await _rebuildLyricsCache(songs, force: force);
-      case 'rebuild_waveform_cache':
-        return await _rebuildWaveformCache(songs, force: force);
-      case 'rebuild_color_cache':
-        return await _rebuildColorCache(songs, force: force);
-      case 'rebuild_blurred_cache':
-        return await _rebuildBlurredCache(songs, force: force);
-      case 'rebuild_recommendations':
-        return await _rebuildRecommendations();
-      case 'fetch_missing_covers':
-        return await _fetchMissingCovers(songs, force: force);
-      case 'fetch_missing_metadata':
-        return await _fetchMissingMetadata(songs, force: force);
-      case 'rebuild_artist_album_art':
-        return await _rebuildArtistAlbumArt(songs, force: force);
-      default:
-        return const IndexerResult(
-            success: false, message: 'Unknown operation');
-    }
-  }
-
-  Future<IndexerResult> _repairLibraryLinks() async {
-    try {
-      final total = await DatabaseService.instance.getSongCount();
-      final report = await LibraryRepairService.instance.repairLibrary(
-        onProgress: (progress, _) {
-          _updateProgress(
-              'repair_library_links', (progress * total).round(), total);
-        },
-      );
-
-      _invalidateLibrary();
-
-      final warnings = report.pruningSkipped
-          ? ['Skipped removing missing tracks — music folders were unreadable']
-          : null;
-
-      return IndexerResult(
-        success: true,
-        message: report.summary,
-        warnings: warnings,
-      );
-    } catch (e) {
-      return IndexerResult(
-        success: false,
-        message: 'Error repairing library links: $e',
-      );
-    }
-  }
-
-  Future<IndexerResult> _matchSongIdentity(List<Song> songs,
-      {required bool force}) async {
-    const id = 'match_song_identity';
-    final service = SongIdentityService.instance;
-    if (service.isRunning) {
-      return const IndexerResult(
-          success: false, message: 'Song matching is already running');
-    }
-    try {
-      // Counters start as "already cached / missing"; zero them so the bar
-      // reflects this run while the stat pass is still working.
-      final operations = Map<String, IndexerOperation>.from(state.operations);
-      operations[id] = operations[id]!.copyWith(processedCount: 0);
-      state = state.copyWith(operations: operations);
-      final cancelToken = _currentCancelToken;
-      final report = await service.reconcile(
-        songs,
-        options: IdentityRunOptions(
-          force: force,
-          isCancelled: () => cancelToken?.isCancelled ?? false,
-          onProgress: (done, total) {
-            final operations =
-                Map<String, IndexerOperation>.from(state.operations);
-            final op = operations[id];
-            if (op == null) return;
-            operations[id] = op.copyWith(
-              processedCount: done,
-              targetCount: total,
-            );
-            state = state.copyWith(operations: operations);
-          },
-        ),
-      );
-      if (report.changedUserData) {
-        _invalidateLibrary();
-        ref.read(userDataProvider.notifier).refresh();
+    Future<void> count(String id, Future<(int, int)> Function() f) async {
+      try {
+        final (done, total) = await f();
+        _patch(
+          id,
+          (op) => op.copyWith(
+            countsLoaded: true,
+            doneCount: done,
+            totalCount: total,
+          ),
+        );
+      } catch (_) {
+        _patch(id, (op) => op.copyWith(countsLoaded: true));
       }
-      return IndexerResult(
-        success: true,
-        message:
-            'Matched ${report.hashed} files, followed ${report.moves.length} renamed songs',
-      );
-    } catch (e) {
-      return IndexerResult(
-        success: false,
-        message: 'Error matching songs: $e',
-      );
+    }
+
+    (int, int) fromPlan(_Plan p) =>
+        (p.all.length - p.pending.length, p.all.length);
+
+    await Future.wait([
+      count(IndexerOps.matchSongIdentity, () async {
+        final known = await _identityFilenames();
+        return (
+          songs.where((s) => known.contains(s.filename)).length,
+          songs.length
+        );
+      }),
+      count(IndexerOps.coverCache,
+          () async => fromPlan(await _coverPlan(songs, force: false))),
+      count(IndexerOps.searchIndex, () async {
+        final indexed =
+            await ref.read(searchServiceProvider).indexedFilenames();
+        return (
+          songs.where((s) => indexed.contains(s.filename)).length,
+          songs.length
+        );
+      }),
+      count(IndexerOps.lyricsCache,
+          () async => fromPlan(await _lyricsPlan(songs, force: false))),
+      count(IndexerOps.waveformCache,
+          () async => fromPlan(await _waveformPlan(songs, force: false))),
+      count(IndexerOps.colorCache,
+          () async => fromPlan(await _colorPlan(songs, force: false))),
+      count(IndexerOps.blurredCache,
+          () async => fromPlan(await _blurredPlan(songs, force: false))),
+      count(IndexerOps.artistAlbumArt, () async {
+        final c = await _artCoverage();
+        final total = c.artistTotal + c.albumTotal;
+        return (total - c.artistPending - c.albumPending, total);
+      }),
+    ]);
+    for (final id in IndexerOps.tasks) {
+      _patch(id, (op) => op.copyWith(countsLoaded: true));
     }
   }
 
-  Future<IndexerResult> _rebuildRecommendations() async {
+  Future<IndexerResult> startOperation(
+    String id, {
+    bool force = false,
+    Set<String>? onlyItems,
+  }) async {
+    final op = state.operations[id];
+    if (op == null) return const IndexerResult(success: false);
+    if (op.isRunning) return const IndexerResult(success: false);
+
+    final token = CancelToken();
+    _tokens[id] = token;
+    final run = _Run(this, id, token);
+    _patch(
+      id,
+      (op) => op.copyWith(
+        state: IndexerOperationState.running,
+        runDone: 0,
+        runTotal: 0,
+        runFraction: null,
+        artistRunDone: 0,
+        artistRunTotal: 0,
+        albumRunDone: 0,
+        albumRunTotal: 0,
+        failedItems: const [],
+        errorMessage: null,
+      ),
+    );
+
+    IndexerResult result;
     try {
-      await ref
-          .read(userDataProvider.notifier)
-          .updateRecommendationPlaylists(force: true);
-      _updateProgress('rebuild_recommendations', 6, 6);
-      return const IndexerResult(
-        success: true,
-        message: 'Recommendation playlists successfully rebuilt',
-      );
+      result = await _execute(id, run, force: force, only: onlyItems);
     } catch (e) {
-      return IndexerResult(
-        success: false,
-        message: 'Error rebuilding recommendations: $e',
-      );
+      result = run.result(error: e.toString());
     }
+    run.flush();
+    _tokens.remove(id);
+
+    final next = result.cancelled
+        ? IndexerOperationState.cancelled
+        : result.success
+            ? IndexerOperationState.completed
+            : IndexerOperationState.error;
+    _patch(
+      id,
+      (op) => op.copyWith(state: next, errorMessage: result.error),
+    );
+    unawaited(loadCounts());
+    return result;
   }
 
-  Future<IndexerResult> _optimizeDatabases() async {
-    final optimizer = DatabaseOptimizerService();
-    final result = await optimizer.optimizeDatabases(
+  void cancelOperation(String id) {
+    final token = _tokens[id];
+    if (token == null || token.isCancelled) return;
+    token.cancel();
+    _patch(id, (op) => op.copyWith(state: IndexerOperationState.stopping));
+  }
+
+  void _invalidateLibrary() => ref.invalidate(songsProvider);
+
+  Future<IndexerResult> _execute(
+    String id,
+    _Run run, {
+    required bool force,
+    Set<String>? only,
+  }) async {
+    switch (id) {
+      case IndexerOps.optimizeDatabases:
+        return _optimizeDatabases(run);
+      case IndexerOps.repairLibraryLinks:
+        return _repairLibraryLinks(run);
+      case IndexerOps.recommendations:
+        return _rebuildRecommendations(run);
+      case IndexerOps.artistAlbumArt:
+        return _rebuildArtistAlbumArt(run, force: force);
+    }
+
+    final songs = await DatabaseService.instance.getAllSongs();
+    List<Song> scoped(List<Song> list) => only == null
+        ? list
+        : list.where((s) => only.contains(s.filename)).toList();
+
+    switch (id) {
+      case IndexerOps.matchSongIdentity:
+        return _matchSongIdentity(run, songs, force: force || only != null);
+      case IndexerOps.searchIndex:
+        return _rebuildSearchIndex(run, songs, force: force);
+      case IndexerOps.coverCache:
+        final plan = await _coverPlan(songs, force: force);
+        return _rebuildCovers(run, scoped(plan.pending), force: force);
+      case IndexerOps.lyricsCache:
+        final plan = await _lyricsPlan(songs, force: force);
+        return _rebuildLyrics(run, scoped(plan.pending), force: force);
+      case IndexerOps.waveformCache:
+        final plan = await _waveformPlan(songs, force: force);
+        return _rebuildWaveforms(run, scoped(plan.pending), force: force);
+      case IndexerOps.colorCache:
+        final plan = await _colorPlan(songs, force: force);
+        final pending = only == null
+            ? plan.pending
+            : plan.pending.where(only.contains).toList();
+        return _rebuildColors(run, pending, force: force);
+      case IndexerOps.blurredCache:
+        final plan = await _blurredPlan(songs, force: force);
+        return _rebuildBlurred(run, scoped(plan.pending));
+    }
+    return const IndexerResult(success: false);
+  }
+
+  // ---------------------------------------------------------------- plans --
+  // Each plan is the single definition of "done" for its cache, shared by the
+  // idle count and the run so the two can never disagree.
+
+  Future<_Plan<Song>> _coverPlan(List<Song> songs,
+      {required bool force}) async {
+    if (force) return _Plan(songs, songs);
+    // A recorded miss means the file was checked and has no art; counting it
+    // as pending would keep the cache from ever reading as complete.
+    final misses = await DatabaseService.instance.getCoverMisses();
+    final pending = await _whereAsync(songs, (s) async {
+      if (misses.containsKey(s.filename)) return false;
+      return !await _nonEmptyFile(s.coverUrl);
+    });
+    return _Plan(songs, pending);
+  }
+
+  Future<_Plan<Song>> _lyricsPlan(List<Song> songs,
+      {required bool force}) async {
+    if (force) return _Plan(songs, songs);
+    final repo = SongRepository();
+    return _Plan(
+      songs,
+      await _whereAsync(songs, (s) async => !await repo.hasLyricsCacheEntry(s)),
+    );
+  }
+
+  Future<_Plan<Song>> _waveformPlan(List<Song> songs,
+      {required bool force}) async {
+    if (force) return _Plan(songs, songs);
+    final cache = CacheService.instance;
+    return _Plan(
+      songs,
+      await _whereAsync(songs, (s) async {
+        final f = await cache.getWaveformCacheFile(s.filename);
+        return !await f.exists();
+      }),
+    );
+  }
+
+  /// Palettes are keyed by image path, and many songs share one cover, so the
+  /// unit here is a distinct cover file, not a song.
+  Future<_Plan<String>> _colorPlan(List<Song> songs,
+      {required bool force}) async {
+    final paths = await _whereAsync(
+      {for (final s in songs) s.coverUrl ?? ''}.where((p) => p.isNotEmpty),
+      _nonEmptyFile,
+    );
+    if (force) return _Plan(paths, paths);
+    await ColorExtractionService.init();
+    return _Plan(
+      paths,
+      await _whereAsync(paths,
+          (p) async => !await ColorExtractionService.hasCachedPalette(p)),
+    );
+  }
+
+  /// Only songs with a cover on disk can have a blurred background at all.
+  Future<_Plan<Song>> _blurredPlan(List<Song> songs,
+      {required bool force}) async {
+    final withCover =
+        await _whereAsync(songs, (s) => _nonEmptyFile(s.coverUrl));
+    if (force) return _Plan(withCover, withCover);
+    final cache = CacheService.instance;
+    return _Plan(
+      withCover,
+      await _whereAsync(withCover, (s) async {
+        final f = await cache.getBlurredCacheFile(s.filename);
+        return !await f.exists();
+      }),
+    );
+  }
+
+  Future<Set<String>> _identityFilenames() async {
+    final db = await DatabaseService.instance.userDataDb;
+    return {
+      for (final r in await SongIdentityRepository.loadAll(db)) r.filename
+    };
+  }
+
+  Future<
+      ({
+        int artistTotal,
+        int artistPending,
+        int albumTotal,
+        int albumPending
+      })> _artCoverage() async {
+    final songs = await ref.read(songsProvider.future);
+    return PassiveArtFetcherService.instance
+        .artCoverage(songs, ref.read(artistAlbumArtProvider));
+  }
+
+  // ----------------------------------------------------------- operations --
+
+  Future<IndexerResult> _optimizeDatabases(_Run run) async {
+    final result = await DatabaseOptimizerService().optimizeDatabases(
       options: const OptimizationOptions(
         automaticMode: false,
         selectedTypes: {
@@ -782,733 +585,248 @@ class IndexerNotifier extends Notifier<IndexerState> {
         },
       ),
     );
+    final r = run.result(error: result.success ? null : result.message);
     return IndexerResult(
-      success: result.success,
-      message: result.message,
-      warnings: result.issuesFound,
+      success: r.success,
+      error: r.error,
+      requiresRestart: result.success,
     );
   }
 
-  Future<IndexerResult> _rebuildCoverCaches(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    final failedItems = <String>[];
-    Future<bool> hasValidCache(File file) async {
-      try {
-        if (!await file.exists()) return false;
-        return await file.length() > 0;
-      } catch (_) {
-        return false;
-      }
-    }
-
-    // Pre-calculate target count by checking which songs don't have cached covers
-    int targetCount = songs.length;
-    if (!force) {
-      final coversDir = await ScannerService.coversDirectory();
-      int missingCount = 0;
-      for (final song in songs) {
-        final file = File(song.url);
-        if (await file.exists()) {
-          bool hasCover = false;
-          if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
-            if (await hasValidCache(File(song.coverUrl!))) {
-              hasCover = true;
-            }
-          }
-          if (!hasCover) {
-            for (final cachedPath in ScannerService.coverCandidatePaths(
-                coversDir.path, song.filename)) {
-              if (await hasValidCache(File(cachedPath))) {
-                hasCover = true;
-                break;
-              }
-            }
-          }
-          if (!hasCover) {
-            missingCount++;
-          }
-        }
-      }
-      targetCount = missingCount;
-    }
-
-    // Update the operation with the correct target count
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations['rebuild_cover_caches'];
-    if (op != null) {
-      operations['rebuild_cover_caches'] =
-          op.copyWith(targetCount: targetCount);
-      state = state.copyWith(operations: operations);
-    }
-
-    final scanner = ScannerService();
-    final coverMap = await scanner.rebuildCoverCache(
-      songs,
-      force: force,
-      onProgress: (progress) {
-        processed = (progress * targetCount).round();
-        _updateProgress('rebuild_cover_caches', processed, targetCount);
-      },
+  Future<IndexerResult> _repairLibraryLinks(_Run run) async {
+    await LibraryRepairService.instance.repairLibrary(
+      onProgress: (progress, _) =>
+          _patch(run.id, (op) => op.copyWith(runFraction: progress)),
     );
-
-    // Update database with new cover URLs
-    final updatedSongs = <Song>[];
-    for (final song in songs) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      try {
-        // Absent means the rebuild couldn't resolve one, which is not the same
-        // as there being none — leave the row's existing cover alone.
-        final newCoverUrl = coverMap[song.url];
-        if (newCoverUrl != null && newCoverUrl != song.coverUrl) {
-          updatedSongs.add(Song(
-            title: song.title,
-            artist: song.artist,
-            album: song.album,
-            filename: song.filename,
-            url: song.url,
-            coverUrl: newCoverUrl,
-            hasLyrics: song.hasLyrics,
-            playCount: song.playCount,
-            duration: song.duration,
-            mtime: song.mtime,
-            createdEpochSec: song.createdEpochSec,
-            songDateEpochSec: song.songDateEpochSec,
-          ));
-        }
-      } catch (e) {
-        failedItems.add(song.filename);
-      }
-    }
-
-    if (updatedSongs.isNotEmpty) {
-      await DatabaseService.instance.insertSongsBatch(updatedSongs);
-    }
-
-    // A forced rebuild is the user saying "try everything again", so the
-    // record of past failures has to go with it — otherwise the lazy
-    // extraction path stays suppressed for exactly the songs the isolate
-    // couldn't handle (videos, and anything only FFmpeg can read).
-    final touched = force
-        ? songs.map((s) => s.filename).toList()
-        : updatedSongs.map((s) => s.filename).toList();
-    if (touched.isNotEmpty) {
-      await DatabaseService.instance.clearCoverMisses(touched);
-      CoverRefreshService.instance.forgetMisses(touched);
-    }
-
     _invalidateLibrary();
-
-    _updateFailedItems('rebuild_cover_caches', failedItems);
-
-    return IndexerResult(
-      success: coverMap.isNotEmpty,
-      message:
-          'Rebuilt covers for ${coverMap.length} songs${failedItems.isNotEmpty ? ' (${failedItems.length} failed)' : ''}',
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
+    return run.result();
   }
 
-  Future<IndexerResult> _rebuildSearchIndexes(List<Song> songs,
-      {bool force = false}) async {
-    final searchService = ref.read(searchServiceProvider);
-    await searchService.init();
+  Future<IndexerResult> _rebuildRecommendations(_Run run) async {
+    await ref
+        .read(userDataProvider.notifier)
+        .updateRecommendationPlaylists(force: true);
+    return run.result();
+  }
 
-    try {
-      if (force) {
-        await searchService.clearIndex();
+  Future<IndexerResult> _matchSongIdentity(_Run run, List<Song> songs,
+      {required bool force}) async {
+    final service = SongIdentityService.instance;
+    if (service.isRunning) {
+      return run.result(error: 'busy');
+    }
+    final report = await service.reconcile(
+      songs,
+      options: IdentityRunOptions(
+        force: force,
+        isCancelled: () => run.cancelled,
+        onProgress: run.report,
+      ),
+    );
+    if (report.changedUserData) {
+      _invalidateLibrary();
+      ref.read(userDataProvider.notifier).refresh();
+    }
+    return run.result();
+  }
+
+  Future<IndexerResult> _rebuildSearchIndex(_Run run, List<Song> songs,
+      {required bool force}) async {
+    final search = ref.read(searchServiceProvider);
+    await search.init();
+    if (force) await search.clearIndex();
+    run.start(songs.length);
+    await search.rebuildIndex(
+      songs,
+      isCancelled: () => run.cancelled,
+      onProgress: run.report,
+    );
+    if (!run.cancelled) {
+      final indexed = await search.indexedFilenames();
+      for (final s in songs) {
+        if (!indexed.contains(s.filename)) run.failed.add(s.filename);
       }
-      await searchService.rebuildIndex(songs);
-      final stats = await searchService.getIndexStats();
-      final failedCount =
-          (songs.length - stats.totalEntries).clamp(0, songs.length).toInt();
-      final failedItems = failedCount > 0
-          ? List<String>.generate(
-              failedCount,
-              (index) => 'Search index entry ${index + 1} could not be created',
-            )
-          : <String>[];
-      _updateFailedItems('rebuild_search_indexes', failedItems);
+    }
+    return run.result();
+  }
 
-      return IndexerResult(
-        success: true,
-        message:
-            'Search index rebuilt with ${stats.totalEntries}/${songs.length} entries${failedCount > 0 ? ' ($failedCount failed)' : ''}',
-        warnings: failedItems.isNotEmpty ? failedItems : null,
+  Future<IndexerResult> _rebuildCovers(_Run run, List<Song> targets,
+      {required bool force}) async {
+    run.start(targets.length);
+    if (force) {
+      await DatabaseService.instance.clearAllCoverMisses();
+    }
+    final scanner = ScannerService();
+    var touched = false;
+    // Small chunks so stop takes effect quickly and progress is real; the
+    // scanner's own callback only reports one pass over everything.
+    const chunkSize = 24;
+    for (var i = 0; i < targets.length; i += chunkSize) {
+      if (run.cancelled) break;
+      final chunk = targets.sublist(i, math.min(i + chunkSize, targets.length));
+      // force wipes the covers directory, which must only happen once.
+      final coverMap = await scanner.rebuildCoverCache(
+        chunk,
+        force: force && i == 0,
       );
-    } catch (e) {
-      _updateFailedItems('rebuild_search_indexes', []);
-      return IndexerResult(
-          success: false, message: 'Error rebuilding search index: $e');
-    }
-  }
-
-  Future<IndexerResult> _rebuildLyricsCache(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int cached = 0;
-    int skipped = 0;
-    final failedItems = <String>[];
-
-    final repository = SongRepository();
-
-    if (force) {
-      await repository.clearLyricsCache();
-    }
-
-    // Pre-calculate target count by checking which songs don't have a cache entry
-    int targetCount = songs.length;
-    if (!force) {
-      // Count songs without cache entries
-      int missingCount = 0;
-      for (final song in songs) {
-        if (!await repository.hasLyricsCacheEntry(song)) {
-          missingCount++;
-        }
-      }
-      targetCount = missingCount;
-    }
-
-    // Update the operation with the correct target count
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations['rebuild_lyrics_cache'];
-    if (op != null) {
-      operations['rebuild_lyrics_cache'] =
-          op.copyWith(targetCount: targetCount);
-      state = state.copyWith(operations: operations);
-    }
-
-    for (int i = 0; i < songs.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      final song = songs[i];
-
-      try {
-        // Check if already cached unless force is true
-        // Use hasLyricsCacheEntry to skip songs that have been checked (even if they have no lyrics)
-        if (!force) {
-          final hasCacheEntry = await repository.hasLyricsCacheEntry(song);
-          if (hasCacheEntry) {
-            skipped++;
-            continue;
+      final updated = <Song>[];
+      final resolved = <String>[];
+      for (final song in chunk) {
+        final cover = coverMap[song.url];
+        if (cover != null) {
+          if (cover != song.coverUrl) {
+            updated.add(song.copyWith(coverUrl: cover));
           }
-        }
-
-        // Extract lyrics
-        final lyrics = await repository.getLyrics(song);
-        final hasEntry = await repository.hasLyricsCacheEntry(song);
-        if (!hasEntry) {
-          failedItems.add(song.filename);
-        } else if (lyrics != null && lyrics.isNotEmpty) {
-          cached++;
-        }
-        processed++;
-        _updateProgress('rebuild_lyrics_cache', processed, targetCount);
-      } catch (e) {
-        failedItems.add(song.filename);
-        processed++;
-        _updateProgress('rebuild_lyrics_cache', processed, targetCount);
-      }
-    }
-
-    _updateFailedItems('rebuild_lyrics_cache', failedItems);
-
-    final message =
-        'Cached $cached new lyrics${skipped > 0 ? ', skipped $skipped already cached' : ''}${failedItems.isNotEmpty ? ', ${failedItems.length} failed' : ''}';
-
-    return IndexerResult(
-      success: failedItems.length < songs.length / 2,
-      message: message,
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
-  }
-
-  Future<IndexerResult> _rebuildWaveformCache(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int cached = 0;
-    int skipped = 0;
-    final failedItems = <String>[];
-
-    final cacheService = CacheService.instance;
-    final waveformService = WaveformService(cacheService);
-
-    // Pre-calculate target count by checking file existence
-    int targetCount = songs.length;
-    if (!force) {
-      int missingCount = 0;
-      for (final song in songs) {
-        final cacheFile =
-            await cacheService.getWaveformCacheFile(song.filename);
-        if (!await cacheFile.exists()) {
-          missingCount++;
-        }
-      }
-      targetCount = missingCount;
-    }
-
-    // Update the operation with the correct target count
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations['rebuild_waveform_cache'];
-    if (op != null) {
-      operations['rebuild_waveform_cache'] =
-          op.copyWith(targetCount: targetCount);
-      state = state.copyWith(operations: operations);
-    }
-
-    for (int i = 0; i < songs.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      final song = songs[i];
-
-      try {
-        // Check if already cached unless force is true
-        final cacheFile =
-            await cacheService.getWaveformCacheFile(song.filename);
-        if (!force) {
-          if (await cacheFile.exists()) {
-            skipped++;
-            continue;
-          }
+          resolved.add(song.filename);
+          run.tick();
+        } else if (await File(song.url).exists()) {
+          // Readable file, nothing embedded: record it so it stops counting
+          // as missing.
+          await DatabaseService.instance
+              .markCoverMiss(song.filename, song.mtime ?? 0);
+          run.tick();
         } else {
-          if (await cacheFile.exists()) {
-            await cacheFile.delete();
-          }
+          run.tick(failedItem: song.filename);
         }
-
-        // Extract waveform
-        final waveform =
-            await waveformService.getWaveform(song.filename, song.url);
-        if (waveform.isNotEmpty) {
-          cached++;
-        }
-        processed++;
-        _updateProgress('rebuild_waveform_cache', processed, targetCount);
-      } catch (e) {
-        failedItems.add(song.filename);
-        processed++;
-        _updateProgress('rebuild_waveform_cache', processed, targetCount);
+      }
+      if (resolved.isNotEmpty) {
+        await DatabaseService.instance.clearCoverMisses(resolved);
+      }
+      if (updated.isNotEmpty) {
+        await DatabaseService.instance.insertSongsBatch(updated);
+        touched = true;
       }
     }
-
-    waveformService.dispose();
-
-    _updateFailedItems('rebuild_waveform_cache', failedItems);
-
-    final message =
-        'Cached $cached new waveforms${skipped > 0 ? ', skipped $skipped already cached' : ''}${failedItems.isNotEmpty ? ', ${failedItems.length} failed' : ''}';
-
-    return IndexerResult(
-      success: failedItems.length < songs.length / 2,
-      message: message,
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
+    CoverRefreshService.instance.invalidateMisses();
+    if (touched || force) _invalidateLibrary();
+    return run.result();
   }
 
-  Future<IndexerResult> _rebuildColorCache(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int cached = 0;
-    int skipped = 0;
-    final failedItems = <String>[];
-
-    final imagePaths = songs
-        .where((s) => s.coverUrl != null && s.coverUrl!.isNotEmpty)
-        .map((s) => s.coverUrl!)
-        .toList();
-
-    if (force) {
-      await ColorExtractionService.clearCache();
+  Future<IndexerResult> _rebuildLyrics(_Run run, List<Song> targets,
+      {required bool force}) async {
+    final repo = SongRepository();
+    if (force) await repo.clearLyricsCache();
+    run.start(targets.length);
+    for (final song in targets) {
+      if (run.cancelled) break;
+      try {
+        await repo.getLyrics(song);
+        final ok = await repo.hasLyricsCacheEntry(song);
+        run.tick(failedItem: ok ? null : song.filename);
+      } catch (_) {
+        run.tick(failedItem: song.filename);
+      }
     }
+    return run.result();
+  }
 
-    // Pre-calculate target count by checking which covers don't have cached palettes
-    int targetCount = imagePaths.length;
-    if (!force) {
-      await ColorExtractionService.init();
-      int missingCount = 0;
-      for (final path in imagePaths) {
-        if (!await ColorExtractionService.hasCachedPalette(path)) {
-          missingCount++;
+  Future<IndexerResult> _rebuildWaveforms(_Run run, List<Song> targets,
+      {required bool force}) async {
+    final cache = CacheService.instance;
+    final waveforms = WaveformService(cache);
+    run.start(targets.length);
+    try {
+      for (final song in targets) {
+        if (run.cancelled) break;
+        try {
+          final file = await cache.getWaveformCacheFile(song.filename);
+          if (force && await file.exists()) await file.delete();
+          final data = await waveforms.getWaveform(song.filename, song.url);
+          run.tick(failedItem: data.isEmpty ? song.filename : null);
+        } catch (_) {
+          run.tick(failedItem: song.filename);
         }
       }
-      targetCount = missingCount;
+    } finally {
+      waveforms.dispose();
     }
+    return run.result();
+  }
 
-    // Update the operation with the correct target count
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations['rebuild_color_cache'];
-    if (op != null) {
-      operations['rebuild_color_cache'] = op.copyWith(targetCount: targetCount);
-      state = state.copyWith(operations: operations);
-    }
-
-    for (int i = 0; i < imagePaths.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      final path = imagePaths[i];
-
+  Future<IndexerResult> _rebuildColors(_Run run, List<String> paths,
+      {required bool force}) async {
+    if (force) await ColorExtractionService.clearCache();
+    run.start(paths.length);
+    for (final path in paths) {
+      if (run.cancelled) break;
       try {
-        // Check if already cached unless force is true
-        if (!force) {
-          if (await ColorExtractionService.hasCachedPalette(path)) {
-            skipped++;
-            continue;
-          }
-        }
-
-        // Extract color palette
         final palette = await ColorExtractionService.extractPalette(path);
-        if (palette != null) {
-          cached++;
-        }
-        processed++;
-        _updateProgress('rebuild_color_cache', processed, targetCount);
-      } catch (e) {
-        failedItems.add(path);
-        processed++;
-        _updateProgress('rebuild_color_cache', processed, targetCount);
+        run.tick(failedItem: palette == null ? path : null);
+      } catch (_) {
+        run.tick(failedItem: path);
       }
     }
-
-    _updateFailedItems('rebuild_color_cache', failedItems);
-
-    final message =
-        'Extracted $cached color palettes${skipped > 0 ? ', skipped $skipped already cached' : ''}${failedItems.isNotEmpty ? ', ${failedItems.length} failed' : ''}';
-
-    return IndexerResult(
-      success: failedItems.length < imagePaths.length / 2,
-      message: message,
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
+    return run.result();
   }
 
-  Future<IndexerResult> _rebuildBlurredCache(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int cached = 0;
-    int skipped = 0;
-    final failedItems = <String>[];
-
-    final cacheService = CacheService.instance;
-
-    // Pre-calculate target count
-    int targetCount = songs.length;
-    if (!force) {
-      int missingCount = 0;
-      for (final song in songs) {
-        final cacheFile = await cacheService.getBlurredCacheFile(song.filename);
-        if (!await cacheFile.exists()) {
-          missingCount++;
-        }
-      }
-      targetCount = missingCount;
-    }
-
-    final operations = Map<String, IndexerOperation>.from(state.operations);
-    final op = operations['rebuild_blurred_cache'];
-    if (op != null) {
-      operations['rebuild_blurred_cache'] =
-          op.copyWith(targetCount: targetCount);
-      state = state.copyWith(operations: operations);
-    }
-
-    // We use FFmpeg to generate the blurred image efficiently
+  Future<IndexerResult> _rebuildBlurred(_Run run, List<Song> targets) async {
+    final cache = CacheService.instance;
     final ffmpeg = FFmpegService();
-
-    for (int i = 0; i < songs.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-      final song = songs[i];
-
+    run.start(targets.length);
+    for (final song in targets) {
+      if (run.cancelled) break;
       try {
-        final cacheFile = await cacheService.getBlurredCacheFile(song.filename);
-        if (!force && await cacheFile.exists()) {
-          skipped++;
-          continue;
-        }
-
-        // We need a source image to blur. If no cover, skip.
-        if (song.coverUrl == null || song.coverUrl!.isEmpty) {
-          skipped++;
-          continue;
-        }
-
-        final sourceFile = File(song.coverUrl!);
-        if (!await sourceFile.exists()) {
-          skipped++;
-          continue;
-        }
-
-        // Generate blurred version using Dart image package:
-        // 1. Scale down to 300x300 square (covers any screen size)
-        // 2. Apply Gaussian blur
-        final success = await ffmpeg.generateBlurredImage(
+        final out = await cache.getBlurredCacheFile(song.filename);
+        final ok = await ffmpeg.generateBlurredImage(
           inputPath: song.coverUrl!,
-          outputPath: cacheFile.path,
+          outputPath: out.path,
           width: 300,
           height: 300,
           blurSigma: 15,
         );
-
-        if (success) {
-          cached++;
-        } else {
-          failedItems.add(song.filename);
-        }
-
-        processed++;
-        _updateProgress('rebuild_blurred_cache', processed, targetCount);
-      } catch (e) {
-        failedItems.add(song.filename);
-        processed++;
-        _updateProgress('rebuild_blurred_cache', processed, targetCount);
+        run.tick(failedItem: ok ? null : song.filename);
+      } catch (_) {
+        run.tick(failedItem: song.filename);
       }
     }
-
-    _updateFailedItems('rebuild_blurred_cache', failedItems);
-
-    return IndexerResult(
-      success: true,
-      message:
-          'Generated $cached blurred backgrounds${skipped > 0 ? ', skipped $skipped' : ''}${failedItems.isNotEmpty ? ', ${failedItems.length} failed' : ''}',
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
+    return run.result();
   }
 
-  Future<Map<String, int>> _getArtistAlbumArtCount(List<Song> songs) async {
-    try {
-      final artState = ref.read(artistAlbumArtProvider);
-
-      // Split multi-artist tags, mirroring the fetcher, so idle counts match
-      // the keys a run actually resolves.
-      final artists = <String>{};
-      for (final song in songs) {
-        final split = LibraryLogic.splitArtistNames(song.artist);
-        final names = split.isEmpty ? [song.artist] : split;
-        for (final name in names) {
-          final clean = OnlineMetadataService.cleanTag(name);
-          if (clean != null) artists.add(clean);
-        }
-      }
-
-      final albumDisplay = <String, (String, String?)>{};
-      for (final song in songs) {
-        final album = OnlineMetadataService.cleanTag(song.album);
-        if (album == null) continue;
-        final artist = OnlineMetadataService.cleanTag(song.artist);
-        final key = artist != null
-            ? '${artist.toLowerCase()}|${album.toLowerCase()}'
-            : album.toLowerCase();
-        albumDisplay.putIfAbsent(key, () => (album, artist));
-      }
-
-      int artistCached = 0;
-      for (final artist in artists) {
-        final p = artState.getArtistArt(artist);
-        if (p != null && await File(p).exists()) artistCached++;
-      }
-
-      int albumCached = 0;
-      for (final entry in albumDisplay.values) {
-        final p = artState.getAlbumArt(entry.$1, artistName: entry.$2);
-        if (p != null && await File(p).exists()) albumCached++;
-      }
-
-      return {
-        'artistCached': artistCached,
-        'artistTotal': artists.length,
-        'albumCached': albumCached,
-        'albumTotal': albumDisplay.length,
-      };
-    } catch (_) {
-      return {
-        'artistCached': 0,
-        'artistTotal': 0,
-        'albumCached': 0,
-        'albumTotal': 0,
-      };
-    }
-  }
-
-  Future<IndexerResult> _fetchMissingCovers(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int updatedCount = 0;
-    final failedItems = <String>[];
-    final onlineService = OnlineMetadataService.instance;
-
-    final targetSongs = force
-        ? songs
-        : songs
-            .where((s) => s.coverUrl == null || s.coverUrl!.isEmpty)
-            .toList();
-
-    for (int i = 0; i < targetSongs.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      final song = targetSongs[i];
-      try {
-        final results = await onlineService.searchParallelForSong(song);
-        final match = results.firstWhere(
-          (r) => r.coverUrl != null && r.coverUrl!.isNotEmpty,
-          orElse: () => results.isNotEmpty
-              ? results.first
-              : OnlineSearchResult(
-                  title: '', artist: '', album: '', source: ''),
-        );
-
-        if (match.coverUrl != null && match.coverUrl!.isNotEmpty) {
-          final coverPath = await onlineService.downloadAndCacheCover(
-            match.coverUrl!,
-            song.filename,
-          );
-          if (coverPath != null && coverPath != song.coverUrl) {
-            await ref
-                .read(songsProvider.notifier)
-                .updateSongCover(song, coverPath);
-            updatedCount++;
-          }
-        }
-      } catch (e) {
-        failedItems.add(song.filename);
-      }
-      processed++;
-      _updateProgress('fetch_missing_covers', processed, targetSongs.length);
-
-      await Future.delayed(const Duration(milliseconds: 500));
+  Future<IndexerResult> _rebuildArtistAlbumArt(_Run run,
+      {required bool force}) async {
+    if (force) await ref.read(artistAlbumArtProvider.notifier).clearAll();
+    var aDone = 0, aTotal = 0, bDone = 0, bTotal = 0;
+    var last = DateTime.fromMillisecondsSinceEpoch(0);
+    void emit() {
+      final now = DateTime.now();
+      final finished = aDone >= aTotal && bDone >= bTotal;
+      if (!finished && now.difference(last).inMilliseconds < 120) return;
+      last = now;
+      run.done = aDone + bDone;
+      run.total = aTotal + bTotal;
+      _patch(
+        run.id,
+        (op) => op.copyWith(
+          runDone: run.done,
+          runTotal: run.total,
+          artistRunDone: aDone,
+          artistRunTotal: aTotal,
+          albumRunDone: bDone,
+          albumRunTotal: bTotal,
+        ),
+      );
     }
 
-    _updateFailedItems('fetch_missing_covers', failedItems);
-
-    return IndexerResult(
-      success: true,
-      message: 'Fetched missing covers for $updatedCount items',
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
-  }
-
-  Future<IndexerResult> _fetchMissingMetadata(List<Song> songs,
-      {bool force = false}) async {
-    int processed = 0;
-    int updatedCount = 0;
-    final failedItems = <String>[];
-    final onlineService = OnlineMetadataService.instance;
-
-    final targetSongs = force
-        ? songs
-        : songs
-            .where((s) =>
-                OnlineMetadataService.cleanTag(s.artist) == null ||
-                OnlineMetadataService.cleanTag(s.album) == null)
-            .toList();
-
-    for (int i = 0; i < targetSongs.length; i++) {
-      if (_currentCancelToken?.isCancelled ?? false) break;
-
-      final song = targetSongs[i];
-      try {
-        final results = await onlineService.searchParallelForSong(song);
-        if (results.isNotEmpty) {
-          final match = results.first;
-
-          String title = song.title;
-          String artist = song.artist;
-          String album = song.album;
-
-          if (OnlineMetadataService.cleanTag(artist) == null) {
-            artist = match.artist;
-          }
-          if (OnlineMetadataService.cleanTag(album) == null) {
-            album = match.album;
-          }
-          if (OnlineMetadataService.cleanTag(title) == null) {
-            title = match.title;
-          }
-
-          String? coverPath = song.coverUrl;
-          if ((coverPath == null || coverPath.isEmpty) &&
-              match.coverUrl != null &&
-              match.coverUrl!.isNotEmpty) {
-            coverPath = await onlineService.downloadAndCacheCover(
-              match.coverUrl!,
-              song.filename,
-            );
-          }
-
-          if (title != song.title ||
-              artist != song.artist ||
-              album != song.album) {
-            await ref
-                .read(songsProvider.notifier)
-                .updateSongMetadata(song, title, artist, album);
-            updatedCount++;
-          }
-
-          if (coverPath != null && coverPath != song.coverUrl) {
-            await ref
-                .read(songsProvider.notifier)
-                .updateSongCover(song, coverPath);
-            updatedCount++;
-          }
-        }
-      } catch (e) {
-        failedItems.add(song.filename);
-      }
-      processed++;
-      _updateProgress('fetch_missing_metadata', processed, targetSongs.length);
-
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    _updateFailedItems('fetch_missing_metadata', failedItems);
-
-    return IndexerResult(
-      success: true,
-      message: 'Fetched missing metadata for $updatedCount items',
-      warnings: failedItems.isNotEmpty ? failedItems : null,
-    );
-  }
-
-  Future<IndexerResult> _rebuildArtistAlbumArt(List<Song> songs,
-      {bool force = false}) async {
-    final notifier = ref.read(artistAlbumArtProvider.notifier);
-    if (force) {
-      await notifier.clearAll();
-    }
-
-    bool isCancelled() => _currentCancelToken?.isCancelled ?? false;
     final result = await PassiveArtFetcherService.instance.runArtBurst(
       driven: true,
-      onArtistProgress: (done, total) => _updateArtProgress(
-        'rebuild_artist_album_art',
-        artistDone: done,
-        artistTotal: total,
-      ),
-      onAlbumProgress: (done, total) => _updateArtProgress(
-        'rebuild_artist_album_art',
-        albumDone: done,
-        albumTotal: total,
-      ),
-      isCancelled: isCancelled,
+      onArtistProgress: (done, total) {
+        aDone = done;
+        aTotal = total;
+        emit();
+      },
+      onAlbumProgress: (done, total) {
+        bDone = done;
+        bTotal = total;
+        emit();
+      },
+      isCancelled: () => run.cancelled,
     );
-
-    _updateFailedItems('rebuild_artist_album_art', result.failedItems);
-
-    final fetched = result.fetchedArtists + result.fetchedAlbums;
-    final message = result.offline
-        ? 'Went offline — fetched $fetched covers, the rest resume automatically'
-        : 'Fetched $fetched artist & album covers'
-            ' (${result.fetchedArtists} artists, ${result.fetchedAlbums} albums)';
-
-    return IndexerResult(
-      success: true,
-      message: message,
-      warnings: result.failedItems.isNotEmpty ? result.failedItems : null,
-    );
+    last = DateTime.fromMillisecondsSinceEpoch(0);
+    emit();
+    run.failed.addAll(result.failedItems);
+    return run.result(error: result.offline ? 'offline' : null);
   }
 }
 
-/// Provider for indexer state
-final indexerProvider = NotifierProvider<IndexerNotifier, IndexerState>(() {
-  return IndexerNotifier();
-});
+final indexerProvider =
+    NotifierProvider<IndexerNotifier, IndexerState>(IndexerNotifier.new);
