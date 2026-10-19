@@ -783,6 +783,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncAlbumArtHint => 'Online album cover choices';
 
   @override
+  String get syncQueueHistory => 'Queue history';
+
+  @override
+  String get syncQueueHistoryHint => 'Recently played queues';
+
+  @override
+  String get syncCurrentQueue => 'Current queue';
+
+  @override
+  String get syncCurrentQueueHint =>
+      'Uploaded automatically; downloaded only when you sync manually';
+
+  @override
+  String get syncPreferCloudQueue => 'Prefer cloud queue';
+
+  @override
+  String get syncPreferCloudQueueHint =>
+      'On: Sync now replaces this device\'s queue with the cloud queue. Off: this device\'s queue is kept and uploaded.';
+
+  @override
   String get syncPrivacy => 'Privacy';
 
   @override

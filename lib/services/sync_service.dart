@@ -42,6 +42,7 @@ class SyncService extends ChangeNotifier {
 
   static const _kCategories = 'sync_categories';
   static const _kAutoEnabled = 'auto_sync_enabled';
+  static const _kQueuePriority = 'sync_queue_priority';
   static const Duration _startDelay = Duration(seconds: 5);
   static const Duration _foregroundGap = Duration(hours: 1);
   static const Duration _dirtyDebounce = Duration(minutes: 5);
@@ -114,6 +115,20 @@ class SyncService extends ChangeNotifier {
         .toSet();
   }
 
+  /// Whether a manual sync lets the cloud's current queue replace the local one.
+  bool get preferCloudQueue => _kv?.get(_kQueuePriority) == 'cloud';
+
+  Future<void> setPreferCloudQueue(bool cloud) async {
+    await _kv?.set(_kQueuePriority, cloud ? 'cloud' : 'local');
+    notifyListeners();
+  }
+
+  final StreamController<void> _queueAppliedCtl =
+      StreamController<void>.broadcast();
+
+  /// Fires after a manual sync replaced the local current queue.
+  Stream<void> get queueApplied => _queueAppliedCtl.stream;
+
   bool get autoSyncEnabled => _kv?.get(_kAutoEnabled) != false;
 
   Future<void> init() async {
@@ -160,6 +175,8 @@ class SyncService extends ChangeNotifier {
       tmpDir: Directory('${tmp.path}/wispie_sync'),
       stampSetting: DatabaseService.instance.stampSettingDirty,
       categories: () => categories,
+      preferCloudQueue: () => preferCloudQueue,
+      onQueueApplied: () => _queueAppliedCtl.add(null),
       onProgress: _emit,
     );
   }
@@ -338,7 +355,8 @@ class SyncService extends ChangeNotifier {
     return e.toString();
   }
 
-  Future<bool> syncNow() => _run((e) => e.sync(), queueIfBusy: true);
+  Future<bool> syncNow({bool manual = false}) =>
+      _run((e) => e.sync(manual: manual), queueIfBusy: true);
 
   /// First upload after registering, also "overwrite cloud with this device".
   Future<bool> overwriteCloud() => _run((e) => e.overwriteCloud());

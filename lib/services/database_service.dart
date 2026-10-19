@@ -69,6 +69,7 @@ class DatabaseService {
           if (oldV < 3) await upgradeUserDataFrom2To3(db);
           if (oldV < 4) await upgradeUserDataFrom3To4(db);
           if (oldV < 5) await upgradeUserDataFrom4To5(db);
+          if (oldV < 6) await upgradeUserDataFrom5To6(db);
         },
       );
     } catch (e) {
@@ -95,6 +96,7 @@ class DatabaseService {
   static const String tombMergedSongs = 'merged_songs';
   static const String tombArtistArt = 'artist_art';
   static const String tombAlbumArt = 'album_art';
+  static const String tombQueueSnapshots = 'queue_snapshots';
   static const String tombPlayEvents = 'play_events';
   static const String tombPlaySessions = 'play_sessions';
 
@@ -321,15 +323,17 @@ class DatabaseService {
     await _userDataDatabase!.transaction((txn) async {
       await txn.insert(
         'queue_snapshot',
-        {
+        _stamp({
           'id': id,
           'name': name,
           'created_at': createdAt,
           'source': source,
           'song_count': songFilenames.length,
-        },
+          'songs_json': jsonEncode(songFilenames),
+        }),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      await _clearTombstone(txn, tombQueueSnapshots, id);
 
       await txn.delete('queue_snapshot_song',
           where: 'snapshot_id = ?', whereArgs: [id]);
@@ -367,7 +371,10 @@ class DatabaseService {
 
       await txn.update(
         'queue_snapshot',
-        {'song_count': songFilenames.length},
+        _stamp({
+          'song_count': songFilenames.length,
+          'songs_json': jsonEncode(songFilenames),
+        }),
         where: 'id = ?',
         whereArgs: [id],
       );
@@ -491,6 +498,7 @@ class DatabaseService {
       await txn.delete('queue_snapshot_song',
           where: 'snapshot_id = ?', whereArgs: [id]);
       await txn.delete('queue_snapshot', where: 'id = ?', whereArgs: [id]);
+      await _tombstone(txn, tombQueueSnapshots, id);
     });
   }
 
@@ -499,8 +507,12 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
 
     await _userDataDatabase!.transaction((txn) async {
+      final ids = await txn.query('queue_snapshot', columns: ['id']);
       await txn.delete('queue_snapshot_song');
       await txn.delete('queue_snapshot');
+      for (final r in ids) {
+        await _tombstone(txn, tombQueueSnapshots, r['id'] as String);
+      }
     });
   }
 
@@ -526,6 +538,9 @@ class DatabaseService {
           where: 'snapshot_id IN ($placeholders)', whereArgs: ids);
       await txn.delete('queue_snapshot',
           where: 'id IN ($placeholders)', whereArgs: ids);
+      for (final id in ids) {
+        await _tombstone(txn, tombQueueSnapshots, id);
+      }
     });
   }
 
@@ -549,6 +564,66 @@ class DatabaseService {
     }
 
     return result;
+  }
+
+  /// Rebuilds the synced `songs_json` mirror from `queue_snapshot_song` and
+  /// marks the snapshot dirty.
+  Future<void> _refreshSnapshotJson(
+      DatabaseExecutor txn, List<String> ids) async {
+    for (final id in ids) {
+      final rows = await txn.query('queue_snapshot_song',
+          columns: ['song_filename'],
+          where: 'snapshot_id = ?',
+          whereArgs: [id],
+          orderBy: 'position ASC');
+      await txn.update(
+          'queue_snapshot',
+          _stamp({
+            'songs_json':
+                jsonEncode([for (final r in rows) r['song_filename']]),
+          }),
+          where: 'id = ?',
+          whereArgs: [id]);
+    }
+  }
+
+  // ==========================================================================
+  // CURRENT QUEUE (synced)
+  // ==========================================================================
+
+  static const String _currentQueueId = 'current';
+
+  Future<void> saveCurrentQueue(Map<String, Object?> queue) async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return;
+    await db.insert(
+      'current_queue',
+      _stamp({
+        'id': _currentQueueId,
+        'queue_json': jsonEncode(queue),
+        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      }),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> loadCurrentQueue() async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return null;
+    final rows = await db.query('current_queue',
+        columns: ['queue_json'],
+        where: 'id = ?',
+        whereArgs: [_currentQueueId],
+        limit: 1);
+    final raw = rows.isEmpty ? null : rows.first['queue_json'] as String?;
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> importQueueHistory(List<Map<String, dynamic>> data) async {
@@ -586,6 +661,7 @@ class DatabaseService {
           'created_at': createdAt,
           'source': source,
           'song_count': songs.length,
+          'songs_json': jsonEncode(songs),
         });
 
         for (int i = 0; i < songs.length; i++) {
@@ -1530,8 +1606,15 @@ class DatabaseService {
 
     // Saved queues name the song by filename. The primary key is
     // (snapshot_id, position), so there is nothing to collide with.
+    final touched = await txn.query('queue_snapshot_song',
+        columns: ['snapshot_id'],
+        where: 'song_filename = ?',
+        whereArgs: [oldFilename],
+        distinct: true);
     await txn.update('queue_snapshot_song', {'song_filename': newFilename},
         where: 'song_filename = ?', whereArgs: [oldFilename]);
+    await _refreshSnapshotJson(
+        txn, [for (final r in touched) r['snapshot_id'] as String]);
 
     // Update Playlist Songs
     // Get all playlist entries for old filename
@@ -2798,6 +2881,7 @@ class DatabaseService {
                   },
                   conflictAlgorithm: ConflictAlgorithm.ignore);
             }
+            await _refreshSnapshotJson(txn, [snapshotId]);
           }
         }
       });

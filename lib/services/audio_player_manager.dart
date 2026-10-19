@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 import 'dart:async'; // For Timer
+import 'package:flutter/foundation.dart' show listEquals;
 import '../models/song.dart';
 import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
@@ -23,6 +24,7 @@ import '../domain/services/queue_ops.dart' as queue_ops;
 import 'stats_service.dart';
 import 'storage_service.dart';
 import 'database_service.dart';
+import 'sync_service.dart';
 import 'ffmpeg_service.dart';
 import 'file_manager_service.dart';
 import 'notification_cover_warmer.dart';
@@ -256,6 +258,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _initPersistence();
     _initVolumeMonitoring();
     _restoreGapStateIfNeeded();
+    _track(SyncService.instance.queueApplied
+        .listen((_) => unawaited(_applySyncedQueue())));
   }
 
   AudioPlayer get player => _player;
@@ -1524,7 +1528,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     });
   }
 
-  Future<void> _writePlaybackState() async {
+  Future<void> _writePlaybackState({bool force = false}) async {
     final currentIndex = _player.currentIndex;
     final currentSong =
         (currentIndex != null && currentIndex < _effectiveQueue.length)
@@ -1543,12 +1547,90 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     };
 
     await _storageService.savePlaybackState(state);
+    unawaited(_syncCurrentQueue(currentSong?.filename, force: force));
   }
 
   /// Writes the playback state immediately, cancelling any coalesced write.
   Future<void> savePlaybackState() async {
     _playbackStateSaveTimer?.cancel();
-    await _writePlaybackState();
+    await _writePlaybackState(force: true);
+  }
+
+  // Latched once the user has played something, so a cold-start default queue
+  // never overwrites the cloud copy.
+  bool _queueSyncArmed = false;
+  List<String> _syncedEff = const [];
+  List<String> _syncedOrig = const [];
+  String? _syncedCurrent;
+  int _syncedPositionMs = 0;
+
+  Future<void> _syncCurrentQueue(String? current, {required bool force}) async {
+    if (!_queueSyncArmed) {
+      if (!_player.playing) return;
+      _queueSyncArmed = true;
+    }
+    final eff = [for (final e in _effectiveQueue) e.song.filename];
+    final orig = [for (final e in _originalQueue) e.song.filename];
+    final posMs = _player.position.inMilliseconds;
+    final changed = current != _syncedCurrent ||
+        !listEquals(eff, _syncedEff) ||
+        !listEquals(orig, _syncedOrig);
+    if (!changed && !(force && (posMs - _syncedPositionMs).abs() > 5000)) {
+      return;
+    }
+    _syncedEff = eff;
+    _syncedOrig = orig;
+    _syncedCurrent = current;
+    _syncedPositionMs = posMs;
+    try {
+      await DatabaseService.instance.saveCurrentQueue({
+        'current': current,
+        'position_ms': posMs,
+        'effective': eff,
+        'original': listEquals(eff.toSet().toList()..sort(),
+                    orig.toSet().toList()..sort()) &&
+                eff.length == orig.length
+            ? null
+            : orig,
+        'restricted': _isRestrictedToOriginal,
+        'playlist_id': _currentPlaylistId,
+      });
+    } catch (e) {
+      debugPrint('AudioPlayerManager: current queue sync write failed: $e');
+    }
+  }
+
+  Future<void> _applySyncedQueue() async {
+    if (_player.playing) return;
+    final q = await DatabaseService.instance.loadCurrentQueue();
+    if (q == null) return;
+    List<QueueItem> items(Object? names) => [
+          for (final n in (names as List? ?? const []))
+            if (_lookupSong('$n') case final song?) QueueItem(song: song),
+        ];
+    final eff = items(q['effective']);
+    if (eff.isEmpty) return;
+    final orig = q['original'] == null ? List.of(eff) : items(q['original']);
+    await _runSerializedQueueMutation(() async {
+      _effectiveQueue = eff;
+      _originalQueue = orig.isEmpty ? List.of(eff) : orig;
+      _isRestrictedToOriginal = q['restricted'] == true;
+      _currentPlaylistId = q['playlist_id'] as String?;
+      final idx = eff.indexWhere((e) => e.song.filename == q['current']);
+      await _rebuildQueue(
+        initialIndex: idx < 0 ? 0 : idx,
+        startPlaying: false,
+        initialPosition: idx < 0
+            ? null
+            : Duration(milliseconds: (q['position_ms'] as num?)?.toInt() ?? 0),
+      );
+    });
+    _syncedEff = [for (final e in _effectiveQueue) e.song.filename];
+    _syncedOrig = [for (final e in _originalQueue) e.song.filename];
+    _syncedCurrent = q['current'] as String?;
+    _syncedPositionMs = (q['position_ms'] as num?)?.toInt() ?? 0;
+    _updateQueueNotifier();
+    await savePlaybackState();
   }
 
   void _updateDurations() {

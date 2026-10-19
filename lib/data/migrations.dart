@@ -3,7 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 
 const int kStatsDbVersion = 3;
-const int kUserDataDbVersion = 5;
+const int kUserDataDbVersion = 6;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -118,7 +118,14 @@ const List<String> _userDataTableStmts = [
       name TEXT NOT NULL,
       created_at REAL NOT NULL,
       source TEXT NOT NULL,
-      song_count INTEGER NOT NULL DEFAULT 0
+      song_count INTEGER NOT NULL DEFAULT 0,
+      songs_json TEXT$_syncCols
+    )''',
+  '''
+    CREATE TABLE IF NOT EXISTS current_queue (
+      id TEXT PRIMARY KEY,
+      queue_json TEXT,
+      updated_at REAL$_syncCols
     )''',
   '''
     CREATE TABLE IF NOT EXISTS queue_snapshot_song (
@@ -258,7 +265,34 @@ Future<void> upgradeUserDataFrom4To5(Database db) async {
   await _createSyncUserDataIndexes(db);
 }
 
+/// User data v5 -> v6: queue history and the current queue join sync. Song
+/// lists are mirrored into `songs_json` so a snapshot is one syncable row.
+Future<void> upgradeUserDataFrom5To6(Database db) async {
+  await _addColumnIfMissing(db, 'queue_snapshot', 'songs_json', 'TEXT');
+  await db.execute(
+      _userDataTableStmts.firstWhere((s) => s.contains('current_queue')));
+  await _createSyncUserDataIndexes(db);
+  final snaps = await db.query('queue_snapshot', columns: ['id']);
+  for (final snap in snaps) {
+    final songs = await db.query('queue_snapshot_song',
+        columns: ['song_filename'],
+        where: 'snapshot_id = ?',
+        whereArgs: [snap['id']],
+        orderBy: 'position ASC');
+    await db.update(
+        'queue_snapshot',
+        {
+          'songs_json':
+              jsonEncode(songs.map((r) => r['song_filename']).toList())
+        },
+        where: 'id = ?',
+        whereArgs: [snap['id']]);
+  }
+}
+
 const List<String> _syncedUserDataTables = [
+  'queue_snapshot',
+  'current_queue',
   'favorite',
   'suggestless',
   'hidden',

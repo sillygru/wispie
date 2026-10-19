@@ -125,9 +125,13 @@ class SyncEngine {
     required this.tmpDir,
     required this.stampSetting,
     Set<String> Function()? categories,
+    bool Function()? preferCloudQueue,
+    void Function()? onQueueApplied,
     ProgressSink? onProgress,
     int Function()? nowMs,
   })  : _categories = categories ?? (() => SyncCategory.all.toSet()),
+        _preferCloudQueue = preferCloudQueue ?? (() => false),
+        _onQueueApplied = onQueueApplied,
         _onProgress = onProgress,
         _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
 
@@ -139,6 +143,8 @@ class SyncEngine {
   final Directory tmpDir;
   final Future<void> Function(String key) stampSetting;
   final Set<String> Function() _categories;
+  final bool Function() _preferCloudQueue;
+  final void Function()? _onQueueApplied;
   final int Function() _nowMs;
   ProgressSink? _onProgress;
 
@@ -194,7 +200,9 @@ class SyncEngine {
 
   // ------------------------------------------------------------ sync cycle
 
-  Future<void> sync() async {
+  /// [manual] is a user-pressed sync; only then may the cloud's current queue
+  /// replace the local one, and only when the user prefers the cloud queue.
+  Future<void> sync({bool manual = false}) async {
     if (!initialDone) throw SyncNotReadyException();
     final paused = pausedForEpoch;
     if (paused != null) throw SyncEpochChangedException(paused);
@@ -210,6 +218,12 @@ class SyncEngine {
     }
 
     await _pull(st);
+    if (manual &&
+        _preferCloudQueue() &&
+        categories.contains(SyncCategory.currentQueue) &&
+        await changeset.applyStashedQueue()) {
+      _onQueueApplied?.call();
+    }
     final pushed = await _push();
     if (pushed) st = await client.state();
     await _compactIfNeeded(st);

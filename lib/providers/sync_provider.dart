@@ -14,6 +14,7 @@ class SyncState {
   final int? lastSyncedAtMs;
   final String? lastError;
   final bool autoSyncEnabled;
+  final bool preferCloudQueue;
   final Set<String> categories;
   final int localPlayCount;
   final int remotePlayCount;
@@ -27,6 +28,7 @@ class SyncState {
     this.lastSyncedAtMs,
     this.lastError,
     this.autoSyncEnabled = true,
+    this.preferCloudQueue = false,
     this.categories = const {},
     this.localPlayCount = 0,
     this.remotePlayCount = 0,
@@ -78,6 +80,7 @@ class SyncNotifier extends Notifier<SyncState> {
       lastSyncedAtMs: _svc.lastSyncMs,
       lastError: _svc.lastError,
       autoSyncEnabled: _svc.autoSyncEnabled,
+      preferCloudQueue: _svc.preferCloudQueue,
       categories: _svc.categories,
       localPlayCount: _localPlayCount,
       remotePlayCount: _remotePlayCount,
@@ -129,12 +132,13 @@ class SyncNotifier extends Notifier<SyncState> {
   Future<void> logout() => _svc.logout();
   Future<void> deleteAccount(String password) => _svc.deleteAccount(password);
 
-  Future<bool> sync() => _svc.syncNow();
+  Future<bool> sync() => _svc.syncNow(manual: true);
   Future<bool> overwriteCloud() => _svc.overwriteCloud();
   Future<bool> mergeWithCloud() => _svc.mergeWithCloud();
   Future<bool> setUpAsNewDevice() => _svc.setUpAsNewDevice();
 
   Future<void> setAutoSyncEnabled(bool v) => _svc.setAutoSyncEnabled(v);
+  Future<void> setPreferCloudQueue(bool v) => _svc.setPreferCloudQueue(v);
   Future<void> setCategories(Set<String> c) => _svc.setCategories(c);
 
   Future<void> setCategory(String id, bool on) {

@@ -1383,6 +1383,42 @@ abstract class AppLocalizations {
   /// **'Online album cover choices'**
   String get syncAlbumArtHint;
 
+  /// Title of sync category toggle for queue history
+  ///
+  /// In en, this message translates to:
+  /// **'Queue history'**
+  String get syncQueueHistory;
+
+  /// Subtitle hint for queue history sync category
+  ///
+  /// In en, this message translates to:
+  /// **'Recently played queues'**
+  String get syncQueueHistoryHint;
+
+  /// Title of sync category toggle for the current playback queue
+  ///
+  /// In en, this message translates to:
+  /// **'Current queue'**
+  String get syncCurrentQueue;
+
+  /// Subtitle hint for current queue sync category
+  ///
+  /// In en, this message translates to:
+  /// **'Uploaded automatically; downloaded only when you sync manually'**
+  String get syncCurrentQueueHint;
+
+  /// Title of switch choosing whether a manual sync replaces the local queue with the cloud queue
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer cloud queue'**
+  String get syncPreferCloudQueue;
+
+  /// Subtitle of the prefer cloud queue switch
+  ///
+  /// In en, this message translates to:
+  /// **'On: Sync now replaces this device\'s queue with the cloud queue. Off: this device\'s queue is kept and uploaded.'**
+  String get syncPreferCloudQueueHint;
+
   /// Group header for privacy info in sync settings
   ///
   /// In en, this message translates to:

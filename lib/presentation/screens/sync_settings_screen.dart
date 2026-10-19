@@ -94,6 +94,16 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         l.syncAlbumArt,
         l.syncAlbumArtHint
       ),
+      SyncCategory.queueHistory: (
+        AppIcons.playlist,
+        l.syncQueueHistory,
+        l.syncQueueHistoryHint
+      ),
+      SyncCategory.currentQueue: (
+        AppIcons.playlist,
+        l.syncCurrentQueue,
+        l.syncCurrentQueueHint
+      ),
     };
   }
 
@@ -226,6 +236,14 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               subtitle: l.syncAutoSyncHint,
               value: st.autoSyncEnabled,
               onChanged: (v) => _n.setAutoSyncEnabled(v),
+            ),
+          if (st.categories.contains(SyncCategory.currentQueue))
+            AppSettingsSwitch(
+              icon: AppIcons.playlist,
+              title: l.syncPreferCloudQueue,
+              subtitle: l.syncPreferCloudQueueHint,
+              value: st.preferCloudQueue,
+              onChanged: (v) => _n.setPreferCloudQueue(v),
             ),
           AppSettingsTile(
             icon: AppIcons.syncAlt,

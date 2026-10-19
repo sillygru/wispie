@@ -17,6 +17,8 @@ class SyncCategory {
   static const settings = 'settings';
   static const artistArt = 'artist_art';
   static const albumArt = 'album_art';
+  static const queueHistory = 'queue_history';
+  static const currentQueue = 'current_queue';
 
   static const List<String> all = [
     playStats,
@@ -28,6 +30,8 @@ class SyncCategory {
     settings,
     artistArt,
     albumArt,
+    queueHistory,
+    currentQueue,
   ];
 }
 
@@ -129,7 +133,20 @@ const List<_Spec> _lwwSpecs = [
       ['artist_name'], ['image_url', 'source', 'updated_at']),
   _Spec('album_art', SyncCategory.albumArt, 'album_art', false, ['album_key'],
       ['album_name', 'artist_name', 'image_url', 'source', 'updated_at']),
+  _Spec('queue_snapshots', SyncCategory.queueHistory, 'queue_snapshot', false,
+      ['id'], ['name', 'created_at', 'source', 'song_count', 'songs_json']),
 ];
+
+/// Merged by hand: remote copies are stashed and only applied on a manual sync
+/// that prefers the cloud queue, so auto-sync never replaces what is playing.
+const _Spec _currentQueueSpec = _Spec(
+    'current_queue',
+    SyncCategory.currentQueue,
+    'current_queue',
+    false,
+    ['id'],
+    ['queue_json', 'updated_at']);
+const String kStashedQueueKey = 'sync_stashed_remote_queue';
 
 const _Spec _sessionSpec = _Spec(
     'play_sessions',
@@ -153,7 +170,12 @@ const _Spec _eventSpec =
   'source',
 ]);
 
-final List<_Spec> _allSpecs = [_sessionSpec, _eventSpec, ..._lwwSpecs];
+final List<_Spec> _allSpecs = [
+  _sessionSpec,
+  _eventSpec,
+  ..._lwwSpecs,
+  _currentQueueSpec,
+];
 final Map<String, _Spec> _specByEntity = {
   for (final s in _allSpecs) s.entity: s
 };
@@ -541,6 +563,12 @@ class Changeset {
           (txn, rec) => _mergeLww(txn, s, rec, remoteDevice));
     }
 
+    if (_on(categories, SyncCategory.currentQueue)) {
+      await _stashQueue(listOf('current_queue'));
+      done += listOf('current_queue').length;
+      onProgress?.call(done, total);
+    }
+
     final tombs = listOf('tombstones').where((t) {
       final spec = _specByEntity['${t['entity']}'];
       return spec != null && _on(categories, spec.category);
@@ -607,13 +635,82 @@ class Changeset {
         'hlc': hlc,
         'dirty': 0,
       });
+      await _rebuildSnapshotSongs(txn, s, rec);
       return;
     }
     final lh = (local.first['hlc'] as num?)?.toInt() ?? 0;
     if (hlc > lh || (hlc == lh && remoteDevice.compareTo(deviceId) > 0)) {
       await txn.update(s.table, {...data, 'hlc': hlc, 'dirty': 0},
           where: _where(s), whereArgs: args);
+      await _rebuildSnapshotSongs(txn, s, rec);
     }
+  }
+
+  /// `queue_snapshot_song` is the local read model; `songs_json` is what syncs.
+  Future<void> _rebuildSnapshotSongs(
+      DatabaseExecutor txn, _Spec s, Map rec) async {
+    if (s.table != 'queue_snapshot') return;
+    final id = '${rec['id']}';
+    await txn.delete('queue_snapshot_song',
+        where: 'snapshot_id = ?', whereArgs: [id]);
+    final raw = rec['songs_json'];
+    if (raw is! String) return;
+    List songs;
+    try {
+      songs = jsonDecode(raw) as List;
+    } catch (_) {
+      return;
+    }
+    final b = txn.batch();
+    for (var i = 0; i < songs.length; i++) {
+      b.insert('queue_snapshot_song',
+          {'snapshot_id': id, 'song_filename': '${songs[i]}', 'position': i});
+    }
+    await b.commit(noResult: true);
+  }
+
+  Future<void> _stashQueue(List<Map> items) async {
+    Map? best;
+    for (final r in items) {
+      if (r['queue_json'] is! String) continue;
+      final h = (r['hlc'] as num?)?.toInt() ?? 0;
+      if (best == null || h > ((best['hlc'] as num?)?.toInt() ?? 0)) best = r;
+    }
+    if (best == null) return;
+    final cur = await settings.read(kStashedQueueKey);
+    if (cur is String) {
+      try {
+        final ch = ((jsonDecode(cur) as Map)['hlc'] as num?)?.toInt() ?? 0;
+        if (ch >= ((best['hlc'] as num?)?.toInt() ?? 0)) return;
+      } catch (_) {}
+    }
+    await settings.write(kStashedQueueKey, jsonEncode(best));
+  }
+
+  /// Replaces the local current queue with the newest stashed cloud copy.
+  /// Returns true when a queue was applied.
+  Future<bool> applyStashedQueue() async {
+    final raw = await settings.read(kStashedQueueKey);
+    if (raw is! String) return false;
+    Map rec;
+    try {
+      rec = jsonDecode(raw) as Map;
+    } catch (_) {
+      return false;
+    }
+    await userData.insert(
+      'current_queue',
+      {
+        'id': rec['id'] ?? 'current',
+        'queue_json': rec['queue_json'],
+        'updated_at': rec['updated_at'],
+        'hlc': (rec['hlc'] as num?)?.toInt() ?? 0,
+        'dirty': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    await settings.write(kStashedQueueKey, '');
+    return true;
   }
 
   Future<void> _mergeTombstone(DatabaseExecutor txn, Map t) async {
@@ -630,6 +727,10 @@ class Changeset {
       final lh = (row.first['hlc'] as num?)?.toInt() ?? 0;
       if (hlc <= lh) return;
       await txn.delete(spec.table, where: _where(spec), whereArgs: parts);
+      if (spec.table == 'queue_snapshot') {
+        await txn.delete('queue_snapshot_song',
+            where: 'snapshot_id = ?', whereArgs: parts);
+      }
     }
     final existing = await _tombHlc(txn, entity, key);
     if (existing == null || hlc > existing) {
@@ -878,6 +979,13 @@ class Changeset {
         });
       }
       await insertAll(_db(s), s.table, rows);
+      if (s.table == 'queue_snapshot') {
+        await userData.transaction((txn) async {
+          for (final r in rows) {
+            await _rebuildSnapshotSongs(txn, s, r);
+          }
+        });
+      }
     }
 
     for (final isStats in [true, false]) {
@@ -916,6 +1024,9 @@ class Changeset {
         for (final s in _allSpecs) {
           if (s.stats != isStats || !_on(categories, s.category)) continue;
           await txn.delete(s.table);
+          if (s.table == 'queue_snapshot') {
+            await txn.delete('queue_snapshot_song');
+          }
           entities.add(s.entity);
         }
         if (entities.isNotEmpty) {
