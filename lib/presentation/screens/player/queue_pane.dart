@@ -1139,10 +1139,9 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
 
     await ref.read(audioPlayerManagerProvider).replaceQueue(
           songs,
-          playlistId: snapshot.id,
+          playlistId: snapshot.source == 'shuffle' ? null : snapshot.source,
           forceLinear: true,
           clearCurrentSong: true,
-          saveSnapshot: false,
         );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1461,8 +1460,7 @@ class _SnapshotCard extends ConsumerWidget {
   /// Stored names are timestamps unless the user renamed the snapshot, so a
   /// custom name wins, then the playlist it came from, then the source.
   String _title(BuildContext context, String? playlistName) {
-    final isDefaultName = snapshot.name ==
-        QueueSnapshot.defaultNameForTimestamp(snapshot.createdAt);
+    final isDefaultName = QueueSnapshot.isDefaultName(snapshot.name);
     if (!isDefaultName && snapshot.name.trim().isNotEmpty) return snapshot.name;
     if (playlistName != null && playlistName.trim().isNotEmpty) {
       return playlistName;

@@ -126,7 +126,7 @@ class SyncEngine {
     required this.stampSetting,
     Set<String> Function()? categories,
     bool Function()? preferCloudQueue,
-    void Function()? onQueueApplied,
+    void Function(Map<String, dynamic> queue)? onQueueApplied,
     ProgressSink? onProgress,
     int Function()? nowMs,
   })  : _categories = categories ?? (() => SyncCategory.all.toSet()),
@@ -144,7 +144,7 @@ class SyncEngine {
   final Future<void> Function(String key) stampSetting;
   final Set<String> Function() _categories;
   final bool Function() _preferCloudQueue;
-  final void Function()? _onQueueApplied;
+  final void Function(Map<String, dynamic> queue)? _onQueueApplied;
   final int Function() _nowMs;
   ProgressSink? _onProgress;
 
@@ -220,9 +220,9 @@ class SyncEngine {
     await _pull(st);
     if (manual &&
         _preferCloudQueue() &&
-        categories.contains(SyncCategory.currentQueue) &&
-        await changeset.applyStashedQueue()) {
-      _onQueueApplied?.call();
+        categories.contains(SyncCategory.currentQueue)) {
+      final queue = await changeset.applyStashedQueue();
+      if (queue != null) _onQueueApplied?.call(queue);
     }
     final pushed = await _push();
     if (pushed) st = await client.state();

@@ -62,6 +62,9 @@ class SyncService extends ChangeNotifier {
   String? _deviceId;
   bool _busy = false;
   bool _syncAgain = false;
+  // A manual sync requested while another op ran must keep its manual intent
+  // (it gates applying the cloud queue) when it is replayed.
+  bool _syncAgainManual = false;
   bool _initialized = false;
   bool _foreground = true;
   String? _lastError;
@@ -123,11 +126,11 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  final StreamController<void> _queueAppliedCtl =
-      StreamController<void>.broadcast();
+  final StreamController<Map<String, dynamic>> _queueAppliedCtl =
+      StreamController<Map<String, dynamic>>.broadcast();
 
-  /// Fires after a manual sync replaced the local current queue.
-  Stream<void> get queueApplied => _queueAppliedCtl.stream;
+  /// Fires with the cloud queue after a manual sync replaced the local one.
+  Stream<Map<String, dynamic>> get queueApplied => _queueAppliedCtl.stream;
 
   bool get autoSyncEnabled => _kv?.get(_kAutoEnabled) != false;
 
@@ -176,7 +179,7 @@ class SyncService extends ChangeNotifier {
       stampSetting: DatabaseService.instance.stampSettingDirty,
       categories: () => categories,
       preferCloudQueue: () => preferCloudQueue,
-      onQueueApplied: () => _queueAppliedCtl.add(null),
+      onQueueApplied: _queueAppliedCtl.add,
       onProgress: _emit,
     );
   }
@@ -344,8 +347,10 @@ class SyncService extends ChangeNotifier {
       notifyListeners();
     }
     if (_syncAgain) {
+      final manual = _syncAgainManual;
       _syncAgain = false;
-      unawaited(syncNow());
+      _syncAgainManual = false;
+      unawaited(syncNow(manual: manual));
     }
     return ok;
   }
@@ -355,8 +360,10 @@ class SyncService extends ChangeNotifier {
     return e.toString();
   }
 
-  Future<bool> syncNow({bool manual = false}) =>
-      _run((e) => e.sync(manual: manual), queueIfBusy: true);
+  Future<bool> syncNow({bool manual = false}) {
+    if (manual && _busy) _syncAgainManual = true;
+    return _run((e) => e.sync(manual: manual), queueIfBusy: true);
+  }
 
   /// First upload after registering, also "overwrite cloud with this device".
   Future<bool> overwriteCloud() => _run((e) => e.overwriteCloud());

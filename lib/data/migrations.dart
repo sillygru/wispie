@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 
-const int kStatsDbVersion = 3;
+const int kStatsDbVersion = 4;
 const int kUserDataDbVersion = 7;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
@@ -31,7 +31,8 @@ const List<String> _statsTableStmts = [
       play_ratio REAL,
       foreground_duration REAL,
       background_duration REAL,
-      source TEXT$_syncCols,
+      source TEXT,
+      queue_id TEXT$_syncCols,
       FOREIGN KEY (session_id) REFERENCES playsession (id)
     )''',
   // Tombstones for explicit removals. Here only the database optimizer writes
@@ -225,6 +226,7 @@ Future<void> createUserDataSchema(Database db) async {
 Future<void> createStatsSchema(Database db) async {
   await _createAllStatsTables(db);
   await _createStatsIndexes(db);
+  await _createPlayEventQueueIndex(db);
 }
 
 Future<void> upgradeStatsFrom1To2(Database db) async {
@@ -247,6 +249,22 @@ Future<void> upgradeStatsFrom2To3(Database db) async {
       _statsTableStmts.firstWhere((s) => s.contains('sync_tombstone')));
   await backfillPlayEventUids(db);
   await _createStatsIndexes(db);
+}
+
+/// Stats v3 -> v4: each play event records the queue history snapshot it was
+/// played from (`queue_snapshot.id` in the user-data DB), so listening history
+/// can be grouped by queue. Older events stay null; there is nothing reliable
+/// to backfill them from.
+Future<void> upgradeStatsFrom3To4(Database db) async {
+  await _addColumnIfMissing(db, 'playevent', 'queue_id', 'TEXT');
+  await _createPlayEventQueueIndex(db);
+}
+
+// Separate from _createStatsIndexes, which older upgrade steps run before the
+// column exists.
+Future<void> _createPlayEventQueueIndex(Database db) async {
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_playevent_queue ON playevent(queue_id)');
 }
 
 Future<void> upgradeUserDataFrom1To2(Database db) async {

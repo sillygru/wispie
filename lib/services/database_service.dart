@@ -64,6 +64,7 @@ class DatabaseService {
         onUpgrade: (db, oldV, newV) async {
           if (oldV < 2) await upgradeStatsFrom1To2(db);
           if (oldV < 3) await upgradeStatsFrom2To3(db);
+          if (oldV < 4) await upgradeStatsFrom3To4(db);
         },
       );
       _userDataDatabase = await _openDatabaseWithMigrations(
@@ -322,12 +323,28 @@ class DatabaseService {
   // QUEUE SNAPSHOT QUERIES
   // ==========================================================================
 
+  /// Inserts a snapshot. Older snapshots with the same source and songs are
+  /// removed so replaying a queue moves it to the top with the new time instead
+  /// of reviving the old entry.
   Future<void> saveQueueSnapshot(String id, String name, double createdAt,
       String source, List<String> songFilenames) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
+    final songsJson = jsonEncode(songFilenames);
     await _userDataDatabase!.transaction((txn) async {
+      final dupes = await txn.query('queue_snapshot',
+          columns: ['id'],
+          where: 'source = ? AND songs_json = ? AND id != ?',
+          whereArgs: [source, songsJson, id]);
+      for (final r in dupes) {
+        final dupeId = r['id'] as String;
+        await txn.delete('queue_snapshot_song',
+            where: 'snapshot_id = ?', whereArgs: [dupeId]);
+        await txn
+            .delete('queue_snapshot', where: 'id = ?', whereArgs: [dupeId]);
+        await _tombstone(txn, tombQueueSnapshots, dupeId);
+      }
       await txn.insert(
         'queue_snapshot',
         _stamp({
@@ -336,7 +353,7 @@ class DatabaseService {
           'created_at': createdAt,
           'source': source,
           'song_count': songFilenames.length,
-          'songs_json': jsonEncode(songFilenames),
+          'songs_json': songsJson,
         }),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -357,12 +374,20 @@ class DatabaseService {
     });
   }
 
-  Future<void> updateQueueSnapshotSongs(
+  /// Returns false when the snapshot no longer exists (pruned, deleted, or
+  /// removed by sync), so the caller can start a new one. Unchanged lists are
+  /// not rewritten, which keeps them from churning sync.
+  Future<bool> updateQueueSnapshotSongs(
       String id, List<String> songFilenames) async {
     await _ensureInitialized();
-    if (_userDataDatabase == null) return;
+    if (_userDataDatabase == null) return false;
 
-    await _userDataDatabase!.transaction((txn) async {
+    final songsJson = jsonEncode(songFilenames);
+    return _userDataDatabase!.transaction((txn) async {
+      final row = await txn.query('queue_snapshot',
+          columns: ['songs_json'], where: 'id = ?', whereArgs: [id], limit: 1);
+      if (row.isEmpty) return false;
+      if (row.first['songs_json'] == songsJson) return true;
       await txn.delete('queue_snapshot_song',
           where: 'snapshot_id = ?', whereArgs: [id]);
 
@@ -380,11 +405,12 @@ class DatabaseService {
         'queue_snapshot',
         _stamp({
           'song_count': songFilenames.length,
-          'songs_json': jsonEncode(songFilenames),
+          'songs_json': songsJson,
         }),
         where: 'id = ?',
         whereArgs: [id],
       );
+      return true;
     });
   }
 
@@ -2373,11 +2399,14 @@ class DatabaseService {
         'UPDATE playsession SET end_time = ?, hlc = ?, dirty = ? WHERE id = ? AND end_time < ?',
         [timestamp, _hlcNow(), rowDirty, sessionId, timestamp]);
 
-    // Coalesce logic (Fix for fragmented stats)
+    final incomingQueueId = event['queue_id'] as String?;
+
+    // Coalesce logic (Fix for fragmented stats). Never across queues: the same
+    // song replayed from another queue is a separate listen in queue history.
     final lastEvents = await txn.query(
       'playevent',
-      where: 'session_id = ? AND song_filename = ?',
-      whereArgs: [sessionId, songFilename],
+      where: 'session_id = ? AND song_filename = ? AND queue_id IS ?',
+      whereArgs: [sessionId, songFilename, incomingQueueId],
       orderBy: 'timestamp DESC',
       limit: 1,
     );
@@ -2500,6 +2529,7 @@ class DatabaseService {
         'foreground_duration': event['foreground_duration'],
         'background_duration': event['background_duration'],
         'source': incomingSource,
+        'queue_id': incomingQueueId,
         'hlc': _hlcNow(),
         'dirty': rowDirty,
       });

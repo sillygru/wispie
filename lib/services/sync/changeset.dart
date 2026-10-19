@@ -171,6 +171,7 @@ const _Spec _eventSpec =
   'foreground_duration',
   'background_duration',
   'source',
+  'queue_id',
 ]);
 
 final List<_Spec> _allSpecs = [
@@ -636,7 +637,7 @@ class Changeset {
     }
 
     if (_on(categories, SyncCategory.currentQueue)) {
-      await _stashQueue(listOf('current_queue'));
+      await _stashQueue(listOf('current_queue'), remoteDevice);
       done += listOf('current_queue').length;
       onProgress?.call(done, total);
     }
@@ -741,7 +742,10 @@ class Changeset {
     await b.commit(noResult: true);
   }
 
-  Future<void> _stashQueue(List<Map> items) async {
+  Future<void> _stashQueue(List<Map> items, String remoteDevice) async {
+    // A snapshot this device compacted carries its own queue back; that is not
+    // a cloud queue to adopt.
+    if (remoteDevice == deviceId) return;
     Map? best;
     for (final r in items) {
       if (r['queue_json'] is! String) continue;
@@ -760,15 +764,35 @@ class Changeset {
   }
 
   /// Replaces the local current queue with the newest stashed cloud copy.
-  /// Returns true when a queue was applied.
-  Future<bool> applyStashedQueue() async {
+  /// Returns the applied queue, or null when there was nothing to apply.
+  Future<Map<String, dynamic>?> applyStashedQueue() async {
     final raw = await settings.read(kStashedQueueKey);
-    if (raw is! String) return false;
+    if (raw is! String || raw.isEmpty) return null;
     Map rec;
+    Map<String, dynamic> queue;
     try {
       rec = jsonDecode(raw) as Map;
+      // Already applied: only the clock is kept, so an older copy arriving
+      // later (e.g. inside a compacted snapshot) is not stashed again.
+      if (rec['queue_json'] is! String) return null;
+      queue = Map<String, dynamic>.from(jsonDecode(rec['queue_json']) as Map);
     } catch (_) {
-      return false;
+      await settings.write(kStashedQueueKey, '');
+      return null;
+    }
+    final remoteHlc = (rec['hlc'] as num?)?.toInt() ?? 0;
+    final local = await userData.query('current_queue',
+        columns: ['hlc', 'dirty'],
+        where: 'id = ?',
+        whereArgs: [rec['id'] ?? 'current'],
+        limit: 1);
+    // A clean local row with a newer clock was pushed after the stashed copy,
+    // so it already is the newest queue in the cloud.
+    if (local.isNotEmpty &&
+        local.first['dirty'] == 0 &&
+        ((local.first['hlc'] as num?)?.toInt() ?? 0) > remoteHlc) {
+      await settings.write(kStashedQueueKey, jsonEncode({'hlc': remoteHlc}));
+      return null;
     }
     await userData.insert(
       'current_queue',
@@ -781,8 +805,8 @@ class Changeset {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    await settings.write(kStashedQueueKey, '');
-    return true;
+    await settings.write(kStashedQueueKey, jsonEncode({'hlc': rec['hlc']}));
+    return queue;
   }
 
   Future<void> _mergeTombstone(DatabaseExecutor txn, Map t) async {
@@ -921,6 +945,7 @@ class Changeset {
       'foreground_duration': max(0.0, _d(rec['foreground_duration']) ?? 0.0),
       'background_duration': max(0.0, _d(rec['background_duration']) ?? 0.0),
       'source': rec['source'] as String?,
+      'queue_id': rec['queue_id'] as String?,
     };
   }
 
@@ -961,6 +986,10 @@ class Changeset {
       'foreground_duration': m('foreground_duration'),
       'background_duration': m('background_duration'),
       'source': _maxStr(l['source'] as String?, inc['source'] as String?),
+      // Events from clients that predate queue ids carry none; never let that
+      // erase a known one.
+      'queue_id': (src['queue_id'] as String?) ??
+          (incomingWins ? l['queue_id'] : inc['queue_id']) as String?,
     };
     final cols = merged.keys;
     if (_sameFields(merged, l, cols)) return;

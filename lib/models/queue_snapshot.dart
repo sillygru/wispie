@@ -13,16 +13,21 @@ class QueueSnapshot {
     required this.source,
   });
 
+  /// [deviceId] prefixes the id so snapshots made on different devices can
+  /// never collide, and so a device can tell which snapshots it owns (only the
+  /// owner keeps editing a snapshot as its queue changes).
   factory QueueSnapshot.create({
     String? name,
     required List<String> songFilenames,
     required String source,
+    String? deviceId,
   }) {
     final now = DateTime.now();
     final createdAt =
         now.microsecondsSinceEpoch / Duration.microsecondsPerSecond;
+    final stamp = now.microsecondsSinceEpoch.toString();
     return QueueSnapshot(
-      id: now.microsecondsSinceEpoch.toString(),
+      id: deviceId == null || deviceId.isEmpty ? stamp : '$deviceId-$stamp',
       name: (name != null && name.trim().isNotEmpty)
           ? name.trim()
           : defaultNameForTimestamp(createdAt),
@@ -37,6 +42,17 @@ class QueueSnapshot {
 
   static String defaultNameForTimestamp(double createdAt) =>
       'Queue @ ${timestampLabelFromEpochSeconds(createdAt)}';
+
+  static final RegExp _defaultNamePattern =
+      RegExp(r'^Queue @ \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$');
+
+  /// Default names embed the creating device's local time, so a snapshot
+  /// synced from another timezone must still count as unnamed.
+  static bool isDefaultName(String name) =>
+      _defaultNamePattern.hasMatch(name.trim());
+
+  static bool isOwnedBy(String id, String deviceId) =>
+      deviceId.isNotEmpty && id.startsWith('$deviceId-');
 
   static String timestampLabelFromEpochSeconds(double createdAt) {
     final date = DateTime.fromMicrosecondsSinceEpoch(

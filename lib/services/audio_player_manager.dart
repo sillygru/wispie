@@ -90,6 +90,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   // Active queue snapshot ID for auto-save tracking
   String? _currentQueueSnapshotId;
+  // Queue history entry the current song's play event belongs to. Latched on
+  // the song's first stats flush rather than at song start: a new queue's
+  // snapshot is saved only after its first track has already started.
+  String? _currentSongQueueSnapshotId;
 
   // Pending queue replacement (fires when current song ends)
   List<Song>? _pendingQueueSongs;
@@ -259,7 +263,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _initVolumeMonitoring();
     _restoreGapStateIfNeeded();
     _track(SyncService.instance.queueApplied
-        .listen((_) => unawaited(_applySyncedQueue())));
+        .listen((q) => unawaited(_applySyncedQueue(q))));
   }
 
   AudioPlayer get player => _player;
@@ -486,7 +490,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       }
 
       if (usedContextQueue) {
-        await _saveQueueSnapshot(contextQueue!, playlistId: playlistId);
+        await _saveQueueSnapshot(
+          [for (final item in _effectiveQueue) item.song],
+          playlistId: playlistId,
+        );
+      } else {
+        _currentQueueSnapshotId = null;
       }
 
       _savePlaybackState();
@@ -634,6 +643,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
           _isCompleting = false;
           _currentSongFilename = newFilename;
+          _currentSongQueueSnapshotId = null;
           final currentIdx = _player.currentIndex;
           _currentQueueId = currentIdx != null &&
                   currentIdx >= 0 &&
@@ -1600,10 +1610,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
   }
 
-  Future<void> _applySyncedQueue() async {
-    if (_player.playing) return;
-    final q = await DatabaseService.instance.loadCurrentQueue();
-    if (q == null) return;
+  /// Replaces the queue with one another device synced. Only reached from a
+  /// user-pressed sync with "prefer cloud queue" on, so it applies even while
+  /// playing; the queue arrives with the event rather than being re-read from
+  /// the database, where a concurrent local save could already have
+  /// overwritten it.
+  Future<void> _applySyncedQueue(Map<String, dynamic> q) async {
+    final wasPlaying = _player.playing;
     List<QueueItem> items(Object? names) => [
           for (final n in (names as List? ?? const []))
             if (_lookupSong('$n') case final song?) QueueItem(song: song),
@@ -1616,13 +1629,24 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _originalQueue = orig.isEmpty ? List.of(eff) : orig;
       _isRestrictedToOriginal = q['restricted'] == true;
       _currentPlaylistId = q['playlist_id'] as String?;
+      _rememberedUpcomingIds = null;
+      _pendingQueueSongs = null;
+      _pendingQueuePlaylistId = null;
+      pendingQueueNotifier.value = false;
       final idx = eff.indexWhere((e) => e.song.filename == q['current']);
+      _resetFading();
       await _rebuildQueue(
         initialIndex: idx < 0 ? 0 : idx,
-        startPlaying: false,
+        startPlaying: wasPlaying,
         initialPosition: idx < 0
             ? null
             : Duration(milliseconds: (q['position_ms'] as num?)?.toInt() ?? 0),
+      );
+      // A fresh entry owned by this device, so plays from here on carry a
+      // queue id and later edits do not touch the other device's snapshot.
+      await _saveQueueSnapshot(
+        [for (final e in _effectiveQueue) e.song],
+        playlistId: _currentPlaylistId,
       );
     });
     _syncedEff = [for (final e in _effectiveQueue) e.song.filename];
@@ -1687,6 +1711,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         'background_duration': _backgroundDuration,
         'total_length': effectiveTotalLength,
         'source': _sourceFor(_currentQueueId)?.dbValue,
+        'queue_id': _currentSongQueueSnapshotId ??= _currentQueueSnapshotId,
       }));
     }
     _foregroundDuration = 0.0;
@@ -2231,9 +2256,15 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // Replace player queue and start playing
     await _rebuildQueue(initialIndex: 0, startPlaying: true);
 
-    // Save snapshot for non-folder shuffles
+    // Save snapshot for non-folder shuffles, in the shuffled order that will
+    // actually play rather than library order.
     if (!isRestricted) {
-      await _saveQueueSnapshot(songs, playlistId: null);
+      await _saveQueueSnapshot(
+        [for (final item in _effectiveQueue) item.song],
+        playlistId: null,
+      );
+    } else {
+      _currentQueueSnapshotId = null;
     }
 
     _savePlaybackState();
@@ -2434,6 +2465,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final currentSong = currentSongNotifier.value;
     final isPlaying = _player.playing;
+    // The still-playing song kept at the head is not part of the new queue's
+    // history entry.
+    final prepended =
+        !clearCurrentSong && currentSong != null && isPlaying ? 1 : 0;
 
     if (forceLinear) {
       _resetFading();
@@ -2485,31 +2520,33 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
 
     if (saveSnapshot) {
-      await _saveQueueSnapshot(songs, playlistId: playlistId);
+      await _saveQueueSnapshot(
+        [for (final item in _effectiveQueue.sublist(prepended)) item.song],
+        playlistId: playlistId,
+      );
+    } else {
+      _currentQueueSnapshotId = null;
     }
 
     _savePlaybackState();
     _updateQueueNotifier();
   }
 
+  /// Starts a new history entry for a queue that begins now. [songs] must be
+  /// in play order so the entry matches what is actually heard. An identical
+  /// older entry is replaced rather than reused: reusing kept its old time and
+  /// let later edits rewrite a snapshot that belonged to another session or
+  /// another device.
   Future<void> _saveQueueSnapshot(List<Song> songs,
       {String? playlistId}) async {
     if (songs.isEmpty) return;
 
-    final watch = Stopwatch()..start();
     final songFilenames = songs.map((s) => s.filename).toList();
     final source = playlistId ?? 'shuffle';
-    final existing = await _findExistingQueueSnapshot(source, songFilenames);
-    _logSlow('saveQueueSnapshot: dedupe scan', watch);
-    if (existing != null) {
-      _currentQueueSnapshotId = existing.id;
-      _savePlaybackState();
-      return;
-    }
-
     final snapshot = QueueSnapshot.create(
       songFilenames: songFilenames,
       source: source,
+      deviceId: SyncService.instance.deviceId,
     );
     _currentQueueSnapshotId = snapshot.id;
     try {
@@ -2530,49 +2567,27 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
   }
 
-  Future<QueueSnapshot?> _findExistingQueueSnapshot(
-    String source,
-    List<String> songFilenames,
-  ) async {
-    try {
-      final snapshots =
-          await DatabaseService.instance.getQueueHistorySnapshots();
-      for (final snapshot in snapshots) {
-        if (snapshot.source != source) continue;
-        if (_sameFilenameList(snapshot.songFilenames, songFilenames)) {
-          return snapshot;
-        }
-      }
-    } catch (e) {
-      debugPrint('Failed to check queue snapshot duplicates: $e');
-    }
-    return null;
-  }
-
-  bool _sameFilenameList(List<String> first, List<String> second) {
-    if (first.length != second.length) return false;
-    for (int i = 0; i < first.length; i++) {
-      if (first[i] != second[i]) return false;
-    }
-    return true;
-  }
-
+  /// Keeps the current history entry in step with the live queue. Only
+  /// snapshots this device created are edited; anything else (legacy ids,
+  /// entries synced from another device, a restored entry) gets a fresh
+  /// snapshot instead, so one device's queue edits never rewrite another
+  /// device's history.
   Future<void> _updateCurrentSnapshotSongs() async {
-    var id = _currentQueueSnapshotId;
-    if (id == null) {
-      if (_effectiveQueue.isEmpty) return;
+    if (_effectiveQueue.isEmpty) return;
+    final id = _currentQueueSnapshotId;
+    final filenames = _effectiveQueue.map((q) => q.song.filename).toList();
+    try {
+      if (id != null &&
+          QueueSnapshot.isOwnedBy(id, SyncService.instance.deviceId) &&
+          await DatabaseService.instance
+              .updateQueueSnapshotSongs(id, filenames)) {
+        _notifyQueueHistoryChanged();
+        return;
+      }
       await _saveQueueSnapshot(
         _effectiveQueue.map((item) => item.song).toList(),
         playlistId: _currentPlaylistId,
       );
-      id = _currentQueueSnapshotId;
-      if (id == null) return;
-    }
-
-    final filenames = _effectiveQueue.map((q) => q.song.filename).toList();
-    try {
-      await DatabaseService.instance.updateQueueSnapshotSongs(id, filenames);
-      _notifyQueueHistoryChanged();
     } catch (e) {
       debugPrint('Failed to update queue snapshot: $e');
     }

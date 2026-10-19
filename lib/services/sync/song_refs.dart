@@ -36,6 +36,43 @@ List<String> _queueNames(Object? raw) {
   return const [];
 }
 
+Map<String, dynamic>? _currentQueue(Object? raw) {
+  if (raw is! String) return null;
+  try {
+    final q = jsonDecode(raw);
+    if (q is Map) return Map<String, dynamic>.from(q);
+  } catch (_) {}
+  return null;
+}
+
+Iterable<String> _currentQueueNames(Map<String, dynamic> q) sync* {
+  if (q['current'] is String) yield q['current'] as String;
+  for (final key in ['effective', 'original']) {
+    final list = q[key];
+    if (list is List) {
+      for (final e in list) {
+        yield '$e';
+      }
+    }
+  }
+}
+
+String _remapCurrentQueue(Map<String, dynamic> q, NameMapper map) {
+  List<String>? remapList(Object? list) => list is List
+      ? [
+          for (final e in list)
+            if (map('$e') case final m?) m
+        ]
+      : null;
+  final current = q['current'];
+  return jsonEncode({
+    ...q,
+    'current': current is String ? map(current) : current,
+    'effective': remapList(q['effective']) ?? q['effective'],
+    'original': remapList(q['original']) ?? q['original'],
+  });
+}
+
 Set<String> collectSongNames(Map records) {
   final names = <String>{};
   _nameField.forEach((array, field) {
@@ -51,6 +88,14 @@ Set<String> collectSongNames(Map records) {
   if (snaps is List) {
     for (final r in snaps) {
       if (r is Map) names.addAll(_queueNames(r['songs_json']));
+    }
+  }
+  final queues = records['current_queue'];
+  if (queues is List) {
+    for (final r in queues) {
+      if (r is! Map) continue;
+      final q = _currentQueue(r['queue_json']);
+      if (q != null) names.addAll(_currentQueueNames(q));
     }
   }
   final tombs = records['tombstones'];
@@ -103,6 +148,14 @@ Map<String, dynamic> remapSongNames(Map records, NameMapper map) {
                   if (map(n) case final m?) m
               ]),
             }
+          else
+            r
+      ];
+    } else if (array == 'current_queue') {
+      out[array] = [
+        for (final r in value)
+          if (r is Map ? _currentQueue(r['queue_json']) : null case final q?)
+            {...(r as Map), 'queue_json': _remapCurrentQueue(q, map)}
           else
             r
       ];
