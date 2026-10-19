@@ -7,6 +7,7 @@ import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../data/migrations.dart';
+import '../data/repositories/song_identity_repository.dart';
 import '../domain/models/listening_insights.dart';
 import '../domain/services/fun_stats_export.dart';
 import '../domain/services/insights_builder.dart';
@@ -37,6 +38,11 @@ class DatabaseService {
 
   @visibleForTesting
   DatabaseService.forTest();
+
+  Future<Database> get userDataDb async {
+    await _ensureInitialized();
+    return _userDataDatabase!;
+  }
 
   Future<void> init() {
     final existing = _initFuture;
@@ -70,6 +76,7 @@ class DatabaseService {
           if (oldV < 4) await upgradeUserDataFrom3To4(db);
           if (oldV < 5) await upgradeUserDataFrom4To5(db);
           if (oldV < 6) await upgradeUserDataFrom5To6(db);
+          if (oldV < 7) await upgradeUserDataFrom6To7(db);
         },
       );
     } catch (e) {
@@ -1638,6 +1645,8 @@ class DatabaseService {
             where: 'id = ?', whereArgs: [plSong['id']]);
       }
     }
+
+    await SongIdentityRepository.markRenamed(txn, oldFilename, newFilename);
   }
 
   /// We always update the filename in playevent. This effectively merges stats
@@ -1670,6 +1679,7 @@ class DatabaseService {
     await _userDataDatabase!.transaction((txn) async {
       // Remove from songs
       await txn.delete('song', where: 'filename = ?', whereArgs: [filename]);
+      await SongIdentityRepository.delete(txn, filename);
       await txn.delete('lyrics_timing_offset',
           where: 'filename = ?', whereArgs: [filename]);
 
@@ -2945,6 +2955,7 @@ class DatabaseService {
       await _importMergedGroups(importedDataDb, additive);
     }
     await _importArtistAlbumArt(importedDataDb, additive);
+    await SongIdentityRepository.importFrom(importedDataDb, _userDataDatabase!);
   }
 
   Future<void> _importPlayHistory(Database importedDb, bool additive) async {

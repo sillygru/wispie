@@ -91,6 +91,10 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
                 warningMessage: context.l10n.indexerWarnRepairLinks,
               ),
               _buildOperationTile(
+                id: 'match_song_identity',
+                icon: AppIcons.fingerprint,
+              ),
+              _buildOperationTile(
                 id: 'rebuild_cover_caches',
                 icon: AppIcons.image,
               ),

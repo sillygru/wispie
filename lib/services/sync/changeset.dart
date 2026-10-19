@@ -4,7 +4,10 @@ import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../../data/repositories/song_identity_repository.dart';
+import '../../domain/services/song_identity.dart';
 import 'hlc.dart';
+import 'song_refs.dart';
 
 /// User-facing sync categories (one toggle each).
 class SyncCategory {
@@ -239,6 +242,22 @@ class Changeset {
   })  : settings = settings ?? PrefsSettingsAccess(),
         nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
 
+  IdentityIndex? _identityCache;
+  int _identityGeneration = -1;
+
+  Future<IdentityIndex> _identityIndex() async {
+    final cached = _identityCache;
+    if (cached != null &&
+        _identityGeneration == SongIdentityRepository.generation) {
+      return cached;
+    }
+    final gen = SongIdentityRepository.generation;
+    final built = IdentityIndex(await SongIdentityRepository.loadAll(userData));
+    _identityCache = built;
+    _identityGeneration = gen;
+    return built;
+  }
+
   Database _db(_Spec s) => s.stats ? stats : userData;
 
   static bool _on(Set<String>? cats, String c) =>
@@ -280,6 +299,7 @@ class Changeset {
       count++;
     }
     flush();
+    await _attachIdentity(batches.map((b) => b.payload));
     return batches;
   }
 
@@ -295,7 +315,58 @@ class Changeset {
       if (item.clear != null) clears.add(item.clear!);
       count++;
     }
-    return _wrap('snapshot', records, clears, count, categories);
+    final batch = _wrap('snapshot', records, clears, count, categories);
+    await _attachIdentity([batch.payload]);
+    return batch;
+  }
+
+  /// Ships the audio content id of every song a payload names, so a device
+  /// that knows the file under another name can still match it.
+  Future<void> _attachIdentity(Iterable<Map<String, dynamic>> payloads) async {
+    final index = await _identityIndex();
+    if (index.byFilename.isEmpty) return;
+    for (final payload in payloads) {
+      final names = collectSongNames(payload['records'] as Map);
+      final ids = {
+        for (final n in names)
+          if (index.byFilename[n] != null) n: index.byFilename[n]!.cid
+      };
+      if (ids.isNotEmpty) payload['identity'] = ids;
+    }
+  }
+
+  /// Rewrites every song name in [payload] to the local file holding the same
+  /// audio. Names whose audio is absent are remembered as orphans so the data
+  /// they carry attaches itself if the file turns up later.
+  Future<Map<String, dynamic>> _remapIncoming(
+      Map<String, dynamic> payload) async {
+    final records = payload['records'];
+    if (records is! Map) return payload;
+    final remote = <String, String>{
+      for (final e in ((payload['identity'] as Map?) ?? const {}).entries)
+        if (e.value is String) '${e.key}': e.value as String
+    };
+    final index = await _identityIndex();
+    if (remote.isEmpty && index.byFilename.isEmpty) return payload;
+
+    final learned = <String, String>{};
+    final remapped = remapSongNames(records, (name) {
+      final cid = remote[name];
+      final target = index.resolve(name, remoteCid: cid);
+      if (target == name &&
+          cid != null &&
+          index.byFilename[name] == null &&
+          index.liveFilesFor(cid).isEmpty) {
+        learned[name] = cid;
+      }
+      return target;
+    });
+    if (learned.isNotEmpty) {
+      await SongIdentityRepository.learnOrphans(userData, learned);
+      learned.forEach(index.addOrphan);
+      _identityGeneration = SongIdentityRepository.generation;
+    }
+    return {...payload, 'records': remapped};
   }
 
   ChangesetBatch _wrap(
@@ -529,6 +600,7 @@ class Changeset {
     Set<String>? categories,
     MergeProgress? onProgress,
   }) async {
+    payload = await _remapIncoming(payload);
     final records =
         ((payload['records'] as Map?) ?? const {}).cast<String, dynamic>();
     final remoteDevice = '${payload['device_id'] ?? ''}';

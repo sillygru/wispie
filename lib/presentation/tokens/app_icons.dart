@@ -108,6 +108,7 @@ abstract final class AppIcons {
   static const AppIconData dataUsage = HugeIcons.strokeRoundedPieChart;
   static const AppIconData dataObject = HugeIcons.strokeRoundedSourceCode;
   static const AppIconData copy = HugeIcons.strokeRoundedCopy01;
+  static const AppIconData fingerprint = HugeIcons.strokeRoundedFingerprintScan;
   static const AppIconData linkOff = HugeIcons.strokeRoundedUnlink01;
   static const AppIconData merge = HugeIcons.strokeRoundedGitMerge;
   static const AppIconData swapHoriz =

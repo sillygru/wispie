@@ -17,6 +17,8 @@ import '../services/online_metadata_service.dart';
 import '../services/passive_art_fetcher_service.dart';
 import '../services/scanner_service.dart';
 import '../services/waveform_service.dart';
+import '../data/repositories/song_identity_repository.dart';
+import '../services/song_identity_service.dart';
 import 'providers.dart';
 import 'search_provider.dart';
 
@@ -197,6 +199,14 @@ class IndexerNotifier extends Notifier<IndexerState> {
         isBlocking: true,
         requiresRestart: false,
       ),
+      'match_song_identity': const IndexerOperation(
+        id: 'match_song_identity',
+        name: 'Match Songs by Audio',
+        description:
+            'Fingerprint every file so renamed songs keep their favourites, playlists and stats, and match across synced devices',
+        isBlocking: false,
+        requiresRestart: false,
+      ),
       'rebuild_cover_caches': const IndexerOperation(
         id: 'rebuild_cover_caches',
         name: 'Rebuild Cover Caches',
@@ -285,6 +295,7 @@ class IndexerNotifier extends Notifier<IndexerState> {
     final colorCount = await _getColorCacheCount(songs);
     final blurredCount = await _getBlurredCacheCount(songs);
     final searchCount = await _getSearchIndexCount();
+    final identityCount = await _getIdentityCount(songs);
 
     final missingCoversCount =
         songs.where((s) => s.coverUrl == null || s.coverUrl!.isEmpty).length;
@@ -303,6 +314,13 @@ class IndexerNotifier extends Notifier<IndexerState> {
     updatedOperations['optimize_databases'] =
         updatedOperations['optimize_databases']!.copyWith(
       totalCount: totalSongs,
+    );
+
+    updatedOperations['match_song_identity'] =
+        updatedOperations['match_song_identity']!.copyWith(
+      processedCount: identityCount,
+      totalCount: totalSongs,
+      targetCount: (totalSongs - identityCount).clamp(0, totalSongs),
     );
 
     updatedOperations['rebuild_cover_caches'] =
@@ -452,6 +470,18 @@ class IndexerNotifier extends Notifier<IndexerState> {
         if (await cacheFile.exists()) count++;
       }
       return count;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _getIdentityCount(List<Song> songs) async {
+    try {
+      final db = await DatabaseService.instance.userDataDb;
+      final known = {
+        for (final r in await SongIdentityRepository.loadAll(db)) r.filename
+      };
+      return songs.where((s) => known.contains(s.filename)).length;
     } catch (_) {
       return 0;
     }
@@ -616,6 +646,8 @@ class IndexerNotifier extends Notifier<IndexerState> {
         return await _optimizeDatabases();
       case 'repair_library_links':
         return await _repairLibraryLinks();
+      case 'match_song_identity':
+        return await _matchSongIdentity(songs, force: force);
       case 'rebuild_cover_caches':
         return await _rebuildCoverCaches(songs, force: force);
       case 'rebuild_search_indexes':
@@ -667,6 +699,56 @@ class IndexerNotifier extends Notifier<IndexerState> {
       return IndexerResult(
         success: false,
         message: 'Error repairing library links: $e',
+      );
+    }
+  }
+
+  Future<IndexerResult> _matchSongIdentity(List<Song> songs,
+      {required bool force}) async {
+    const id = 'match_song_identity';
+    final service = SongIdentityService.instance;
+    if (service.isRunning) {
+      return const IndexerResult(
+          success: false, message: 'Song matching is already running');
+    }
+    try {
+      // Counters start as "already cached / missing"; zero them so the bar
+      // reflects this run while the stat pass is still working.
+      final operations = Map<String, IndexerOperation>.from(state.operations);
+      operations[id] = operations[id]!.copyWith(processedCount: 0);
+      state = state.copyWith(operations: operations);
+      final cancelToken = _currentCancelToken;
+      final report = await service.reconcile(
+        songs,
+        options: IdentityRunOptions(
+          force: force,
+          isCancelled: () => cancelToken?.isCancelled ?? false,
+          onProgress: (done, total) {
+            final operations =
+                Map<String, IndexerOperation>.from(state.operations);
+            final op = operations[id];
+            if (op == null) return;
+            operations[id] = op.copyWith(
+              processedCount: done,
+              targetCount: total,
+            );
+            state = state.copyWith(operations: operations);
+          },
+        ),
+      );
+      if (report.changedUserData) {
+        _invalidateLibrary();
+        ref.read(userDataProvider.notifier).refresh();
+      }
+      return IndexerResult(
+        success: true,
+        message:
+            'Matched ${report.hashed} files, followed ${report.moves.length} renamed songs',
+      );
+    } catch (e) {
+      return IndexerResult(
+        success: false,
+        message: 'Error matching songs: $e',
       );
     }
   }

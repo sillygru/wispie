@@ -3,7 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 
 const int kStatsDbVersion = 3;
-const int kUserDataDbVersion = 6;
+const int kUserDataDbVersion = 7;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -47,6 +47,15 @@ const List<String> _statsTableStmts = [
     )''',
   'CREATE INDEX IF NOT EXISTS idx_playevent_ts ON playevent(timestamp)',
 ];
+
+const String _songIdentityStmt = '''
+    CREATE TABLE IF NOT EXISTS song_identity (
+      filename TEXT PRIMARY KEY,
+      cid TEXT NOT NULL,
+      mtime REAL,
+      status INTEGER NOT NULL DEFAULT 0,
+      seen_at REAL
+    )''';
 
 const List<String> _userDataTableStmts = [
   '''
@@ -167,6 +176,10 @@ const List<String> _userDataTableStmts = [
       filename TEXT PRIMARY KEY,
       offset_seconds REAL NOT NULL DEFAULT 0
     )''',
+  // Durable filename -> audio content id memory. Not synced as rows: each
+  // device derives it from its own files, and ids travel inside sync payloads.
+  // status: 0 live, 1 orphan (waiting for its audio), 2 alias (former name).
+  _songIdentityStmt,
   // Explicit removals of synced user-data rows (unfavorite, delete playlist,
   // unmerge, reset art, ...). A tombstone beats a row iff tomb.hlc > row.hlc.
   '''
@@ -290,6 +303,18 @@ Future<void> upgradeUserDataFrom5To6(Database db) async {
   }
 }
 
+/// User data v6 -> v7: durable content ids so a song stays recognizable after
+/// its file is renamed, on this device or another.
+Future<void> upgradeUserDataFrom6To7(Database db) async {
+  await db.execute(_songIdentityStmt);
+  await _createSongIdentityIndexes(db);
+}
+
+Future<void> _createSongIdentityIndexes(Database db) async {
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_song_identity_cid ON song_identity(cid)');
+}
+
 const List<String> _syncedUserDataTables = [
   'queue_snapshot',
   'current_queue',
@@ -397,6 +422,7 @@ Future<void> _createUserDataIndexes(Database db) async {
   await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_queue_snapshot_song_snapshot_id ON queue_snapshot_song(snapshot_id)');
   await _createMembershipIndexes(db);
+  await _createSongIdentityIndexes(db);
   await _createSyncUserDataIndexes(db);
 }
 

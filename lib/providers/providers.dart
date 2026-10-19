@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/song_identity_service.dart';
 import '../services/stats_service.dart';
 import '../services/audio_player_manager.dart';
 import '../services/storage_service.dart';
@@ -906,6 +907,13 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         } finally {
           await searchService.dispose();
         }
+      }
+
+      // After enrichment so the hashing I/O never delays what the user sees.
+      final identity =
+          await SongIdentityService.instance.reconcileFromLibrary();
+      if (identity.changedUserData) {
+        ref.read(userDataProvider.notifier).refresh();
       }
 
       await _saveScanCheckpoint();

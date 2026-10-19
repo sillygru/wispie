@@ -14,6 +14,7 @@ import 'database_service.dart';
 import 'wispie_paths.dart';
 import 'import_options.dart';
 import 'library_repair_service.dart';
+import 'song_identity_service.dart';
 import '../models/song.dart';
 import '../domain/services/shuffle_migration.dart';
 import '../data/repositories/search_index_repository.dart';
@@ -816,6 +817,10 @@ class BackupService {
       importedRows: importedRows,
       onProgress: onProgress,
     );
+
+    // Backup rows are keyed by the names files had when it was taken; files
+    // renamed since are matched back by audio content.
+    await SongIdentityService.instance.reconcileFromLibrary();
   }
 
   /// Imports a previously validated archive, then removes the extracted copy.
