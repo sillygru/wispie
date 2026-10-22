@@ -94,7 +94,8 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
         isWide && (isDesktop || isIPad) && !WideLayout.isCompact(context);
 
     return StreamBuilder<SequenceState?>(
-      stream: player.sequenceStateStream,
+      stream: audioManager.settledSequenceStateStream,
+      initialData: player.sequenceState,
       builder: (context, snapshot) {
         final state = snapshot.data;
         if (state == null) return const SizedBox.shrink();

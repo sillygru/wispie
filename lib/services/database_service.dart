@@ -65,6 +65,7 @@ class DatabaseService {
           if (oldV < 2) await upgradeStatsFrom1To2(db);
           if (oldV < 3) await upgradeStatsFrom2To3(db);
           if (oldV < 4) await upgradeStatsFrom3To4(db);
+          if (oldV < 5) await upgradeStatsFrom4To5(db);
         },
       );
       _userDataDatabase = await _openDatabaseWithMigrations(

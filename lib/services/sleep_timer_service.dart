@@ -259,7 +259,7 @@ class SleepTimerService {
     }
 
     // Listen for sequence state changes (index changes)
-    _sequenceStateSub = audioManager.player.sequenceStateStream.listen((state) {
+    _sequenceStateSub = audioManager.settledSequenceStateStream.listen((state) {
       if (_isShuttingDown) return;
 
       final currentIndex = state.currentIndex;

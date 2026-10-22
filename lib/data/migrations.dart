@@ -1,8 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 
-const int kStatsDbVersion = 4;
+const int kStatsDbVersion = 5;
 const int kUserDataDbVersion = 7;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
@@ -258,6 +259,83 @@ Future<void> upgradeStatsFrom2To3(Database db) async {
 Future<void> upgradeStatsFrom3To4(Database db) async {
   await _addColumnIfMissing(db, 'playevent', 'queue_id', 'TEXT');
   await _createPlayEventQueueIndex(db);
+}
+
+/// Stats v4 -> v5: removes phantom skips. Before the settled-sequence fix,
+/// the transient tracks the player flicked through while loading a queue were
+/// recorded as sub-second skips, which skewed every skip statistic. Only a
+/// burst matching that pattern is removed: several back-to-back fast skips
+/// near the start of an app session, ended by a real listen or a slower skip.
+/// Isolated quick skips and bursts at the end of a session are kept, since
+/// those look like a person skipping.
+Future<void> upgradeStatsFrom4To5(Database db) async {
+  const fastSkipMaxSec = 1.5;
+  const skipRatio = 0.25;
+  const minBurst = 3;
+  const maxChainGapSec = 5.0;
+  const startupWindowSec = 30.0;
+  const maxEventsBeforeBurst = 1;
+
+  final rows = await db.rawQuery(
+    'SELECT id, session_id, timestamp, duration_played, play_ratio '
+    'FROM playevent WHERE session_id IS NOT NULL AND timestamp IS NOT NULL '
+    'ORDER BY session_id, timestamp, id',
+  );
+
+  bool isFastSkip(Map<String, Object?> r) {
+    final played = (r['duration_played'] as num?)?.toDouble() ?? 0.0;
+    final ratio = (r['play_ratio'] as num?)?.toDouble() ?? 0.0;
+    return played <= fastSkipMaxSec && ratio < skipRatio;
+  }
+
+  double ts(Map<String, Object?> r) => (r['timestamp'] as num).toDouble();
+
+  final toDelete = <int>[];
+  var start = 0;
+  while (start < rows.length) {
+    final session = rows[start]['session_id'];
+    var end = start;
+    while (end < rows.length && rows[end]['session_id'] == session) {
+      end++;
+    }
+    final events = rows.sublist(start, end);
+    final sessionStart = ts(events.first);
+
+    var i = 0;
+    while (i < events.length) {
+      if (!isFastSkip(events[i])) {
+        i++;
+        continue;
+      }
+      var j = i + 1;
+      while (j < events.length &&
+          isFastSkip(events[j]) &&
+          ts(events[j]) - ts(events[j - 1]) <= maxChainGapSec) {
+        j++;
+      }
+      final burstLen = j - i;
+      final atStartup = i <= maxEventsBeforeBurst &&
+          ts(events[i]) - sessionStart <= startupWindowSec;
+      // j < length means a non-fast event (or a slow-chained one) follows.
+      final terminated = j < events.length && !isFastSkip(events[j]);
+      if (burstLen >= minBurst && atStartup && terminated) {
+        for (var k = i; k < j; k++) {
+          toDelete.add(events[k]['id'] as int);
+        }
+      }
+      i = j;
+    }
+    start = end;
+  }
+
+  const chunk = 500;
+  for (var c = 0; c < toDelete.length; c += chunk) {
+    final ids = toDelete.sublist(c, min(c + chunk, toDelete.length));
+    await db.rawDelete(
+      'DELETE FROM playevent WHERE id IN (${List.filled(ids.length, '?').join(',')})',
+      ids,
+    );
+  }
 }
 
 // Separate from _createStatsIndexes, which older upgrade steps run before the

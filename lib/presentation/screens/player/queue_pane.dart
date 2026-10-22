@@ -538,7 +538,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       valueListenable: audioManager.queueNotifier,
       builder: (context, queue, _) {
         return StreamBuilder<int?>(
-          stream: audioManager.player.currentIndexStream,
+          stream: audioManager.settledCurrentIndexStream,
           initialData: audioManager.player.currentIndex,
           builder: (context, snapshot) {
             final currentIndex = snapshot.data ?? -1;

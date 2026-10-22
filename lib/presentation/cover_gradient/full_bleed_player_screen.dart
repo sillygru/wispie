@@ -523,14 +523,21 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                     _PaneTransition(
                       position: _pagePosition,
                       index: 1,
-                      child: _FullBleedPlayerPane(
-                        song: song,
-                        accent: accent,
-                        coverHeight: coverH,
-                        coverKey: _coverKey,
-                        paneVisible: _nowPlayingVisible,
-                        audioManager: _manager,
-                        pagePosition: _pagePosition,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onVerticalDragStart: (_) => _dismissDrag = 0,
+                        onVerticalDragUpdate: _onDismissDragUpdate,
+                        onVerticalDragEnd: _onDismissDragEnd,
+                        onVerticalDragCancel: () => _dismissDrag = 0,
+                        child: _FullBleedPlayerPane(
+                          song: song,
+                          accent: accent,
+                          coverHeight: coverH,
+                          coverKey: _coverKey,
+                          paneVisible: _nowPlayingVisible,
+                          audioManager: _manager,
+                          pagePosition: _pagePosition,
+                        ),
                       ),
                     ),
                     _PaneTransition(

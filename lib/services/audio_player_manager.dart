@@ -196,6 +196,27 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   // (notification / headset actions).
   int _playerMutationDepth = 0;
 
+  // setAudioSources broadcasts the new sequence against the old index before
+  // the platform seeks to initialIndex, and the platform can report further
+  // indices while it loads. Those states flashed random songs in the UI and
+  // were recorded as skips, so listeners consume only states observed outside
+  // a mutation, plus the final state once the mutation lands.
+  final StreamController<SequenceState> _settledSequenceController =
+      StreamController<SequenceState>.broadcast(sync: true);
+
+  Stream<SequenceState> get settledSequenceStateStream =>
+      _settledSequenceController.stream;
+
+  Stream<int?> get settledCurrentIndexStream =>
+      settledSequenceStateStream.map((s) => s.currentIndex).distinct();
+
+  void _emitSettledSequence(SequenceState state) {
+    if (_playerMutationDepth > 0 || _settledSequenceController.isClosed) {
+      return;
+    }
+    _settledSequenceController.add(state);
+  }
+
   // Play/pause fade state (separate from track-transition fades)
   // ignore: unused_field
   bool _isPlayPauseFading = false;
@@ -592,7 +613,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // detection lives in _initFadingListeners, which owns the single
     // positionStream subscription for this player.
 
-    _track(_player.sequenceStateStream.listen((state) {
+    _track(_player.sequenceStateStream.listen(_emitSettledSequence));
+    _track(settledSequenceStateStream.listen((state) {
       _syncEffectiveQueueWithPlayerSequence(state);
       final currentItem = state.currentSource?.tag;
 
@@ -800,7 +822,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   void _initFadingListeners() {
     _sequenceSubscription =
-        _track(_player.sequenceStateStream.listen((state) async {
+        _track(settledSequenceStateStream.listen((state) async {
       if (_ref == null) return;
       // Use cached settings to avoid Riverpod lookups on every sequence
       // update (fires on every track change, but in a tighter loop during
@@ -2139,6 +2161,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       if (_playerMutationDepth == 0) {
         // Publish the authoritative model once the whole mutation has landed.
         _updateQueueNotifier();
+        _emitSettledSequence(_player.sequenceState);
       }
     }
   }
@@ -3599,6 +3622,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_settledSequenceController.close());
     unawaited(forceFlushCurrentStats());
     _volumeMonitorService?.dispose();
     _positionSubscription?.cancel();

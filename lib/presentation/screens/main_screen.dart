@@ -938,7 +938,7 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                     return ValueListenableBuilder<List<QueueItem>>(
                       valueListenable: audioManager.queueNotifier,
                       builder: (context, queue, _) => StreamBuilder<int?>(
-                        stream: audioManager.player.currentIndexStream,
+                        stream: audioManager.settledCurrentIndexStream,
                         initialData: audioManager.player.currentIndex,
                         builder: (context, snapshot) {
                           final current = snapshot.data ?? -1;
