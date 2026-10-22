@@ -3,10 +3,12 @@ import 'package:path/path.dart' as p;
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/providers.dart';
+import '../../services/permission_service.dart';
 import '../../services/storage_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
+import '../components/app_surface.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -20,15 +22,105 @@ class FolderManagementScreen extends ConsumerStatefulWidget {
       _FolderManagementScreenState();
 }
 
-class _FolderManagementScreenState
-    extends ConsumerState<FolderManagementScreen> {
+class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
+    with WidgetsBindingObserver {
   List<Map<String, String>> _folders = [];
   bool _isLoading = true;
+
+  /// Null when all-files access does not apply to this platform or API level.
+  bool? _allFilesGranted;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadFolders();
+    _refreshAllFilesAccess();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshAllFilesAccess();
+  }
+
+  Future<void> _refreshAllFilesAccess() async {
+    final granted = await PermissionService.instance.hasAllFilesAccess();
+    if (!mounted) return;
+    setState(() => _allFilesGranted = granted);
+  }
+
+  Future<void> _requestAllFilesAccess() async {
+    await PermissionService.instance.requestAllFilesAccess();
+    await _refreshAllFilesAccess();
+  }
+
+  Widget _buildAllFilesCard(BuildContext context) {
+    final l10n = context.l10n;
+    final granted = _allFilesGranted == true;
+    final accent = AppTokens.accentOf(context, ref);
+    final tone = granted ? accent : AppTokens.warning;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s5,
+        0,
+        AppTokens.s5,
+        AppTokens.s3,
+      ),
+      child: AppSurface(
+        accentTint: tone,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: AppIcon(
+                granted ? AppIcons.checkCircle : AppIcons.warning,
+                color: tone,
+              ),
+            ),
+            const SizedBox(width: AppTokens.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    granted
+                        ? l10n.foldersAllFilesGrantedTitle
+                        : l10n.foldersAllFilesMissingTitle,
+                    style: AppTokens.rowTitle(context),
+                  ),
+                  const SizedBox(height: AppTokens.s1),
+                  Text(
+                    granted
+                        ? l10n.foldersAllFilesGrantedSubtitle
+                        : l10n.foldersAllFilesMissingSubtitle,
+                    style: AppTokens.rowSubtitle(context),
+                  ),
+                  if (!granted) ...[
+                    const SizedBox(height: AppTokens.s3),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.icon(
+                        onPressed: _requestAllFilesAccess,
+                        icon: const AppIcon(AppIcons.folder),
+                        label: Text(l10n.foldersAllFilesAllowButton),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadFolders() async {
@@ -110,6 +202,7 @@ class _FolderManagementScreenState
                     style: AppTokens.rowSubtitle(context),
                   ),
                 ),
+                if (_allFilesGranted != null) _buildAllFilesCard(context),
                 Expanded(
                   child: _folders.isEmpty
                       ? AppEmptyState(

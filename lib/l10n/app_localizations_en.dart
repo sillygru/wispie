@@ -4282,6 +4282,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get foldersAddButton => 'Add Folder';
 
   @override
+  String get foldersAllFilesGrantedTitle => 'All files access granted';
+
+  @override
+  String get foldersAllFilesGrantedSubtitle =>
+      'wispie can read music in every folder you add.';
+
+  @override
+  String get foldersAllFilesMissingTitle => 'All files access is off';
+
+  @override
+  String get foldersAllFilesMissingSubtitle =>
+      'Allow it so wispie can find music in folders outside the default media library.';
+
+  @override
+  String get foldersAllFilesAllowButton => 'Allow all files access';
+
+  @override
   String get foldersShortcutInternalStorage => 'Internal Storage';
 
   @override

@@ -4356,6 +4356,26 @@ class AppLocalizationsPt extends AppLocalizations {
   String get foldersAddButton => 'Adicionar pasta';
 
   @override
+  String get foldersAllFilesGrantedTitle =>
+      'Acesso a todos os arquivos concedido';
+
+  @override
+  String get foldersAllFilesGrantedSubtitle =>
+      'O wispie pode ler músicas em todas as pastas que você adicionar.';
+
+  @override
+  String get foldersAllFilesMissingTitle =>
+      'Acesso a todos os arquivos desativado';
+
+  @override
+  String get foldersAllFilesMissingSubtitle =>
+      'Ative-o para que o wispie encontre músicas fora da biblioteca de mídia padrão.';
+
+  @override
+  String get foldersAllFilesAllowButton =>
+      'Permitir acesso a todos os arquivos';
+
+  @override
   String get foldersShortcutInternalStorage => 'Armazenamento interno';
 
   @override
@@ -9642,6 +9662,26 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get foldersAddButton => 'Adicionar pasta';
+
+  @override
+  String get foldersAllFilesGrantedTitle =>
+      'Acesso a todos os ficheiros concedido';
+
+  @override
+  String get foldersAllFilesGrantedSubtitle =>
+      'O wispie pode ler música em todas as pastas que adicionares.';
+
+  @override
+  String get foldersAllFilesMissingTitle =>
+      'Acesso a todos os ficheiros desativado';
+
+  @override
+  String get foldersAllFilesMissingSubtitle =>
+      'Ativa-o para que o wispie encontre música fora da biblioteca multimédia predefinida.';
+
+  @override
+  String get foldersAllFilesAllowButton =>
+      'Permitir acesso a todos os ficheiros';
 
   @override
   String get foldersShortcutInternalStorage => 'Armazenamento interno';

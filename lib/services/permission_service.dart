@@ -97,6 +97,23 @@ class PermissionService {
     return await Permission.manageExternalStorage.isPermanentlyDenied;
   }
 
+  /// MANAGE_EXTERNAL_STORAGE ("All files access") only exists on API 30+.
+  /// Returns null when the concept does not apply (non-Android, API < 30, or
+  /// unknown SDK) so callers can hide the affordance.
+  Future<bool?> hasAllFilesAccess() async {
+    if (!Platform.isAndroid) return null;
+    final sdk = await AndroidStorageService.getSdkIntOrNull();
+    if (sdk == null || sdk < 30) return null;
+    return Permission.manageExternalStorage.isGranted;
+  }
+
+  /// Opens the system "All files access" page for this app on API 30+.
+  Future<bool> requestAllFilesAccess() async {
+    if (!Platform.isAndroid) return false;
+    final status = await Permission.manageExternalStorage.request();
+    return status.isGranted;
+  }
+
   /// Notification permission is required for the media playback foreground
   /// notification (android `POST_NOTIFICATIONS`, API 33+). Without it the
   /// service runs but no controls appear in the shade or lock screen.

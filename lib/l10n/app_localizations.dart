@@ -7281,6 +7281,36 @@ abstract class AppLocalizations {
   /// **'Add Folder'**
   String get foldersAddButton;
 
+  /// Status title on the music folders screen when all files access is on
+  ///
+  /// In en, this message translates to:
+  /// **'All files access granted'**
+  String get foldersAllFilesGrantedTitle;
+
+  /// Status subtitle when all files access is on
+  ///
+  /// In en, this message translates to:
+  /// **'wispie can read music in every folder you add.'**
+  String get foldersAllFilesGrantedSubtitle;
+
+  /// Warning title on the music folders screen when all files access is missing
+  ///
+  /// In en, this message translates to:
+  /// **'All files access is off'**
+  String get foldersAllFilesMissingTitle;
+
+  /// Warning subtitle asking the user to allow all files access
+  ///
+  /// In en, this message translates to:
+  /// **'Allow it so wispie can find music in folders outside the default media library.'**
+  String get foldersAllFilesMissingSubtitle;
+
+  /// Button that requests all files access on the music folders screen
+  ///
+  /// In en, this message translates to:
+  /// **'Allow all files access'**
+  String get foldersAllFilesAllowButton;
+
   /// Shortcut label for internal storage in the folder picker
   ///
   /// In en, this message translates to:

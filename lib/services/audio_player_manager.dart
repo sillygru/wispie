@@ -524,7 +524,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     if (startPlaying) {
       await _player.seek(Duration.zero, index: targetIndex);
-      await _player.play();
+      unawaited(_player.play());
     }
 
     _syncCoverWarmer(targetIndex);
@@ -3247,7 +3247,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _logSlow('rebuild: setAudioSources(${sources.length})', setWatch);
     _updateEffectivePlaybackMode(currentItem?.song);
 
-    if (startPlaying) await _player.play();
+    if (startPlaying) unawaited(_player.play());
     _updateQueueNotifier();
     _syncCoverWarmer(targetIndex);
   }
@@ -3588,7 +3588,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       await _updateCurrentSnapshotSongs();
 
       await _player.seek(Duration.zero, index: targetIndex);
-      await _player.play();
+      unawaited(_player.play());
     });
   }
 
