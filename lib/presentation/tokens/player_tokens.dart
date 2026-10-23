@@ -140,7 +140,7 @@ class PlayerTokens {
   /// use for the same idea, because these sit over the blurred cover rather
   /// than over a flat sheet fill, where 0.12 disappears into the artwork.
   static const double accentWash = 0.14;
-  static const double lyricsTimingControlHeight = 40;
+  static const double lyricsTimingControlHeight = 48;
 
   // Layout
   static const double coverMaxFraction = 0.72;

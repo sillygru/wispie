@@ -66,7 +66,6 @@ class _LyricsTimingSheet extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        final window = controller.window;
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
             PlayerTokens.s5,
@@ -90,12 +89,10 @@ class _LyricsTimingSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: PlayerTokens.s2),
-              _RungSelector(
-                precision: controller.precision,
-                accent: accent,
-                onChanged: controller.setPrecision,
+              Text(
+                context.l10n.lyricsTimingRangeLabel,
+                style: PlayerTokens.meta(context),
               ),
-              const SizedBox(height: PlayerTokens.s3),
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   activeTrackColor: accent,
@@ -104,16 +101,40 @@ class _LyricsTimingSheet extends StatelessWidget {
                       accent.withValues(alpha: PlayerTokens.aTertiary),
                 ),
                 child: Slider(
-                  value: window.snap(controller.seconds),
-                  min: window.lower,
-                  max: window.upper,
-                  divisions: window.divisions,
+                  value: LyricsTimingController.rangeWindow
+                      .snap(controller.seconds),
+                  min: LyricsTimingController.rangeWindow.lower,
+                  max: LyricsTimingController.rangeWindow.upper,
+                  divisions: LyricsTimingController.rangeWindow.divisions,
                   label: formatLyricsTimingOffset(
                     controller.seconds,
                     showUnit: true,
                   ),
-                  onChanged: controller.drag,
-                  onChangeEnd: (_) => controller.commitSlider(),
+                  onChanged: controller.dragRange,
+                ),
+              ),
+              Text(
+                context.l10n.lyricsTimingFineLabel,
+                style: PlayerTokens.meta(context),
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: accent,
+                  thumbColor: accent,
+                  overlayColor:
+                      accent.withValues(alpha: PlayerTokens.aTertiary),
+                ),
+                child: Slider(
+                  value: controller.fineWindow.snap(controller.seconds),
+                  min: controller.fineWindow.lower,
+                  max: controller.fineWindow.upper,
+                  divisions: controller.fineWindow.divisions,
+                  label: formatLyricsTimingOffset(
+                    controller.seconds,
+                    showUnit: true,
+                  ),
+                  onChanged: controller.dragFine,
+                  onChangeEnd: (_) => controller.commitFine(),
                 ),
               ),
               Row(
@@ -172,102 +193,6 @@ class _LyricsTimingSheet extends StatelessWidget {
         formatLyricsTimingOffset(controller.seconds, showUnit: true),
       ),
       tone: AppTone.success,
-    );
-  }
-}
-
-/// Rung picker.
-///
-/// Named by the range it shows rather than by an abstract level, because the
-/// question a user is actually answering is "how far can this reach" and "how
-/// fine can this move" at the same time.
-class _RungSelector extends StatelessWidget {
-  const _RungSelector({
-    required this.precision,
-    required this.accent,
-    required this.onChanged,
-  });
-
-  final LyricsTimingPrecision precision;
-  final Color accent;
-  final void Function(LyricsTimingPrecision) onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (final rung in LyricsTimingPrecision.values) ...[
-          Expanded(
-            child: _RungOption(
-              rung: rung,
-              selected: rung == precision,
-              accent: accent,
-              onTap: () => onChanged(rung),
-            ),
-          ),
-          if (rung != LyricsTimingPrecision.values.last)
-            const SizedBox(width: PlayerTokens.s2),
-        ],
-      ],
-    );
-  }
-}
-
-class _RungOption extends StatelessWidget {
-  const _RungOption({
-    required this.rung,
-    required this.selected,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final LyricsTimingPrecision rung;
-  final bool selected;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? accent : Colors.white;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: PlayerTokens.dFast,
-        curve: PlayerTokens.cStandard,
-        padding: const EdgeInsets.symmetric(
-          vertical: PlayerTokens.s2,
-          horizontal: PlayerTokens.s1,
-        ),
-        decoration: BoxDecoration(
-          // Selection is an accent fill, never an outline.
-          color: selected
-              ? accent.withValues(alpha: PlayerTokens.accentWash)
-              : Colors.white.withValues(alpha: PlayerTokens.aTertiary),
-          borderRadius: PlayerTokens.brSm,
-        ),
-        child: Column(
-          children: [
-            Text(
-              rung.label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.2,
-                color: foreground,
-              ),
-            ),
-            Text(
-              '${rung.spanSeconds.round()}s',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: foreground.withValues(alpha: PlayerTokens.aSecondary),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

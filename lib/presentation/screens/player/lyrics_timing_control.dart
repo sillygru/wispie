@@ -22,7 +22,11 @@ class LyricsTimingController extends ChangeNotifier {
       : _seconds = quantizeLyricsTimingOffset(initialSeconds),
         _window = anchorLyricsTimingWindow(
           currentSeconds: initialSeconds,
-          precision: LyricsTimingPrecision.coarse,
+          precision: LyricsTimingPrecision.fine,
+        ),
+        _fineWindow = anchorLyricsTimingWindow(
+          currentSeconds: initialSeconds,
+          precision: LyricsTimingPrecision.fine,
         );
 
   /// Fired on every committed change so the pane can preview the offset against
@@ -31,10 +35,21 @@ class LyricsTimingController extends ChangeNotifier {
 
   double _seconds;
   LyricsTimingWindow _window;
-  LyricsTimingPrecision _precision = LyricsTimingPrecision.coarse;
+  LyricsTimingWindow _fineWindow;
+  LyricsTimingPrecision _precision = LyricsTimingPrecision.fine;
 
   double get seconds => _seconds;
   LyricsTimingWindow get window => _window;
+
+  /// Whole-range window for the long-jump slider: fixed, 1s steps.
+  static const LyricsTimingWindow rangeWindow = LyricsTimingWindow(
+    lower: -kLyricsTimingMaxSeconds,
+    upper: kLyricsTimingMaxSeconds,
+    step: 1,
+  );
+
+  /// +-5s window at 10ms for the precise slider, anchored on the offset.
+  LyricsTimingWindow get fineWindow => _fineWindow;
   LyricsTimingPrecision get precision => _precision;
 
   /// Loads the stored offset for a song, returning the rung to coarse.
@@ -44,11 +59,32 @@ class LyricsTimingController extends ChangeNotifier {
   /// relative to the offset it was anchored on.
   void load(double seconds) {
     _seconds = quantizeLyricsTimingOffset(seconds);
-    _precision = LyricsTimingPrecision.coarse;
-    _window = anchorLyricsTimingWindow(
-      currentSeconds: _seconds,
-      precision: _precision,
-    );
+    _precision = LyricsTimingPrecision.fine;
+    _reanchor();
+    notifyListeners();
+  }
+
+  /// Long jump: lands on a whole second and re-centres the fine window there.
+  void dragRange(double seconds) {
+    final next = quantizeLyricsTimingOffset(seconds, step: 1);
+    if (next == _seconds) return;
+    _seconds = next;
+    onChanged(next);
+    _reanchor();
+    notifyListeners();
+  }
+
+  /// Precise move inside the fine window, which stays put under the finger.
+  void dragFine(double seconds) {
+    final next = quantizeLyricsTimingOffset(seconds);
+    if (next == _seconds) return;
+    _seconds = next;
+    onChanged(next);
+    notifyListeners();
+  }
+
+  void commitFine() {
+    _reanchor();
     notifyListeners();
   }
 
@@ -85,7 +121,7 @@ class LyricsTimingController extends ChangeNotifier {
     if (next == _seconds) return;
     _seconds = next;
     onChanged(next);
-    if (!_window.contains(next)) _reanchor();
+    if (!_window.contains(next) || !_fineWindow.contains(next)) _reanchor();
     notifyListeners();
   }
 
@@ -138,6 +174,10 @@ class LyricsTimingController extends ChangeNotifier {
       currentSeconds: _seconds,
       precision: _precision,
     );
+    _fineWindow = anchorLyricsTimingWindow(
+      currentSeconds: _seconds,
+      precision: LyricsTimingPrecision.fine,
+    );
   }
 }
 
@@ -156,7 +196,7 @@ class LyricsTimingControl extends StatelessWidget {
     required this.onOpenSheet,
   });
 
-  static const double width = 240;
+  static const double width = 260;
 
   final LyricsTimingController controller;
   final Color accent;
@@ -178,35 +218,56 @@ class LyricsTimingControl extends StatelessWidget {
       child: AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
-          final window = controller.window;
+          final sliderTheme = SliderTheme.of(context).copyWith(
+            activeTrackColor: accent,
+            inactiveTrackColor: accent.withValues(alpha: 0.24),
+            thumbColor: accent,
+            trackHeight: 2,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+            trackShape: const RoundedRectSliderTrackShape(),
+          );
+          Widget slider(
+            LyricsTimingWindow window,
+            ValueChanged<double> onChanged,
+            VoidCallback? onEnd,
+          ) =>
+              SizedBox(
+                height: 20,
+                child: Slider(
+                  value: window.snap(controller.seconds),
+                  min: window.lower,
+                  max: window.upper,
+                  divisions: window.divisions,
+                  label: formatLyricsTimingOffset(
+                    controller.seconds,
+                    showUnit: true,
+                  ),
+                  onChanged: onChanged,
+                  onChangeEnd: onEnd == null ? null : (_) => onEnd(),
+                ),
+              );
           return Row(
             children: [
-              _RungChip(
-                precision: controller.precision,
-                accent: accent,
-                onTap: () =>
-                    controller.setPrecision(_next(controller.precision)),
-                onLongPress: onOpenSheet,
-              ),
-              const SizedBox(width: PlayerTokens.s1),
               Expanded(
                 child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: accent,
-                    thumbColor: accent,
-                    trackHeight: 3,
-                  ),
-                  child: Slider(
-                    value: window.snap(controller.seconds),
-                    min: window.lower,
-                    max: window.upper,
-                    divisions: window.divisions,
-                    label: formatLyricsTimingOffset(
-                      controller.seconds,
-                      showUnit: true,
-                    ),
-                    onChanged: controller.drag,
-                    onChangeEnd: (_) => controller.commitSlider(),
+                  data: sliderTheme,
+                  // Top: long reach in whole seconds. Bottom: +-5s at 10ms
+                  // around wherever the top one left the offset.
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      slider(
+                        LyricsTimingController.rangeWindow,
+                        controller.dragRange,
+                        null,
+                      ),
+                      slider(
+                        controller.fineWindow,
+                        controller.dragFine,
+                        controller.commitFine,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -225,10 +286,6 @@ class LyricsTimingControl extends StatelessWidget {
       ),
     );
   }
-
-  static LyricsTimingPrecision _next(LyricsTimingPrecision current) =>
-      LyricsTimingPrecision
-          .values[(current.index + 1) % LyricsTimingPrecision.values.length];
 }
 
 /// The numeric offset, which doubles as the reset target.
@@ -309,43 +366,6 @@ class _LyricsTimingReadoutState extends State<LyricsTimingReadout>
                 style: widget.style,
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The step-size chip. Shows the rung's resolution rather than naming it, since
-/// the resolution is the thing the user is actually choosing.
-class _RungChip extends StatelessWidget {
-  const _RungChip({
-    required this.precision,
-    required this.accent,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  final LyricsTimingPrecision precision;
-  final Color accent;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      haptic: PressHaptic.selection,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s1),
-        child: Text(
-          precision.label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.1,
-            color: accent,
           ),
         ),
       ),

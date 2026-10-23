@@ -13,6 +13,32 @@ import 'track_swipe_switcher.dart';
 
 /// Play glyph that morphs into pause (and back) instead of swapping, with a
 /// small squash at the midpoint so the change reads as a press response.
+/// Shared-element wrapper so mini bar and player transport controls morph
+/// into each other during the route transition. The shuttle scales the
+/// destination glyph to the in-flight rect instead of re-laying it out.
+class TransportHero extends StatelessWidget {
+  static const String prev = 'transport_prev';
+  static const String play = 'transport_play';
+  static const String next = 'transport_next';
+
+  final String tag;
+  final Widget child;
+
+  const TransportHero({super.key, required this.tag, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Hero(
+      tag: tag,
+      flightShuttleBuilder: (context, animation, direction, from, to) {
+        final Widget target = (to.widget as Hero).child;
+        return FittedBox(child: target);
+      },
+      child: child,
+    );
+  }
+}
+
 class PlayPauseMorphIcon extends StatefulWidget {
   final bool playing;
   final double size;
@@ -97,58 +123,61 @@ class PlayPauseDisc extends StatelessWidget {
     return Pressable(
       onTap: audioManager.togglePlayPause,
       pressedScale: 0.88,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: accent,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: accent.withValues(alpha: 0.45),
-              blurRadius: 22,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: StreamBuilder<PlayerState>(
-          stream: audioManager.player.playerStateStream,
-          initialData: audioManager.player.playerState,
-          builder: (context, snapshot) {
-            final bool buffering =
-                snapshot.data?.processingState == ProcessingState.buffering;
-            return ValueListenableBuilder<bool>(
-              valueListenable: audioManager.playingNotifier,
-              builder: (context, playing, _) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    PlayPauseMorphIcon(
-                      playing: playing,
-                      size: iconSize,
-                      color: onAccent,
-                    ),
-                    // Ring orbits the glyph instead of replacing it, so a
-                    // brief buffer doesn't make the button flicker.
-                    AnimatedOpacity(
-                      opacity: buffering ? 1 : 0,
-                      duration: PlayerTokens.dFast,
-                      child: SizedBox(
-                        width: size - PlayerTokens.s3,
-                        height: size - PlayerTokens.s3,
-                        child: buffering
-                            ? CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: onAccent,
-                              )
-                            : null,
+      child: TransportHero(
+        tag: TransportHero.play,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: accent,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.45),
+                blurRadius: 22,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: StreamBuilder<PlayerState>(
+            stream: audioManager.player.playerStateStream,
+            initialData: audioManager.player.playerState,
+            builder: (context, snapshot) {
+              final bool buffering =
+                  snapshot.data?.processingState == ProcessingState.buffering;
+              return ValueListenableBuilder<bool>(
+                valueListenable: audioManager.playingNotifier,
+                builder: (context, playing, _) {
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PlayPauseMorphIcon(
+                        playing: playing,
+                        size: iconSize,
+                        color: onAccent,
                       ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+                      // Ring orbits the glyph instead of replacing it, so a
+                      // brief buffer doesn't make the button flicker.
+                      AnimatedOpacity(
+                        opacity: buffering ? 1 : 0,
+                        duration: PlayerTokens.dFast,
+                        child: SizedBox(
+                          width: size - PlayerTokens.s3,
+                          height: size - PlayerTokens.s3,
+                          child: buffering
+                              ? CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: onAccent,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -215,46 +244,49 @@ class _SkipButtonState extends State<SkipButton>
       pressedScale: 0.86,
       child: Padding(
         padding: const EdgeInsets.all(PlayerTokens.s3),
-        child: SizedBox(
-          width: s,
-          height: s,
-          child: ClipRect(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final double t =
-                    Curves.easeInOutCubic.transform(_controller.value);
-                final Widget glyph =
-                    Icon(widget.icon, size: s, color: widget.color);
-                if (t == 0 || t == 1) {
-                  return AnimatedSwitcher(
-                    duration: PlayerTokens.dBase,
-                    switchInCurve: PlayerTokens.cSpring,
-                    switchOutCurve: PlayerTokens.cStandard,
-                    transitionBuilder: (child, anim) => ScaleTransition(
-                      scale: anim,
-                      child: FadeTransition(opacity: anim, child: child),
-                    ),
-                    child: KeyedSubtree(
-                      key: ValueKey<IconData>(widget.icon),
-                      child: glyph,
-                    ),
+        child: TransportHero(
+          tag: widget.direction < 0 ? TransportHero.prev : TransportHero.next,
+          child: SizedBox(
+            width: s,
+            height: s,
+            child: ClipRect(
+              child: AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  final double t =
+                      Curves.easeInOutCubic.transform(_controller.value);
+                  final Widget glyph =
+                      Icon(widget.icon, size: s, color: widget.color);
+                  if (t == 0 || t == 1) {
+                    return AnimatedSwitcher(
+                      duration: PlayerTokens.dBase,
+                      switchInCurve: PlayerTokens.cSpring,
+                      switchOutCurve: PlayerTokens.cStandard,
+                      transitionBuilder: (child, anim) => ScaleTransition(
+                        scale: anim,
+                        child: FadeTransition(opacity: anim, child: child),
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey<IconData>(widget.icon),
+                        child: glyph,
+                      ),
+                    );
+                  }
+                  final double dx = widget.direction * s * 0.9;
+                  return Stack(
+                    children: [
+                      Transform.translate(
+                        offset: Offset(dx * t, 0),
+                        child: Opacity(opacity: 1 - t, child: glyph),
+                      ),
+                      Transform.translate(
+                        offset: Offset(dx * (t - 1), 0),
+                        child: Opacity(opacity: t, child: glyph),
+                      ),
+                    ],
                   );
-                }
-                final double dx = widget.direction * s * 0.9;
-                return Stack(
-                  children: [
-                    Transform.translate(
-                      offset: Offset(dx * t, 0),
-                      child: Opacity(opacity: 1 - t, child: glyph),
-                    ),
-                    Transform.translate(
-                      offset: Offset(dx * (t - 1), 0),
-                      child: Opacity(opacity: t, child: glyph),
-                    ),
-                  ],
-                );
-              },
+                },
+              ),
             ),
           ),
         ),

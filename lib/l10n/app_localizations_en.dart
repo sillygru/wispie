@@ -5060,6 +5060,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get lyricsTimingRangeLabel => 'Range (up to 60 s either way)';
+
+  @override
+  String get lyricsTimingFineLabel => 'Fine (5 s either side, 0.01 s steps)';
+
+  @override
   String get lyricsTimingResetTooltip => 'Double-tap to reset to 0.00';
 
   @override

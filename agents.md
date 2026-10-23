@@ -8,6 +8,8 @@ Local-first Flutter music player. Riverpod 3, `just_audio`, two SQLite files, MV
 - **No building.** Do not run `flutter build` or `flutter run` unless explicitly requested.
 - **No emojis** in code, comments, or messages.
 - **No hardcoded user-facing strings.** Every string shown to the user (labels, titles, tooltips, messages, dialogs, semantics labels) must be added to `lib/l10n/app_en.arb` and read through the generated localizations, never inlined in widgets or services. This applies to every new feature and any UI change you touch.
+- **English ARB only.** Add and edit strings in `lib/l10n/app_en.arb` only (the `template-arb-file` in `l10n.yaml`). Leave every other `lib/l10n/app_*.arb` file alone unless the user asks for that locale. Enumerate the current ARB files instead of assuming a fixed locale list.
+- **Write in the user's language.** If the user is writing in a non-English language, also add the new keys to that language's ARB file, translated into it. If no file for it exists yet, that is the one deliberate case for adding a locale: start `lib/l10n/app_<tag>.arb` from `app_en.arb` with matching keys plus its own `languageNativeName` (nothing else needs wiring; the generated locale list picks it up). Keys stay identical to the template and the template stays English. Only do this for languages the user actually speaks or asks for.
 - **`filename` is the primary key for all user data.** Never change this (see Architecture).
 - **Comments**: minimal, explain _why_ not _what_. No "// added this" style comments.
 - **Before finishing any code change:** `dart format .` then `flutter analyze --no-pub`, both clean.

@@ -26,6 +26,7 @@ import '../components/favorite_heart_button.dart';
 import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
+import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import '../../l10n/l10n.dart';
 import '../utils/wide_layout.dart';
@@ -88,7 +89,6 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   late int _pane;
   bool _wakeLockHeld = false;
   bool _appActive = true;
-  double _dismissDrag = 0;
   late int _landscapeTab;
   bool _showingWide = false;
   bool _reduceMotion = false;
@@ -326,17 +326,24 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     _syncWakeLock();
   }
 
-  void _onDismissDragUpdate(DragUpdateDetails details) {
-    _dismissDrag += details.delta.dy;
+  PlayerPageRoute? get _playerRoute {
+    final route = ModalRoute.of(context);
+    return route is PlayerPageRoute ? route : null;
   }
 
-  void _onDismissDragEnd(DragEndDetails details) {
-    final double velocity = details.primaryVelocity ?? 0;
-    if (_dismissDrag > 90 || velocity > 700) {
-      Navigator.of(context).maybePop();
-    }
-    _dismissDrag = 0;
-  }
+  void _onDismissDragStart(DragStartDetails details) =>
+      _playerRoute?.dismissDragStart();
+
+  void _onDismissDragUpdate(DragUpdateDetails details) => _playerRoute
+      ?.dismissDragUpdate(details.delta.dy, MediaQuery.sizeOf(context).height);
+
+  void _onDismissDragEnd(DragEndDetails details) =>
+      _playerRoute?.dismissDragEnd(
+        details.primaryVelocity ?? 0,
+        MediaQuery.sizeOf(context).height,
+      );
+
+  void _onDismissDragCancel() => _playerRoute?.dismissDragCancel();
 
   @override
   Widget build(BuildContext context) {
@@ -525,10 +532,10 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                       index: 1,
                       child: GestureDetector(
                         behavior: HitTestBehavior.translucent,
-                        onVerticalDragStart: (_) => _dismissDrag = 0,
+                        onVerticalDragStart: _onDismissDragStart,
                         onVerticalDragUpdate: _onDismissDragUpdate,
                         onVerticalDragEnd: _onDismissDragEnd,
-                        onVerticalDragCancel: () => _dismissDrag = 0,
+                        onVerticalDragCancel: _onDismissDragCancel,
                         child: _FullBleedPlayerPane(
                           song: song,
                           accent: accent,
@@ -745,8 +752,10 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       // Wide: the header floats over the Lyrics/Queue switch, so it must let
       // taps through to it.
       behavior: wide ? HitTestBehavior.deferToChild : HitTestBehavior.opaque,
+      onVerticalDragStart: wide ? null : _onDismissDragStart,
       onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
       onVerticalDragEnd: wide ? null : _onDismissDragEnd,
+      onVerticalDragCancel: wide ? null : _onDismissDragCancel,
       child: Stack(
         children: [
           // The narrow layout lays its own eased scrim under the whole chrome

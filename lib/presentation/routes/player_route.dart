@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
@@ -22,6 +23,68 @@ class PlayerPageRoute extends PageRoute<void> {
 
   /// Opens the Queue pane on its History segment rather than Up Next.
   final bool queueShowsHistory;
+
+  bool _dragging = false;
+  bool _settling = false;
+
+  // While the finger owns the sheet it tracks 1:1 (linear), never through
+  // the open/close curves, so slow drags feel physically attached.
+  bool _gestureDriven = false;
+
+  void dismissDragStart() {
+    final c = controller;
+    if (c == null || _dragging) return;
+    if (_settling) {
+      // Re-grabbing a running settle keeps the existing gesture claim.
+      _settling = false;
+      c.stop();
+    } else {
+      if (c.isAnimating || !isCurrent) return;
+      navigator?.didStartUserGesture();
+    }
+    _dragging = true;
+    _gestureDriven = true;
+  }
+
+  void dismissDragUpdate(double dy, double height) {
+    final c = controller;
+    if (!_dragging || c == null || height <= 0) return;
+    c.value = c.value - dy / height;
+  }
+
+  /// [velocity] is px/s, positive downward.
+  void dismissDragEnd(double velocity, double height) {
+    final c = controller;
+    if (!_dragging || c == null) return;
+    _dragging = false;
+    final v = height > 0 ? velocity / height : 0.0;
+    // Final flick direction wins, so down-then-quickly-up reopens.
+    final close = v.abs() > 0.3 ? v > 0 : c.value < 0.6;
+    _settle(close ? 0 : 1, -v);
+  }
+
+  void dismissDragCancel() {
+    if (!_dragging) return;
+    _dragging = false;
+    _settle(1, 0);
+  }
+
+  // Popped only once landed closed, so a late grab can still pull it back.
+  void _settle(double target, double velocity) {
+    final c = controller!;
+    _settling = true;
+    c.animateWith(_SnapSimulation(c.value, target, velocity)).then((_) {
+      if (!_settling) return;
+      _settling = false;
+      final nav = navigator;
+      nav?.didStopUserGesture();
+      if (target == 0) {
+        if (nav != null && isActive) nav.removeRoute(this);
+      } else {
+        _gestureDriven = false;
+      }
+    });
+  }
 
   @override
   bool get opaque => false;
@@ -93,45 +156,38 @@ class PlayerPageRoute extends PageRoute<void> {
       curve: PlayerTokens.cEmphasizedDecel,
       reverseCurve: PlayerTokens.cEmphasizedAccel,
     );
+    // Content only melts into the mini player over the last stretch.
     final fade = CurvedAnimation(
       parent: animation,
-      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
-      reverseCurve: const Interval(0.35, 1.0, curve: Curves.easeIn),
+      curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
     );
-    final slide = Tween<Offset>(
-      begin: const Offset(0, 0.18),
-      end: Offset.zero,
-    ).animate(primary);
 
     return Stack(
       children: [
         FadeTransition(
-          opacity: fade,
+          opacity: animation,
           child: Container(color: Colors.black.withValues(alpha: 0.46)),
         ),
-        SlideTransition(
-          position: slide,
-          child: AnimatedBuilder(
-            animation: primary,
-            child: FadeTransition(opacity: fade, child: child),
-            builder: (context, child) {
-              final double t = primary.value.clamp(0.0, 1.0);
-              final double radius = (1 - t) * PlayerTokens.rLg;
-              // Structure stays fixed (only clip mode changes) so the player
-              // subtree is never remounted when the animation settles.
-              return ClipRRect(
+        AnimatedBuilder(
+          animation: primary,
+          child: FadeTransition(opacity: fade, child: child),
+          builder: (context, child) {
+            final double t = (_gestureDriven ? animation.value : primary.value)
+                .clamp(0.0, 1.0);
+            final double radius = (1 - t) * PlayerTokens.rLg;
+            // Structure stays fixed (only clip mode changes) so the player
+            // subtree is never remounted when the animation settles.
+            return FractionalTranslation(
+              translation: Offset(0, 1 - t),
+              child: ClipRRect(
                 clipBehavior: radius < 0.5 ? Clip.none : Clip.antiAlias,
                 borderRadius: BorderRadius.vertical(
                   top: Radius.circular(radius),
                 ),
-                child: Transform.scale(
-                  scale: 0.94 + 0.06 * t,
-                  alignment: Alignment.bottomCenter,
-                  child: child,
-                ),
-              );
-            },
-          ),
+                child: child,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -140,5 +196,38 @@ class PlayerPageRoute extends PageRoute<void> {
   @override
   Widget buildModalBarrier() {
     return const SizedBox.shrink();
+  }
+}
+
+/// Critically damped, no bounce. A close aims slightly past 0 and ends on
+/// crossing it, so the sheet lands with intent instead of creeping in; any
+/// overshoot past either end finishes immediately.
+class _SnapSimulation extends Simulation {
+  _SnapSimulation(double from, this._target, double velocity)
+      : _spring = SpringSimulation(
+          SpringDescription.withDampingRatio(
+            mass: 1,
+            stiffness: 520,
+            ratio: 1,
+          ),
+          from,
+          _target == 0 ? -0.08 : _target,
+          velocity,
+          tolerance: const Tolerance(distance: 0.001, velocity: 0.01),
+        );
+
+  final double _target;
+  final SpringSimulation _spring;
+
+  @override
+  double x(double time) => _spring.x(time).clamp(0.0, 1.0);
+
+  @override
+  double dx(double time) => _spring.dx(time);
+
+  @override
+  bool isDone(double time) {
+    final x = _spring.x(time);
+    return _spring.isDone(time) || (_target == 0 ? x <= 0 : x >= 1);
   }
 }

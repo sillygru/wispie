@@ -5141,6 +5141,13 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get lyricsTimingRangeLabel => 'Intervalo (até 60 s para cada lado)';
+
+  @override
+  String get lyricsTimingFineLabel =>
+      'Ajuste fino (5 s para cada lado, passos de 0,01 s)';
+
+  @override
   String get lyricsTimingResetTooltip =>
       'Toque duas vezes para redefinir para 0,00';
 
@@ -10448,6 +10455,13 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String lyricsTimingSnapped(String value) {
     return 'Ajustado para $value';
   }
+
+  @override
+  String get lyricsTimingRangeLabel => 'Intervalo (até 60 s para cada lado)';
+
+  @override
+  String get lyricsTimingFineLabel =>
+      'Ajuste fino (5 s para cada lado, passos de 0,01 s)';
 
   @override
   String get lyricsTimingResetTooltip =>

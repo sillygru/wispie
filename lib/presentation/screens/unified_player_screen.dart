@@ -18,6 +18,7 @@ import '../components/player_segmented_pill.dart';
 import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/full_bleed_player_screen.dart';
+import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/basic_progress_bar.dart';
@@ -96,7 +97,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   late int _pane;
   bool _wakeLockHeld = false;
   bool _appActive = true;
-  double _dismissDrag = 0;
 
   /// Right-column tab on wide windows: 0 is Lyrics, 1 is Queue. Seeded from
   /// the opening pane so a deep link into Queue lands on Queue.
@@ -389,17 +389,24 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _syncWakeLock();
   }
 
-  void _onDismissDragUpdate(DragUpdateDetails details) {
-    _dismissDrag += details.delta.dy;
+  PlayerPageRoute? get _playerRoute {
+    final route = ModalRoute.of(context);
+    return route is PlayerPageRoute ? route : null;
   }
 
-  void _onDismissDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (_dismissDrag > 90 || velocity > 700) {
-      Navigator.of(context).maybePop();
-    }
-    _dismissDrag = 0;
-  }
+  void _onDismissDragStart(DragStartDetails details) =>
+      _playerRoute?.dismissDragStart();
+
+  void _onDismissDragUpdate(DragUpdateDetails details) => _playerRoute
+      ?.dismissDragUpdate(details.delta.dy, MediaQuery.sizeOf(context).height);
+
+  void _onDismissDragEnd(DragEndDetails details) =>
+      _playerRoute?.dismissDragEnd(
+        details.primaryVelocity ?? 0,
+        MediaQuery.sizeOf(context).height,
+      );
+
+  void _onDismissDragCancel() => _playerRoute?.dismissDragCancel();
 
   @override
   Widget build(BuildContext context) {
@@ -548,8 +555,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                     _buildHeader(context, song),
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
+                      onVerticalDragStart: _onDismissDragStart,
                       onVerticalDragUpdate: _onDismissDragUpdate,
                       onVerticalDragEnd: _onDismissDragEnd,
+                      onVerticalDragCancel: _onDismissDragCancel,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: PlayerTokens.s5,
@@ -579,9 +588,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                           ),
                           GestureDetector(
                             behavior: HitTestBehavior.translucent,
+                            onVerticalDragStart: _onDismissDragStart,
                             onVerticalDragUpdate: _onDismissDragUpdate,
                             onVerticalDragEnd: _onDismissDragEnd,
-                            onVerticalDragCancel: () => _dismissDrag = 0,
+                            onVerticalDragCancel: _onDismissDragCancel,
                             child: NowPlayingPane(
                               song: song,
                               accent: accent,
@@ -743,8 +753,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   Widget _buildHeader(BuildContext context, Song song) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: _onDismissDragStart,
       onVerticalDragUpdate: _onDismissDragUpdate,
       onVerticalDragEnd: _onDismissDragEnd,
+      onVerticalDragCancel: _onDismissDragCancel,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           PlayerTokens.s5,

@@ -258,10 +258,13 @@ class _NowPlayingContent extends ConsumerWidget {
           onTap: player.hasPrevious ? player.seekToPrevious : null,
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: AppIcon(
-              AppIcons.skipPrevious,
-              size: compact ? 22 : 28,
-              color: Colors.white,
+            child: TransportHero(
+              tag: TransportHero.prev,
+              child: AppIcon(
+                AppIcons.skipPrevious,
+                size: compact ? 22 : 28,
+                color: Colors.white,
+              ),
             ),
           ),
         ),
@@ -294,18 +297,21 @@ class _NowPlayingContent extends ConsumerWidget {
                 message: playing ? l10n.songListPause : l10n.songListPlay,
                 child: Pressable(
                   onTap: () => audioManager.togglePlayPause(),
-                  child: Container(
-                    width: disc,
-                    height: disc,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: accent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: PlayPauseMorphIcon(
-                      playing: playing,
-                      size: compact ? 18 : 22,
-                      color: AppTokens.onAccent(accent),
+                  child: TransportHero(
+                    tag: TransportHero.play,
+                    child: Container(
+                      width: disc,
+                      height: disc,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: PlayPauseMorphIcon(
+                        playing: playing,
+                        size: compact ? 18 : 22,
+                        color: AppTokens.onAccent(accent),
+                      ),
                     ),
                   ),
                 ),
@@ -320,10 +326,13 @@ class _NowPlayingContent extends ConsumerWidget {
           onLongPressCancel: () => audioManager.stopFastForward(),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: AppIcon(
-              AppIcons.skipNext,
-              size: compact ? 22 : 28,
-              color: Colors.white,
+            child: TransportHero(
+              tag: TransportHero.next,
+              child: AppIcon(
+                AppIcons.skipNext,
+                size: compact ? 22 : 28,
+                color: Colors.white,
+              ),
             ),
           ),
         ),

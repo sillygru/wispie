@@ -27,6 +27,7 @@ class PlayerTrackRow extends ConsumerWidget {
   final Color accent;
   final VoidCallback? onTap;
   final VoidCallback? onIndicatorTap;
+  final VoidCallback? onLongPress;
 
   /// Shows the animated bars on the current row (settings.animatedSoundWaveEnabled).
   final bool showAnimatedWave;
@@ -46,6 +47,7 @@ class PlayerTrackRow extends ConsumerWidget {
     this.isPlayed = false,
     this.onTap,
     this.onIndicatorTap,
+    this.onLongPress,
     this.showAnimatedWave = false,
     this.visualizerMode = VisualizerMode.synced,
     this.trailing,
@@ -114,6 +116,7 @@ class PlayerTrackRow extends ConsumerWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: PlayerTokens.brMd,
         child: row,
       ),

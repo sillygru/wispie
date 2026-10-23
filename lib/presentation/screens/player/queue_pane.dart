@@ -482,6 +482,11 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     }
   }
 
+  void _showSongOptions(Song song) {
+    HapticFeedback.mediumImpact();
+    showSongOptionsMenu(context, ref, song.filename, song.title, song: song);
+  }
+
   Future<void> _undo(AudioPlayerManager audioManager) async {
     final pending = _pendingRemoval;
     if (pending == null) return;
@@ -588,6 +593,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                                     isPlayed: true,
                                     onTap: () =>
                                         _jumpTo(audioManager, played[index]),
+                                    onLongPress: () =>
+                                        _showSongOptions(played[index].song),
                                   ),
                                 ),
                               ),
@@ -614,6 +621,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                                         song: current.song,
                                         accent: widget.accent,
                                         isCurrent: true,
+                                        onLongPress: () =>
+                                            _showSongOptions(current.song),
                                         showAnimatedWave: animatedWave &&
                                             playing &&
                                             visualizerMode !=
@@ -750,6 +759,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
         song: item.song,
         accent: widget.accent,
         onTap: () => _jumpTo(audioManager, item),
+        onLongPress: () => _showSongOptions(item.song),
         trailing: ReorderableDragStartListener(
           index: index,
           child: Icon(

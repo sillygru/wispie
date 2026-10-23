@@ -8517,6 +8517,18 @@ abstract class AppLocalizations {
   /// **'Snapped to {value}'**
   String lyricsTimingSnapped(String value);
 
+  /// Label above the long-range lyric timing slider
+  ///
+  /// In en, this message translates to:
+  /// **'Range (up to 60 s either way)'**
+  String get lyricsTimingRangeLabel;
+
+  /// Label above the precise lyric timing slider
+  ///
+  /// In en, this message translates to:
+  /// **'Fine (5 s either side, 0.01 s steps)'**
+  String get lyricsTimingFineLabel;
+
   /// Tooltip for double-tap to reset timing to zero
   ///
   /// In en, this message translates to:
