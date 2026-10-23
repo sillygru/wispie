@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
+import '../services/sync/hlc.dart';
 
-const int kStatsDbVersion = 5;
+const int kStatsDbVersion = 6;
 const int kUserDataDbVersion = 7;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
@@ -334,6 +335,106 @@ Future<void> upgradeStatsFrom4To5(Database db) async {
     await db.rawDelete(
       'DELETE FROM playevent WHERE id IN (${List.filled(ids.length, '?').join(',')})',
       ids,
+    );
+  }
+}
+
+/// Stats v5 -> v6: removes skips the player produced, not the listener.
+///
+/// Removes three or more consecutive fast skips spaced under 0.5s apart. That
+/// is faster than a person can tap, so it means the app advanced the queue
+/// itself. Human-paced chains are kept however long they are, and a row with no
+/// play ratio is kept: a missing ratio is not evidence of a skip.
+Future<void> upgradeStatsFrom5To6(Database db) async {
+  const fastSkipMaxSec = 1.5;
+  const skipRatio = 0.25;
+  const maxMachineGapSec = 0.5;
+  const minBurst = 3;
+
+  final rows = await db.rawQuery(
+    'SELECT id, uid, session_id, timestamp, duration_played, play_ratio, '
+    'total_length FROM playevent '
+    'WHERE session_id IS NOT NULL AND timestamp IS NOT NULL '
+    'ORDER BY session_id, timestamp, id',
+  );
+
+  double? ratioOf(Map<String, Object?> r) {
+    final stored = (r['play_ratio'] as num?)?.toDouble();
+    if (stored != null) return stored;
+    final played = (r['duration_played'] as num?)?.toDouble() ?? 0.0;
+    final length = (r['total_length'] as num?)?.toDouble() ?? 0.0;
+    return length > 0 ? played / length : null;
+  }
+
+  bool isFastSkip(Map<String, Object?> r) {
+    final played = (r['duration_played'] as num?)?.toDouble() ?? 0.0;
+    final ratio = ratioOf(r);
+    return ratio != null && played <= fastSkipMaxSec && ratio < skipRatio;
+  }
+
+  double ts(Map<String, Object?> r) => (r['timestamp'] as num).toDouble();
+
+  final doomed = <Map<String, Object?>>[];
+  var start = 0;
+  while (start < rows.length) {
+    final session = rows[start]['session_id'];
+    var end = start;
+    while (end < rows.length && rows[end]['session_id'] == session) {
+      end++;
+    }
+    final events = rows.sublist(start, end);
+
+    var i = 0;
+    while (i < events.length) {
+      if (!isFastSkip(events[i])) {
+        i++;
+        continue;
+      }
+      var j = i + 1;
+      while (j < events.length &&
+          isFastSkip(events[j]) &&
+          ts(events[j]) - ts(events[j - 1]) <= maxMachineGapSec) {
+        j++;
+      }
+      if (j - i >= minBurst) {
+        doomed.addAll(events.sublist(i, j));
+      }
+      i = j;
+    }
+    start = end;
+  }
+
+  if (doomed.isEmpty) return;
+
+  const chunk = 500;
+  for (var c = 0; c < doomed.length; c += chunk) {
+    final ids = [
+      for (final r in doomed.sublist(c, min(c + chunk, doomed.length)))
+        r['id'] as int,
+    ];
+    await db.rawDelete(
+      'DELETE FROM playevent WHERE id IN (${List.filled(ids.length, '?').join(',')})',
+      ids,
+    );
+  }
+
+  // Tombstone the removals or they resurrect from another device on sync.
+  final newestRow = await db.rawQuery('SELECT MAX(hlc) AS m FROM playevent');
+  var stamp = Hlc.instance.now();
+  final newest = (newestRow.first['m'] as num?)?.toInt() ?? 0;
+  if (newest >= stamp) stamp = newest + 1;
+  for (final row in doomed) {
+    final uid = row['uid'] as String?;
+    if (uid == null || uid.isEmpty) continue;
+    await db.insert(
+      'sync_tombstone',
+      {
+        'entity': 'play_events', // DatabaseService.tombPlayEvents
+        'key': uid,
+        'hlc': stamp++,
+        'dirty': 1,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 }

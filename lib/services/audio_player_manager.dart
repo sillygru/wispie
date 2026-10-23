@@ -85,9 +85,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Song? _lookupSong(String filename) =>
       _songMap[filename] ?? _transientSongs[filename];
 
-  // Flag to restrict auto-generation to original queue (e.g. for folder shuffle)
-  bool _isRestrictedToOriginal = false;
-
   // Active queue snapshot ID for auto-save tracking
   String? _currentQueueSnapshotId;
   // Queue history entry the current song's play event belongs to. Latched on
@@ -234,7 +231,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   // Feature coordination state
   bool _wasPausedByMute = false;
-  bool _isGeneratingNext = false;
 
   // New stats counters
   double _foregroundDuration = 0.0;
@@ -480,11 +476,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (_originalQueue.isEmpty) {
       if (contextQueue != null) {
         _originalQueue = contextQueue.map((s) => QueueItem(song: s)).toList();
-        _isRestrictedToOriginal = true;
         usedContextQueue = true;
       } else {
         _originalQueue = [QueueItem(song: song)];
-        _isRestrictedToOriginal = false;
       }
 
       final originalIdx = _originalQueue.indexWhere(
@@ -617,18 +611,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _track(settledSequenceStateStream.listen((state) {
       _syncEffectiveQueueWithPlayerSequence(state);
       final currentItem = state.currentSource?.tag;
-
-      // Pre-fetch logic: only extend queue in radio mode (no active loop)
-      final currentIndex = state.currentIndex;
-      if (currentIndex != null && _effectiveQueue.isNotEmpty) {
-        if (currentIndex >= _effectiveQueue.length - 2) {
-          if (!_isBackground &&
-              _shuffleState.config.enabled &&
-              _player.loopMode == LoopMode.off) {
-            _generateOfflineNext();
-          }
-        }
-      }
 
       if (currentItem is MediaItem) {
         final newFilename = currentItem.id;
@@ -890,55 +872,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _itemSource[queueId] = source;
     while (_itemSource.length > _maxItemSources) {
       _itemSource.remove(_itemSource.keys.first);
-    }
-  }
-
-  void _generateOfflineNext() async {
-    // Queue extension is speculative work; let uninterrupted playback use the
-    // existing queue while the app is backgrounded and resume generation when
-    // it returns to the foreground.
-    if (_isBackground) return;
-    if (_isGeneratingNext) return;
-    if (_player.loopMode != LoopMode.off) return;
-    if (_allSongs.isEmpty) return;
-
-    _isGeneratingNext = true;
-    try {
-      final currentIndex = _player.currentIndex ?? -1;
-      if (currentIndex < 0) return;
-
-      final currentItem = _effectiveQueue[currentIndex];
-      final existingIds = _effectiveQueue.map((e) => e.song.filename).toSet();
-
-      final List<QueueItem> candidateItems;
-      if (_isRestrictedToOriginal) {
-        candidateItems = _originalQueue
-            .where((q) => !existingIds.contains(q.song.filename))
-            .toList();
-      } else {
-        candidateItems = _allSongs
-            .where((s) => !existingIds.contains(s.filename))
-            .map((s) => QueueItem(song: s))
-            .toList();
-      }
-
-      if (candidateItems.isEmpty) return;
-      final shuffled = await _weightedShuffle(
-        candidateItems,
-        lastItem: currentItem,
-        context: ShuffleContext.radio,
-      );
-
-      if (shuffled.isNotEmpty) {
-        final nextItem = shuffled.first;
-        _effectiveQueue.add(nextItem);
-        _tagSource(nextItem.queueId, PlaySource.radio);
-        final source = await _createAudioSource(nextItem);
-        await _player.addAudioSource(source);
-        _updateQueueNotifier();
-      }
-    } finally {
-      _isGeneratingNext = false;
     }
   }
 
@@ -1572,7 +1505,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       'last_effective_queue': _effectiveQueue.map((e) => e.toJson()).toList(),
       'last_original_queue': _originalQueue.map((e) => e.toJson()).toList(),
       'last_position_ms': _player.position.inMilliseconds,
-      'is_restricted_to_original': _isRestrictedToOriginal,
       'current_playlist_id': _currentPlaylistId,
       'current_queue_snapshot_id': _currentQueueSnapshotId,
       'preferred_media_mode': preferredMediaModeNotifier.value.name,
@@ -1624,7 +1556,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
                 eff.length == orig.length
             ? null
             : orig,
-        'restricted': _isRestrictedToOriginal,
         'playlist_id': _currentPlaylistId,
       });
     } catch (e) {
@@ -1649,7 +1580,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     await _runSerializedQueueMutation(() async {
       _effectiveQueue = eff;
       _originalQueue = orig.isEmpty ? List.of(eff) : orig;
-      _isRestrictedToOriginal = q['restricted'] == true;
       _currentPlaylistId = q['playlist_id'] as String?;
       _rememberedUpcomingIds = null;
       _pendingQueueSongs = null;
@@ -1788,7 +1718,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       unawaited(tasteSnapshot());
     }
     _songMap = {for (var s in songs) s.filename: s};
-    _isRestrictedToOriginal = false;
     await _player.setShuffleModeEnabled(false);
 
     await DatabaseService.instance.init();
@@ -1832,8 +1761,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         _logSlow('init: restored saved queue', restoreWatch);
 
         if (_effectiveQueue.isNotEmpty || _originalQueue.isNotEmpty) {
-          _isRestrictedToOriginal =
-              savedState['is_restricted_to_original'] ?? false;
           _currentPlaylistId = savedState['current_playlist_id'];
           _currentQueueSnapshotId = savedState['current_queue_snapshot_id'];
 
@@ -2224,8 +2151,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   Future<void> shuffleAndPlay(
     List<Song> songs, {
-    bool isRestricted = false,
     ShuffleContext? context,
+    bool saveSnapshot = true,
   }) async {
     if (songs.isEmpty) return;
 
@@ -2255,7 +2182,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     // Set up fresh queue (always replaces current queue entirely)
     _originalQueue = songs.map((s) => QueueItem(song: s)).toList();
-    _isRestrictedToOriginal = isRestricted;
     _currentPlaylistId = null;
 
     // Pick the opening song from the same weighted distribution as the rest of
@@ -2279,9 +2205,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // Replace player queue and start playing
     await _rebuildQueue(initialIndex: 0, startPlaying: true);
 
-    // Save snapshot for non-folder shuffles, in the shuffled order that will
-    // actually play rather than library order.
-    if (!isRestricted) {
+    // Save a queue-history snapshot of the shuffled order, unless this shuffle
+    // came from a folder or ad-hoc song list.
+    if (saveSnapshot) {
       await _saveQueueSnapshot(
         [for (final item in _effectiveQueue) item.song],
         playlistId: null,
@@ -2507,7 +2433,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       }
 
       _originalQueue = songs.map((s) => QueueItem(song: s)).toList();
-      _isRestrictedToOriginal = true;
 
       if (!clearCurrentSong && currentSong != null && isPlaying) {
         final currentItem = QueueItem(song: currentSong);
@@ -2521,7 +2446,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _resetFading();
       await _player.setShuffleModeEnabled(false);
       _originalQueue = songs.map((s) => QueueItem(song: s)).toList();
-      _isRestrictedToOriginal = true;
 
       if (_shuffleState.config.enabled) {
         final firstItem = _originalQueue.first;

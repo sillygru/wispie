@@ -3,7 +3,6 @@
 enum PlaySource {
   manual('manual'),
   shuffle('shuffle'),
-  radio('radio'),
   queued('queued'),
   linear('linear');
 

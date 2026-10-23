@@ -1334,10 +1334,8 @@ class _DetailInfo extends ConsumerWidget {
                 icon: AppIcons.shuffle,
                 enabled: enabled,
                 onTap: () {
-                  audioManager.shuffleAndPlay(
-                    visibleSongs,
-                    isRestricted: true,
-                  );
+                  audioManager.shuffleAndPlay(visibleSongs,
+                      saveSnapshot: false);
                 },
               ),
               const SizedBox(width: 12),

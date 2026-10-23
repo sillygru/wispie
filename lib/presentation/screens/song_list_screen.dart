@@ -386,10 +386,8 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
           FilledButton.tonalIcon(
             onPressed: visibleSongs.isNotEmpty
                 ? () {
-                    audioManager.shuffleAndPlay(
-                      visibleSongs,
-                      isRestricted: true,
-                    );
+                    audioManager.shuffleAndPlay(visibleSongs,
+                        saveSnapshot: false);
                   }
                 : null,
             icon: const AppIcon(AppIcons.shuffle),

@@ -19,7 +19,6 @@ const double _defaultFamiliarity = 0.65;
 const double _playlistBoost = 1.1;
 const double _favoriteArtistMass = 0.5;
 const double _coPlayArtistBoost = 0.5;
-const double _coPlaySongBoost = 0.6;
 
 /// A song, or a merge group of songs, that smart shuffle may choose.
 ///
@@ -96,9 +95,9 @@ Map<_Bucket, double> _bucketShares(double f, Set<_Bucket> present) {
 
 /// Probability of every candidate in [pool]. Keys are the candidates' items.
 ///
-/// [context] only changes two things: anti-repeat is skipped for `sort`, and
-/// radio adds co-play boosts from [currentFilename]. Bucket shares are the same
-/// for every context, so scoped pools stay correct without special casing.
+/// [context] only changes one thing: anti-repeat is skipped for `sort`. Bucket
+/// shares are the same for every context, so scoped pools stay correct without
+/// special casing.
 Map<T, double> computeSmartWeights<T>({
   required List<SmartCandidate<T>> pool,
   required TasteSnapshot taste,
@@ -156,9 +155,6 @@ Map<T, double> computeSmartWeights<T>({
   }
 
   final prior = _lerp(0.35, 0.08, f);
-  final radioRow = context == ShuffleContext.radio && currentFilename != null
-      ? taste.coPlay[currentFilename]
-      : null;
   final antiRepeat = context != ShuffleContext.sort && historyLimit > 0;
 
   final out = <T, double>{};
@@ -199,13 +195,6 @@ Map<T, double> computeSmartWeights<T>({
       if (c.isFavorite) s *= favoriteMultiplier;
       if (c.isSuggestLess) s *= suggestLessMultiplier;
       if (c.isInPlaylist) s *= _playlistBoost;
-      if (radioRow != null) {
-        var co = 0.0;
-        for (final name in c.filenames) {
-          co = max(co, radioRow[name] ?? 0.0);
-        }
-        s *= 1 + _coPlaySongBoost * co;
-      }
       raw.add(s.isFinite && s > 0 ? s : 0.0);
     }
 

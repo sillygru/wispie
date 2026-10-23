@@ -542,10 +542,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         HeaderShuffleButton(
                           tooltip: context.l10n.actionShuffleAll,
                           color: accent,
-                          onShufflePressed: () => audioManager.shuffleAndPlay(
-                            songs,
-                            isRestricted: false,
-                          ),
+                          onShufflePressed: () =>
+                              audioManager.shuffleAndPlay(songs),
                           onShuffleAfterSong: () =>
                               audioManager.shuffleAfterCurrentSong(songs),
                           onShuffleAfterQueue: () =>

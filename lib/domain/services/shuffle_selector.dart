@@ -50,7 +50,7 @@ class ShuffleCandidate<T> {
 
 /// Where a shuffle was requested from. Smart weights use it to decide how much
 /// to trust recent taste and context.
-enum ShuffleContext { library, scoped, radio, sort }
+enum ShuffleContext { library, scoped, sort }
 
 /// Resolved, personality-independent knobs the scoring maths reads.
 class ShuffleWeights {

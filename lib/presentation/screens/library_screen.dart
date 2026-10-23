@@ -252,8 +252,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               tooltip: context.l10n.actionShuffleAll,
                               onShufflePressed: () {
                                 if (songs.isNotEmpty) {
-                                  audioManager.shuffleAndPlay(songs,
-                                      isRestricted: false);
+                                  audioManager.shuffleAndPlay(songs);
                                 }
                               },
                               onShuffleAfterSong: () {
@@ -763,7 +762,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         tooltip: context.l10n.libraryShuffleFolderTooltip,
                         onPressed: () => audioManager.shuffleAndPlay(
                           content.allSongsInFolder,
-                          isRestricted: true,
+                          saveSnapshot: false,
                         ),
                       ),
                   ],

@@ -23,7 +23,6 @@ wispie is an offline music player for the audio files already on your device. It
 ### Playing music
 
 - **Smart shuffle** - Picks what plays next from your listening history. See [How Smart shuffle works](#how-smart-shuffle-works).
-- **Radio mode** - Shuffle keeps extending itself, so it never runs out of songs.
 - **Transitions** - Fade in, fade out, or a fixed silence between tracks. Pick one; the others switch off.
 - **Sleep timer** - Stop after a set time, a set number of tracks, or at the end of the current song. Can also loop one song for a set time.
 - **Queue editing** - Reorder, remove, play next, shuffle what's up next, or clear it.

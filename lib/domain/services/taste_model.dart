@@ -344,12 +344,12 @@ List<bool> _replayFlags(List<PlaySignal> events, List<double> ratio) {
 double _positiveSourceMultiplier(PlaySource? source) => switch (source) {
       PlaySource.queued => 1.4,
       PlaySource.manual => 1.3,
-      PlaySource.shuffle || PlaySource.radio => 0.8,
+      PlaySource.shuffle => 0.8,
       PlaySource.linear || null => 1.0,
     };
 
 double _negativeSourceMultiplier(PlaySource? source) => switch (source) {
-      PlaySource.shuffle || PlaySource.radio => 1.0,
+      PlaySource.shuffle => 1.0,
       PlaySource.queued => 0.5,
       PlaySource.manual => 0.3,
       PlaySource.linear || null => 0.6,
