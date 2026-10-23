@@ -31,9 +31,25 @@ class TransportHero extends StatelessWidget {
     return Hero(
       tag: tag,
       transitionOnUserGestures: true,
+      curve: PlayerTokens.cEmphasizedDecel,
+      reverseCurve: Curves.linear,
       flightShuttleBuilder: (context, animation, direction, from, to) {
+        final Widget source = (from.widget as Hero).child;
         final Widget target = (to.widget as Hero).child;
-        return FittedBox(child: target);
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (context, _) {
+            final double a = animation.value.clamp(0.0, 1.0);
+            final double t = direction == HeroFlightDirection.push ? a : 1 - a;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Opacity(opacity: 1 - t, child: FittedBox(child: source)),
+                Opacity(opacity: t, child: FittedBox(child: target)),
+              ],
+            );
+          },
+        );
       },
       child: child,
     );

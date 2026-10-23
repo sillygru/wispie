@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -25,6 +27,16 @@ class PlayerTokens {
   static const double rSm = 12;
   static const double rMd = 18;
   static const double rLg = 26;
+  static const double rFlight = 240;
+  static const double rSheetFlight = 24;
+
+  /// Cover corner radius during the open/close flight: eases from the mini
+  /// art's radius to [landed], swelling to a strong peak in between.
+  static double flightRadius(double t, double landed, [double peak = rFlight]) {
+    final double base = rSm + (landed - rSm) * t;
+    return base + (peak - base) * math.sin(math.pi * t);
+  }
+
   static const double rPill = 999;
 
   static BorderRadius get brSm => BorderRadius.circular(rSm);

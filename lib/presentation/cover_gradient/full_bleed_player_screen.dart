@@ -1003,6 +1003,8 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         final Widget art = Hero(
           tag: PlayerTokens.coverHeroTag(song.filename),
           transitionOnUserGestures: true,
+          curve: PlayerTokens.cEmphasizedDecel,
+          reverseCurve: Curves.linear,
           flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
             final Hero hero = (direction == HeroFlightDirection.push
                 ? toCtx.widget
@@ -1016,8 +1018,9 @@ class _FullBleedPlayerPane extends ConsumerWidget {
               builder: (context, child) {
                 final double t = animation.value.clamp(0.0, 1.0);
                 return ClipRRect(
-                  borderRadius:
-                      BorderRadius.circular((1 - t) * PlayerTokens.rSm),
+                  borderRadius: BorderRadius.circular(
+                    PlayerTokens.flightRadius(t, 0),
+                  ),
                   child: _SideFade(
                     enabled: WideLayout.isWide(context),
                     strength: Curves.easeInOut.transform(t),

@@ -11,6 +11,7 @@ import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../routes/player_route.dart';
 import '../tokens/app_tokens.dart';
+import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import 'audio_visualizer.dart';
 import 'duration_display.dart' show DurationFormatter;
@@ -366,6 +367,9 @@ class _NowPlayingContent extends ConsumerWidget {
                           children: [
                             Hero(
                               tag: 'now_playing_art_${m.$1.id}',
+                              transitionOnUserGestures: true,
+                              curve: PlayerTokens.cEmphasizedDecel,
+                              reverseCurve: Curves.linear,
                               child: SizedBox(
                                 width: imageSize,
                                 height: imageSize,

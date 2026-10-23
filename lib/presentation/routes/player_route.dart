@@ -45,11 +45,30 @@ class PlayerPageRoute extends PageRoute<void> {
       _settling = false;
       c.stop();
     } else {
-      if (c.isAnimating || !isCurrent) return;
+      if (!isCurrent) return;
+      if (c.isAnimating) {
+        // Grabbed mid-open: continue from where the curved sheet is drawn.
+        final shown = PlayerTokens.cEmphasizedDecel.transform(c.value);
+        c.stop();
+        c.value = _invertCurve(shown);
+      }
       nav.didStartUserGesture();
     }
     _dragging = true;
     _gestureDriven = true;
+  }
+
+  static double _invertCurve(double y) {
+    double lo = 0, hi = 1;
+    for (var i = 0; i < 24; i++) {
+      final mid = (lo + hi) / 2;
+      if (PlayerTokens.cEmphasizedDecel.transform(mid) < y) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
   }
 
   void dismissDragUpdate(double dy, double height) {
@@ -114,6 +133,17 @@ class PlayerPageRoute extends PageRoute<void> {
 
   @override
   bool get maintainState => true;
+
+  @override
+  void install() {
+    super.install();
+    _catchable.value = true;
+    animation!.addStatusListener((status) {
+      if (status == AnimationStatus.completed && !_settling && !_dragging) {
+        _catchable.value = false;
+      }
+    });
+  }
 
   @override
   Duration get transitionDuration => PlayerTokens.dRouteIn;
@@ -197,7 +227,8 @@ class PlayerPageRoute extends PageRoute<void> {
             child: FadeTransition(opacity: fade, child: child),
             builder: (context, child) {
               final double t = primary.value.clamp(0.0, 1.0);
-              final double radius = (1 - t) * PlayerTokens.rLg;
+              final double radius =
+                  PlayerTokens.flightRadius(t, 0, PlayerTokens.rSheetFlight);
               // Structure stays fixed (only clip mode changes) so the player
               // subtree is never remounted when the animation settles.
               return ClipRRect(
@@ -205,11 +236,7 @@ class PlayerPageRoute extends PageRoute<void> {
                 borderRadius: BorderRadius.vertical(
                   top: Radius.circular(radius),
                 ),
-                child: Transform.scale(
-                  scale: 0.94 + 0.06 * t,
-                  alignment: Alignment.bottomCenter,
-                  child: child,
-                ),
+                child: child,
               );
             },
           ),

@@ -425,6 +425,26 @@ class _CoverStage extends ConsumerWidget {
     return Hero(
       tag: PlayerTokens.coverHeroTag(song.filename),
       transitionOnUserGestures: true,
+      curve: PlayerTokens.cEmphasizedDecel,
+      reverseCurve: Curves.linear,
+      flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
+        final Hero hero = (direction == HeroFlightDirection.push
+            ? toCtx.widget
+            : fromCtx.widget) as Hero;
+        return AnimatedBuilder(
+          animation: animation,
+          child: hero.child,
+          builder: (context, child) {
+            final double t = animation.value.clamp(0.0, 1.0);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(
+                PlayerTokens.flightRadius(t, PlayerTokens.rLg),
+              ),
+              child: child,
+            );
+          },
+        );
+      },
       child: BeatReactiveCover(
         controller: motion,
         enabled: beatReactive && current,
