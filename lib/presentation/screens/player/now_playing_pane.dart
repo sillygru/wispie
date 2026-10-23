@@ -424,6 +424,7 @@ class _CoverStage extends ConsumerWidget {
     // bar and this pane.
     return Hero(
       tag: PlayerTokens.coverHeroTag(song.filename),
+      transitionOnUserGestures: true,
       child: BeatReactiveCover(
         controller: motion,
         enabled: beatReactive && current,

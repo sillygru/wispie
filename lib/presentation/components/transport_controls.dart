@@ -30,6 +30,7 @@ class TransportHero extends StatelessWidget {
   Widget build(BuildContext context) {
     return Hero(
       tag: tag,
+      transitionOnUserGestures: true,
       flightShuttleBuilder: (context, animation, direction, from, to) {
         final Widget target = (to.widget as Hero).child;
         return FittedBox(child: target);

@@ -734,6 +734,7 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                         const SizedBox(width: inset),
                         Hero(
                           tag: PlayerTokens.coverHeroTag(song.filename),
+                          transitionOnUserGestures: true,
                           child: ClipRRect(
                             borderRadius: AppTokens.brSm,
                             child: SizedBox(
@@ -823,18 +824,21 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                             : context.l10n.songListPlay,
                         child: Pressable(
                           onTap: manager.togglePlayPause,
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: accent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: PlayPauseMorphIcon(
-                              playing: playing,
-                              size: 20,
-                              color: AppTokens.onAccent(accent),
+                          child: TransportHero(
+                            tag: TransportHero.play,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: accent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: PlayPauseMorphIcon(
+                                playing: playing,
+                                size: 20,
+                                color: AppTokens.onAccent(accent),
+                              ),
                             ),
                           ),
                         ),
@@ -848,12 +852,15 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                           TrackSwipeSwitcher.hint(1);
                           player.seekToNext();
                         },
-                        child: const Padding(
-                          padding: EdgeInsets.all(AppTokens.s2),
-                          child: AppIcon(
-                            AppIcons.skipNext,
-                            size: 22,
-                            color: Colors.white,
+                        child: const TransportHero(
+                          tag: TransportHero.next,
+                          child: Padding(
+                            padding: EdgeInsets.all(AppTokens.s2),
+                            child: AppIcon(
+                              AppIcons.skipNext,
+                              size: 22,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -890,7 +897,7 @@ Widget _heroIfOwner({
   required String tag,
   required Widget child,
 }) =>
-    owns ? Hero(tag: tag, child: child) : child;
+    owns ? Hero(tag: tag, transitionOnUserGestures: true, child: child) : child;
 
 /// One slow revolution while [enabled].
 ///

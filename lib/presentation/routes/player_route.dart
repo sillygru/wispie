@@ -27,20 +27,26 @@ class PlayerPageRoute extends PageRoute<void> {
   bool _dragging = false;
   bool _settling = false;
 
-  // While the finger owns the sheet it tracks 1:1 (linear), never through
-  // the open/close curves, so slow drags feel physically attached.
+  // While the finger owns the sheet it tracks linearly instead of through
+  // the open/close curves, so the sheet stays attached to the finger.
   bool _gestureDriven = false;
+
+  // The user-gesture claim lets Hero flights (cover, transport buttons)
+  // follow the finger, but it also makes the framework ignore pointers on
+  // the page. This flag swaps in a catch-all detector so a settling sheet
+  // can still be grabbed back.
+  final ValueNotifier<bool> _catchable = ValueNotifier(false);
 
   void dismissDragStart() {
     final c = controller;
-    if (c == null || _dragging) return;
+    final nav = navigator;
+    if (c == null || nav == null || _dragging) return;
     if (_settling) {
-      // Re-grabbing a running settle keeps the existing gesture claim.
       _settling = false;
       c.stop();
     } else {
       if (c.isAnimating || !isCurrent) return;
-      navigator?.didStartUserGesture();
+      nav.didStartUserGesture();
     }
     _dragging = true;
     _gestureDriven = true;
@@ -59,7 +65,7 @@ class PlayerPageRoute extends PageRoute<void> {
     _dragging = false;
     final v = height > 0 ? velocity / height : 0.0;
     // Final flick direction wins, so down-then-quickly-up reopens.
-    final close = v.abs() > 0.3 ? v > 0 : c.value < 0.6;
+    final close = v.abs() > 0.25 ? v > 0 : c.value < 0.6;
     _settle(close ? 0 : 1, -v);
   }
 
@@ -69,21 +75,29 @@ class PlayerPageRoute extends PageRoute<void> {
     _settle(1, 0);
   }
 
-  // Popped only once landed closed, so a late grab can still pull it back.
+  // Popped only once landed, so a late grab can still pull it back.
   void _settle(double target, double velocity) {
     final c = controller!;
     _settling = true;
+    _catchable.value = true;
     c.animateWith(_SnapSimulation(c.value, target, velocity)).then((_) {
       if (!_settling) return;
       _settling = false;
       final nav = navigator;
-      nav?.didStopUserGesture();
-      if (target == 0) {
-        if (nav != null && isActive) nav.removeRoute(this);
-      } else {
+      if (target == 0 && nav != null && isActive) nav.pop();
+      if (target == 1) {
         _gestureDriven = false;
+        _catchable.value = false;
       }
+      // After the pop: Hero flights finish against the landed animation.
+      nav?.didStopUserGesture();
     });
+  }
+
+  @override
+  void dispose() {
+    _catchable.dispose();
+    super.dispose();
   }
 
   @override
@@ -151,45 +165,74 @@ class PlayerPageRoute extends PageRoute<void> {
     // Rises from the mini player's edge rather than fading in place: the
     // sheet travels most of the way fast and lands softly, so it reads as the
     // bar expanding instead of a page swap.
-    final primary = CurvedAnimation(
-      parent: animation,
-      curve: PlayerTokens.cEmphasizedDecel,
-      reverseCurve: PlayerTokens.cEmphasizedAccel,
+    final Animation<double> primary = _GestureAwareAnimation(
+      CurvedAnimation(
+        parent: animation,
+        curve: PlayerTokens.cEmphasizedDecel,
+        reverseCurve: Curves.linear,
+      ),
+      animation,
+      () => _gestureDriven,
     );
-    // Content only melts into the mini player over the last stretch.
     final fade = CurvedAnimation(
       parent: animation,
-      curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+      reverseCurve: Curves.linear,
     );
+    final slide = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(primary);
 
-    return Stack(
+    final Widget stack = Stack(
       children: [
         FadeTransition(
-          opacity: animation,
+          opacity: fade,
           child: Container(color: Colors.black.withValues(alpha: 0.46)),
         ),
-        AnimatedBuilder(
-          animation: primary,
-          child: FadeTransition(opacity: fade, child: child),
-          builder: (context, child) {
-            final double t = (_gestureDriven ? animation.value : primary.value)
-                .clamp(0.0, 1.0);
-            final double radius = (1 - t) * PlayerTokens.rLg;
-            // Structure stays fixed (only clip mode changes) so the player
-            // subtree is never remounted when the animation settles.
-            return FractionalTranslation(
-              translation: Offset(0, 1 - t),
-              child: ClipRRect(
+        SlideTransition(
+          position: slide,
+          child: AnimatedBuilder(
+            animation: primary,
+            child: FadeTransition(opacity: fade, child: child),
+            builder: (context, child) {
+              final double t = primary.value.clamp(0.0, 1.0);
+              final double radius = (1 - t) * PlayerTokens.rLg;
+              // Structure stays fixed (only clip mode changes) so the player
+              // subtree is never remounted when the animation settles.
+              return ClipRRect(
                 clipBehavior: radius < 0.5 ? Clip.none : Clip.antiAlias,
                 borderRadius: BorderRadius.vertical(
                   top: Radius.circular(radius),
                 ),
-                child: child,
-              ),
-            );
-          },
+                child: Transform.scale(
+                  scale: 0.94 + 0.06 * t,
+                  alignment: Alignment.bottomCenter,
+                  child: child,
+                ),
+              );
+            },
+          ),
         ),
       ],
+    );
+    return ValueListenableBuilder<bool>(
+      valueListenable: _catchable,
+      child: stack,
+      builder: (context, catchable, stack) {
+        final double height = MediaQuery.sizeOf(context).height;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onVerticalDragStart: catchable ? (_) => dismissDragStart() : null,
+          onVerticalDragUpdate:
+              catchable ? (d) => dismissDragUpdate(d.delta.dy, height) : null,
+          onVerticalDragEnd: catchable
+              ? (d) => dismissDragEnd(d.primaryVelocity ?? 0, height)
+              : null,
+          onVerticalDragCancel: catchable ? dismissDragCancel : null,
+          child: stack,
+        );
+      },
     );
   }
 
@@ -199,19 +242,34 @@ class PlayerPageRoute extends PageRoute<void> {
   }
 }
 
-/// Critically damped, no bounce. A close aims slightly past 0 and ends on
-/// crossing it, so the sheet lands with intent instead of creeping in; any
-/// overshoot past either end finishes immediately.
+/// Raw (linear) value while a drag owns the route, curved otherwise. Both
+/// agree at 0 and 1, so switching never jumps.
+class _GestureAwareAnimation extends Animation<double>
+    with AnimationWithParentMixin<double> {
+  _GestureAwareAnimation(this._curved, this.parent, this._linear);
+
+  final Animation<double> _curved;
+  final bool Function() _linear;
+
+  @override
+  final Animation<double> parent;
+
+  @override
+  double get value => _linear() ? parent.value : _curved.value;
+}
+
+/// Critically damped, no bounce; ends the moment it reaches or crosses the
+/// target instead of creeping through a long tail.
 class _SnapSimulation extends Simulation {
   _SnapSimulation(double from, this._target, double velocity)
       : _spring = SpringSimulation(
           SpringDescription.withDampingRatio(
             mass: 1,
-            stiffness: 520,
+            stiffness: 420,
             ratio: 1,
           ),
           from,
-          _target == 0 ? -0.08 : _target,
+          _target == 0 ? -0.06 : _target,
           velocity,
           tolerance: const Tolerance(distance: 0.001, velocity: 0.01),
         );

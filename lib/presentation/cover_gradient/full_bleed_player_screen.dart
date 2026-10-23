@@ -1002,6 +1002,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         // behind shows through with no edge to color-match.
         final Widget art = Hero(
           tag: PlayerTokens.coverHeroTag(song.filename),
+          transitionOnUserGestures: true,
           flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
             final Hero hero = (direction == HeroFlightDirection.push
                 ? toCtx.widget
