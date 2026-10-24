@@ -7,12 +7,11 @@ import '../../models/queue_item.dart';
 import '../../models/song.dart';
 import '../../services/audio_player_manager.dart';
 import '../../l10n/l10n.dart';
+import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import 'pressable.dart';
 import 'track_swipe_switcher.dart';
 
-/// Play glyph that morphs into pause (and back) instead of swapping, with a
-/// small squash at the midpoint so the change reads as a press response.
 /// Shared-element wrapper so mini bar and player transport controls morph
 /// into each other during the route transition. The shuttle scales the
 /// destination glyph to the in-flight rect instead of re-laying it out.
@@ -31,21 +30,25 @@ class TransportHero extends StatelessWidget {
     return Hero(
       tag: tag,
       transitionOnUserGestures: true,
-      curve: PlayerTokens.cEmphasizedDecel,
+      curve: Curves.linear,
       reverseCurve: Curves.linear,
+      createRectTween: PlayerPageRoute.transportRectTween,
       flightShuttleBuilder: (context, animation, direction, from, to) {
-        final Widget source = (from.widget as Hero).child;
-        final Widget target = (to.widget as Hero).child;
+        final bool push = direction == HeroFlightDirection.push;
+        final Widget mini = ((push ? from : to).widget as Hero).child;
+        final Widget full = ((push ? to : from).widget as Hero).child;
         return AnimatedBuilder(
           animation: animation,
           builder: (context, _) {
-            final double a = animation.value.clamp(0.0, 1.0);
-            final double t = direction == HeroFlightDirection.push ? a : 1 - a;
+            // Sheet progress in both directions; the swap happens in the
+            // middle third so neither glyph ghosts for the whole flight.
+            final double p = animation.value.clamp(0.0, 1.0);
+            final double t = ((p - 0.25) / 0.45).clamp(0.0, 1.0);
             return Stack(
               fit: StackFit.expand,
               children: [
-                Opacity(opacity: 1 - t, child: FittedBox(child: source)),
-                Opacity(opacity: t, child: FittedBox(child: target)),
+                Opacity(opacity: 1 - t, child: FittedBox(child: mini)),
+                Opacity(opacity: t, child: FittedBox(child: full)),
               ],
             );
           },
@@ -56,6 +59,8 @@ class TransportHero extends StatelessWidget {
   }
 }
 
+/// Play glyph that morphs into pause (and back) instead of swapping, with a
+/// small squash at the midpoint so the change reads as a press response.
 class PlayPauseMorphIcon extends StatefulWidget {
   final bool playing;
   final double size;

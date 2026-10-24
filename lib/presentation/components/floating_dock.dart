@@ -11,6 +11,7 @@ import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../routes/player_route.dart';
+import '../routes/player_sheet_origin.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/player_tokens.dart';
 import '../widgets/album_art_image.dart';
@@ -286,13 +287,16 @@ class _DockBody extends ConsumerWidget {
                   if (hasSong)
                     Positioned.fromRect(
                       rect: mini,
-                      child: _MorphingMini(
-                        song: song,
-                        collapse: c,
+                      child: PlayerSheetOrigin(
                         radius: radius,
-                        expandedWidth: expanded.width,
-                        fill: fill,
-                        accent: accent,
+                        child: _MorphingMini(
+                          song: song,
+                          collapse: c,
+                          radius: radius,
+                          expandedWidth: expanded.width,
+                          fill: fill,
+                          accent: accent,
+                        ),
                       ),
                     ),
                 ],
@@ -470,7 +474,6 @@ class _MorphingMini extends ConsumerWidget {
       builder: (context, constraints) {
         final Size size = constraints.biggest;
         final double t = collapse;
-        final double tRadius = t.clamp(0.0, 1.0);
         final Rect barArt = Rect.fromLTWH(
           FloatingDock.barArtInset,
           (size.height - FloatingDock.barArtSize) / 2,
@@ -486,8 +489,9 @@ class _MorphingMini extends ConsumerWidget {
           ballSide,
         );
         final Rect art = Rect.lerp(barArt, ballArt, t)!;
-        final double artRadius =
-            ui.lerpDouble(AppTokens.rSm, art.shortestSide / 2, tRadius)!;
+        // The cover is a record for the whole morph, so it stays round rather
+        // than passing through a rounded square on the way.
+        final double artRadius = art.shortestSide / 2;
 
         return Pressable(
           onTap: collapse > 0.5
@@ -517,7 +521,11 @@ class _MorphingMini extends ConsumerWidget {
                             maxWidth: expandedWidth,
                             minHeight: FloatingDock.miniHeight,
                             maxHeight: FloatingDock.miniHeight,
-                            child: _DockMiniBar(song: song, accent: accent),
+                            child: _DockMiniBar(
+                              song: song,
+                              accent: accent,
+                              coverVisible: collapse <= 0.001,
+                            ),
                           ),
                         ),
                       ),
@@ -528,18 +536,18 @@ class _MorphingMini extends ConsumerWidget {
                         rect: art,
                         child: ValueListenableBuilder<bool>(
                           valueListenable: manager.playingNotifier,
-                          builder: (context, playing, _) => AnimatedOpacity(
-                            // Paused reads as a dimmed cover, not a new icon.
-                            opacity: playing || collapse < 0.7 ? 1 : 0.55,
-                            duration: AppTokens.dBase,
-                            curve: AppTokens.cStandard,
-                            child: _heroIfOwner(
-                              // Only one Hero per tag may exist on the route: the
-                              // bar owns it until it has faded out, then the
-                              // travelling cover takes over so opening the player
-                              // from the ball still flies the artwork.
-                              owns: barOpacity <= 0,
-                              tag: PlayerTokens.coverHeroTag(song.filename),
+                          builder: (context, playing, _) => _heroIfOwner(
+                            // Only one Hero per tag may exist on the route: the
+                            // bar owns it until it has faded out, then the
+                            // travelling cover takes over so opening the player
+                            // from the ball still flies the artwork.
+                            owns: barOpacity <= 0,
+                            tag: PlayerTokens.coverHeroTag(song.filename),
+                            // Inside the Hero so the player's flight shuttle
+                            // can land on the same circle and dimming.
+                            child: CoverFlightEnd(
+                              // Paused reads as a dimmed cover, not a new icon.
+                              opacity: playing || collapse < 0.7 ? 1 : 0.55,
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(artRadius),
                                 child: Stack(
@@ -553,8 +561,8 @@ class _MorphingMini extends ConsumerWidget {
                                         url: song.coverUrl ?? '',
                                         filename: song.filename,
                                         cacheVersion: song.mtime,
-                                        width: FloatingDock.pillHeight,
-                                        height: FloatingDock.pillHeight,
+                                        width: art.width,
+                                        height: art.height,
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -601,8 +609,15 @@ class _MorphingMini extends ConsumerWidget {
 class _DockMiniBar extends ConsumerStatefulWidget {
   final Song song;
   final Color accent;
+  // Once the morph starts, the travelling cover replaces this one. Its square
+  // corners would otherwise poke out around the circle.
+  final bool coverVisible;
 
-  const _DockMiniBar({required this.song, required this.accent});
+  const _DockMiniBar({
+    required this.song,
+    required this.accent,
+    this.coverVisible = true,
+  });
 
   @override
   ConsumerState<_DockMiniBar> createState() => _DockMiniBarState();
@@ -735,36 +750,40 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                         Hero(
                           tag: PlayerTokens.coverHeroTag(song.filename),
                           transitionOnUserGestures: true,
-                          child: ClipRRect(
-                            borderRadius: AppTokens.brSm,
-                            child: SizedBox(
-                              width: art,
-                              height: art,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  AlbumArtImage(
-                                    url: song.coverUrl ?? '',
-                                    filename: song.filename,
-                                    cacheVersion: song.mtime,
-                                    width: art,
-                                    height: art,
-                                    fit: BoxFit.cover,
-                                  ),
-                                  ValueListenableBuilder<bool>(
-                                    valueListenable: manager.playingNotifier,
-                                    builder: (context, playing, _) =>
-                                        PlayingVisualizerOverlay(
-                                      playing: playing,
-                                      mode: ref.watch(
-                                        settingsProvider.select(
-                                          (s) => s.visualizerMode,
-                                        ),
-                                      ),
-                                      size: 18,
+                          createRectTween: PlayerPageRoute.coverRectTween,
+                          child: Opacity(
+                            opacity: widget.coverVisible ? 1 : 0,
+                            child: ClipRRect(
+                              borderRadius: AppTokens.brSm,
+                              child: SizedBox(
+                                width: art,
+                                height: art,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    AlbumArtImage(
+                                      url: song.coverUrl ?? '',
+                                      filename: song.filename,
+                                      cacheVersion: song.mtime,
+                                      width: art,
+                                      height: art,
+                                      fit: BoxFit.cover,
                                     ),
-                                  ),
-                                ],
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: manager.playingNotifier,
+                                      builder: (context, playing, _) =>
+                                          PlayingVisualizerOverlay(
+                                        playing: playing,
+                                        mode: ref.watch(
+                                          settingsProvider.select(
+                                            (s) => s.visualizerMode,
+                                          ),
+                                        ),
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -897,7 +916,14 @@ Widget _heroIfOwner({
   required String tag,
   required Widget child,
 }) =>
-    owns ? Hero(tag: tag, transitionOnUserGestures: true, child: child) : child;
+    owns
+        ? Hero(
+            tag: tag,
+            transitionOnUserGestures: true,
+            createRectTween: PlayerPageRoute.coverRectTween,
+            child: child,
+          )
+        : child;
 
 /// One slow revolution while [enabled].
 ///

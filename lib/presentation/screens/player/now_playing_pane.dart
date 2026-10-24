@@ -19,6 +19,7 @@ import '../../../services/audio_player_manager.dart';
 import '../../components/pressable.dart';
 import '../../components/song_actions.dart';
 import '../../components/track_swipe_switcher.dart';
+import '../../routes/player_route.dart';
 import '../../tokens/player_tokens.dart';
 import '../../widgets/album_art_image.dart';
 import '../../widgets/beat_reactive_cover.dart';
@@ -425,22 +426,30 @@ class _CoverStage extends ConsumerWidget {
     return Hero(
       tag: PlayerTokens.coverHeroTag(song.filename),
       transitionOnUserGestures: true,
-      curve: PlayerTokens.cEmphasizedDecel,
+      curve: Curves.linear,
       reverseCurve: Curves.linear,
+      createRectTween: PlayerPageRoute.coverRectTween,
       flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
         final Hero hero = (direction == HeroFlightDirection.push
             ? toCtx.widget
             : fromCtx.widget) as Hero;
+        final CoverFlightEnd? ball =
+            CoverFlightEnd.of(direction, fromCtx, toCtx);
+        // Laid out once at the landed size and scaled, so the cover's own
+        // large corner radius shrinks with it. Re-laying it out at the mini
+        // size turned that radius into a near-circle mid-flight.
         return AnimatedBuilder(
           animation: animation,
-          child: hero.child,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            child: SizedBox.square(dimension: size, child: hero.child),
+          ),
           builder: (context, child) {
-            final double t = animation.value.clamp(0.0, 1.0);
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(
-                PlayerTokens.flightRadius(t, PlayerTokens.rLg),
-              ),
-              child: child,
+            return CoverFlightEnd.clip(
+              ball: ball,
+              t: animation.value,
+              landedRadius: PlayerTokens.rLg,
+              child: child!,
             );
           },
         );

@@ -44,78 +44,113 @@ class PlayerSegmentedPill extends StatelessWidget {
     final fontSize = compact ? 11.5 : 13.0;
     final height = compact ? 26.0 : 30.0;
 
-    return SizedBox(
-      height: height,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final segmentWidth = constraints.maxWidth / labels.length;
+    return _RouteEntrance(
+      child: SizedBox(
+        height: height,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final segmentWidth = constraints.maxWidth / labels.length;
 
-          return ValueListenableBuilder<double>(
-            valueListenable: position,
-            builder: (context, value, _) {
-              final clamped = value.clamp(0.0, (labels.length - 1).toDouble());
+            return ValueListenableBuilder<double>(
+              valueListenable: position,
+              builder: (context, value, _) {
+                final clamped =
+                    value.clamp(0.0, (labels.length - 1).toDouble());
 
-              return Stack(
-                children: [
-                  Row(
-                    children: List.generate(labels.length, (index) {
-                      // Full strength when the underline is centred here,
-                      // fading as it slides away.
-                      final emphasis =
-                          1.0 - (clamped - index).abs().clamp(0.0, 1.0);
+                return Stack(
+                  children: [
+                    Row(
+                      children: List.generate(labels.length, (index) {
+                        // Full strength when the underline is centred here,
+                        // fading as it slides away.
+                        final emphasis =
+                            1.0 - (clamped - index).abs().clamp(0.0, 1.0);
 
-                      return Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            onSelected(index);
-                          },
-                          child: Center(
-                            child: Text(
-                              labels[index],
-                              style: TextStyle(
-                                fontSize: fontSize,
-                                letterSpacing: 0.3,
-                                fontWeight: FontWeight.lerp(
-                                  FontWeight.w500,
-                                  FontWeight.w700,
-                                  emphasis,
+                        return Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              onSelected(index);
+                            },
+                            child: Center(
+                              child: Text(
+                                labels[index],
+                                style: TextStyle(
+                                  fontSize: fontSize,
+                                  letterSpacing: 0.3,
+                                  fontWeight: FontWeight.lerp(
+                                    FontWeight.w500,
+                                    FontWeight.w700,
+                                    emphasis,
+                                  ),
+                                  color: Color.lerp(
+                                    Colors.white.withValues(
+                                        alpha: overCover
+                                            ? PlayerTokens.aSecondary
+                                            : PlayerTokens.aTertiary),
+                                    accent,
+                                    emphasis,
+                                  ),
+                                  shadows:
+                                      overCover ? _legibilityShadows : null,
                                 ),
-                                color: Color.lerp(
-                                  Colors.white.withValues(
-                                      alpha: overCover
-                                          ? PlayerTokens.aSecondary
-                                          : PlayerTokens.aTertiary),
-                                  accent,
-                                  emphasis,
-                                ),
-                                shadows: overCover ? _legibilityShadows : null,
                               ),
                             ),
                           ),
+                        );
+                      }),
+                    ),
+                    Positioned(
+                      left: clamped * segmentWidth + segmentWidth / 2 - 9,
+                      bottom: 0,
+                      child: Container(
+                        width: 18,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: accent,
+                          borderRadius: PlayerTokens.brPill,
                         ),
-                      );
-                    }),
-                  ),
-                  Positioned(
-                    left: clamped * segmentWidth + segmentWidth / 2 - 9,
-                    bottom: 0,
-                    child: Container(
-                      width: 18,
-                      height: 2.5,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        borderRadius: PlayerTokens.brPill,
                       ),
                     ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+                  ],
+                );
+              },
+            );
+          },
+        ),
       ),
+    );
+  }
+}
+
+/// Holds the pill back while the player sheet opens, then lifts it in once the
+/// sheet is mostly up. Otherwise it sits at the top of the sheet and is on
+/// screen from the first frame, right where the mini player is.
+class _RouteEntrance extends StatelessWidget {
+  final Widget child;
+
+  const _RouteEntrance({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final Animation<double>? route = ModalRoute.of(context)?.animation;
+    if (route == null) return child;
+    return AnimatedBuilder(
+      animation: route,
+      child: child,
+      builder: (context, child) {
+        final double t = PlayerTokens.cStandard
+            .transform(((route.value - 0.35) / 0.55).clamp(0.0, 1.0));
+        // Same structure at every value so the pill never remounts.
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * PlayerTokens.s3),
+            child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
+          ),
+        );
+      },
     );
   }
 }

@@ -10,8 +10,8 @@ import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../routes/player_route.dart';
+import '../routes/player_sheet_origin.dart';
 import '../tokens/app_tokens.dart';
-import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import 'audio_visualizer.dart';
 import 'duration_display.dart' show DurationFormatter;
@@ -368,8 +368,7 @@ class _NowPlayingContent extends ConsumerWidget {
                             Hero(
                               tag: 'now_playing_art_${m.$1.id}',
                               transitionOnUserGestures: true,
-                              curve: PlayerTokens.cEmphasizedDecel,
-                              reverseCurve: Curves.linear,
+                              createRectTween: PlayerPageRoute.coverRectTween,
                               child: SizedBox(
                                 width: imageSize,
                                 height: imageSize,
@@ -510,9 +509,12 @@ class _NowPlayingContent extends ConsumerWidget {
     );
 
     if (embedded) {
-      return ClipRRect(
-        borderRadius: borderRadius,
-        child: content,
+      return PlayerSheetOrigin(
+        radius: borderRadius.topLeft.x,
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: content,
+        ),
       );
     }
 
@@ -529,9 +531,12 @@ class _NowPlayingContent extends ConsumerWidget {
     );
 
     if (docked) {
-      return DecoratedBox(
-        decoration: BoxDecoration(color: fill),
-        child: content,
+      return PlayerSheetOrigin(
+        radius: 0,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: fill),
+          child: content,
+        ),
       );
     }
 
@@ -547,12 +552,15 @@ class _NowPlayingContent extends ConsumerWidget {
     );
 
     // Shadow lives outside the clip so it is not cropped to the bar's corners.
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: borderRadius,
-        boxShadow: AppTokens.shadowFloating,
+    return PlayerSheetOrigin(
+      radius: borderRadius.topLeft.x,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          boxShadow: AppTokens.shadowFloating,
+        ),
+        child: bar,
       ),
-      child: bar,
     );
   }
 }

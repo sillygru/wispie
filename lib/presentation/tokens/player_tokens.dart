@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,15 +25,18 @@ class PlayerTokens {
   static const double rSm = 12;
   static const double rMd = 18;
   static const double rLg = 26;
-  static const double rFlight = 240;
   static const double rSheetFlight = 24;
 
-  /// Cover corner radius during the open/close flight: eases from the mini
-  /// art's radius to [landed], swelling to a strong peak in between.
-  static double flightRadius(double t, double landed, [double peak = rFlight]) {
-    final double base = rSm + (landed - rSm) * t;
-    return base + (peak - base) * math.sin(math.pi * t);
-  }
+  /// Cover progress for a sheet progress [p]. The cover leads the sheet a
+  /// little so it is already near full size while the sheet is still landing,
+  /// yet stays inside the rising sheet the whole way.
+  static double coverFlight(double p) => Curves.easeOutQuad.transform(p);
+
+  /// Cover corner radius during the open/close flight. A straight blend from
+  /// the mini art's radius to [landed]: any swell in between reads as the
+  /// artwork turning into a blob mid-flight.
+  static double flightRadius(double p, double landed) =>
+      rSm + (landed - rSm) * coverFlight(p.clamp(0.0, 1.0));
 
   static const double rPill = 999;
 
@@ -125,8 +126,12 @@ class PlayerTokens {
   static const Curve cEmphasizedDecel = Cubic(0.05, 0.7, 0.1, 1.0);
   static const Curve cEmphasizedAccel = Cubic(0.3, 0.0, 0.8, 0.15);
 
-  static const Duration dRouteIn = Duration(milliseconds: 460);
-  static const Duration dRouteOut = Duration(milliseconds: 300);
+  /// Player sheet open/close. The curve is baked into the route controller so
+  /// the sheet, the flying cover and a grabbing finger all share one value.
+  static const Duration dRouteIn = Duration(milliseconds: 400);
+  static const Duration dRouteOut = Duration(milliseconds: 320);
+  static const Curve cRouteIn = Cubic(0.2, 0.8, 0.2, 1.0);
+  static const Curve cRouteOut = Cubic(0.3, 0.7, 0.2, 1.0);
 
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;

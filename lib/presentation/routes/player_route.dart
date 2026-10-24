@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/collection_accent_scope.dart';
 import '../screens/unified_player_screen.dart';
+import 'player_sheet_origin.dart';
 import '../tokens/player_tokens.dart';
 
 class PlayerPageRoute extends PageRoute<void> {
@@ -26,16 +27,62 @@ class PlayerPageRoute extends PageRoute<void> {
 
   bool _dragging = false;
   bool _settling = false;
+  // Tracks whether nav.didStartUserGesture() was actually called, so the stop
+  // call stays balanced when a grab happens mid-open and no gesture was started.
+  bool _gestureHeld = false;
 
-  // While the finger owns the sheet it tracks linearly instead of through
-  // the open/close curves, so the sheet stays attached to the finger.
-  bool _gestureDriven = false;
-
-  // The user-gesture claim lets Hero flights (cover, transport buttons)
+  // The user-gesture claim lets the cover Hero flight
   // follow the finger, but it also makes the framework ignore pointers on
   // the page. This flag swaps in a catch-all detector so a settling sheet
   // can still be grabbed back.
   final ValueNotifier<bool> _catchable = ValueNotifier(false);
+
+  // Distance the sheet's top edge travels: from the mini player's top edge
+  // (or the screen's bottom edge without one) up to the top of the screen.
+  // Captured by the transition each frame so a drag tracks the finger 1:1.
+  double? _travel;
+
+  // The route this player was pushed over; its mini player is the origin.
+  Route<dynamic>? _below;
+
+  static PlayerPageRoute? _active;
+
+  /// Vertical offset of the sheet at progress [p], for whichever player route
+  /// is currently on screen. The cover flight rides this so it lands with the
+  /// sheet instead of racing ahead of it.
+  static double sheetOffsetAt(double p) {
+    final double? travel = _active?._travel;
+    if (travel == null) return 0;
+    return (1 - p.clamp(0.0, 1.0)) * travel;
+  }
+
+  /// Rect tween for the cover shared between the mini player and the player.
+  /// Both sides must use it: a push builds the tween from the player's Hero,
+  /// a pop from the mini player's.
+  static Tween<Rect?> coverRectTween(Rect? begin, Rect? end) =>
+      _SheetRideTween(begin: begin, end: end, closing: _isClosing(begin, end));
+
+  /// Same as [coverRectTween] for the play/skip controls.
+  static Tween<Rect?> transportRectTween(Rect? begin, Rect? end) =>
+      _SheetRideTween(
+        begin: begin,
+        end: end,
+        closing: _isClosing(begin, end),
+        hold: true,
+      );
+
+  static bool _isClosing(Rect? begin, Rect? end) {
+    final route = _active;
+    if (route != null) return route._closing;
+    // No live route to ask: the player side is the larger rect.
+    return begin != null &&
+        end != null &&
+        begin.width * begin.height > end.width * end.height;
+  }
+
+  // Which way the current flights run. Set before the framework starts them,
+  // which is when the rect tweens capture it.
+  bool _closing = false;
 
   void dismissDragStart() {
     final c = controller;
@@ -46,35 +93,26 @@ class PlayerPageRoute extends PageRoute<void> {
       c.stop();
     } else {
       if (!isCurrent) return;
-      if (c.isAnimating) {
-        // Grabbed mid-open: continue from where the curved sheet is drawn.
-        final shown = PlayerTokens.cEmphasizedDecel.transform(c.value);
-        c.stop();
-        c.value = _invertCurve(shown);
+      // Grabbed mid-open: the controller value is what is drawn, so the
+      // sheet simply stops under the finger.
+      if (c.isAnimating) c.stop();
+      _closing = true;
+      // Hero flights only accept a user gesture once the route has fully
+      // opened; starting one mid-open trips Hero's reverse-status assertion.
+      if (animation?.status == AnimationStatus.completed) {
+        nav.didStartUserGesture();
+        _gestureHeld = true;
       }
-      nav.didStartUserGesture();
     }
     _dragging = true;
-    _gestureDriven = true;
-  }
-
-  static double _invertCurve(double y) {
-    double lo = 0, hi = 1;
-    for (var i = 0; i < 24; i++) {
-      final mid = (lo + hi) / 2;
-      if (PlayerTokens.cEmphasizedDecel.transform(mid) < y) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return (lo + hi) / 2;
   }
 
   void dismissDragUpdate(double dy, double height) {
     final c = controller;
-    if (!_dragging || c == null || height <= 0) return;
-    c.value = c.value - dy / height;
+    if (!_dragging || c == null) return;
+    final double travel = _travel ?? height;
+    if (travel <= 0) return;
+    c.value = c.value - dy / travel;
   }
 
   /// [velocity] is px/s, positive downward.
@@ -82,7 +120,8 @@ class PlayerPageRoute extends PageRoute<void> {
     final c = controller;
     if (!_dragging || c == null) return;
     _dragging = false;
-    final v = height > 0 ? velocity / height : 0.0;
+    final double travel = _travel ?? height;
+    final v = travel > 0 ? velocity / travel : 0.0;
     // Final flick direction wins, so down-then-quickly-up reopens.
     final close = v.abs() > 0.25 ? v > 0 : c.value < 0.6;
     _settle(close ? 0 : 1, -v);
@@ -104,19 +143,44 @@ class PlayerPageRoute extends PageRoute<void> {
       _settling = false;
       final nav = navigator;
       if (target == 0 && nav != null && isActive) nav.pop();
-      if (target == 1) {
-        _gestureDriven = false;
-        _catchable.value = false;
-      }
+      if (target == 1) _catchable.value = false;
       // After the pop: Hero flights finish against the landed animation.
-      nav?.didStopUserGesture();
+      if (_gestureHeld) {
+        _gestureHeld = false;
+        nav?.didStopUserGesture();
+      }
     });
   }
 
   @override
   void dispose() {
+    if (_active == this) _active = null;
     _catchable.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangePrevious(Route<dynamic>? previousRoute) {
+    super.didChangePrevious(previousRoute);
+    _below = previousRoute;
+  }
+
+  // The open/close curves live in the controller itself rather than in a
+  // CurvedAnimation on top, so the sheet, the cover flight and a finger that
+  // grabs the sheet mid-flight all read the same value.
+  @override
+  Simulation? createSimulation({required bool forward}) {
+    final double from = controller?.value ?? (forward ? 0 : 1);
+    final double to = forward ? 1 : 0;
+    _closing = !forward;
+    final Duration full =
+        forward ? PlayerTokens.dRouteIn : PlayerTokens.dRouteOut;
+    return _CurveSimulation(
+      from: from,
+      to: to,
+      duration: full * (to - from).abs(),
+      curve: forward ? PlayerTokens.cRouteIn : PlayerTokens.cRouteOut,
+    );
   }
 
   @override
@@ -137,6 +201,7 @@ class PlayerPageRoute extends PageRoute<void> {
   @override
   void install() {
     super.install();
+    _active = this;
     _catchable.value = true;
     animation!.addStatusListener((status) {
       if (status == AnimationStatus.completed && !_settling && !_dragging) {
@@ -192,56 +257,68 @@ class PlayerPageRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // Rises from the mini player's edge rather than fading in place: the
-    // sheet travels most of the way fast and lands softly, so it reads as the
-    // bar expanding instead of a page swap.
-    final Animation<double> primary = _GestureAwareAnimation(
-      CurvedAnimation(
-        parent: animation,
-        curve: PlayerTokens.cEmphasizedDecel,
-        reverseCurve: Curves.linear,
-      ),
-      animation,
-      () => _gestureDriven,
-    );
-    final fade = CurvedAnimation(
-      parent: animation,
-      curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
-      reverseCurve: Curves.linear,
-    );
-    final slide = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(primary);
+    // The sheet grows out of the mini player: it starts as the bar's own rect
+    // and corners, rises with its top edge, widens to the screen and squares
+    // off, and lands back into the bar the same way. The page is never faded
+    // as a whole, so the transport and everything else stay visibly attached
+    // to the sheet for the full flight instead of vanishing ahead of it.
+    final Widget stack = AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final Size size = MediaQuery.sizeOf(context);
+        final RenderObject? overlayBox =
+            navigator?.overlay?.context.findRenderObject();
+        final origin = PlayerSheetOrigin.resolve(
+          _below,
+          overlayBox is RenderBox ? overlayBox : null,
+        );
+        final Rect from =
+            origin?.rect ?? Rect.fromLTWH(0, size.height, size.width, 0);
+        final double fromRadius = origin?.radius ?? PlayerTokens.rSheetFlight;
+        // A mini player scrolled into an odd spot must not shrink the travel
+        // to a twitch.
+        _travel = from.top.clamp(size.height * 0.4, size.height);
 
-    final Widget stack = Stack(
-      children: [
-        FadeTransition(
-          opacity: fade,
-          child: Container(color: Colors.black.withValues(alpha: 0.46)),
-        ),
-        SlideTransition(
-          position: slide,
-          child: AnimatedBuilder(
-            animation: primary,
-            child: FadeTransition(opacity: fade, child: child),
-            builder: (context, child) {
-              final double t = primary.value.clamp(0.0, 1.0);
-              final double radius =
-                  PlayerTokens.flightRadius(t, 0, PlayerTokens.rSheetFlight);
-              // Structure stays fixed (only clip mode changes) so the player
-              // subtree is never remounted when the animation settles.
-              return ClipRRect(
-                clipBehavior: radius < 0.5 ? Clip.none : Clip.antiAlias,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(radius),
+        final double p = animation.value.clamp(0.0, 1.0);
+        final double w = PlayerTokens.coverFlight(p);
+        final double left = from.left.clamp(0.0, size.width) * (1 - w);
+        final double right =
+            (size.width - from.right).clamp(0.0, size.width) * (1 - w);
+        final double radius = fromRadius * (1 - w);
+        // Only the very start is faded: the bar underneath stays visible as
+        // the sheet emerges from it, and shows again as the sheet lands.
+        final double shell =
+            Curves.easeOut.transform((p / 0.14).clamp(0.0, 1.0));
+
+        return Stack(
+          children: [
+            IgnorePointer(
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: 0.5 * p),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // Structure stays fixed (only clip mode and values change) so the
+            // player subtree is never remounted when the animation settles.
+            Transform.translate(
+              offset: Offset(0, (1 - p) * _travel!),
+              child: Opacity(
+                opacity: shell,
+                child: ClipRRect(
+                  clipBehavior: p >= 1 ? Clip.none : Clip.antiAlias,
+                  clipper: _SheetClipper(
+                    left: left,
+                    right: right,
+                    radius: radius,
+                  ),
+                  child: child,
                 ),
-                child: child,
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+          ],
+        );
+      },
     );
     return ValueListenableBuilder<bool>(
       valueListenable: _catchable,
@@ -269,20 +346,95 @@ class PlayerPageRoute extends PageRoute<void> {
   }
 }
 
-/// Raw (linear) value while a drag owns the route, curved otherwise. Both
-/// agree at 0 and 1, so switching never jumps.
-class _GestureAwareAnimation extends Animation<double>
-    with AnimationWithParentMixin<double> {
-  _GestureAwareAnimation(this._curved, this.parent, this._linear);
+class _SheetClipper extends CustomClipper<RRect> {
+  const _SheetClipper({
+    required this.left,
+    required this.right,
+    required this.radius,
+  });
 
-  final Animation<double> _curved;
-  final bool Function() _linear;
+  final double left;
+  final double right;
+  final double radius;
 
   @override
-  final Animation<double> parent;
+  RRect getClip(Size size) => RRect.fromLTRBR(
+        left,
+        0,
+        size.width - right,
+        size.height,
+        Radius.circular(radius),
+      );
 
   @override
-  double get value => _linear() ? parent.value : _curved.value;
+  bool shouldReclip(_SheetClipper old) =>
+      old.left != left || old.right != right || old.radius != radius;
+}
+
+/// Mini <-> player flight that heads for the element's slot *in the moving
+/// sheet* rather than its landed spot, so it stays attached to the sheet and
+/// lands with it instead of arriving early.
+class _SheetRideTween extends Tween<Rect?> {
+  _SheetRideTween(
+      {super.begin, super.end, required this.closing, this.hold = false});
+
+  /// Direction captured when the flight starts: on close, [begin] is the
+  /// player side and the tween runs against sheet progress.
+  final bool closing;
+
+  /// Keeps the element from dipping below where the mini player draws it.
+  /// Transport controls sit at the bottom of the player, so their slot starts
+  /// off screen; holding lets them wait in the bar until the sheet arrives.
+  final bool hold;
+
+  @override
+  Rect? lerp(double t) {
+    final Rect? a = begin;
+    final Rect? b = end;
+    if (a == null || b == null) return Rect.lerp(a, b, t);
+    final Rect mini = closing ? b : a;
+    final Rect full = closing ? a : b;
+    final double p = closing ? 1 - t : t;
+    final Rect slot = full.shift(Offset(0, PlayerPageRoute.sheetOffsetAt(p)));
+    final Rect r = Rect.lerp(mini, slot, PlayerTokens.coverFlight(p))!;
+    if (!hold) return r;
+    // Releases the hold in step with sheet progress, so the element is at the
+    // mini player's height at the start and exactly on its slot at the end.
+    final double dip = r.center.dy - mini.center.dy;
+    return dip > 0 ? r.shift(Offset(0, -dip * (1 - p))) : r;
+  }
+}
+
+/// Plays [curve] over [duration] as a simulation, so open/close can bake the
+/// curve into the controller value.
+class _CurveSimulation extends Simulation {
+  _CurveSimulation({
+    required this.from,
+    required this.to,
+    required Duration duration,
+    required this.curve,
+  }) : _seconds = duration.inMicroseconds / Duration.microsecondsPerSecond;
+
+  final double from;
+  final double to;
+  final Curve curve;
+  final double _seconds;
+
+  double _f(double time) =>
+      _seconds <= 0 ? 1 : (time / _seconds).clamp(0.0, 1.0);
+
+  @override
+  double x(double time) => from + (to - from) * curve.transform(_f(time));
+
+  @override
+  double dx(double time) {
+    if (_seconds <= 0 || time >= _seconds) return 0;
+    const double h = 1e-3;
+    return (x(time + h) - x(time)) / h;
+  }
+
+  @override
+  bool isDone(double time) => time >= _seconds;
 }
 
 /// Critically damped, no bounce; ends the moment it reaches or crosses the
@@ -315,4 +467,70 @@ class _SnapSimulation extends Simulation {
     final x = _spring.x(time);
     return _spring.isDone(time) || (_target == 0 ? x <= 0 : x >= 1);
   }
+}
+
+/// The dock-side end of the cover flight when it is the collapsed ball.
+///
+/// The player's flight shuttle draws its own cover, so it cannot see the
+/// ball's circular clip or paused dimming. It reads them from here so the
+/// flight lands on the exact shape and opacity the ball shows.
+class CoverFlightEnd extends StatelessWidget {
+  final double opacity;
+  final Widget child;
+
+  const CoverFlightEnd({super.key, required this.opacity, required this.child});
+
+  /// The ball end of a cover flight, or null when the dock end is the bar.
+  static CoverFlightEnd? of(
+    HeroFlightDirection direction,
+    BuildContext fromCtx,
+    BuildContext toCtx,
+  ) {
+    final Widget dock = ((direction == HeroFlightDirection.push
+            ? fromCtx.widget
+            : toCtx.widget) as Hero)
+        .child;
+    return dock is CoverFlightEnd ? dock : null;
+  }
+
+  /// Clips [child] for flight progress [t] (0 = dock, 1 = player): toward the
+  /// ball's dimmed circle when [ball] is set, else the bar's small radius.
+  static Widget clip({
+    required CoverFlightEnd? ball,
+    required double t,
+    required double landedRadius,
+    required Widget child,
+  }) {
+    if (ball == null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(
+          PlayerTokens.flightRadius(t, landedRadius),
+        ),
+        child: child,
+      );
+    }
+    final double k = PlayerTokens.coverFlight(t.clamp(0.0, 1.0));
+    return Opacity(
+      opacity: ball.opacity + (1 - ball.opacity) * k,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final double circle = box.biggest.shortestSide / 2;
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(
+              circle + (landedRadius - circle) * k,
+            ),
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedOpacity(
+        opacity: opacity,
+        duration: PlayerTokens.dBase,
+        curve: PlayerTokens.cStandard,
+        child: child,
+      );
 }

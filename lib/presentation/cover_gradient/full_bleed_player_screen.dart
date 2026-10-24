@@ -1003,12 +1003,15 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         final Widget art = Hero(
           tag: PlayerTokens.coverHeroTag(song.filename),
           transitionOnUserGestures: true,
-          curve: PlayerTokens.cEmphasizedDecel,
+          curve: Curves.linear,
           reverseCurve: Curves.linear,
+          createRectTween: PlayerPageRoute.coverRectTween,
           flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
             final Hero hero = (direction == HeroFlightDirection.push
                 ? toCtx.widget
                 : fromCtx.widget) as Hero;
+            final CoverFlightEnd? ball =
+                CoverFlightEnd.of(direction, fromCtx, toCtx);
             // The landed cover carries a bottom fade. Growing that fade in
             // with the flight (instead of applying it on landing) keeps the
             // darkening from popping in after the route settles.
@@ -1017,10 +1020,10 @@ class _FullBleedPlayerPane extends ConsumerWidget {
               child: hero.child,
               builder: (context, child) {
                 final double t = animation.value.clamp(0.0, 1.0);
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(
-                    PlayerTokens.flightRadius(t, 0),
-                  ),
+                return CoverFlightEnd.clip(
+                  ball: ball,
+                  t: t,
+                  landedRadius: 0,
                   child: _SideFade(
                     enabled: WideLayout.isWide(context),
                     strength: Curves.easeInOut.transform(t),
