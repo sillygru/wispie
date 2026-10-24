@@ -80,3 +80,9 @@ dependency_overrides:
   # desyncs on media_kit (Linux/Windows).
   just_audio_media_kit:
     path: third_party/just_audio_media_kit
+  # Vendored: upstream eager-instantiates Geolocator in the Windows plugin
+  # constructor on startup, falsely triggering Windows location service usage
+  # in the taskbar even though the app never uses location. Lazily creates
+  # Geolocator only if location service status is explicitly queried.
+  permission_handler_windows:
+    path: third_party/permission_handler_windows
