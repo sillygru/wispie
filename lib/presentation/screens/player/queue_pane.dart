@@ -87,6 +87,12 @@ class _QueuePaneState extends ConsumerState<QueuePane>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _chrome.duration = MotionPolicy.of(context).duration(MotionTokens.fast);
+  }
+
+  @override
   void dispose() {
     _cancelChromeSettle();
     _segment.dispose();

@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../components/song_actions.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
@@ -23,7 +24,7 @@ void showSongOptionsMenu(
     barrierDismissible: true,
     barrierLabel: AppLocalizations.of(context).songMenuTitle,
     barrierColor: Colors.black.withValues(alpha: 0.35),
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: MotionTokens.exit,
     pageBuilder: (dialogContext, _, __) {
       return SafeArea(
         child: Center(
@@ -516,14 +517,14 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
     final offset = _direction >= 0 ? 0.14 : -0.14;
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeInOutCubic,
+      duration: MotionTokens.base,
+      curve: MotionTokens.inOutCurve,
       alignment: Alignment.topCenter,
       clipBehavior: Clip.none,
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 240),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
+        duration: MotionTokens.base,
+        switchInCurve: MotionTokens.enterCurve,
+        switchOutCurve: MotionTokens.exitCurve,
         layoutBuilder: (currentChild, previousChildren) {
           return Stack(
             alignment: Alignment.topCenter,

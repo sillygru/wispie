@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'album_art_image.dart';
 import '../../domain/models/cover_key.dart';
+import '../motion/motion.dart';
 import '../../domain/services/media_decode.dart';
 import '../../services/cache_service.dart';
 import '../../services/cover_refresh_service.dart';
@@ -182,9 +183,9 @@ class _BlurredBackgroundState extends State<BlurredBackground> {
         if (_hasBlurredBackground)
           Positioned.fill(
             child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 400),
+              duration: MotionTokens.standard,
               opacity: 1.0,
-              curve: Curves.easeIn,
+              curve: MotionTokens.exitCurve,
               child: Image.file(
                 _blurFile!,
                 fit: BoxFit.cover,

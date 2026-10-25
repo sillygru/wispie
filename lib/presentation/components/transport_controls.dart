@@ -7,6 +7,7 @@ import '../../models/queue_item.dart';
 import '../../models/song.dart';
 import '../../services/audio_player_manager.dart';
 import '../../l10n/l10n.dart';
+import '../motion/motion.dart';
 import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import 'pressable.dart';
@@ -30,8 +31,8 @@ class TransportHero extends StatelessWidget {
     return Hero(
       tag: tag,
       transitionOnUserGestures: true,
-      curve: Curves.linear,
-      reverseCurve: Curves.linear,
+      curve: MotionTokens.linearCurve,
+      reverseCurve: MotionTokens.linearCurve,
       createRectTween: PlayerPageRoute.transportRectTween,
       flightShuttleBuilder: (context, animation, direction, from, to) {
         final bool push = direction == HeroFlightDirection.push;
@@ -86,15 +87,18 @@ class _PlayPauseMorphIconState extends State<PlayPauseMorphIcon>
   );
   late final Animation<double> _progress = CurvedAnimation(
     parent: _controller,
-    curve: Curves.easeInOutCubic,
+    curve: MotionTokens.inOutCurve,
   );
 
   @override
   void didUpdateWidget(covariant PlayPauseMorphIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.playing != widget.playing) {
-      widget.playing ? _controller.forward() : _controller.reverse();
+    if (oldWidget.playing == widget.playing) return;
+    if (MotionPolicy.read(context).reduceMotion) {
+      _controller.value = widget.playing ? 1 : 0;
+      return;
     }
+    widget.playing ? _controller.forward() : _controller.reverse();
   }
 
   @override
@@ -276,7 +280,7 @@ class _SkipButtonState extends State<SkipButton>
                 animation: _controller,
                 builder: (context, _) {
                   final double t =
-                      Curves.easeInOutCubic.transform(_controller.value);
+                      MotionTokens.inOutCurve.transform(_controller.value);
                   final Widget glyph =
                       Icon(widget.icon, size: s, color: widget.color);
                   if (t == 0 || t == 1) {
@@ -345,7 +349,7 @@ class _NextFastForwardButtonState extends State<NextFastForwardButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 520),
+    duration: MotionTokens.long,
   );
 
   @override
@@ -380,7 +384,8 @@ class _NextFastForwardButtonState extends State<NextFastForwardButton>
             AnimatedBuilder(
               animation: _pulse,
               builder: (context, child) => Transform.scale(
-                scale: 1 + 0.08 * Curves.easeInOut.transform(_pulse.value),
+                scale:
+                    1 + 0.08 * MotionTokens.inOutCurve.transform(_pulse.value),
                 child: child,
               ),
               // One SkipButton throughout: swapping widgets mid-hold would

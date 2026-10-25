@@ -6,6 +6,7 @@ import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../components/pressable.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import 'album_art_image.dart';
 import 'collection_cover.dart';
@@ -170,8 +171,8 @@ class _AlbumCard extends StatelessWidget {
                       cover,
                       AnimatedOpacity(
                         opacity: isSelected ? 1 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOut,
+                        duration: MotionTokens.fast,
+                        curve: MotionTokens.standardCurve,
                         child: ColoredBox(
                           color: accent.withValues(alpha: 0.28),
                         ),

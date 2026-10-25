@@ -8,6 +8,7 @@ import '../../models/song.dart';
 import '../../providers/artist_album_art_provider.dart';
 import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
+import '../motion/motion.dart';
 import 'album_art_image.dart';
 import 'collection_cover.dart';
 import 'lyrics_match_widget.dart';
@@ -45,7 +46,7 @@ class SearchResultItem extends ConsumerWidget {
         : 'search_result_${song.filename}';
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: MotionTokens.short,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: isSelected
@@ -98,7 +99,7 @@ class SearchResultItem extends ConsumerWidget {
                       child: Stack(
                         children: [
                           AnimatedScale(
-                            duration: const Duration(milliseconds: 200),
+                            duration: MotionTokens.short,
                             scale: isSelected ? 0.8 : 1.0,
                             child: ClipRRect(
                               borderRadius: AppTokens.brSm,

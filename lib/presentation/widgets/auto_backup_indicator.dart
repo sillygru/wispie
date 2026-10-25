@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../services/auto_backup_service.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -27,13 +28,13 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator>
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 250),
+      duration: MotionTokens.theme,
       vsync: this,
       value: 1.0,
     );
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
-      curve: Curves.easeInOut,
+      curve: MotionTokens.inOutCurve,
     );
   }
 
