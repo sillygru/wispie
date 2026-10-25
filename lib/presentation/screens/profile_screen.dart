@@ -15,6 +15,7 @@ import '../components/app_settings.dart';
 import '../components/scroll_chrome.dart';
 import '../components/app_section_header.dart';
 import '../components/app_surface.dart';
+import '../motion/motion.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
 import 'settings_screen.dart';
@@ -96,7 +97,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             maxWidth: WideLayout.maxNarrowWidth,
             child: CustomScrollView(
               controller: widget.scrollController,
-              physics: const BouncingScrollPhysics(),
+              physics: const MotionScrollPhysics(),
               slivers: [
                 AppSliverHeader(
                     title: l10n.profileTitle, isScrolled: isScrolled),
@@ -430,7 +431,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
             maxWidth: WideLayout.maxContentWidth,
             child: CustomScrollView(
               controller: widget.scrollController,
-              physics: const BouncingScrollPhysics(),
+              physics: const MotionScrollPhysics(),
               slivers: [
                 AppSliverHeader(
                     title: l10n.profileTitle, isScrolled: isScrolled),

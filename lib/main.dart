@@ -18,6 +18,7 @@ import 'presentation/components/popup_scroll_dismiss.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 import 'presentation/motion/motion.dart';
+import 'presentation/player_panel/player_panel.dart';
 import 'presentation/widgets/orientation_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/setup_provider.dart';
@@ -449,6 +450,12 @@ class _WispieAppState extends ConsumerState<WispieApp>
   Future<void> _goBack() async {
     final navigator = _navigatorKey.currentState;
     if (navigator != null && await navigator.maybePop()) return;
+    // The player is not a route, so it is the last thing between the current
+    // screen and Home.
+    if (PlayerPanel.isVisible) {
+      PlayerPanel.close();
+      return;
+    }
     ref.read(homeNavigationProvider.notifier).goHome();
   }
 

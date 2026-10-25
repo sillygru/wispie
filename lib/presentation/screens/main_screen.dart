@@ -28,6 +28,7 @@ import '../components/app_nav_bar.dart';
 import '../components/floating_dock.dart';
 import '../components/tab_switch_transition.dart';
 import '../motion/motion.dart';
+import '../player_panel/player_panel.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
@@ -527,30 +528,37 @@ class _MainScreenState extends ConsumerState<MainScreen>
                 ref.read(selectionProvider.notifier).exitSelectionMode();
               }
             },
-            child: Row(
+            child: Stack(
               children: [
-                _WideNavRail(
-                  selectedIndex: _selectedIndex,
-                  onSelected: _onTabSelected,
-                  accent: accent,
-                  onSearch: openSearch,
-                  onSettings: openSettings,
+                Row(
+                  children: [
+                    _WideNavRail(
+                      selectedIndex: _selectedIndex,
+                      onSelected: _onTabSelected,
+                      accent: accent,
+                      onSearch: openSearch,
+                      onSettings: openSettings,
+                    ),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          buildShellBody(),
+                          // Above the content: the hover zone and its pill only
+                          // work if nothing under them absorbs the pointer.
+                          if (mediaQuery.size.width >= _sidePanelBreakpoint &&
+                              settings.desktopSidebarEnabled &&
+                              !sidePanelOpen)
+                            const Positioned.fill(child: _SidebarEdgeReveal()),
+                        ],
+                      ),
+                    ),
+                    if (mediaQuery.size.width >= _sidePanelBreakpoint)
+                      _AnimatedSidePanel(open: sidePanelOpen),
+                  ],
                 ),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      buildShellBody(),
-                      // Above the content: the hover zone and its pill only
-                      // work if nothing under them absorbs the pointer.
-                      if (mediaQuery.size.width >= _sidePanelBreakpoint &&
-                          settings.desktopSidebarEnabled &&
-                          !sidePanelOpen)
-                        const Positioned.fill(child: _SidebarEdgeReveal()),
-                    ],
-                  ),
-                ),
-                if (mediaQuery.size.width >= _sidePanelBreakpoint)
-                  _AnimatedSidePanel(open: sidePanelOpen),
+                // The player is mounted here, not pushed: opening it is the
+                // same motion a drag makes.
+                const PlayerPanelHost(),
               ],
             ),
           ),
@@ -567,7 +575,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
             ref.read(selectionProvider.notifier).exitSelectionMode();
           }
         },
-        child: buildShellBody(),
+        child: Stack(
+          children: [
+            buildShellBody(),
+            // The player is mounted here, not pushed: opening it is the same
+            // motion a drag makes, so back is its own PopScope, not a route.
+            const PlayerPanelHost(),
+          ],
+        ),
       ),
       // The floating dock is drawn inside the content stack so pages scroll
       // underneath it; no Scaffold bottom bar.

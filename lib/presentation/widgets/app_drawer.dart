@@ -7,7 +7,7 @@ import '../../providers/settings_provider.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
 import '../components/app_section_header.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_panel.dart';
 import '../screens/play_history_screen.dart';
 import '../screens/playlists_screen.dart';
 import '../screens/session_history_screen.dart';
@@ -66,12 +66,9 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
   void _openQueueHistory() {
     _closeDrawer().then((_) {
       if (!mounted) return;
-      Navigator.push(
-        context,
-        PlayerPageRoute(
-          initialPane: PlayerPane.queue,
-          queueShowsHistory: true,
-        ),
+      PlayerPanel.open(
+        initialPane: PlayerPane.queue,
+        queueShowsHistory: true,
       );
     });
   }

@@ -19,5 +19,6 @@ export 'motion_theme.dart';
 export 'motion_tokens.dart';
 export 'motion_visibility.dart';
 export 'progress_geometry.dart';
+export 'scroll_physics_modified.dart';
 export 'snap_engine.dart';
 export 'spring_morph.dart';

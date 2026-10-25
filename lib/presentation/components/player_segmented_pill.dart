@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../player_panel/player_panel.dart';
 import '../tokens/player_tokens.dart';
 import '../motion/motion.dart';
 
@@ -134,7 +135,8 @@ class PlayerRouteEntrance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Animation<double>? route = ModalRoute.of(context)?.animation;
+    // The player is not a route, so the entrance follows the panel's own value.
+    final Animation<double>? route = PlayerPanel.controller?.progress;
     if (route == null) return child;
     return AnimatedBuilder(
       animation: route,

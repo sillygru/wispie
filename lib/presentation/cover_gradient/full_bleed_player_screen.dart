@@ -27,7 +27,7 @@ import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
 import '../motion/motion.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_panel.dart';
 import '../tokens/player_tokens.dart';
 import '../../l10n/l10n.dart';
 import '../utils/wide_layout.dart';
@@ -89,7 +89,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   final ValueNotifier<bool> _nowPlayingVisible = ValueNotifier(false);
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(false);
 
-  final GlobalKey _coverKey = GlobalKey(debugLabel: 'fullbleed cover');
+  // Shared with the panel, which flies the artwork in from the dock's bar.
+  final GlobalKey _coverKey = PlayerMorphTargets.cover;
   final GlobalKey _shellKey = GlobalKey(debugLabel: 'fullbleed shell');
 
   late int _pane;
@@ -320,24 +321,18 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     _syncWakeLock();
   }
 
-  PlayerPageRoute? get _playerRoute {
-    final route = ModalRoute.of(context);
-    return route is PlayerPageRoute ? route : null;
-  }
+  // The panel owns the motion; this screen only reports the finger.
+  PlayerPanelController? get _panel => PlayerPanel.controller;
 
-  void _onDismissDragStart(DragStartDetails details) =>
-      _playerRoute?.dismissDragStart();
+  void _onDismissDragStart(DragStartDetails details) => _panel?.dragStart();
 
-  void _onDismissDragUpdate(DragUpdateDetails details) => _playerRoute
-      ?.dismissDragUpdate(details.delta.dy, MediaQuery.sizeOf(context).height);
+  void _onDismissDragUpdate(DragUpdateDetails details) =>
+      _panel?.dragUpdate(details.delta.dy);
 
   void _onDismissDragEnd(DragEndDetails details) =>
-      _playerRoute?.dismissDragEnd(
-        details.primaryVelocity ?? 0,
-        MediaQuery.sizeOf(context).height,
-      );
+      _panel?.dragEnd(velocity: details.primaryVelocity ?? 0);
 
-  void _onDismissDragCancel() => _playerRoute?.dismissDragCancel();
+  void _onDismissDragCancel() => _panel?.dragCancel();
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +365,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
         builder: (context) => CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () =>
-                Navigator.of(context).maybePop(),
+                PlayerPanel.close(),
           },
           child: Focus(
               autofocus: true,
@@ -800,7 +795,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                         tooltip: wide
                             ? context.l10n.playerCloseEsc
                             : context.l10n.actionClose,
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed: PlayerPanel.close,
                       ),
                       const Spacer(),
                       GlassCircleButton(
@@ -869,7 +864,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
             constraints.maxHeight.isFinite ? constraints.maxHeight : 640;
         if (viewportH < 380 || song.hasVideo) {
           return SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
+            physics: const MotionScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1020,44 +1015,14 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         //
         // ShaderMask fades the lower third into transparency so the blur
         // behind shows through with no edge to color-match.
-        final Widget art = Hero(
-          tag: PlayerTokens.coverHeroTag(song.filename),
-          transitionOnUserGestures: true,
-          curve: Curves.linear,
-          reverseCurve: Curves.linear,
-          createRectTween: PlayerPageRoute.coverRectTween,
-          flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
-            final Hero hero = (direction == HeroFlightDirection.push
-                ? toCtx.widget
-                : fromCtx.widget) as Hero;
-            final CoverFlightEnd? ball =
-                CoverFlightEnd.of(direction, fromCtx, toCtx);
-            // The landed cover carries a bottom fade. Growing that fade in
-            // with the flight (instead of applying it on landing) keeps the
-            // darkening from popping in after the route settles.
-            return AnimatedBuilder(
-              animation: animation,
-              child: hero.child,
-              builder: (context, child) {
-                final double t = animation.value.clamp(0.0, 1.0);
-                return CoverFlightEnd.clip(
-                  ball: ball,
-                  t: t,
-                  landedRadius: 0,
-                  child: _SideFade(
-                    enabled: WideLayout.isWide(context),
-                    strength: Curves.easeInOut.transform(t),
-                    child: ShaderMask(
-                      shaderCallback: (bounds) =>
-                          _coverFadeShader(bounds, fadeTop, t),
-                      blendMode: BlendMode.dstIn,
-                      child: child,
-                    ),
-                  ),
-                );
-              },
-            );
-          },
+        // The panel flies the artwork in from the dock's bar, so this one is
+        // hidden for the duration of that flight rather than flown itself.
+        final Widget art = AnimatedBuilder(
+          animation: transitionAnimation ?? kAlwaysCompleteAnimation,
+          builder: (context, child) => Opacity(
+            opacity: PlayerCoverOpacity.coverOpacityOf(context),
+            child: child,
+          ),
           child: Container(
             key: current ? coverKey : null,
             width: double.infinity,
@@ -1106,7 +1071,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
   }
 
   /// Fades the lower part of the cover (and the top edge when capped) into
-  /// the blurred backdrop. [strength] 0 is an unmasked cover, 1 the full fade.
+  /// the blurred backdrop.
   /// The ramp follows a smoothstep rather than linear segments, so there is no
   /// visible knee where the art starts to dissolve.
   static Shader _coverFadeShader(Rect bounds, bool fadeTop, double strength) {
@@ -1147,13 +1112,11 @@ class _FullBleedPlayerPane extends ConsumerWidget {
 /// where the cover column sits beside the lyrics instead of spanning the screen.
 class _SideFade extends StatelessWidget {
   final bool enabled;
-  final double strength;
   final Widget child;
 
   const _SideFade({
     required this.enabled,
     required this.child,
-    this.strength = 1,
   });
 
   static double _smootherstep(double t) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -1166,8 +1129,7 @@ class _SideFade extends StatelessWidget {
       shaderCallback: (bounds) => LinearGradient(
         colors: <Color>[
           for (var i = 0; i <= 12; i++)
-            Colors.white
-                .withValues(alpha: 1 - strength * _smootherstep(i / 12)),
+            Colors.white.withValues(alpha: 1 - _smootherstep(i / 12)),
         ],
         stops: <double>[
           for (var i = 0; i <= 12; i++) 0.3 + 0.7 * (i / 12),

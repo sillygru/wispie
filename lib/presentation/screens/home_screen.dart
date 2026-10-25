@@ -19,7 +19,7 @@ import '../widgets/sort_menu.dart';
 import 'search_screen.dart';
 import 'unified_player_screen.dart';
 import '../routes/app_page_route.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_panel.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_media_card.dart';
@@ -307,8 +307,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         context,
                         context.l10n.homePlayingCount(songs.length),
                         actionLabel: context.l10n.homeOpenPlayer,
-                        onAction: () =>
-                            Navigator.push(context, PlayerPageRoute()),
+                        onAction: PlayerPanel.open,
                       );
                     },
                     icon: const AppIcon(AppIcons.play),
@@ -534,7 +533,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: WideContentCenter(
                 child: CustomScrollView(
                   controller: widget.scrollController,
-                  physics: const BouncingScrollPhysics(),
+                  physics: const MotionScrollPhysics(),
                   slivers: [
                     AppSliverHeader(
                       title: 'wispie',
@@ -601,12 +600,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         child: AppSectionHeader(
                           label: context.l10n.homeRecentQueues,
                           actionLabel: context.l10n.actionSeeAll,
-                          onActionTap: () => Navigator.push(
-                            context,
-                            PlayerPageRoute(
-                              initialPane: PlayerPane.queue,
-                              queueShowsHistory: true,
-                            ),
+                          onActionTap: () => PlayerPanel.open(
+                            initialPane: PlayerPane.queue,
+                            queueShowsHistory: true,
                           ),
                         ),
                       ),

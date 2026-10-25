@@ -19,7 +19,7 @@ import '../../components/favorite_heart_button.dart';
 import '../../components/pressable.dart';
 import '../../components/song_actions.dart';
 import '../../components/track_swipe_switcher.dart';
-import '../../routes/player_route.dart';
+import '../../player_panel/player_panel.dart';
 import '../../tokens/player_tokens.dart';
 import '../../widgets/album_art_image.dart';
 import '../../widgets/beat_reactive_cover.dart';
@@ -304,85 +304,57 @@ class _CoverStage extends ConsumerWidget {
     Animation<double>? transitionAnimation,
   }) {
     final Song song = forSong;
-    // Tag must match NowPlayingBar's so the artwork flies between the mini bar
-    // and this pane.
-    //
-    // The pulse wraps the artwork *inside* the Hero, never the Hero itself:
-    // transforming the Hero would fight the flight animation between the mini
-    // bar and this pane.
-    return Hero(
-      tag: PlayerTokens.coverHeroTag(song.filename),
-      transitionOnUserGestures: true,
-      curve: Curves.linear,
-      reverseCurve: Curves.linear,
-      createRectTween: PlayerPageRoute.coverRectTween,
-      flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
-        final Hero hero = (direction == HeroFlightDirection.push
-            ? toCtx.widget
-            : fromCtx.widget) as Hero;
-        final CoverFlightEnd? ball =
-            CoverFlightEnd.of(direction, fromCtx, toCtx);
-        // Laid out once at the landed size and scaled, so the cover's own
-        // large corner radius shrinks with it. Re-laying it out at the mini
-        // size turned that radius into a near-circle mid-flight.
-        return AnimatedBuilder(
-          animation: animation,
-          child: FittedBox(
-            fit: BoxFit.fill,
-            child: SizedBox.square(dimension: size, child: hero.child),
-          ),
-          builder: (context, child) {
-            return CoverFlightEnd.clip(
-              ball: ball,
-              t: animation.value,
-              landedRadius: PlayerTokens.rLg,
-              child: child!,
-            );
-          },
-        );
-      },
-      child: BeatReactiveCover(
-        controller: motion,
-        enabled: beatReactive && current,
-        child: Container(
-          // The shell's glow layer reads this box's on-screen rect every frame.
-          // It sits inside the beat transform on purpose, so the glow tracks the
-          // pulse — and the page swipe — without being told about either.
-          key: current ? coverKey : null,
-          decoration: BoxDecoration(
-            borderRadius: PlayerTokens.brLg,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 34,
-                offset: const Offset(0, 14),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: PlayerTokens.brLg,
-            child: AnimatedBuilder(
-              animation: transitionAnimation ?? kAlwaysCompleteAnimation,
-              builder: (context, _) {
-                final moving = transitionAnimation != null &&
-                    transitionAnimation.value > 0 &&
-                    transitionAnimation.value < 1;
-                return AlbumArtImage(
+    // The pulse wraps the artwork itself, and the panel's own shuttle is the
+    // copy that flies out of the bar. This one simply steps aside while that
+    // flight is running, so the artwork is never on screen twice.
+    return BeatReactiveCover(
+      controller: motion,
+      enabled: beatReactive && current,
+      child: Container(
+        // The shell's glow layer reads this box's on-screen rect every frame.
+        // It sits inside the beat transform on purpose, so the glow tracks the
+        // pulse — and the page swipe — without being told about either.
+        key: current ? coverKey : null,
+        decoration: BoxDecoration(
+          borderRadius: PlayerTokens.brLg,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 34,
+              offset: const Offset(0, 14),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: PlayerTokens.brLg,
+          child: AnimatedBuilder(
+            animation: transitionAnimation ?? kAlwaysCompleteAnimation,
+            builder: (context, _) {
+              // The panel carries the artwork while the shuttle owns it, and
+              // fades this one back in on the landed rect. Quality follows the
+              // opacity: sharp the moment the cover is the thing being looked
+              // at, compressed while it is still fading.
+              final double coverOpacity =
+                  PlayerCoverOpacity.coverOpacityOf(context);
+              return Opacity(
+                opacity: coverOpacity,
+                child: AlbumArtImage(
                   url: song.coverUrl ?? '',
                   filename: song.filename,
                   cacheVersion: song.mtime,
                   width: size,
                   height: size,
                   fadeDuration: Duration.zero,
-                  filterQuality:
-                      moving ? FilterQuality.low : FilterQuality.high,
+                  filterQuality: coverOpacity < 0.99
+                      ? FilterQuality.low
+                      : FilterQuality.high,
                   // Decoded at the size it is actually drawn at.
                   memCacheWidth:
                       (size * MediaQuery.devicePixelRatioOf(context)).round(),
                   fit: coverFitFor(coverSizing),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),

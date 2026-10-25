@@ -9,6 +9,7 @@ import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../components/app_surface.dart';
 import '../components/app_icon.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../../domain/services/settings_search_service.dart';
 import 'settings_registry.dart';
@@ -198,7 +199,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           SizedBox(
             width: 300,
             child: ListView.builder(
-              physics: const BouncingScrollPhysics(),
+              physics: const MotionScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(
                 AppTokens.s4,
                 AppTokens.s2,
@@ -330,7 +331,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     return ListView(
-      physics: const BouncingScrollPhysics(),
+      physics: const MotionScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
         AppTokens.s2,

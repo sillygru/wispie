@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/insights_provider.dart';
 import '../../components/app_chip.dart';
 import '../../../domain/models/listening_insights.dart';
+import '../../motion/motion.dart';
 import '../../tokens/app_tokens.dart';
 
 /// The window selector.
@@ -23,7 +24,7 @@ class StatsRangeBar extends ConsumerWidget {
       height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
+        physics: const MotionScrollPhysics(),
         padding: EdgeInsets.zero,
         itemCount: StatsRange.values.length,
         separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s2),

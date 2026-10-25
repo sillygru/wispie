@@ -18,7 +18,7 @@ import '../components/player_segmented_pill.dart';
 import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/full_bleed_player_screen.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_panel.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/basic_progress_bar.dart';
@@ -97,7 +97,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// Let the glow layer locate the artwork inside the pane, and convert it into
   /// the shell's coordinates. The glow is painted up here so it can spill past
   /// the pane, which clips.
-  final GlobalKey _coverKey = GlobalKey(debugLabel: 'player cover');
+  // Shared with the panel, which flies the artwork in from the dock's bar.
+  final GlobalKey _coverKey = PlayerMorphTargets.cover;
   final GlobalKey _shellKey = GlobalKey(debugLabel: 'player shell');
 
   late int _pane;
@@ -384,24 +385,18 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _syncWakeLock();
   }
 
-  PlayerPageRoute? get _playerRoute {
-    final route = ModalRoute.of(context);
-    return route is PlayerPageRoute ? route : null;
-  }
+  // The panel owns the motion; this screen only reports the finger.
+  PlayerPanelController? get _panel => PlayerPanel.controller;
 
-  void _onDismissDragStart(DragStartDetails details) =>
-      _playerRoute?.dismissDragStart();
+  void _onDismissDragStart(DragStartDetails details) => _panel?.dragStart();
 
-  void _onDismissDragUpdate(DragUpdateDetails details) => _playerRoute
-      ?.dismissDragUpdate(details.delta.dy, MediaQuery.sizeOf(context).height);
+  void _onDismissDragUpdate(DragUpdateDetails details) =>
+      _panel?.dragUpdate(details.delta.dy);
 
   void _onDismissDragEnd(DragEndDetails details) =>
-      _playerRoute?.dismissDragEnd(
-        details.primaryVelocity ?? 0,
-        MediaQuery.sizeOf(context).height,
-      );
+      _panel?.dragEnd(velocity: details.primaryVelocity ?? 0);
 
-  void _onDismissDragCancel() => _playerRoute?.dismissDragCancel();
+  void _onDismissDragCancel() => _panel?.dragCancel();
 
   @override
   Widget build(BuildContext context) {
@@ -448,7 +443,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
         builder: (context) => CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () =>
-                Navigator.of(context).maybePop(),
+                PlayerPanel.close(),
           },
           child: Focus(
               autofocus: true,
@@ -734,7 +729,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
             IconButton(
               icon: const Icon(Icons.keyboard_arrow_down_rounded),
               color: Colors.white,
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed: PlayerPanel.close,
               tooltip: context.l10n.playerCloseEsc,
             ),
             const Spacer(),
@@ -787,7 +782,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                   IconButton(
                     icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     color: Colors.white,
-                    onPressed: () => Navigator.of(context).maybePop(),
+                    onPressed: PlayerPanel.close,
                     tooltip: context.l10n.actionClose,
                   ),
                   Expanded(

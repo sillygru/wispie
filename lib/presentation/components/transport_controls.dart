@@ -8,14 +8,16 @@ import '../../models/song.dart';
 import '../../services/audio_player_manager.dart';
 import '../../l10n/l10n.dart';
 import '../motion/motion.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_morph.dart';
 import '../tokens/player_tokens.dart';
 import 'pressable.dart';
 import 'track_swipe_switcher.dart';
 
-/// Shared-element wrapper so mini bar and player transport controls morph
-/// into each other during the route transition. The shuttle scales the
-/// destination glyph to the in-flight rect instead of re-laying it out.
+/// Tag for a transport control shared between the dock and the player.
+///
+/// The panel drives those two surfaces with one progress value, so the control
+/// morphs without a Hero flight: a flight would need its own route and would
+/// race the surface it is supposed to sit on.
 class TransportHero extends StatelessWidget {
   static const String prev = 'transport_prev';
   static const String play = 'transport_play';
@@ -27,37 +29,7 @@ class TransportHero extends StatelessWidget {
   const TransportHero({super.key, required this.tag, required this.child});
 
   @override
-  Widget build(BuildContext context) {
-    return Hero(
-      tag: tag,
-      transitionOnUserGestures: true,
-      curve: MotionTokens.linearCurve,
-      reverseCurve: MotionTokens.linearCurve,
-      createRectTween: PlayerPageRoute.transportRectTween,
-      flightShuttleBuilder: (context, animation, direction, from, to) {
-        final bool push = direction == HeroFlightDirection.push;
-        final Widget mini = ((push ? from : to).widget as Hero).child;
-        final Widget full = ((push ? to : from).widget as Hero).child;
-        return AnimatedBuilder(
-          animation: animation,
-          builder: (context, _) {
-            // Sheet progress in both directions; the swap happens in the
-            // middle third so neither glyph ghosts for the whole flight.
-            final double p = animation.value.clamp(0.0, 1.0);
-            final double t = ((p - 0.25) / 0.45).clamp(0.0, 1.0);
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Opacity(opacity: 1 - t, child: FittedBox(child: mini)),
-                Opacity(opacity: t, child: FittedBox(child: full)),
-              ],
-            );
-          },
-        );
-      },
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => child;
 }
 
 /// Play glyph that morphs into pause (and back) instead of swapping, with a
@@ -151,58 +123,62 @@ class PlayPauseDisc extends StatelessWidget {
       pressedScale: 0.88,
       child: TransportHero(
         tag: TransportHero.play,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: accent,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: accent.withValues(alpha: 0.45),
-                blurRadius: 22,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: StreamBuilder<PlayerState>(
-            stream: audioManager.player.playerStateStream,
-            initialData: audioManager.player.playerState,
-            builder: (context, snapshot) {
-              final bool buffering =
-                  snapshot.data?.processingState == ProcessingState.buffering;
-              return ValueListenableBuilder<bool>(
-                valueListenable: audioManager.playingNotifier,
-                builder: (context, playing, _) {
-                  return Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      PlayPauseMorphIcon(
-                        playing: playing,
-                        size: iconSize,
-                        color: onAccent,
-                      ),
-                      // Ring orbits the glyph instead of replacing it, so a
-                      // brief buffer doesn't make the button flicker.
-                      AnimatedOpacity(
-                        opacity: buffering ? 1 : 0,
-                        duration: PlayerTokens.dFast,
-                        child: SizedBox(
-                          width: size - PlayerTokens.s3,
-                          height: size - PlayerTokens.s3,
-                          child: buffering
-                              ? CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: onAccent,
-                                )
-                              : null,
+        child: PlayerMorphAnchor(
+          slot: PlayerMorphSlot.play,
+          surface: PlayerMorphSurface.panel,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: accent,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.45),
+                  blurRadius: 22,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: StreamBuilder<PlayerState>(
+              stream: audioManager.player.playerStateStream,
+              initialData: audioManager.player.playerState,
+              builder: (context, snapshot) {
+                final bool buffering =
+                    snapshot.data?.processingState == ProcessingState.buffering;
+                return ValueListenableBuilder<bool>(
+                  valueListenable: audioManager.playingNotifier,
+                  builder: (context, playing, _) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        PlayPauseMorphIcon(
+                          playing: playing,
+                          size: iconSize,
+                          color: onAccent,
                         ),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
+                        // Ring orbits the glyph instead of replacing it, so a
+                        // brief buffer doesn't make the button flicker.
+                        AnimatedOpacity(
+                          opacity: buffering ? 1 : 0,
+                          duration: PlayerTokens.dFast,
+                          child: SizedBox(
+                            width: size - PlayerTokens.s3,
+                            height: size - PlayerTokens.s3,
+                            child: buffering
+                                ? CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    color: onAccent,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -390,15 +366,20 @@ class _NextFastForwardButtonState extends State<NextFastForwardButton>
               ),
               // One SkipButton throughout: swapping widgets mid-hold would
               // drop the long-press recognizer and strand fast-forward on.
-              child: SkipButton(
-                icon: ff ? Icons.fast_forward_rounded : Icons.skip_next_rounded,
-                size: widget.size,
-                color: glyphColor,
-                direction: 1,
-                onTap: widget.canSkipNext ? m.player.seekToNext : null,
-                onLongPressStart: (_) => _start(),
-                onLongPressEnd: (_) => _stop(),
-                onLongPressCancel: _stop,
+              child: PlayerMorphAnchor(
+                slot: PlayerMorphSlot.skipNext,
+                surface: PlayerMorphSurface.panel,
+                child: SkipButton(
+                  icon:
+                      ff ? Icons.fast_forward_rounded : Icons.skip_next_rounded,
+                  size: widget.size,
+                  color: glyphColor,
+                  direction: 1,
+                  onTap: widget.canSkipNext ? m.player.seekToNext : null,
+                  onLongPressStart: (_) => _start(),
+                  onLongPressEnd: (_) => _stop(),
+                  onLongPressCancel: _stop,
+                ),
               ),
             ),
             Positioned(

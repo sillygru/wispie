@@ -22,6 +22,7 @@ import '../../components/progressive_edge_fade.dart';
 import '../../dialogs/lyrics_search_sheet.dart';
 import '../../dialogs/lyrics_translation_sheet.dart';
 import '../../models/lyrics_gap_loader_state.dart';
+import '../../motion/motion.dart';
 import '../../tokens/player_tokens.dart';
 import '../../utils/wide_layout.dart';
 import '../../widgets/lyrics_gap_loader.dart';
@@ -1582,7 +1583,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
         return ListView.builder(
           controller: _scrollController,
-          physics: const ClampingScrollPhysics(),
+          physics: const MotionScrollPhysics(),
           // Top padding is deliberately small: the first lines belong near the
           // top of the pane, not floating mid-screen. It only clears the
           // find-lyrics button. The tall bottom padding is what lets the last

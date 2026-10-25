@@ -613,7 +613,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                       ProgressiveEdgeFade(
                         child: CustomScrollView(
                           controller: _scrollController,
-                          physics: const ClampingScrollPhysics(),
+                          physics: const MotionScrollPhysics(),
                           slivers: [
                             if (played.isNotEmpty) ...[
                               SliverToBoxAdapter(
@@ -1269,7 +1269,7 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
         }
 
         return ListView.builder(
-          physics: const ClampingScrollPhysics(),
+          physics: const MotionScrollPhysics(),
           padding: const EdgeInsets.only(
             bottom: ProgressiveEdgeFade.defaultHeight,
           ),

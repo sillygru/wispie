@@ -658,7 +658,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           onNotification: handleScrollNotification,
                           child: MotionEntranceLimiter(
                             child: ListView.builder(
-                              physics: const BouncingScrollPhysics(),
+                              physics: const MotionScrollPhysics(),
                               padding: const EdgeInsets.only(
                                 bottom: AppTokens.scrollBottomInset,
                               ),
@@ -695,7 +695,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         child: NotificationListener<ScrollNotification>(
                           onNotification: handleScrollNotification,
                           child: CustomScrollView(
-                            physics: const BouncingScrollPhysics(),
+                            physics: const MotionScrollPhysics(),
                             slivers: [
                               const SliverToBoxAdapter(
                                 child: WideTrackTableHeader(showAlbum: true),
@@ -759,7 +759,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           onNotification: handleScrollNotification,
           child: WideContentCenter(
             child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
+              physics: const MotionScrollPhysics(),
               slivers: [
                 AppSliverHeader(
                   title: widget.relativePath ?? context.l10n.libraryTitle,

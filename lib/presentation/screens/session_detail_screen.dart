@@ -4,7 +4,7 @@ import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/play_session.dart';
 import '../../providers/providers.dart';
-import '../routes/player_route.dart';
+import '../player_panel/player_panel.dart';
 import '../components/app_surface.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_feedback.dart';
@@ -293,7 +293,7 @@ class SessionDetailScreen extends ConsumerWidget {
                   playlistId: session.id,
                   forceLinear: true,
                 );
-            Navigator.push(context, PlayerPageRoute());
+            PlayerPanel.open(from: context);
           }
         },
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -463,7 +463,7 @@ class SessionDetailScreen extends ConsumerWidget {
         content: Text(context.l10n.sessionPlayingSnack(songs.length)),
         action: SnackBarAction(
           label: context.l10n.homeOpenPlayer,
-          onPressed: () => Navigator.push(context, PlayerPageRoute()),
+          onPressed: () => PlayerPanel.open(from: context),
         ),
       ),
     );

@@ -128,18 +128,37 @@ class PlayerTokens {
   static const Curve cEmphasizedDecel = MotionTokens.emphasizedDecel;
   static const Curve cEmphasizedAccel = MotionTokens.emphasizedAccel;
 
-  /// Player sheet open/close. The curve is baked into the route controller so
-  /// the sheet, the flying cover and a grabbing finger all share one value.
-  /// Keep both directions short enough to feel immediate while leaving the
-  /// landing long enough to read as a deliberate sheet transition.
-  static const Duration dRouteIn = MotionTokens.medium;
-  static const Duration dRouteOut = MotionTokens.medium;
+  /// Player panel open/close. One controller carries the whole transition, so
+  /// the surface, the flying cover and a grabbing finger all read one value.
+  /// Short enough to feel immediate; the close overshoot is what gives it
+  /// weight, not a longer duration.
+  static const Duration dPanelOpen = MotionTokens.standard;
+  static const Duration dPanelClose = Duration(milliseconds: 380);
+
+  /// Headroom past the bar and past full screen, so the curves can overshoot
+  /// and the dock can dip instead of the surface stopping dead.
+  static const double panelDip = 0.14;
+  static const double panelOvershoot = 0.02;
+
+  /// How far the dock sinks per unit of close overshoot.
+  static const double dockDip = 46;
+
+  /// Artwork slot inside the dock bar and the collapsed ball, so the cover
+  /// flight can start on exactly the pixels the bar draws.
+  static const double dockArtInset = 10;
+  static const double dockArtSize = 44;
+  static const double dockBallInset = 4;
+  static const double dockBarHeight = 64;
   static const Duration dTrackSwitch = MotionTokens.long;
   static const Duration dTrackSwitchTimeout = Duration(milliseconds: 700);
   static const Duration dPaneSwitch = MotionTokens.medium;
   static const double sheetGestureDeadSpace = 12;
-  static const Curve cRouteIn = MotionTokens.emphasizedDecel;
-  static const Curve cRouteOut = Cubic(0.175, 0.885, 0.32, 1.0);
+
+  /// Quick launch, soft landing on the way up.
+  static const Curve cPanelOpen = MotionTokens.enterCurve;
+
+  /// Ends past its target so the panel and the dock spring back a little.
+  static const Curve cPanelClose = MotionTokens.overshootCurve;
   static const Curve cTrackSwitch = MotionTokens.exitCurve;
   static const Curve cPaneSwitch = MotionTokens.enterCurve;
 

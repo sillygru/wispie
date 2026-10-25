@@ -8,6 +8,7 @@ import '../components/app_screen_header.dart';
 import '../components/app_section_header.dart';
 import '../../domain/models/listening_insights.dart';
 import '../../l10n/l10n.dart';
+import '../motion/motion.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
@@ -41,7 +42,7 @@ class StatsScreen extends ConsumerWidget {
         // to pick up a session that ended after the screen was built.
         onRefresh: () => ref.refresh(listeningInsightsProvider.future),
         child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
+          physics: const MotionScrollPhysics(),
           slivers: [
             // SliverFillRemaining keeps the view scrollable — and so
             // refreshable — while a single message fills it, which is what

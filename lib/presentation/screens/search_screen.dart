@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../l10n/l10n.dart';
 import '../components/ambient_scaffold.dart';
+import '../motion/motion.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_filter.dart';
 import '../../domain/models/search_result.dart';
@@ -301,7 +302,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return WideContentCenter(
       child: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
+        physics: const MotionScrollPhysics(),
         slivers: [
           if (artists.isNotEmpty) ...[
             SliverToBoxAdapter(

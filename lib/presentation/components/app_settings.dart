@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
 import 'app_list_row.dart';
@@ -378,7 +379,7 @@ class _AppSettingsListState extends State<AppSettingsList> {
       return WideContentCenter(
         maxWidth: WideLayout.maxNarrowWidth,
         child: ListView(
-          physics: const BouncingScrollPhysics(),
+          physics: const MotionScrollPhysics(),
           padding: _padding,
           children: widget.children,
         ),
@@ -391,7 +392,7 @@ class _AppSettingsListState extends State<AppSettingsList> {
         highlightId: widget.highlightId,
         register: _register,
         child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
+          physics: const MotionScrollPhysics(),
           padding: _padding,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
