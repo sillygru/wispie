@@ -19,7 +19,6 @@ import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_sheet.dart';
-import '../motion/motion.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
@@ -637,34 +636,28 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     ),
                   )
                 else
-                  MotionEntranceLimiter(
-                    child: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final song = visibleSongs[index];
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final song = visibleSongs[index];
 
-                        return MotionEntrance(
-                          id: song.filename,
-                          index: index,
-                          child: _desktopRow(
-                            context,
-                            ref,
-                            song: song,
-                            child: SongListItem(
-                              song: song,
-                              heroTagPrefix: 'song_list_$title',
+                      return _desktopRow(
+                        context,
+                        ref,
+                        song: song,
+                        child: SongListItem(
+                          song: song,
+                          heroTagPrefix: 'song_list_$title',
+                          playlistId: playlistId,
+                          onTap: () {
+                            audioManager.playSong(
+                              song,
+                              contextQueue: visibleSongs,
                               playlistId: playlistId,
-                              onTap: () {
-                                audioManager.playSong(
-                                  song,
-                                  contextQueue: visibleSongs,
-                                  playlistId: playlistId,
-                                );
-                              },
-                            ),
-                          ),
-                        );
-                      }, childCount: visibleSongs.length),
-                    ),
+                            );
+                          },
+                        ),
+                      );
+                    }, childCount: visibleSongs.length),
                   ),
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],

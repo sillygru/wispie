@@ -656,37 +656,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         width: 300,
                         child: NotificationListener<ScrollNotification>(
                           onNotification: handleScrollNotification,
-                          child: MotionEntranceLimiter(
-                            child: ListView.builder(
-                              physics: const MotionScrollPhysics(),
-                              padding: const EdgeInsets.only(
-                                bottom: AppTokens.scrollBottomInset,
-                              ),
-                              itemCount: collectionCount + 1,
-                              itemBuilder: (context, index) {
-                                return MotionEntrance(
-                                  id: 'collection_$index',
-                                  index: index,
-                                  child: index > 0
-                                      ? folderIndexBuilder(context, index - 1)
-                                      : _desktopRow(
-                                          child: AppListRow(
-                                            leading: AppRowIcon(
-                                              icon: AppIcons.library,
-                                              color: AppTokens.accentOf(
-                                                  context, ref),
-                                            ),
-                                            title: context.l10n.libraryAll,
-                                            subtitle: context.l10n
-                                                .libraryTrackCount(
-                                                    immediateSongs.length),
-                                            isActive: _collection == null,
-                                            onTap: () => selectCollection(null),
-                                          ),
-                                        ),
-                                );
-                              },
+                          child: ListView.builder(
+                            physics: const MotionScrollPhysics(),
+                            padding: const EdgeInsets.only(
+                              bottom: AppTokens.scrollBottomInset,
                             ),
+                            itemCount: collectionCount + 1,
+                            itemBuilder: (context, index) {
+                              return index > 0
+                                  ? folderIndexBuilder(context, index - 1)
+                                  : _desktopRow(
+                                      child: AppListRow(
+                                        leading: AppRowIcon(
+                                          icon: AppIcons.library,
+                                          color:
+                                              AppTokens.accentOf(context, ref),
+                                        ),
+                                        title: context.l10n.libraryAll,
+                                        subtitle: context.l10n
+                                            .libraryTrackCount(
+                                                immediateSongs.length),
+                                        isActive: _collection == null,
+                                        onTap: () => selectCollection(null),
+                                      ),
+                                    );
+                            },
                           ),
                         ),
                       ),
@@ -700,28 +694,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               const SliverToBoxAdapter(
                                 child: WideTrackTableHeader(showAlbum: true),
                               ),
-                              MotionEntranceLimiter(
-                                child: SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) {
-                                      final song = tableSongs[index];
-                                      return MotionEntrance(
-                                        id: song.filename,
-                                        index: index,
-                                        child: WideTrackRow(
-                                          song: song,
-                                          heroTagPrefix:
-                                              'library_${widget.relativePath ?? 'root'}',
-                                          showAlbum: true,
-                                          onTap: () => audioManager.playSong(
-                                            song,
-                                            contextQueue: tableSongs,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    childCount: tableSongs.length,
-                                  ),
+                              SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final song = tableSongs[index];
+                                    return WideTrackRow(
+                                      song: song,
+                                      heroTagPrefix:
+                                          'library_${widget.relativePath ?? 'root'}',
+                                      showAlbum: true,
+                                      onTap: () => audioManager.playSong(
+                                        song,
+                                        contextQueue: tableSongs,
+                                      ),
+                                    );
+                                  },
+                                  childCount: tableSongs.length,
                                 ),
                               ),
                               const SliverPadding(
@@ -857,16 +845,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       ),
                     ),
                 ] else ...[
-                  MotionEntranceLimiter(
-                    child: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => MotionEntrance(
-                          id: 'folder_$index',
-                          index: index,
-                          child: folderIndexBuilder(context, index),
-                        ),
-                        childCount: itemCount,
-                      ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => folderIndexBuilder(context, index),
+                      childCount: itemCount,
                     ),
                   ),
                   const SliverPadding(

@@ -1,10 +1,9 @@
 /// The app's motion engine. Feature code imports this one file and talks only to
 /// these interfaces; the layer knows about progress, springs and clocks, not
-/// about songs. See README.md for the full map.
+/// about songs.
 library;
 
 export 'carousel_motion.dart';
-export 'list_motion.dart';
 export 'motion_builders.dart';
 export 'motion_clock.dart';
 export 'motion_drag.dart';

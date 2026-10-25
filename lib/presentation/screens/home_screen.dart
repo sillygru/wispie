@@ -691,28 +691,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ],
                       ),
                     ),
-                    MotionEntranceLimiter(
-                      child: SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final song = sortedSongs[index];
-                            return MotionEntrance(
-                              id: song.filename,
-                              index: index,
-                              child: SongListItem(
-                                song: song,
-                                heroTagPrefix: 'all_songs',
-                                onTap: () => audioManager.playSong(
-                                  song,
-                                  contextQueue: sortedSongs,
-                                  playlistId: audioManager.currentPlaylistId,
-                                ),
-                              ),
-                            );
-                          },
-                          childCount: sortedSongs.length,
-                        ),
-                      ),
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final song = sortedSongs[index];
+                        return SongListItem(
+                          song: song,
+                          heroTagPrefix: 'all_songs',
+                          onTap: () => audioManager.playSong(
+                            song,
+                            contextQueue: sortedSongs,
+                            playlistId: audioManager.currentPlaylistId,
+                          ),
+                        );
+                      }, childCount: sortedSongs.length),
                     ),
                     const SliverPadding(
                       padding:

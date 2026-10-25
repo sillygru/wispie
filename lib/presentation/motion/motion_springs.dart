@@ -33,6 +33,16 @@ abstract final class MotionSprings {
     damping: 46,
   );
 
+  /// A large surface opening into a hard stop — a docked panel's travel ends at
+  /// the window edge, so it cannot overshoot. Almost critically damped: it is
+  /// still moving when it lands instead of crossing early and freezing against
+  /// the edge for the rest of the spring.
+  static const SpringDescription panel = SpringDescription(
+    mass: 1,
+    stiffness: 260,
+    damping: 32,
+  );
+
   /// Critically damped: fastest approach that never overshoots.
   static final SpringDescription critical = SpringDescription.withDampingRatio(
     mass: 1,

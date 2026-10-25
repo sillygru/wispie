@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -248,10 +249,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     // A clamped controller cannot overshoot the screen edge, so the settle is
-    // damped to land on the boundary instead of stalling against it.
+    // damped to land on the boundary instead of stalling against it. Opening is
+    // the softer of the two, so a swipe's momentum carries into a long landing
+    // instead of being killed at the edge.
     _drawerSnap.springTo(
       open ? 1 : 0,
-      spring: MotionSprings.settle,
+      spring: open ? MotionSprings.panel : MotionSprings.settle,
       velocity: width > 0 ? velocity / width : 0,
       onSettled: () {
         if (!mounted) return;
@@ -900,18 +903,29 @@ class _AnimatedSidePanel extends StatefulWidget {
 }
 
 class _AnimatedSidePanelState extends State<_AnimatedSidePanel>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  /// How far the pane has been revealed. Its width cannot overshoot — the
+  /// window edge is the end of the travel — so the bounce lives elsewhere.
   late final AnimationController _c = AnimationController.unbounded(
     vsync: this,
     value: widget.open ? 1 : 0,
   );
   late final SnapEngine _snap = SnapEngine(_c);
 
+  /// The column's own spring, 1 at the trailing edge and 0 at home. It gives
+  /// the content its own soft landing on top of the pane's width, so the open
+  /// is a layered move rather than one surface arriving flat.
+  late final AnimationController _trailC = AnimationController.unbounded(
+    vsync: this,
+    value: widget.open ? 0 : 1,
+  );
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (MotionPolicy.of(context).reduceMotion) {
       _snap.jumpTo(widget.open ? 1 : 0);
+      _trailC.value = widget.open ? 0 : 1;
     }
   }
 
@@ -922,29 +936,65 @@ class _AnimatedSidePanelState extends State<_AnimatedSidePanel>
     final double target = widget.open ? 1 : 0;
     if (MotionPolicy.read(context).reduceMotion) {
       _snap.jumpTo(target);
+      _trailC.value = target == 1 ? 0 : 1;
       return;
     }
-    _snap.springTo(target, spring: MotionSprings.settle);
+    if (widget.open) {
+      // Only reset the trailing edge when the pane was fully closed; a re-open
+      // mid-close carries on from where the column already is.
+      if (_c.value <= 0.001) _trailC.value = 1;
+      MotionSprings.driveTo(_trailC, 0, spring: MotionSprings.gentle);
+    }
+    // The pane's own travel ends at the window edge, so an overshooting spring
+    // would freeze against it; the bounce lives in the column instead.
+    _snap.springTo(
+      target,
+      spring: widget.open ? MotionSprings.panel : MotionSprings.settle,
+    );
   }
 
   @override
   void dispose() {
     _c.dispose();
+    _trailC.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final double width = _WideSidePanel.widthFor(context);
     return AnimatedBuilder(
       animation: _c,
-      child: const _WideSidePanel(),
-      builder: (context, child) => ClipRect(
-        child: Align(
-          alignment: Alignment.centerRight,
-          widthFactor: _c.value.clamp(0.0, 1.0),
-          child: child,
-        ),
+      // Its own layer: the spring then clips the panel instead of repainting
+      // its cover and lyrics on every frame.
+      child: RepaintBoundary(
+        child: _WideSidePanel(contentSpring: _trailC),
       ),
+      builder: (context, child) {
+        final double progress = _c.value;
+        final double reveal = (width * progress).clamp(0.0, width);
+        final bool visible = progress > 0.002;
+        // A closed panel is offstage rather than clipped to nothing: its tree
+        // keeps its state but stops ticking, laying out and painting, which is
+        // what a clipped-but-live lyrics/queue column was costing.
+        return SizedBox(
+          width: reveal,
+          child: Offstage(
+            offstage: !visible,
+            child: TickerMode(
+              enabled: visible,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.centerRight,
+                  minWidth: width,
+                  maxWidth: width,
+                  child: child!,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -952,13 +1002,27 @@ class _AnimatedSidePanelState extends State<_AnimatedSidePanel>
 /// Desktop right column, Spotify-style: one scroll of now playing art, a
 /// lyrics block and the upcoming queue. No tabs; everything is visible at once.
 class _WideSidePanel extends ConsumerStatefulWidget {
-  const _WideSidePanel();
+  const _WideSidePanel({this.contentSpring});
+
+  /// 1 at the trailing edge, 0 at home. The column rides it so the pane can
+  /// settle with a bounce the window edge would otherwise swallow.
+  final ValueListenable<double>? contentSpring;
+
+  /// The pane's own width at the current window size. The shell reserves it.
+  static double widthFor(BuildContext context) =>
+      (MediaQuery.sizeOf(context).width * 0.24).clamp(320.0, 420.0);
+
+  /// How far the column starts behind its place, in logical pixels.
+  static const double contentTrail = 44;
 
   @override
   ConsumerState<_WideSidePanel> createState() => _WideSidePanelState();
 }
 
 class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
+  /// Used when the pane is not moving; keeps the builder below unconditional.
+  static final ValueNotifier<double> _still = ValueNotifier<double>(0);
+
   // The panel is always on screen when built, so lyrics always sync.
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(true);
 
@@ -977,7 +1041,7 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
     final themeState = ref.watch(themeProvider);
     final accent = AppTokens.accentOf(context, ref);
     final audioManager = ref.watch(audioPlayerManagerProvider);
-    final width = (MediaQuery.sizeOf(context).width * 0.24).clamp(320.0, 420.0);
+    final width = _WideSidePanel.widthFor(context);
 
     return Theme(
       data: AppTheme.getPlayerTheme(themeState, accent),
@@ -1003,43 +1067,50 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
                       ],
                     ),
             ),
-            RepaintBoundary(
-              child: SafeArea(
-                left: false,
-                child: ValueListenableBuilder<Song?>(
-                  valueListenable: audioManager.currentSongNotifier,
-                  builder: (context, song, _) {
-                    if (song == null) {
-                      return Center(
-                        child: Text(
-                          context.l10n.playerNothingPlaying,
-                          style: PlayerTokens.meta(context),
+            ValueListenableBuilder<double>(
+              valueListenable: widget.contentSpring ?? _still,
+              child: RepaintBoundary(
+                child: SafeArea(
+                  left: false,
+                  child: ValueListenableBuilder<Song?>(
+                    valueListenable: audioManager.currentSongNotifier,
+                    builder: (context, song, _) {
+                      if (song == null) {
+                        return Center(
+                          child: Text(
+                            context.l10n.playerNothingPlaying,
+                            style: PlayerTokens.meta(context),
+                          ),
+                        );
+                      }
+                      return ValueListenableBuilder<List<QueueItem>>(
+                        valueListenable: audioManager.queueNotifier,
+                        builder: (context, queue, _) => StreamBuilder<int?>(
+                          stream: audioManager.settledCurrentIndexStream,
+                          initialData: audioManager.player.currentIndex,
+                          builder: (context, snapshot) {
+                            final current = snapshot.data ?? -1;
+                            final upcoming = current >= 0
+                                ? queue.skip(current + 1).toList()
+                                : queue;
+                            return _buildScroll(
+                              context,
+                              song,
+                              accent,
+                              audioManager,
+                              queue,
+                              upcoming,
+                            );
+                          },
                         ),
                       );
-                    }
-                    return ValueListenableBuilder<List<QueueItem>>(
-                      valueListenable: audioManager.queueNotifier,
-                      builder: (context, queue, _) => StreamBuilder<int?>(
-                        stream: audioManager.settledCurrentIndexStream,
-                        initialData: audioManager.player.currentIndex,
-                        builder: (context, snapshot) {
-                          final current = snapshot.data ?? -1;
-                          final upcoming = current >= 0
-                              ? queue.skip(current + 1).toList()
-                              : queue;
-                          return _buildScroll(
-                            context,
-                            song,
-                            accent,
-                            audioManager,
-                            queue,
-                            upcoming,
-                          );
-                        },
-                      ),
-                    );
-                  },
+                    },
+                  ),
                 ),
+              ),
+              builder: (context, shift, child) => Transform.translate(
+                offset: Offset(_WideSidePanel.contentTrail * shift, 0),
+                child: child,
               ),
             ),
           ],
