@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,9 +23,11 @@ import '../components/app_feedback.dart';
 import '../widgets/blurred_background.dart';
 import '../components/app_icon.dart';
 import '../components/pressable.dart';
+import '../components/animated_removal.dart';
 import '../components/app_nav_bar.dart';
 import '../components/floating_dock.dart';
 import '../components/tab_switch_transition.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
@@ -122,6 +123,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _isDrawerOpen = false;
 
   late AnimationController _drawerController;
+  late final SnapEngine _drawerSnap;
 
   bool _isDraggingDrawer = false;
 
@@ -145,17 +147,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ];
 
   Future<void> _closeDrawer() async {
-    if (!_isDrawerOpen && !_drawerController.isAnimating) return;
-    await _drawerController.animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutQuart,
-    );
-    if (mounted) {
-      setState(() {
-        _isDrawerOpen = false;
-      });
+    if (!_isDrawerOpen &&
+        !_isDraggingDrawer &&
+        !_drawerController.isAnimating &&
+        _drawerController.value <= 0.001) {
+      return;
     }
+    if (_drawerController.value <= 0.001 ||
+        MotionPolicy.read(context).reduceMotion) {
+      _drawerSnap.jumpTo(0);
+      _markDrawerClosed();
+      return;
+    }
+    // State is marked closed only by the generation-guarded settle, so a drawer
+    // grabbed again mid-close is not marked closed behind the finger.
+    await _drawerSnap.springTo(
+      0,
+      spring: MotionSprings.settle,
+      onSettled: _markDrawerClosed,
+    );
+  }
+
+  void _markDrawerClosed() {
+    if (!mounted) return;
+    setState(() {
+      _isDrawerOpen = false;
+      _isDraggingDrawer = false;
+    });
   }
 
   void _onTabSelected(int index) {
@@ -163,8 +181,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (_scrollControllers[index].hasClients) {
         _scrollControllers[index].animateTo(
           0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
+          duration: MotionPolicy.read(context).duration(MotionTokens.medium),
+          curve: MotionTokens.standardCurve,
         );
       }
     } else {
@@ -176,62 +194,72 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  void _onHorizontalDragStart(DragStartDetails details) {
+  void _onHorizontalDragStart(MotionDragStart start) {
     final edge = MediaQuery.sizeOf(context).width * _edgeDragFraction;
-    if (_isDrawerOpen || details.globalPosition.dx <= edge) {
-      setState(() {
-        _isDraggingDrawer = true;
-      });
-      _drawerController.stop();
-    }
-  }
-
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!_isDraggingDrawer) return;
-
-    final screenWidth = MediaQuery.of(context).size.width;
-    final delta = details.delta.dx / WideLayout.drawerWidth(screenWidth);
-
-    _drawerController.value = (_drawerController.value + delta).clamp(0.0, 1.0);
-  }
-
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    if (!_isDraggingDrawer) return;
-
-    final vx = details.velocity.pixelsPerSecond.dx;
-
-    bool open;
-    if (vx.abs() > 250) {
-      open = vx > 0;
-    } else {
-      open = _drawerController.value > 0.30;
-    }
-
-    final target = open ? 1.0 : 0.0;
-    final remaining = (target - _drawerController.value).abs();
-
-    final velocityFraction = (vx.abs() / 1200).clamp(0.0, 1.0);
-    final baseDurationMs = (remaining * 200).round();
-    final durationMs = (baseDurationMs * (1.0 - 0.45 * velocityFraction))
-        .round()
-        .clamp(90, 200);
-
+    if (!_isDrawerOpen && start.globalPosition.dx > edge) return;
     setState(() {
-      _isDraggingDrawer = false;
+      _isDraggingDrawer = true;
+      if (_drawerController.value > 0) _isDrawerOpen = true;
+    });
+    // Freeze any settle where it is; the drag continues from the drawn value.
+    _drawerSnap.cancel();
+  }
+
+  void _onHorizontalDragUpdate(double delta) {
+    if (!_isDraggingDrawer) return;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final amount = delta / WideLayout.drawerWidth(screenWidth);
+    _drawerController.value =
+        (_drawerController.value + amount).clamp(0.0, 1.0);
+  }
+
+  void _onHorizontalDragEnd(MotionDragEnd end) {
+    if (!_isDraggingDrawer) return;
+    const tuning = SnapTuning(
+      actuation: 0,
+      flingVelocity: 250,
+      commitRatio: 0.30,
+    );
+    final bool open = tuning.advances(
+      progress: _drawerController.value,
+      velocity: end.velocity.dx,
+      extent: MediaQuery.sizeOf(context).width,
+    );
+    _settleDrawer(open: open, velocity: end.velocity.dx);
+  }
+
+  void _onHorizontalDragCancel() {
+    if (!_isDraggingDrawer) return;
+    _settleDrawer(open: _drawerController.value >= 0.30);
+  }
+
+  void _settleDrawer({required bool open, double velocity = 0}) {
+    final width = WideLayout.drawerWidth(MediaQuery.sizeOf(context).width);
+    setState(() {
       if (open) _isDrawerOpen = true;
     });
-
-    _drawerController
-        .animateTo(
-      target,
-      duration: Duration(milliseconds: durationMs),
-      curve: Curves.easeOutQuart,
-    )
-        .then((_) {
-      if (mounted && !open) {
-        setState(() => _isDrawerOpen = false);
-      }
-    });
+    if (MotionPolicy.read(context).reduceMotion) {
+      _drawerSnap.jumpTo(open ? 1 : 0);
+      setState(() {
+        _isDrawerOpen = open;
+        _isDraggingDrawer = false;
+      });
+      return;
+    }
+    // A clamped controller cannot overshoot the screen edge, so the settle is
+    // damped to land on the boundary instead of stalling against it.
+    _drawerSnap.springTo(
+      open ? 1 : 0,
+      spring: MotionSprings.settle,
+      velocity: width > 0 ? velocity / width : 0,
+      onSettled: () {
+        if (!mounted) return;
+        setState(() {
+          _isDraggingDrawer = false;
+          _isDrawerOpen = open;
+        });
+      },
+    );
   }
 
   @override
@@ -239,8 +267,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     super.initState();
     _drawerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: MotionTokens.short,
     );
+    _drawerSnap = SnapEngine(_drawerController);
     _scrollControllers = List.generate(3, (_) => ScrollController());
     WidgetsBinding.instance.addObserver(this);
     // Report app launch telemetry
@@ -443,16 +472,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     Widget buildShellBody() {
-      return GestureDetector(
+      return MotionDragArea(
+        axis: Axis.horizontal,
         // Desktop has the nav rail; a trackpad's sideways scroll would
         // otherwise drag the whole shell, bottom bar included.
-        onHorizontalDragStart: isWide ? null : _onHorizontalDragStart,
-        onHorizontalDragUpdate: isWide ? null : _onHorizontalDragUpdate,
-        onHorizontalDragEnd: isWide ? null : _onHorizontalDragEnd,
-        // Start tracking at touch-down so the slop distance is not lost and
-        // the edge test uses where the finger landed.
-        dragStartBehavior: DragStartBehavior.down,
-        behavior: HitTestBehavior.translucent,
+        enabled: !isWide,
+        onStart: _onHorizontalDragStart,
+        onUpdate: _onHorizontalDragUpdate,
+        onEnd: _onHorizontalDragEnd,
+        onCancel: _onHorizontalDragCancel,
         child: Stack(
           children: [
             // Drawer sits underneath the main content
@@ -784,12 +812,12 @@ class _SidebarEdgeRevealState extends State<_SidebarEdgeReveal> {
         child: Stack(
           children: [
             AnimatedPositioned(
-              duration: const Duration(milliseconds: 380),
-              curve: Curves.easeOutCubic,
+              duration: MotionPolicy.of(context).duration(MotionTokens.slow),
+              curve: MotionTokens.standardCurve,
               top: _y,
               right: PlayerTokens.s1,
               child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 180),
+                duration: MotionPolicy.of(context).duration(MotionTokens.fast),
                 opacity: _inZone ? 1 : 0,
                 child: IgnorePointer(
                   ignoring: !_inZone,
@@ -845,28 +873,63 @@ final _sidePanelOpenProvider =
 /// leaving the extra width empty.
 const double _sidePanelBreakpoint = 1200;
 
-/// Desktop right column: Lyrics and Queue for whatever is playing, so neither
-/// Slides the desktop side panel open and closed by animating its width. The
-/// panel stays mounted so lyrics and queue state survive a toggle.
-class _AnimatedSidePanel extends StatelessWidget {
+/// Desktop right column, slid open and closed on a spring. The panel stays
+/// mounted so lyrics and queue state survive a toggle.
+class _AnimatedSidePanel extends StatefulWidget {
   final bool open;
 
   const _AnimatedSidePanel({required this.open});
 
   @override
+  State<_AnimatedSidePanel> createState() => _AnimatedSidePanelState();
+}
+
+class _AnimatedSidePanelState extends State<_AnimatedSidePanel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController.unbounded(
+    vsync: this,
+    value: widget.open ? 1 : 0,
+  );
+  late final SnapEngine _snap = SnapEngine(_c);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MotionPolicy.of(context).reduceMotion) {
+      _snap.jumpTo(widget.open ? 1 : 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedSidePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.open == widget.open) return;
+    final double target = widget.open ? 1 : 0;
+    if (MotionPolicy.read(context).reduceMotion) {
+      _snap.jumpTo(target);
+      return;
+    }
+    _snap.springTo(target, spring: MotionSprings.settle);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(end: open ? 1.0 : 0.0),
-      duration: AppTokens.dBase,
-      curve: AppTokens.cStandard,
-      builder: (context, factor, child) => ClipRect(
+    return AnimatedBuilder(
+      animation: _c,
+      child: const _WideSidePanel(),
+      builder: (context, child) => ClipRect(
         child: Align(
           alignment: Alignment.centerRight,
-          widthFactor: factor,
+          widthFactor: _c.value.clamp(0.0, 1.0),
           child: child,
         ),
       ),
-      child: const _WideSidePanel(),
     );
   }
 }
@@ -883,6 +946,10 @@ class _WideSidePanel extends ConsumerStatefulWidget {
 class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
   // The panel is always on screen when built, so lyrics always sync.
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(true);
+
+  /// Drives the arrival pop on the row most recently moved to the top.
+  String? _movedId;
+  DateTime? _movedAt;
 
   @override
   void dispose() {
@@ -1062,19 +1129,41 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
             itemCount: upcoming.length,
             itemBuilder: (context, i) {
               final item = upcoming[i];
-              return _SideQueueRow(
+              return RemovableEntry(
                 key: ValueKey(item.queueId),
-                item: item,
-                accent: accent,
-                onTap: () => audioManager.jumpToQueueItem(item.queueId),
-                onMoveToTop: i == 0
-                    ? null
-                    : () => audioManager.moveUpcomingToTop(item.queueId),
-                onRemove: () {
-                  final absolute =
-                      queue.indexWhere((q) => q.queueId == item.queueId);
-                  if (absolute >= 0) audioManager.removeFromQueue(absolute);
-                },
+                id: 'side_${item.queueId}',
+                child: MotionPop(
+                  trigger: _movedId == item.queueId ? _movedAt : null,
+                  child: _SideQueueRow(
+                    item: item,
+                    accent: accent,
+                    onTap: () => audioManager.jumpToQueueItem(item.queueId),
+                    onMoveToTop: i == 0
+                        ? null
+                        : () async {
+                            await audioManager.moveUpcomingToTop(item.queueId);
+                            if (!mounted) return;
+                            setState(() {
+                              _movedId = item.queueId;
+                              _movedAt = DateTime.now();
+                            });
+                          },
+                    onRemove: () {
+                      AnimatedRemoval.run(
+                        'side_${item.queueId}',
+                        () async {
+                          final index = audioManager.queueNotifier.value
+                              .indexWhere((q) => q.queueId == item.queueId);
+                          if (index >= 0) {
+                            await audioManager.removeFromQueue(index);
+                          }
+                        },
+                        exit: MotionPolicy.read(context)
+                            .duration(MotionTokens.slow),
+                      );
+                    },
+                  ),
+                ),
               );
             },
           ),
@@ -1093,7 +1182,6 @@ class _SideQueueRow extends StatefulWidget {
   final VoidCallback onRemove;
 
   const _SideQueueRow({
-    super.key,
     required this.item,
     required this.accent,
     required this.onTap,

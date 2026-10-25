@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
+import '../motion/motion_tokens.dart';
 import '../widgets/collection_accent_scope.dart';
 
 /// Shared design tokens for the unified player screen.
@@ -45,10 +46,11 @@ class PlayerTokens {
   static BorderRadius get brLg => BorderRadius.circular(rLg);
   static BorderRadius get brPill => BorderRadius.circular(rPill);
 
-  // Motion — matches the transition timings already used by PlayerPageRoute
-  static const Duration dFast = Duration(milliseconds: 180);
-  static const Duration dBase = Duration(milliseconds: 260);
-  static const Duration dSlow = Duration(milliseconds: 420);
+  // Motion — named rungs from the shared engine, so the player and the rest
+  // of the app cannot drift apart.
+  static const Duration dFast = MotionTokens.fast;
+  static const Duration dBase = MotionTokens.base;
+  static const Duration dSlow = MotionTokens.slow;
   static const Duration dLyricsLine = Duration(milliseconds: 520);
   static const Duration dLyricsLineRipple = Duration(milliseconds: 55);
   static const Duration dLyricsHighlightIn = Duration(milliseconds: 330);
@@ -110,8 +112,8 @@ class PlayerTokens {
   /// How long a sung word keeps its glow before settling to plain colour.
   static const Duration dLyricsWordGlowDecay = Duration(milliseconds: 700);
 
-  static const Curve cStandard = Curves.easeOutCubic;
-  static const Curve cEmphasized = Curves.easeOutQuart;
+  static const Curve cStandard = MotionTokens.standardCurve;
+  static const Curve cEmphasized = MotionTokens.emphasized;
   static const Curve cLyricsScroll = Cubic(0.86, 0.0, 0.2, 1.0);
   static const Curve cLyricsCascade = Cubic(0.3, 0.9, 0.25, 1.0);
   static const Curve cLyricsLoader = Cubic(0.22, 1.0, 0.36, 1.0);
@@ -120,26 +122,26 @@ class PlayerTokens {
   static const Curve cLyricsHighlight = Curves.ease;
 
   /// Overshoot-and-settle, for small glyphs and badges that should feel sprung.
-  static const Curve cSpring = Cubic(0.34, 1.42, 0.64, 1.0);
+  static const Curve cSpring = MotionTokens.popCurve;
 
   /// Material 3 emphasized decelerate: quick launch, long soft landing.
-  static const Curve cEmphasizedDecel = Cubic(0.05, 0.7, 0.1, 1.0);
-  static const Curve cEmphasizedAccel = Cubic(0.3, 0.0, 0.8, 0.15);
+  static const Curve cEmphasizedDecel = MotionTokens.emphasizedDecel;
+  static const Curve cEmphasizedAccel = MotionTokens.emphasizedAccel;
 
   /// Player sheet open/close. The curve is baked into the route controller so
   /// the sheet, the flying cover and a grabbing finger all share one value.
   /// Keep both directions short enough to feel immediate while leaving the
   /// landing long enough to read as a deliberate sheet transition.
-  static const Duration dRouteIn = Duration(milliseconds: 300);
-  static const Duration dRouteOut = Duration(milliseconds: 300);
-  static const Duration dTrackSwitch = Duration(milliseconds: 600);
+  static const Duration dRouteIn = MotionTokens.medium;
+  static const Duration dRouteOut = MotionTokens.medium;
+  static const Duration dTrackSwitch = MotionTokens.long;
   static const Duration dTrackSwitchTimeout = Duration(milliseconds: 700);
-  static const Duration dPaneSwitch = Duration(milliseconds: 300);
+  static const Duration dPaneSwitch = MotionTokens.medium;
   static const double sheetGestureDeadSpace = 12;
-  static const Curve cRouteIn = Cubic(0.05, 0.7, 0.1, 1.0);
+  static const Curve cRouteIn = MotionTokens.emphasizedDecel;
   static const Curve cRouteOut = Cubic(0.175, 0.885, 0.32, 1.0);
-  static const Curve cTrackSwitch = Curves.fastLinearToSlowEaseIn;
-  static const Curve cPaneSwitch = Curves.fastEaseInToSlowEaseOut;
+  static const Curve cTrackSwitch = MotionTokens.exitCurve;
+  static const Curve cPaneSwitch = MotionTokens.enterCurve;
 
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;

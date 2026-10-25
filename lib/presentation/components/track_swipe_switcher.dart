@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 
 import '../../services/audio_player_manager.dart';
+import '../motion/motion.dart';
 import '../tokens/player_tokens.dart';
 
 /// Carousel-style track change: the outgoing item slides off in the skip
@@ -67,8 +67,13 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
             setState(() => _previous = null);
           }
         });
+
+  /// Continuous finger position, -1 previous … 0 current … 1 next.
   late final AnimationController _drag =
       AnimationController.unbounded(vsync: this, value: 0);
+
+  late final SnapEngine _snap = SnapEngine(_drag);
+
   late T _current = widget.item;
   T? _previous;
   int _dir = 1;
@@ -76,6 +81,13 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
   int _swipeGeneration = 0;
   double _width = 1;
   Timer? _pendingTimeout;
+  bool _reduceMotion = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MotionPolicy.of(context).reduceMotion;
+  }
 
   @override
   void didUpdateWidget(covariant TrackSwipeSwitcher<T> oldWidget) {
@@ -92,12 +104,13 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
     _pendingSwipe = null;
     _swipeGeneration++;
     _pendingTimeout?.cancel();
-    _drag.stop();
+    _pendingTimeout = null;
+    _snap.cancel();
     _drag.value = 0;
     _c.value = 0;
     _c.animateTo(
       1,
-      duration: PlayerTokens.dTrackSwitch,
+      duration: _reduceMotion ? Duration.zero : PlayerTokens.dTrackSwitch,
       curve: PlayerTokens.cTrackSwitch,
     );
   }
@@ -126,67 +139,81 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
     super.dispose();
   }
 
-  void _onHorizontalDragStart(DragStartDetails details) {
-    if (widget.onSwipe == null) return;
+  void _onDragStart(MotionDragStart _) {
+    // A new touch owns the motion: freeze any settle where it is, so the drag
+    // starts from what is drawn rather than from the old target.
     _swipeGeneration++;
     _pendingSwipe = null;
     _pendingTimeout?.cancel();
-    _drag.stop();
+    _pendingTimeout = null;
+    _snap.cancel();
   }
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    if (widget.onSwipe == null || _width <= 0) return;
-    final next = (_drag.value + details.delta.dx / _width).clamp(-1.0, 1.0);
-    _drag.value = next;
+  void _onDragUpdate(double delta) {
+    if (_width <= 0) return;
+    _drag.value = (_drag.value + delta / _width).clamp(-1.0, 1.0);
   }
 
-  void _onHorizontalDragEnd(DragEndDetails details) {
-    if (widget.onSwipe == null) return;
-    final x = _drag.value;
+  void _onDragEnd(MotionDragEnd end) {
+    final double x = _drag.value;
     if (x == 0) return;
-    final rawVelocity = details.primaryVelocity ?? 0;
-    final velocity = rawVelocity / _width;
-    final direction = x < 0 ? 1 : -1;
-    final fling = rawVelocity.abs() > 1000 && rawVelocity.sign == x.sign;
-    final far = x.abs() > 0.28;
-    final canSwipe = widget.canSwipe?.call(direction) ?? true;
-    if ((fling || far) && canSwipe) {
-      final generation = ++_swipeGeneration;
-      _pendingSwipe = direction;
-      _drag
-          .animateTo(
-        -direction.toDouble(),
-        duration: PlayerTokens.dFast,
-        curve: Curves.easeIn,
-      )
-          .whenComplete(() {
-        if (!mounted ||
-            generation != _swipeGeneration ||
-            _pendingSwipe != direction) {
-          return;
-        }
-        widget.onSwipe!(direction);
-        _pendingTimeout?.cancel();
-        _pendingTimeout = Timer(PlayerTokens.dTrackSwitchTimeout, () {
-          if (!mounted ||
-              generation != _swipeGeneration ||
-              _pendingSwipe != direction) {
-            return;
-          }
-          _pendingSwipe = null;
-          _drag.animateWith(
-            SpringSimulation(_dragSpring, _drag.value, 0, 0),
-          );
-        });
-      });
+    final int? direction = decideCarouselSwipe(
+      progress: x,
+      velocity: end.velocity.dx,
+      extent: _width,
+      canGoNext: widget.canSwipe?.call(1) ?? true,
+      canGoPrevious: widget.canSwipe?.call(-1) ?? true,
+    );
+    if (direction == null) {
+      _springHome();
       return;
     }
-    _drag.animateWith(SpringSimulation(_dragSpring, x, 0, velocity));
+    _commit(direction);
+  }
+
+  void _onDragCancel() => _springHome();
+
+  void _springHome() {
+    if (_reduceMotion) {
+      _snap.jumpTo(0);
+    } else {
+      _snap.springTo(0, spring: _dragSpring);
+    }
+  }
+
+  Future<void> _commit(int direction) async {
+    final int generation = ++_swipeGeneration;
+    _pendingSwipe = direction;
+    await _snap.snapTo(
+      -direction.toDouble(),
+      duration: _reduceMotion ? Duration.zero : MotionTokens.fast,
+      curve: MotionTokens.exitCurve,
+    );
+    if (!mounted ||
+        generation != _swipeGeneration ||
+        _pendingSwipe != direction) {
+      return;
+    }
+    widget.onSwipe!(direction);
+    _pendingTimeout?.cancel();
+    // If the player never reports the new track, spring the stack back rather
+    // than leaving it parked off-centre.
+    _pendingTimeout = Timer(PlayerTokens.dTrackSwitchTimeout, () {
+      if (!mounted ||
+          generation != _swipeGeneration ||
+          _pendingSwipe != direction) {
+        return;
+      }
+      _pendingSwipe = null;
+      _springHome();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final T? previous = _previous;
+    final double stackWidth = _width * widget.travel;
+
     // Children are built once per item change; only the transforms tick.
     final stack = Stack(
       fit: StackFit.passthrough,
@@ -202,13 +229,22 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
                   child: widget.builder(context, previous, false),
                 ),
                 builder: (context, child) {
-                  final double t = _c.value;
-                  final double k = t.clamp(0.0, 1.0);
-                  return FractionalTranslation(
-                    translation: Offset(-_dir * widget.travel * t, 0),
+                  final double t = _c.value.clamp(0.0, 1.0);
+                  return Transform.translate(
+                    offset: Offset(
+                      carouselSlotTravel(
+                        progress: t,
+                        width: stackWidth,
+                        direction: -_dir,
+                      ),
+                      0,
+                    ),
                     child: Opacity(
-                      opacity: (1 - widget.fade * k).clamp(0.0, 1.0),
-                      child: Transform.scale(scale: 1 - 0.08 * k, child: child),
+                      opacity: (1 - widget.fade * t).clamp(0.0, 1.0),
+                      child: Transform.scale(
+                        scale: 1 - 0.08 * t,
+                        child: child,
+                      ),
                     ),
                   );
                 },
@@ -223,13 +259,25 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
               child: widget.builder(context, _current, true),
             ),
             builder: (context, child) {
-              final double t = _c.value;
-              final double k = t.clamp(0.0, 1.0);
-              return FractionalTranslation(
-                translation: Offset(_dir * widget.travel * (1 - t), 0),
+              final double t = _c.value.clamp(0.0, 1.0);
+              return Transform.translate(
+                offset: Offset(
+                  // The arriving copy travels a little further than the finger,
+                  // which gives the outgoing one depth behind it.
+                  carouselSlotTravel(
+                    progress: 1 - t,
+                    width: stackWidth,
+                    direction: _dir,
+                    parallax: 1.15,
+                  ),
+                  0,
+                ),
                 child: Opacity(
-                  opacity: (1 - widget.fade * (1 - k)).clamp(0.0, 1.0),
-                  child: child,
+                  opacity: (1 - widget.fade * (1 - t)).clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 0.96 + 0.04 * t,
+                    child: child,
+                  ),
                 ),
               );
             },
@@ -237,15 +285,18 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
         ),
       ],
     );
+
     if (widget.onSwipe == null) return stack;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         _width = constraints.maxWidth;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: _onHorizontalDragStart,
-          onHorizontalDragUpdate: _onHorizontalDragUpdate,
-          onHorizontalDragEnd: _onHorizontalDragEnd,
+        return MotionDragArea(
+          axis: Axis.horizontal,
+          onStart: _onDragStart,
+          onUpdate: _onDragUpdate,
+          onEnd: _onDragEnd,
+          onCancel: _onDragCancel,
           child: AnimatedBuilder(
             animation: _drag,
             child: stack,

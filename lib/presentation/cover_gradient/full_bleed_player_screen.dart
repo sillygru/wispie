@@ -26,6 +26,7 @@ import '../components/favorite_heart_button.dart';
 import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
+import '../motion/motion.dart';
 import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import '../../l10n/l10n.dart';
@@ -73,7 +74,10 @@ class FullBleedPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        RouteSettledMixin<FullBleedPlayerScreen> {
   static const String _wakeLockReason = 'full_bleed_player_lyrics';
 
   late final PageController _pageController;
@@ -158,7 +162,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final bool reduceMotion = MotionPolicy.of(context).reduceMotion;
     if (reduceMotion == _reduceMotion) return;
     _reduceMotion = reduceMotion;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -219,21 +223,9 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       _motion.beatMap = cached;
       return;
     }
-    final route = ModalRoute.of(context);
-    final animation = route?.animation;
-    if (animation != null && !animation.isCompleted) {
-      final completer = Completer<void>();
-      void listener(AnimationStatus status) {
-        if (status == AnimationStatus.completed) {
-          animation.removeStatusListener(listener);
-          if (!completer.isCompleted) completer.complete();
-        }
-      }
-
-      animation.addStatusListener(listener);
-      await completer.future;
-      if (!mounted || token != _beatMapToken) return;
-    }
+    // Analysis is heavy: let the sheet finish opening first.
+    await whenRouteSettled();
+    if (!mounted || token != _beatMapToken) return;
     final analyzed = await service.analyze(song.filename, song.url);
     if (!mounted || token != _beatMapToken) return;
     _motion.beatMap = analyzed;

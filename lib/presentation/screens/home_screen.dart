@@ -30,6 +30,7 @@ import '../components/scroll_chrome.dart';
 import '../components/app_section_header.dart';
 import '../components/app_sheet.dart';
 import '../components/app_surface.dart';
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../widgets/header_shuffle_button.dart';
@@ -694,21 +695,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ],
                       ),
                     ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final song = sortedSongs[index];
-                          return SongListItem(
-                            song: song,
-                            heroTagPrefix: 'all_songs',
-                            onTap: () => audioManager.playSong(
-                              song,
-                              contextQueue: sortedSongs,
-                              playlistId: audioManager.currentPlaylistId,
-                            ),
-                          );
-                        },
-                        childCount: sortedSongs.length,
+                    MotionEntranceLimiter(
+                      child: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final song = sortedSongs[index];
+                            return MotionEntrance(
+                              id: song.filename,
+                              index: index,
+                              child: SongListItem(
+                                song: song,
+                                heroTagPrefix: 'all_songs',
+                                onTap: () => audioManager.playSong(
+                                  song,
+                                  contextQueue: sortedSongs,
+                                  playlistId: audioManager.currentPlaylistId,
+                                ),
+                              ),
+                            );
+                          },
+                          childCount: sortedSongs.length,
+                        ),
                       ),
                     ),
                     const SliverPadding(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 
 /// Shell-tab visibility with motion. The incoming tab springs in from the side
@@ -33,18 +34,39 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
   late final AnimationController _c =
       AnimationController.unbounded(vsync: this, value: widget.active ? 1 : 0);
   late int _dir = widget.direction;
+  bool _reduceMotion = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool reduce = MotionPolicy.of(context).reduceMotion;
+    if (reduce == _reduceMotion) return;
+    _reduceMotion = reduce;
+    if (reduce) {
+      _c.stop();
+      _c.value = widget.active ? 1 : 0;
+    }
+  }
 
   @override
   void didUpdateWidget(covariant TabSwitchTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.active == widget.active) return;
     _dir = widget.direction;
+    if (_reduceMotion) {
+      _c.value = widget.active ? 1 : 0;
+      return;
+    }
     if (widget.active) {
       _c.animateWith(
         SpringSimulation(TabSwitchTransition._spring, _c.value, 1, _c.velocity),
       );
     } else {
-      _c.animateTo(0, duration: AppTokens.dFast, curve: Curves.easeOutCubic);
+      _c.animateTo(
+        0,
+        duration: MotionTokens.fast,
+        curve: MotionTokens.standardCurve,
+      );
     }
   }
 

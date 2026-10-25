@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../motion/motion_springs.dart';
 import 'player_tokens.dart';
 
 /// The z-layer a surface lives on. Drives both its fill and its shadow through
@@ -60,26 +61,14 @@ class AppTokens {
 
   /// Standard press response — quick, barely any overshoot. Buttons, rows,
   /// nav items: the surface dips under the finger and settles back crisply.
-  static const SpringDescription springSnappy = SpringDescription(
-    mass: 1,
-    stiffness: 520,
-    damping: 30,
-  );
+  static const SpringDescription springSnappy = MotionSprings.snappy;
 
   /// A touch looser, with a hint of overshoot — for larger moving surfaces
   /// (cards, sheets) where a little bounce reads as physical rather than nervous.
-  static const SpringDescription springGentle = SpringDescription(
-    mass: 1,
-    stiffness: 340,
-    damping: 24,
-  );
+  static const SpringDescription springGentle = MotionSprings.gentle;
 
   /// Pronounced overshoot, for a deliberate "pop" (toggles, confirmations).
-  static const SpringDescription springBouncy = SpringDescription(
-    mass: 1,
-    stiffness: 300,
-    damping: 16,
-  );
+  static const SpringDescription springBouncy = MotionSprings.bouncy;
 
   /// How far a [Pressable] scales down while held. Small on purpose — iOS press
   /// feedback is felt more than seen.

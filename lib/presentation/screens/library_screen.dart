@@ -36,6 +36,7 @@ import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
 import '../components/wide_track_table.dart';
 import '../components/animated_removal.dart';
+import '../motion/motion.dart';
 
 /// Gives the library tab its own navigator, so artist, album, playlist and
 /// folder drill-downs push inside the tab and the shell's dock stays on top.
@@ -655,30 +656,37 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                         width: 300,
                         child: NotificationListener<ScrollNotification>(
                           onNotification: handleScrollNotification,
-                          child: ListView.builder(
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.only(
-                              bottom: AppTokens.scrollBottomInset,
+                          child: MotionEntranceLimiter(
+                            child: ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.only(
+                                bottom: AppTokens.scrollBottomInset,
+                              ),
+                              itemCount: collectionCount + 1,
+                              itemBuilder: (context, index) {
+                                return MotionEntrance(
+                                  id: 'collection_$index',
+                                  index: index,
+                                  child: index > 0
+                                      ? folderIndexBuilder(context, index - 1)
+                                      : _desktopRow(
+                                          child: AppListRow(
+                                            leading: AppRowIcon(
+                                              icon: AppIcons.library,
+                                              color: AppTokens.accentOf(
+                                                  context, ref),
+                                            ),
+                                            title: context.l10n.libraryAll,
+                                            subtitle: context.l10n
+                                                .libraryTrackCount(
+                                                    immediateSongs.length),
+                                            isActive: _collection == null,
+                                            onTap: () => selectCollection(null),
+                                          ),
+                                        ),
+                                );
+                              },
                             ),
-                            itemCount: collectionCount + 1,
-                            itemBuilder: (context, index) {
-                              if (index > 0) {
-                                return folderIndexBuilder(context, index - 1);
-                              }
-                              return _desktopRow(
-                                child: AppListRow(
-                                  leading: AppRowIcon(
-                                    icon: AppIcons.library,
-                                    color: AppTokens.accentOf(context, ref),
-                                  ),
-                                  title: context.l10n.libraryAll,
-                                  subtitle: context.l10n
-                                      .libraryTrackCount(immediateSongs.length),
-                                  isActive: _collection == null,
-                                  onTap: () => selectCollection(null),
-                                ),
-                              );
-                            },
                           ),
                         ),
                       ),
@@ -692,22 +700,28 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               const SliverToBoxAdapter(
                                 child: WideTrackTableHeader(showAlbum: true),
                               ),
-                              SliverList(
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) {
-                                    final song = tableSongs[index];
-                                    return WideTrackRow(
-                                      song: song,
-                                      heroTagPrefix:
-                                          'library_${widget.relativePath ?? 'root'}',
-                                      showAlbum: true,
-                                      onTap: () => audioManager.playSong(
-                                        song,
-                                        contextQueue: tableSongs,
-                                      ),
-                                    );
-                                  },
-                                  childCount: tableSongs.length,
+                              MotionEntranceLimiter(
+                                child: SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) {
+                                      final song = tableSongs[index];
+                                      return MotionEntrance(
+                                        id: song.filename,
+                                        index: index,
+                                        child: WideTrackRow(
+                                          song: song,
+                                          heroTagPrefix:
+                                              'library_${widget.relativePath ?? 'root'}',
+                                          showAlbum: true,
+                                          onTap: () => audioManager.playSong(
+                                            song,
+                                            contextQueue: tableSongs,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    childCount: tableSongs.length,
+                                  ),
                                 ),
                               ),
                               const SliverPadding(
@@ -843,10 +857,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       ),
                     ),
                 ] else ...[
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      folderIndexBuilder,
-                      childCount: itemCount,
+                  MotionEntranceLimiter(
+                    child: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => MotionEntrance(
+                          id: 'folder_$index',
+                          index: index,
+                          child: folderIndexBuilder(context, index),
+                        ),
+                        childCount: itemCount,
+                      ),
                     ),
                   ),
                   const SliverPadding(

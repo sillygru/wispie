@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../motion/motion_tokens.dart';
+
 /// Edge fade for scrolling panes.
 ///
 /// Each edge fades in only while content is actually hidden past it, so the
@@ -80,8 +82,8 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade>
   void _settle() {
     _motion.animateTo(
       0,
-      duration: const Duration(milliseconds: 520),
-      curve: Curves.easeOutCubic,
+      duration: MotionTokens.slow,
+      curve: MotionTokens.standardCurve,
     );
   }
 

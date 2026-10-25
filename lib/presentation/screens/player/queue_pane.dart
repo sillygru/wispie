@@ -16,6 +16,7 @@ import '../../../providers/queue_history_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/audio_player_manager.dart';
 import '../../../services/display_refresh_service.dart';
+import '../../components/animated_removal.dart';
 import '../../components/player_glass_surface.dart';
 import '../../components/player_section_header.dart';
 import '../../components/player_segmented_pill.dart';
@@ -23,6 +24,7 @@ import '../../components/player_track_row.dart';
 import '../../components/progressive_edge_fade.dart';
 import '../../components/queue_cover_mosaic.dart';
 import '../../components/swipe_action_row.dart';
+import '../../motion/motion.dart';
 import '../../tokens/app_tokens.dart';
 import '../../tokens/player_tokens.dart';
 import '../../utils/wide_layout.dart';
@@ -261,6 +263,11 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   Timer? _undoTimer;
   bool _didAutoScroll = false;
 
+  /// The row that last changed place, and when, so [MotionPop] can announce
+  /// the move instead of letting the list teleport.
+  String? _poppedId;
+  DateTime? _poppedAt;
+
   @override
   void dispose() {
     _undoTimer?.cancel();
@@ -309,26 +316,38 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     _scrollController.jumpTo(target);
   }
 
+  /// [hideFirst] is off when the row already has an exit animation of its own
+  /// (a [RemovableEntry] shrink); hiding it as well would cut that short.
+  ///
+  /// The index is resolved here rather than passed in: an exit animation keeps
+  /// the queue unchanged for a few frames, so a captured index can go stale.
   Future<void> _remove(
     AudioPlayerManager audioManager,
-    QueueItem item,
-    int absoluteIndex,
-  ) async {
-    setState(() => _dismissed.add(item.queueId));
+    QueueItem item, {
+    bool hideFirst = true,
+  }) async {
+    if (hideFirst) setState(() => _dismissed.add(item.queueId));
+
+    final int index = audioManager.queueNotifier.value
+        .indexWhere((queued) => queued.queueId == item.queueId);
+    if (index < 0) {
+      if (hideFirst) _restoreRow(item.queueId);
+      return;
+    }
 
     try {
-      await audioManager.removeFromQueue(absoluteIndex);
+      await audioManager.removeFromQueue(index);
     } catch (_) {
       // Rare failure path — same Dismissible hazard as _addToTop: the row must
       // actually leave the tree before it can come back.
-      _restoreRow(item.queueId);
+      if (hideFirst) _restoreRow(item.queueId);
       return;
     }
 
     _undoTimer?.cancel();
     if (!mounted) return;
     setState(() {
-      _pendingRemoval = _PendingRemoval(item: item, index: absoluteIndex);
+      _pendingRemoval = _PendingRemoval(item: item, index: index);
     });
     _undoTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _pendingRemoval = null);
@@ -359,7 +378,18 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     }
 
     if (!mounted) return;
+    _popRow(item.queueId);
     _restoreRow(item.queueId);
+  }
+
+  /// Popping the row that just moved is what makes the reorder legible: the eye
+  /// follows the item that scaled, not the hole it left behind.
+  void _popRow(String queueId) {
+    if (!mounted) return;
+    setState(() {
+      _poppedId = queueId;
+      _poppedAt = DateTime.now();
+    });
   }
 
   /// Brings a hidden row back after the next frame. The manager's mutation can
@@ -384,7 +414,9 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       await audioManager.moveUpcomingToTop(item.queueId);
     } catch (_) {
       // The row stays where it is; the next queue update re-renders it.
+      return;
     }
+    _popRow(item.queueId);
   }
 
   /// Cursor-anchored context menu for a wide-window queue row. Replaces both
@@ -393,13 +425,13 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     BuildContext context,
     Offset globalPosition,
     AudioPlayerManager audioManager,
-    List<QueueItem> queue,
     QueueItem item,
   ) async {
     final l10n = AppLocalizations.of(context);
     final overlayBox =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (overlayBox == null) return;
+    final exit = MotionPolicy.read(context).duration(MotionTokens.slow);
     final position = RelativeRect.fromRect(
       globalPosition & const Size(1, 1),
       Offset.zero & overlayBox.size,
@@ -466,10 +498,11 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       case 'top':
         await _moveToTopNow(audioManager, item);
       case 'remove':
-        final absolute =
-            queue.indexWhere((queued) => queued.queueId == item.queueId);
-        if (absolute == -1) return;
-        await _remove(audioManager, item, absolute);
+        await AnimatedRemoval.run(
+          'queue_${item.queueId}',
+          () => _remove(audioManager, item, hideFirst: false),
+          exit: exit,
+        );
       case 'more':
         if (!context.mounted) return;
         showSongOptionsMenu(
@@ -503,6 +536,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       _dismissed.remove(pending.item.queueId);
       _pendingRemoval = null;
     });
+    _popRow(pending.item.queueId);
   }
 
   void _confirmClear(AudioPlayerManager audioManager) {
@@ -708,26 +742,34 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     final desktop = platform == TargetPlatform.macOS ||
         platform == TargetPlatform.windows ||
         platform == TargetPlatform.linux;
+    final String removalId = 'queue_${item.queueId}';
+    final Object? popTrigger = _poppedId == item.queueId ? _poppedAt : null;
     if (desktop || WideLayout.isWide(context)) {
-      return _WideUpcomingRow(
+      return RemovableEntry(
         key: ValueKey('upnext_${item.queueId}'),
-        accent: widget.accent,
-        item: item,
-        index: index,
-        onTap: () => _jumpTo(audioManager, item),
-        onMoveToTop: () => _moveToTopNow(audioManager, item),
-        onRemove: () {
-          final absolute =
-              queue.indexWhere((queued) => queued.queueId == item.queueId);
-          if (absolute == -1) return;
-          _remove(audioManager, item, absolute);
-        },
-        onOpenMenu: (position) => _showWideRowMenu(
-          context,
-          position,
-          audioManager,
-          queue,
-          item,
+        id: removalId,
+        child: MotionPop(
+          trigger: popTrigger,
+          child: _WideUpcomingRow(
+            accent: widget.accent,
+            item: item,
+            index: index,
+            onTap: () => _jumpTo(audioManager, item),
+            onMoveToTop: () => _moveToTopNow(audioManager, item),
+            onRemove: () {
+              AnimatedRemoval.run(
+                removalId,
+                () => _remove(audioManager, item, hideFirst: false),
+                exit: MotionPolicy.read(context).duration(MotionTokens.slow),
+              );
+            },
+            onOpenMenu: (position) => _showWideRowMenu(
+              context,
+              position,
+              audioManager,
+              item,
+            ),
+          ),
         ),
       );
     }
@@ -748,23 +790,23 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
         if (direction == DismissDirection.startToEnd) {
           _addToTop(audioManager, item, queue);
         } else {
-          final absolute =
-              queue.indexWhere((queued) => queued.queueId == item.queueId);
-          if (absolute == -1) return;
-          _remove(audioManager, item, absolute);
+          _remove(audioManager, item);
         }
       },
       padding: const EdgeInsets.symmetric(horizontal: PlayerTokens.s3),
-      child: PlayerTrackRow(
-        song: item.song,
-        accent: widget.accent,
-        onTap: () => _jumpTo(audioManager, item),
-        onLongPress: () => _showSongOptions(item.song),
-        trailing: ReorderableDragStartListener(
-          index: index,
-          child: Icon(
-            Icons.drag_handle_rounded,
-            color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
+      child: MotionPop(
+        trigger: popTrigger,
+        child: PlayerTrackRow(
+          song: item.song,
+          accent: widget.accent,
+          onTap: () => _jumpTo(audioManager, item),
+          onLongPress: () => _showSongOptions(item.song),
+          trailing: ReorderableDragStartListener(
+            index: index,
+            child: Icon(
+              Icons.drag_handle_rounded,
+              color: Colors.white.withValues(alpha: PlayerTokens.aTertiary),
+            ),
           ),
         ),
       ),
@@ -914,8 +956,8 @@ class _PendingRemoval {
 /// anywhere reorders), right-click / long-press / overflow button open the
 /// same cursor-anchored menu. No Dismissible — swipe is a touch gesture.
 ///
-/// The reorderable list requires a key on every child; the parent passes the
-/// same `upnext_<queueId>` key the narrow Dismissible carries.
+/// The reorderable list requires a key on every child; the parent puts the
+/// `upnext_<queueId>` key on the [RemovableEntry] that wraps this row.
 class _WideUpcomingRow extends StatefulWidget {
   final Color accent;
   final QueueItem item;
@@ -926,7 +968,6 @@ class _WideUpcomingRow extends StatefulWidget {
   final void Function(Offset globalPosition) onOpenMenu;
 
   const _WideUpcomingRow({
-    super.key,
     required this.accent,
     required this.item,
     required this.index,

@@ -16,6 +16,7 @@ import '../../../models/song.dart';
 import '../../../providers/providers.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/audio_player_manager.dart';
+import '../../components/favorite_heart_button.dart';
 import '../../components/pressable.dart';
 import '../../components/song_actions.dart';
 import '../../components/track_swipe_switcher.dart';
@@ -24,7 +25,6 @@ import '../../tokens/player_tokens.dart';
 import '../../widgets/album_art_image.dart';
 import '../../widgets/beat_reactive_cover.dart';
 import '../../widgets/clickable_artist_text.dart';
-import '../../widgets/heart_context_menu.dart';
 import '../../widgets/now_playing_lyric_peek.dart';
 import '../../widgets/player_motion.dart';
 import '../../widgets/shrink_then_wrap_text.dart';
@@ -173,151 +173,16 @@ class _NowPlayingPaneState extends ConsumerState<NowPlayingPane>
             ),
           ),
           const SizedBox(width: PlayerTokens.s3),
-          _FavoriteButton(song: widget.song, accent: widget.accent),
-        ],
-      ),
-    );
-  }
-}
-
-/// Favorite lives here rather than only in the quick action row: it is the one
-/// action people expect to find without configuring anything, and the quick
-/// action row can be reordered or turned off entirely.
-class _FavoriteButton extends ConsumerStatefulWidget {
-  final Song song;
-  final Color accent;
-
-  const _FavoriteButton({required this.song, required this.accent});
-
-  @override
-  ConsumerState<_FavoriteButton> createState() => _FavoriteButtonState();
-}
-
-class _FavoriteButtonState extends ConsumerState<_FavoriteButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pop;
-  late final Animation<double> _ringScale;
-  late final Animation<double> _ringFade;
-  bool _showRing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 620),
-    );
-
-    // Squash on the way in, overshoot, then settle — the dip is what makes it
-    // read as a press rather than a plain grow.
-    _pop = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.78)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 14,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.78, end: 1.32)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.32, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 56,
-      ),
-    ]).animate(_controller);
-
-    _ringScale = Tween<double>(begin: 0.35, end: 1.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart),
-    );
-    _ringFade = Tween<double>(begin: 0.45, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.65)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    final wasFavorite = ref.read(userDataProvider).isFavorite(
-          widget.song.filename,
-        );
-
-    HapticFeedback.mediumImpact();
-    // No snackbar: the heart filling in already says what happened.
-    songActionToggleFavorite(
-      context,
-      ref,
-      widget.song.filename,
-      widget.song.title,
-      showFeedback: false,
-    );
-
-    // Both directions get the pop; only favouriting gets the ring.
-    _showRing = !wasFavorite;
-    _controller.forward(from: 0);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isFavorite = ref.watch(
-      userDataProvider.select((data) => data.isFavorite(widget.song.filename)),
-    );
-
-    return InkResponse(
-      radius: 28,
-      onTap: _toggle,
-      onLongPress: () {
-        HapticFeedback.mediumImpact();
-        showHeartContextMenu(
-          context: context,
-          ref: ref,
-          songFilename: widget.song.filename,
-          songTitle: widget.song.title,
-        );
-      },
-      child: SizedBox(
-        width: 48,
-        height: 48,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                if (_showRing && _controller.isAnimating && _ringFade.value > 0)
-                  Transform.scale(
-                    scale: _ringScale.value,
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color:
-                              widget.accent.withValues(alpha: _ringFade.value),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                Transform.scale(scale: _pop.value, child: child),
-              ],
-            );
-          },
-          child: Icon(
-            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            size: 28,
-            color: isFavorite
-                ? widget.accent
-                : Colors.white.withValues(alpha: PlayerTokens.aSecondary),
+          // The heart sits here rather than only in the quick action row: it
+          // is the one action people look for without configuring anything.
+          FavoriteHeartButton(
+            filename: widget.song.filename,
+            title: widget.song.title,
+            accent: widget.accent,
+            inactiveColor:
+                Colors.white.withValues(alpha: PlayerTokens.aSecondary),
           ),
-        ),
+        ],
       ),
     );
   }

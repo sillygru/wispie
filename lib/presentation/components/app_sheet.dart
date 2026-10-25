@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../motion/motion_tokens.dart';
 import '../tokens/app_tokens.dart';
 import 'press_highlight.dart';
 import '../tokens/app_icons.dart';
@@ -23,6 +24,10 @@ Future<T?> showAppSheet<T>(
     isScrollControlled: isScrollControlled,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.55),
+    sheetAnimationStyle: const AnimationStyle(
+      duration: MotionTokens.medium,
+      reverseDuration: MotionTokens.exit,
+    ),
     builder: (sheetContext) {
       final sheet = AppSheet(
         title: title,

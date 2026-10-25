@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
+import '../motion/motion.dart';
 import '../widgets/collection_accent_scope.dart';
 import '../screens/unified_player_screen.dart';
 import 'player_sheet_origin.dart';
@@ -28,7 +27,10 @@ class PlayerPageRoute extends PageRoute<void> {
 
   bool _dragging = false;
   bool _settling = false;
-  int _settleGeneration = 0;
+
+  /// Drives every release of the sheet. Its generation tokens make a settle
+  /// that a newer grab overtook a no-op, so completion effects cannot fire twice.
+  late final SnapEngine _snap = SnapEngine(controller!);
   // Tracks whether nav.didStartUserGesture() was actually called, so the stop
   // call stays balanced when a grab happens mid-open and no gesture was started.
   bool _gestureHeld = false;
@@ -39,7 +41,7 @@ class PlayerPageRoute extends PageRoute<void> {
   // can still be grabbed back.
   final ValueNotifier<bool> _catchable = ValueNotifier(false);
 
-  VelocityTracker _velocity = VelocityTracker.withKind(PointerDeviceKind.touch);
+  final MotionDragTracker _dragTracker = MotionDragTracker();
   bool _ignoreCurrentPointer = false;
 
   // Distance the sheet's top edge travels: from the mini player's top edge
@@ -95,8 +97,7 @@ class PlayerPageRoute extends PageRoute<void> {
     if (c == null || nav == null || _dragging || _ignoreCurrentPointer) return;
     if (_settling) {
       _settling = false;
-      _settleGeneration++;
-      c.stop();
+      _snap.cancel();
     } else {
       if (!isCurrent) return;
       // Grabbed mid-open: the controller value is what is drawn, so the
@@ -127,44 +128,54 @@ class PlayerPageRoute extends PageRoute<void> {
     if (!_dragging || c == null) return;
     _dragging = false;
     final double travel = _travel ?? height;
-    final trackedVelocity = _velocity.getVelocity().pixelsPerSecond.dy;
+    final trackedVelocity = _dragTracker.velocity.dy;
     final effectiveVelocity =
         trackedVelocity.isFinite && trackedVelocity.abs() > 1
             ? trackedVelocity
             : velocity;
-    const flingVelocity = 500.0;
-    // A fast final flick wins over position. Otherwise the sheet settles to
-    // whichever side owns most of the travel, like the reference miniplayer.
-    final close = effectiveVelocity > flingVelocity ||
-        (effectiveVelocity.abs() <= flingVelocity && c.value < 0.6);
+    _dragTracker.reset();
+    // Thresholds scale with the travel the sheet actually has on this screen,
+    // so the same flick does not close it on a phone and fail on a tablet.
+    final tuning = SnapTuning.forExtent(
+      travel,
+      flingRatio: 0.62,
+      commitRatio: 0.6,
+    );
+    final bool stayOpen = tuning.advances(
+      progress: c.value,
+      // Positive velocity moves toward progress 1; a downward drag closes.
+      velocity: -effectiveVelocity,
+      extent: travel,
+    );
     final v = travel > 0 ? effectiveVelocity / travel : 0.0;
-    _settle(close ? 0 : 1, -v);
+    _settle(stayOpen ? 1 : 0, -v);
   }
 
   void dismissDragCancel() {
     if (!_dragging) return;
     _dragging = false;
+    _dragTracker.reset();
     _settle(1, 0);
   }
 
   // Popped only once landed, so a late grab can still pull it back.
   void _settle(double target, double velocity) {
-    final c = controller!;
-    final int generation = ++_settleGeneration;
     _settling = true;
     _catchable.value = true;
-    c.animateWith(_SnapSimulation(c.value, target, velocity)).then((_) {
-      if (!_settling || generation != _settleGeneration) return;
-      _settling = false;
-      final nav = navigator;
-      if (target == 0 && nav != null && isActive) nav.pop();
-      if (target == 1) _catchable.value = false;
-      // After the pop: Hero flights finish against the landed animation.
-      if (_gestureHeld) {
-        _gestureHeld = false;
-        nav?.didStopUserGesture();
-      }
-    });
+    _snap.drive(
+      LandingSimulation(controller!.value, target, velocity),
+      onSettled: () {
+        _settling = false;
+        final nav = navigator;
+        if (target == 0 && nav != null && isActive) nav.pop();
+        if (target == 1) _catchable.value = false;
+        // After the pop: Hero flights finish against the landed animation.
+        if (_gestureHeld) {
+          _gestureHeld = false;
+          nav?.didStopUserGesture();
+        }
+      },
+    );
   }
 
   @override
@@ -190,7 +201,7 @@ class PlayerPageRoute extends PageRoute<void> {
     _closing = !forward;
     final Duration full =
         forward ? PlayerTokens.dRouteIn : PlayerTokens.dRouteOut;
-    return _CurveSimulation(
+    return CurveSimulation(
       from: from,
       to: to,
       duration: full * (to - from).abs(),
@@ -347,11 +358,10 @@ class PlayerPageRoute extends PageRoute<void> {
             _ignoreCurrentPointer = event.position.dy >=
                 MediaQuery.sizeOf(context).height -
                     PlayerTokens.sheetGestureDeadSpace;
-            _velocity = VelocityTracker.withKind(event.kind);
-            _velocity.addPosition(event.timeStamp, event.position);
+            if (!_ignoreCurrentPointer) _dragTracker.start(event);
           },
           onPointerMove: (event) {
-            _velocity.addPosition(event.timeStamp, event.position);
+            if (!_ignoreCurrentPointer) _dragTracker.add(event);
           },
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
@@ -431,72 +441,6 @@ class _SheetRideTween extends Tween<Rect?> {
     // mini player's height at the start and exactly on its slot at the end.
     final double dip = r.center.dy - mini.center.dy;
     return dip > 0 ? r.shift(Offset(0, -dip * (1 - p))) : r;
-  }
-}
-
-/// Plays [curve] over [duration] as a simulation, so open/close can bake the
-/// curve into the controller value.
-class _CurveSimulation extends Simulation {
-  _CurveSimulation({
-    required this.from,
-    required this.to,
-    required Duration duration,
-    required this.curve,
-  }) : _seconds = duration.inMicroseconds / Duration.microsecondsPerSecond;
-
-  final double from;
-  final double to;
-  final Curve curve;
-  final double _seconds;
-
-  double _f(double time) =>
-      _seconds <= 0 ? 1 : (time / _seconds).clamp(0.0, 1.0);
-
-  @override
-  double x(double time) => from + (to - from) * curve.transform(_f(time));
-
-  @override
-  double dx(double time) {
-    if (_seconds <= 0 || time >= _seconds) return 0;
-    const double h = 1e-3;
-    return (x(time + h) - x(time)) / h;
-  }
-
-  @override
-  bool isDone(double time) => time >= _seconds;
-}
-
-/// Critically damped, no bounce; ends the moment it reaches or crosses the
-/// target instead of creeping through a long tail.
-class _SnapSimulation extends Simulation {
-  _SnapSimulation(double from, this._target, double velocity)
-      : _spring = SpringSimulation(
-          SpringDescription.withDampingRatio(
-            mass: 1,
-            stiffness: 520,
-            ratio: 1,
-          ),
-          from,
-          _target == 0 ? -0.06 : _target,
-          velocity,
-          tolerance: const Tolerance(distance: 0.001, velocity: 0.01),
-        );
-
-  final double _target;
-  final SpringSimulation _spring;
-
-  @override
-  double x(double time) => _spring.x(time).clamp(0.0, 1.0);
-
-  @override
-  double dx(double time) => _spring.dx(time);
-
-  @override
-  bool isDone(double time) {
-    final x = _spring.x(time);
-    return _spring.isDone(time) ||
-        (_target == 0 ? x <= 0 : x >= 1) ||
-        time >= 0.3;
   }
 }
 

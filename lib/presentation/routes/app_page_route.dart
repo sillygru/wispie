@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../motion/motion_tokens.dart';
+
 /// The one sub-screen transition for the whole app.
 ///
 /// Every pushed screen — settings pages, detail views, pickers — used the stock
@@ -32,10 +34,10 @@ class AppPageRoute<T> extends PageRoute<T> {
   bool get opaque => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 300);
+  Duration get transitionDuration => MotionTokens.medium;
 
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 240);
+  Duration get reverseTransitionDuration => MotionTokens.exit;
 
   @override
   Widget buildPage(
@@ -55,8 +57,8 @@ class AppPageRoute<T> extends PageRoute<T> {
   ) {
     final incoming = CurvedAnimation(
       parent: animation,
-      curve: Curves.easeOutQuart,
-      reverseCurve: Curves.easeInCubic,
+      curve: MotionTokens.emphasized,
+      reverseCurve: MotionTokens.emphasizedAccel,
     );
     final slide = Tween<Offset>(
       begin: const Offset(0, 0.03),
@@ -68,8 +70,8 @@ class AppPageRoute<T> extends PageRoute<T> {
     // then comes forward again on pop — the sense of depth between screens.
     final receding = CurvedAnimation(
       parent: secondaryAnimation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: MotionTokens.standardCurve,
+      reverseCurve: MotionTokens.emphasizedAccel,
     );
     final underScale = Tween<double>(begin: 1.0, end: 0.985).animate(receding);
     final underFade = Tween<double>(begin: 1.0, end: 0.55).animate(receding);

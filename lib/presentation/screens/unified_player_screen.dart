@@ -22,6 +22,7 @@ import '../routes/player_route.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/basic_progress_bar.dart';
+import '../motion/motion.dart';
 import '../motion/player_motion_ensemble.dart';
 import '../widgets/beat_cover_glow.dart';
 import '../widgets/beat_particle_field.dart';
@@ -64,7 +65,10 @@ class UnifiedPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with
+        SingleTickerProviderStateMixin,
+        WidgetsBindingObserver,
+        RouteSettledMixin<UnifiedPlayerScreen> {
   static const String _wakeLockReason = 'unified_player_lyrics';
 
   late final PageController _pageController;
@@ -182,7 +186,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final reduceMotion = MotionPolicy.of(context).reduceMotion;
     if (reduceMotion == _reduceMotion) return;
     _reduceMotion = reduceMotion;
     // Deferred: this runs inside the build phase, and the motion setters notify
@@ -260,21 +264,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       return;
     }
 
-    final route = ModalRoute.of(context);
-    final animation = route?.animation;
-    if (animation != null && !animation.isCompleted) {
-      final completer = Completer<void>();
-      AnimationStatusListener? listener;
-      listener = (status) {
-        if (status == AnimationStatus.completed) {
-          animation.removeStatusListener(listener!);
-          if (!completer.isCompleted) completer.complete();
-        }
-      };
-      animation.addStatusListener(listener);
-      await completer.future;
-      if (!mounted || token != _beatMapToken) return;
-    }
+    // Analysis is heavy: let the sheet finish opening first, or the decode
+    // competes with the transition for the frame budget.
+    await whenRouteSettled();
+    if (!mounted || token != _beatMapToken) return;
 
     final analyzed = await service.analyze(song.filename, song.url);
     if (!mounted || token != _beatMapToken) return;

@@ -10,6 +10,7 @@ import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
+import '../motion/motion.dart';
 import '../routes/player_route.dart';
 import '../routes/player_sheet_origin.dart';
 import '../tokens/app_tokens.dart';
@@ -969,7 +970,7 @@ class _SpinArtworkState extends State<_SpinArtwork>
     // paused ball resumes mid-turn instead of snapping back to upright.
     final bool on = widget.enabled &&
         TickerMode.valuesOf(context).enabled &&
-        !MediaQuery.disableAnimationsOf(context);
+        !MotionPolicy.of(context).reduceMotion;
     if (on && !_c.isAnimating) {
       _c.repeat();
     } else if (!on && _c.isAnimating) {

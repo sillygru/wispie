@@ -17,6 +17,7 @@ import 'dart:io';
 import 'presentation/components/popup_scroll_dismiss.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
+import 'presentation/motion/motion.dart';
 import 'presentation/widgets/orientation_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/setup_provider.dart';
@@ -456,6 +457,8 @@ class _WispieAppState extends ConsumerState<WispieApp>
     final authState = ref.watch(authProvider);
     final isSetupComplete = ref.watch(setupProvider);
     final themeState = ref.watch(themeProvider);
+    // Above MediaQuery, so the root theme tween reads the platform directly.
+    final platformPolicy = MotionPolicy.fromPlatform();
 
     return MaterialApp(
       title: 'wispie',
@@ -465,9 +468,16 @@ class _WispieAppState extends ConsumerState<WispieApp>
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       navigatorObservers: [PopupScrollDismiss.observer],
+      // One scroll feel for every scrollable in the app. Screens opt out only
+      // when they need a different physical metaphor, not per platform.
+      scrollBehavior: const MotionScrollBehavior(),
       builder: (context, child) {
-        final content =
-            PopupScrollDismiss(child: child ?? const SizedBox.shrink());
+        final content = MotionScope(
+          policy: MotionPolicy(
+            reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+          ),
+          child: PopupScrollDismiss(child: child ?? const SizedBox.shrink()),
+        );
         if (!_isDesktop) return content;
         return CallbackShortcuts(
           bindings: _playbackShortcuts(),
@@ -478,8 +488,8 @@ class _WispieAppState extends ConsumerState<WispieApp>
       home: OrientationPolicy(
         child: AnimatedTheme(
           data: AppTheme.getTheme(themeState),
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
+          duration: platformPolicy.duration(MotionTokens.slow),
+          curve: MotionTokens.inOutCurve,
           child: _AnimatedAppAccent(
             accent: themeState.extractedColor,
             isNeutral: themeState.isNeutralCover,
@@ -495,7 +505,8 @@ class _WispieAppState extends ConsumerState<WispieApp>
 
 /// Eases the app-wide accent between palettes (track changes, entering or
 /// leaving an artist / album page) at the same pace as the [AnimatedTheme]
-/// around it, instead of snapping.
+/// around it, instead of snapping. The blend itself is linear: an eased colour
+/// transition spends most of its time in the muddy middle of the blend.
 class _AnimatedAppAccent extends StatelessWidget {
   final Color? accent;
   final bool isNeutral;
@@ -511,15 +522,13 @@ class _AnimatedAppAccent extends StatelessWidget {
   Widget build(BuildContext context) {
     // Always installs the scope: inserting it later would remount the app.
     final target = accent ?? Theme.of(context).colorScheme.primary;
-    return TweenAnimationBuilder<Color?>(
-      tween: ColorTween(end: target),
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-      child: child,
-      builder: (context, value, child) => CollectionAccentScope(
-        accent: value ?? target,
+    return MotionColorLerp(
+      color: target,
+      duration: MotionTokens.slow,
+      builder: (context, value) => CollectionAccentScope(
+        accent: value,
         isNeutral: isNeutral,
-        child: child!,
+        child: child,
       ),
     );
   }

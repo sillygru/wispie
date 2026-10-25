@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 
+import '../motion/motion.dart';
 import '../tokens/app_tokens.dart';
 
 /// The haptic played when a [Pressable] is tapped.
@@ -16,11 +16,11 @@ enum PressHaptic {
       case PressHaptic.none:
         break;
       case PressHaptic.selection:
-        HapticFeedback.selectionClick();
+        MotionHaptics.selection();
       case PressHaptic.light:
-        HapticFeedback.lightImpact();
+        MotionHaptics.light();
       case PressHaptic.medium:
-        HapticFeedback.mediumImpact();
+        MotionHaptics.medium();
     }
   }
 }
@@ -36,7 +36,8 @@ enum PressHaptic {
 /// the whole revamp is built around, and it is why there is no ink splash here —
 /// the motion is the feedback.
 ///
-/// Wrap anything tappable: nav destinations, cards, list rows, icon buttons.
+/// Under reduced motion the dip is skipped: the tap still works and still
+/// haptics, only the scale is gone.
 class Pressable extends StatefulWidget {
   final Widget child;
 
@@ -47,7 +48,7 @@ class Pressable extends StatefulWidget {
   final VoidCallback? onLongPressCancel;
   final VoidCallback? onLongPressUp;
 
-  /// The spring driving the dip and rebound. [AppTokens.springSnappy] is the
+  /// The spring driving the dip and rebound. [MotionSprings.snappy] is the
   /// default; use [AppTokens.springGentle] for larger surfaces that can carry a
   /// little overshoot.
   final SpringDescription spring;
@@ -71,7 +72,7 @@ class Pressable extends StatefulWidget {
     this.onLongPressEnd,
     this.onLongPressCancel,
     this.onLongPressUp,
-    this.spring = AppTokens.springSnappy,
+    this.spring = MotionSprings.snappy,
     this.pressedScale = AppTokens.pressScale,
     this.haptic = PressHaptic.light,
     this.alignment = Alignment.center,
@@ -84,6 +85,8 @@ class Pressable extends StatefulWidget {
 class _PressableState extends State<Pressable>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+
+  bool _reduceMotion = false;
 
   bool get _interactive =>
       widget.onTap != null ||
@@ -101,20 +104,26 @@ class _PressableState extends State<Pressable>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool reduce = MotionPolicy.of(context).reduceMotion;
+    if (reduce == _reduceMotion) return;
+    _reduceMotion = reduce;
+    if (reduce) {
+      _controller.stop();
+      _controller.value = 1;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
   void _springTo(double target) {
-    _controller.animateWith(
-      SpringSimulation(
-        widget.spring,
-        _controller.value,
-        target,
-        _controller.velocity,
-      ),
-    );
+    if (_reduceMotion) return;
+    MotionSprings.driveTo(_controller, target, spring: widget.spring);
   }
 
   void _handleTapDown(TapDownDetails _) => _springTo(widget.pressedScale);
@@ -127,12 +136,12 @@ class _PressableState extends State<Pressable>
   }
 
   void _handleLongPress() {
-    HapticFeedback.mediumImpact();
+    MotionHaptics.medium();
     widget.onLongPress!.call();
   }
 
   void _handleLongPressStart(LongPressStartDetails details) {
-    HapticFeedback.mediumImpact();
+    MotionHaptics.medium();
     widget.onLongPressStart?.call(details);
   }
 

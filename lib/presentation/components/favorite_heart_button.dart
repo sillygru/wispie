@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
+import '../motion/motion.dart';
 import '../widgets/heart_context_menu.dart';
 import 'song_actions.dart';
 
@@ -33,54 +33,52 @@ class FavoriteHeartButton extends ConsumerStatefulWidget {
 
 class _FavoriteHeartButtonState extends ConsumerState<FavoriteHeartButton>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pop;
-  late final Animation<double> _ringScale;
-  late final Animation<double> _ringFade;
+  /// The glyph's scale. A spring, not a keyframe timeline: tapping twice
+  /// quickly retargets from where the heart is instead of restarting the pop
+  /// from 1.0.
+  late final SpringMorph<double> _pop = SpringMorph<double>(
+    vsync: this,
+    lerp: (a, b, t) => a + (b - a) * t,
+    initial: 1,
+    spring: MotionSprings.bouncy,
+  );
+
+  late final AnimationController _ringController = AnimationController(
+    vsync: this,
+    duration: MotionTokens.long,
+  );
+  late final Animation<double> _ringScale = Tween<double>(
+    begin: 0.35,
+    end: 1.9,
+  ).animate(
+    CurvedAnimation(
+      parent: _ringController,
+      curve: MotionTokens.emphasized,
+    ),
+  );
+  late final Animation<double> _ringFade = Tween<double>(
+    begin: 0.45,
+    end: 0.0,
+  ).animate(
+    CurvedAnimation(
+      parent: _ringController,
+      curve: const Interval(0.0, 0.65),
+    ),
+  );
+
   bool _showRing = false;
 
   @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 620),
-    );
-    _pop = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.78)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
-        weight: 14,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.78, end: 1.32)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.32, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
-        weight: 56,
-      ),
-    ]).animate(_controller);
-    _ringScale = Tween<double>(begin: 0.35, end: 1.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart),
-    );
-    _ringFade = Tween<double>(begin: 0.45, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.65)),
-    );
-  }
-
-  @override
   void dispose() {
-    _controller.dispose();
+    _pop.dispose();
+    _ringController.dispose();
     super.dispose();
   }
 
   void _toggle() {
     final bool wasFavorite =
         ref.read(userDataProvider).isFavorite(widget.filename);
-    HapticFeedback.mediumImpact();
+    MotionHaptics.medium();
     songActionToggleFavorite(
       context,
       ref,
@@ -88,8 +86,17 @@ class _FavoriteHeartButtonState extends ConsumerState<FavoriteHeartButton>
       widget.title,
       showFeedback: false,
     );
-    _showRing = !wasFavorite;
-    _controller.forward(from: 0);
+    if (MotionPolicy.read(context).reduceMotion) return;
+
+    _pop.jumpTo(0.82);
+    _pop.retarget(
+      1.0,
+      spring: wasFavorite ? MotionSprings.snappy : MotionSprings.bouncy,
+    );
+    if (!wasFavorite) {
+      _showRing = true;
+      _ringController.forward(from: 0);
+    }
   }
 
   @override
@@ -101,7 +108,7 @@ class _FavoriteHeartButtonState extends ConsumerState<FavoriteHeartButton>
       behavior: HitTestBehavior.opaque,
       onTap: _toggle,
       onLongPress: () {
-        HapticFeedback.mediumImpact();
+        MotionHaptics.medium();
         showHeartContextMenu(
           context: context,
           ref: ref,
@@ -113,12 +120,17 @@ class _FavoriteHeartButtonState extends ConsumerState<FavoriteHeartButton>
         width: widget.boxSize,
         height: widget.boxSize,
         child: AnimatedBuilder(
-          animation: _controller,
+          animation: Listenable.merge([
+            _pop.progressListenable,
+            _ringController,
+          ]),
           builder: (context, child) {
             return Stack(
               alignment: Alignment.center,
               children: [
-                if (_showRing && _controller.isAnimating && _ringFade.value > 0)
+                if (_showRing &&
+                    _ringController.isAnimating &&
+                    _ringFade.value > 0)
                   Transform.scale(
                     scale: _ringScale.value,
                     child: Container(
