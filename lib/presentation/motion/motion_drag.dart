@@ -64,8 +64,12 @@ class MotionDragEnd {
       axis == Axis.vertical ? velocity.dy : velocity.dx;
 }
 
-/// Drag surface: raw listener for velocity, gesture detector for the drag, and
-/// the bottom-edge and disabled guards. Callers decide what the drag means.
+/// Drag surface: raw listener for velocity, a gesture arena entry for the drag,
+/// and the bottom-edge and disabled guards. Callers decide what the drag means.
+///
+/// When [axisLock] is true (the default), the recognizer rejects as soon as the
+/// cross-axis wins the slop race so a vertical list under this surface keeps
+/// scrolling instead of losing the arena to a no-op horizontal claim.
 class MotionDragArea extends StatefulWidget {
   const MotionDragArea({
     super.key,
@@ -77,8 +81,9 @@ class MotionDragArea extends StatefulWidget {
     this.onCancel,
     this.enabled = true,
     this.ignoreBottomInset = 0,
-    this.dragStartBehavior = DragStartBehavior.down,
+    this.dragStartBehavior = DragStartBehavior.start,
     this.behavior = HitTestBehavior.translucent,
+    this.axisLock = true,
   });
 
   final Widget child;
@@ -94,11 +99,13 @@ class MotionDragArea extends StatefulWidget {
   /// Touches this close to the bottom edge belong to the system gesture.
   final double ignoreBottomInset;
 
-  /// `down` reports the position where the finger landed, not where the drag
-  /// was recognised, which is what an edge test needs.
+  /// `start` waits for the drag threshold so a competing scroll can win cleanly.
   final DragStartBehavior dragStartBehavior;
 
   final HitTestBehavior behavior;
+
+  /// Reject when the cross-axis outruns the primary axis past touch slop.
+  final bool axisLock;
 
   @override
   State<MotionDragArea> createState() => _MotionDragAreaState();
@@ -163,25 +170,148 @@ class _MotionDragAreaState extends State<MotionDragArea> {
     _tracker.reset();
   }
 
+  Map<Type, GestureRecognizerFactory> _buildRecognizers() {
+    if (!widget.enabled) return const <Type, GestureRecognizerFactory>{};
+
+    if (_isVertical) {
+      return <Type, GestureRecognizerFactory>{
+        _AxisLockedVerticalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+                _AxisLockedVerticalDragGestureRecognizer>(
+          () => _AxisLockedVerticalDragGestureRecognizer(
+            axisLock: widget.axisLock,
+            debugOwner: this,
+          ),
+          (instance) {
+            instance
+              ..dragStartBehavior = widget.dragStartBehavior
+              ..onStart = _start
+              ..onUpdate = _update
+              ..onEnd = _end
+              ..onCancel = _cancel;
+          },
+        ),
+      };
+    }
+
+    return <Type, GestureRecognizerFactory>{
+      _AxisLockedHorizontalDragGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<
+              _AxisLockedHorizontalDragGestureRecognizer>(
+        () => _AxisLockedHorizontalDragGestureRecognizer(
+          axisLock: widget.axisLock,
+          debugOwner: this,
+        ),
+        (instance) {
+          instance
+            ..dragStartBehavior = widget.dragStartBehavior
+            ..onStart = _start
+            ..onUpdate = _update
+            ..onEnd = _end
+            ..onCancel = _cancel;
+        },
+      ),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: _onPointerDown,
       onPointerMove: _onPointerMove,
-      child: GestureDetector(
+      child: RawGestureDetector(
         behavior: widget.behavior,
-        dragStartBehavior: widget.dragStartBehavior,
-        onVerticalDragStart: _isVertical && widget.enabled ? _start : null,
-        onVerticalDragUpdate: _isVertical && widget.enabled ? _update : null,
-        onVerticalDragEnd: _isVertical && widget.enabled ? _end : null,
-        onVerticalDragCancel: _isVertical && widget.enabled ? _cancel : null,
-        onHorizontalDragStart: !_isVertical && widget.enabled ? _start : null,
-        onHorizontalDragUpdate: !_isVertical && widget.enabled ? _update : null,
-        onHorizontalDragEnd: !_isVertical && widget.enabled ? _end : null,
-        onHorizontalDragCancel: !_isVertical && widget.enabled ? _cancel : null,
+        gestures: _buildRecognizers(),
         child: widget.child,
       ),
     );
   }
+}
+
+/// [HorizontalDragGestureRecognizer] that leaves the arena when the finger
+/// clearly means a vertical scroll, instead of claiming and no-opping.
+class _AxisLockedHorizontalDragGestureRecognizer
+    extends HorizontalDragGestureRecognizer {
+  _AxisLockedHorizontalDragGestureRecognizer({
+    required this.axisLock,
+    super.debugOwner,
+  });
+
+  final bool axisLock;
+  Offset _origin = Offset.zero;
+  bool _decided = false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _origin = event.position;
+    _decided = false;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (axisLock && !_decided && event is PointerMoveEvent) {
+      final Offset delta = event.position - _origin;
+      final double dx = delta.dx.abs();
+      final double dy = delta.dy.abs();
+      final double slop = computeHitSlop(event.kind, gestureSettings);
+      if (dy > dx && dy > slop) {
+        _decided = true;
+        resolve(GestureDisposition.rejected);
+        stopTrackingPointer(event.pointer);
+        return;
+      }
+      if (dx > dy && dx > slop) {
+        _decided = true;
+      }
+    }
+    super.handleEvent(event);
+  }
+
+  @override
+  String get debugDescription => 'axis-locked horizontal drag';
+}
+
+/// Vertical twin of [_AxisLockedHorizontalDragGestureRecognizer].
+class _AxisLockedVerticalDragGestureRecognizer
+    extends VerticalDragGestureRecognizer {
+  _AxisLockedVerticalDragGestureRecognizer({
+    required this.axisLock,
+    super.debugOwner,
+  });
+
+  final bool axisLock;
+  Offset _origin = Offset.zero;
+  bool _decided = false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _origin = event.position;
+    _decided = false;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (axisLock && !_decided && event is PointerMoveEvent) {
+      final Offset delta = event.position - _origin;
+      final double dx = delta.dx.abs();
+      final double dy = delta.dy.abs();
+      final double slop = computeHitSlop(event.kind, gestureSettings);
+      if (dx > dy && dx > slop) {
+        _decided = true;
+        resolve(GestureDisposition.rejected);
+        stopTrackingPointer(event.pointer);
+        return;
+      }
+      if (dy > dx && dy > slop) {
+        _decided = true;
+      }
+    }
+    super.handleEvent(event);
+  }
+
+  @override
+  String get debugDescription => 'axis-locked vertical drag';
 }

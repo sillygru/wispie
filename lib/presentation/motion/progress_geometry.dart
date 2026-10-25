@@ -14,6 +14,10 @@ abstract class ProgressGeometry extends ChangeNotifier {
 
   bool _bound = false;
 
+  /// True once [bind] has subscribed. Callers that must feed a width in before
+  /// the first tick can check this instead of tracking it themselves.
+  bool get isBound => _bound;
+
   double get progress => controller.value;
 
   /// Writes the derived fields. Runs once per tick; no allocation, no side

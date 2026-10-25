@@ -769,8 +769,16 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                     child: Row(
                       children: [
                         const SizedBox(width: inset),
-                        Opacity(
-                          opacity: widget.coverVisible ? 1 : 0,
+                        // Hide under the panel's travelling cover so close does
+                        // not land one image on top of another in the same slot.
+                        ValueListenableBuilder<double>(
+                          valueListenable: PlayerMorph.strength,
+                          builder: (context, strength, child) {
+                            final double visible = widget.coverVisible
+                                ? (1 - strength).clamp(0.0, 1.0)
+                                : 0.0;
+                            return Opacity(opacity: visible, child: child);
+                          },
                           child: ClipRRect(
                             borderRadius: AppTokens.brSm,
                             child: SizedBox(

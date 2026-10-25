@@ -376,36 +376,43 @@ class _NowPlayingContent extends ConsumerWidget {
                             SizedBox(
                               width: imageSize,
                               height: imageSize,
-                              child: ClipRRect(
-                                borderRadius: AppTokens.brSm,
-                                child: Stack(
-                                  children: [
-                                    AlbumArtImage(
-                                      url: m.$1.artUri?.toString() ?? '',
-                                      filename: m.$1.id,
-                                      cacheVersion: m.$2,
-                                      width: imageSize,
-                                      height: imageSize,
-                                      fit: BoxFit.cover,
-                                    ),
-                                    StreamBuilder<PlayerState>(
-                                      stream: player.playerStateStream,
-                                      builder: (context, snapshot) {
-                                        final playing =
-                                            snapshot.data?.playing ?? false;
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: PlayerMorph.strength,
+                                builder: (context, strength, child) => Opacity(
+                                  opacity: (1 - strength).clamp(0.0, 1.0),
+                                  child: child,
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: AppTokens.brSm,
+                                  child: Stack(
+                                    children: [
+                                      AlbumArtImage(
+                                        url: m.$1.artUri?.toString() ?? '',
+                                        filename: m.$1.id,
+                                        cacheVersion: m.$2,
+                                        width: imageSize,
+                                        height: imageSize,
+                                        fit: BoxFit.cover,
+                                      ),
+                                      StreamBuilder<PlayerState>(
+                                        stream: player.playerStateStream,
+                                        builder: (context, snapshot) {
+                                          final playing =
+                                              snapshot.data?.playing ?? false;
 
-                                        return Positioned.fill(
-                                          child: PlayingVisualizerOverlay(
-                                            playing: playing && isBarVisible,
-                                            mode: visualizerMode,
-                                            size: compact ? 18 : 22,
-                                            scrim: Colors.black
-                                                .withValues(alpha: 0.28),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                          return Positioned.fill(
+                                            child: PlayingVisualizerOverlay(
+                                              playing: playing && isBarVisible,
+                                              mode: visualizerMode,
+                                              size: compact ? 18 : 22,
+                                              scrim: Colors.black
+                                                  .withValues(alpha: 0.28),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

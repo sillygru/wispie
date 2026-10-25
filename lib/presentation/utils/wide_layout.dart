@@ -43,6 +43,60 @@ class WideLayout {
   /// a desktop window.
   static const double maxDrawerWidth = 360;
 
+  /// Headroom past fully open. The sheet swells a visible amount past its
+  /// resting width instead of stopping dead at the screen edge, and the open
+  /// settle is allowed to crest into this room before relaxing back.
+  static const double drawerOvershoot = 0.2;
+
+  /// How far the sheet swells to the **right** past its resting open width, for a
+  /// progress past 1.
+  ///
+  /// The drawn sheet's left edge sits on the window edge, so it cannot grow
+  /// leftward without either leaving the screen or shoving the content along
+  /// with it. The swell is therefore one edge only: the panel's trailing edge
+  /// moves out over the background while everything else holds still.
+  static double drawerStretch(
+    double drawerWidth,
+    double overshootPastOpen,
+  ) {
+    final limit = drawerOvershoot;
+    final t = (overshootPastOpen / limit).clamp(0.0, 1.0);
+    // Ease the swell: it comes on quickly as the sheet leaves its resting size
+    // and softens into the cap, so pushing further gives back less with each
+    // pixel instead of growing at one rate all the way to a hard stop.
+    return drawerWidth * Curves.easeOutCubic.transform(t) * limit;
+  }
+
+  /// Extra drag resistance past fully open. It ramps from none at the resting
+  /// edge to this at the cap, so the overshoot comes alive as you push into it
+  /// rather than the sheet stopping dead.
+  static const double drawerOvershootMaxResistance = 0.6;
+
+  /// Fraction of a drag that survives at [value]. 1 inside the resting range,
+  /// easing down to `1 - drawerOvershootMaxResistance` at either cap, so the
+  /// overshoot gets progressively heavier instead of hitting a wall.
+  static double drawerOvershootDragScale(double value) {
+    final double past = value >= 1
+        ? (value - 1) / drawerOvershoot
+        : (value <= 0 ? -value / drawerOvershoot : 0.0);
+    return 1 -
+        drawerOvershootMaxResistance *
+            Curves.easeOutCubic.transform(
+              past.clamp(0.0, 1.0),
+            );
+  }
+
+  /// Fraction of the rest-state swell that reaches the content, so the buttons
+  /// drift out with the panel without taking part in the settle's overshoot.
+  /// Kept low — this is a lean into the swell, not a slide.
+  static const double drawerContentDrift = 0.28;
+
+  /// Extra left/right growth in logical pixels that holds at rest, for a
+  /// progress past 1. The settle spring rides above this into the rest of
+  /// [drawerOvershoot], so the elastic crest never drags the content with it.
+  static double drawerStretchAtRest(double drawerWidth, double pastOpen) =>
+      drawerStretch(drawerWidth, pastOpen.clamp(0.0, 1.0) / 3);
+
   /// Maximum bottom-sheet width on wide windows, so sheets read as dialogs.
   static const double maxSheetWidth = 560;
 

@@ -129,7 +129,15 @@ class PlayerPanelController {
   double _startValue = 0;
   double _travel = 1;
 
+  /// Wall-clock until which a fresh grab must not reopen a just-closed panel.
+  DateTime? _reopenBlockedUntil;
+
+  bool get _reopenBlocked =>
+      _reopenBlockedUntil != null &&
+      DateTime.now().isBefore(_reopenBlockedUntil!);
+
   void open() {
+    _reopenBlockedUntil = null;
     PlayerPanel.openState.value = true;
     // A fixed duration on purpose: the reference app never shortens a snap
     // because the surface is already part way there. Scaling it made a lane
@@ -145,6 +153,7 @@ class PlayerPanelController {
   void close() {
     if (!isOpen && !progress.isAnimating && value <= 0) return;
     PlayerPanel.openState.value = false;
+    _reopenBlockedUntil = DateTime.now().add(PlayerTokens.dPanelReopenGrace);
     onClosing?.call();
     snap.snapTo(
       0,
@@ -155,6 +164,7 @@ class PlayerPanelController {
   }
 
   void jumpOpen() {
+    _reopenBlockedUntil = null;
     PlayerPanel.openState.value = true;
     snap.jumpTo(1);
   }
@@ -166,6 +176,9 @@ class PlayerPanelController {
 
   void dragStart() {
     if (_dragging) return;
+    // A bounce of the finger right after a flick-close must not catch the
+    // settling sheet and open it again.
+    if (_reopenBlocked) return;
     _dragging = true;
     onGrabbed?.call();
     // A grab always takes over from what is drawn, never from the target, so a

@@ -43,6 +43,16 @@ abstract final class MotionSprings {
     damping: 32,
   );
 
+  /// A panel arriving where it still has room past its seat — the slide-in
+  /// drawer, which is allowed to swell beyond its resting width. Lightly damped
+  /// on purpose: it crests past the seat and relaxes back, so the open reads as
+  /// elastic instead of the surface stopping dead.
+  static const SpringDescription elastic = SpringDescription(
+    mass: 1,
+    stiffness: 220,
+    damping: 19,
+  );
+
   /// Critically damped: fastest approach that never overshoots.
   static final SpringDescription critical = SpringDescription.withDampingRatio(
     mass: 1,

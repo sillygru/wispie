@@ -135,6 +135,10 @@ class PlayerTokens {
   static const Duration dPanelOpen = MotionTokens.standard;
   static const Duration dPanelClose = Duration(milliseconds: 380);
 
+  /// After a close commits, ignore grab-to-reopen so a quick upward flick does
+  /// not yank the panel back open. Twice the close duration on purpose.
+  static const Duration dPanelReopenGrace = Duration(milliseconds: 760);
+
   /// Headroom past the bar and past full screen, so the curves can overshoot
   /// and the dock can dip instead of the surface stopping dead.
   static const double panelDip = 0.14;
