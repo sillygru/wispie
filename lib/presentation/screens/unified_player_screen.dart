@@ -46,6 +46,7 @@ enum PlayerPane { lyrics, player, queue }
 /// they no longer own the pieces that would let them.
 class UnifiedPlayerScreen extends ConsumerStatefulWidget {
   final PlayerPane initialPane;
+  final Animation<double>? transitionAnimation;
 
   /// Opens the Queue pane directly on its History segment.
   final bool queueShowsHistory;
@@ -54,6 +55,7 @@ class UnifiedPlayerScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialPane = PlayerPane.player,
     this.queueShowsHistory = false,
+    this.transitionAnimation,
   });
 
   @override
@@ -376,8 +378,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     DisplayRefreshService.instance.boost120();
     _pageController.animateToPage(
       index,
-      duration: PlayerTokens.dBase,
-      curve: PlayerTokens.cEmphasized,
+      duration: PlayerTokens.dPaneSwitch,
+      curve: PlayerTokens.cPaneSwitch,
     );
   }
 
@@ -418,6 +420,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       return FullBleedPlayerScreen(
         initialPane: widget.initialPane,
         queueShowsHistory: widget.queueShowsHistory,
+        transitionAnimation: widget.transitionAnimation,
       );
     }
     final themeState = ref.watch(themeProvider);
@@ -598,6 +601,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                               motion: _motion,
                               coverKey: _coverKey,
                               paneVisible: _nowPlayingVisible,
+                              transitionAnimation: widget.transitionAnimation,
                             ),
                           ),
                           QueuePane(
@@ -645,6 +649,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                             motion: _motion,
                             coverKey: _coverKey,
                             paneVisible: _nowPlayingVisible,
+                            transitionAnimation: widget.transitionAnimation,
                           ),
                         ),
                         _TransportDock(song: song, accent: accent),
@@ -719,106 +724,111 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// Desktop top bar: no touch drag handle or dismiss-drag, and no title (the
   /// cover column already carries it).
   Widget _buildWideHeader(BuildContext context, Song song) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: PlayerTokens.s3,
-        vertical: PlayerTokens.s1,
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-            color: Colors.white,
-            onPressed: () => Navigator.of(context).maybePop(),
-            tooltip: context.l10n.playerCloseEsc,
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.more_vert_rounded),
-            color: Colors.white,
-            tooltip: context.l10n.playerSongOptions,
-            onPressed: () => showSongOptionsMenu(
-              context,
-              ref,
-              song.filename,
-              song.title,
-              song: song,
+    return PlayerRouteEntrance(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: PlayerTokens.s3,
+          vertical: PlayerTokens.s1,
+        ),
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              color: Colors.white,
+              onPressed: () => Navigator.of(context).maybePop(),
+              tooltip: context.l10n.playerCloseEsc,
             ),
-          ),
-        ],
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.more_vert_rounded),
+              color: Colors.white,
+              tooltip: context.l10n.playerSongOptions,
+              onPressed: () => showSongOptionsMenu(
+                context,
+                ref,
+                song.filename,
+                song.title,
+                song: song,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader(BuildContext context, Song song) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: _onDismissDragStart,
-      onVerticalDragUpdate: _onDismissDragUpdate,
-      onVerticalDragEnd: _onDismissDragEnd,
-      onVerticalDragCancel: _onDismissDragCancel,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          PlayerTokens.s5,
-          PlayerTokens.s2,
-          PlayerTokens.s3,
-          PlayerTokens.s1,
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 38,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: PlayerTokens.s3),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.28),
-                borderRadius: PlayerTokens.brPill,
+    return PlayerRouteEntrance(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: _onDismissDragStart,
+        onVerticalDragUpdate: _onDismissDragUpdate,
+        onVerticalDragEnd: _onDismissDragEnd,
+        onVerticalDragCancel: _onDismissDragCancel,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            PlayerTokens.s5,
+            PlayerTokens.s2,
+            PlayerTokens.s3,
+            PlayerTokens.s1,
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: PlayerTokens.s3),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.28),
+                  borderRadius: PlayerTokens.brPill,
+                ),
               ),
-            ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  color: Colors.white,
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  tooltip: context.l10n.actionClose,
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: PlayerTokens.trackTitle(context),
-                      ),
-                      ClickableArtistText(
-                        artist: song.artist,
-                        textAlign: TextAlign.center,
-                        style: PlayerTokens.trackSubtitle(context),
-                        onArtistTap: (artistName) => songActionGoToArtistByName(
-                            context, ref, artistName),
-                      ),
-                    ],
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    color: Colors.white,
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    tooltip: context.l10n.actionClose,
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert_rounded),
-                  color: Colors.white,
-                  tooltip: context.l10n.playerSongOptions,
-                  onPressed: () => showSongOptionsMenu(
-                    context,
-                    ref,
-                    song.filename,
-                    song.title,
-                    song: song,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: PlayerTokens.trackTitle(context),
+                        ),
+                        ClickableArtistText(
+                          artist: song.artist,
+                          textAlign: TextAlign.center,
+                          style: PlayerTokens.trackSubtitle(context),
+                          onArtistTap: (artistName) =>
+                              songActionGoToArtistByName(
+                                  context, ref, artistName),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                  IconButton(
+                    icon: const Icon(Icons.more_vert_rounded),
+                    color: Colors.white,
+                    tooltip: context.l10n.playerSongOptions,
+                    onPressed: () => showSongOptionsMenu(
+                      context,
+                      ref,
+                      song.filename,
+                      song.title,
+                      song: song,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

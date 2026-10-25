@@ -45,6 +45,7 @@ class NowPlayingPane extends ConsumerStatefulWidget {
   /// Whether this pane is the one on screen. The pane is kept alive across
   /// swipes, so without this a video would go on decoding behind the Queue.
   final ValueListenable<bool> paneVisible;
+  final Animation<double>? transitionAnimation;
 
   const NowPlayingPane({
     super.key,
@@ -53,6 +54,7 @@ class NowPlayingPane extends ConsumerStatefulWidget {
     required this.motion,
     required this.coverKey,
     required this.paneVisible,
+    this.transitionAnimation,
   });
 
   @override
@@ -103,6 +105,7 @@ class _NowPlayingPaneState extends ConsumerState<NowPlayingPane>
                       motion: widget.motion,
                       coverKey: widget.coverKey,
                       paneVisible: widget.paneVisible,
+                      transitionAnimation: widget.transitionAnimation,
                     );
                   },
                 ),
@@ -344,6 +347,7 @@ class _CoverStage extends ConsumerWidget {
   final PlayerMotionController motion;
   final GlobalKey coverKey;
   final ValueListenable<bool> paneVisible;
+  final Animation<double>? transitionAnimation;
 
   const _CoverStage({
     required this.song,
@@ -356,6 +360,7 @@ class _CoverStage extends ConsumerWidget {
     required this.motion,
     required this.coverKey,
     required this.paneVisible,
+    this.transitionAnimation,
   });
 
   @override
@@ -394,12 +399,23 @@ class _CoverStage extends ConsumerWidget {
                         idOf: (s) => s.filename,
                         audioManager: audioManager,
                         travel: 1.25,
-                        fade: 0.6,
+                        fade: 0,
+                        canSwipe: (direction) => direction > 0
+                            ? audioManager.player.hasNext
+                            : audioManager.player.hasPrevious,
+                        onSwipe: (direction) {
+                          if (direction > 0) {
+                            audioManager.player.seekToNext();
+                          } else {
+                            audioManager.player.seekToPrevious();
+                          }
+                        },
                         builder: (context, s, current) => _buildCover(
                           context,
                           beatReactive,
                           forSong: s,
                           current: current,
+                          transitionAnimation: transitionAnimation,
                         ),
                       ),
                     ),
@@ -415,6 +431,7 @@ class _CoverStage extends ConsumerWidget {
     bool beatReactive, {
     required Song forSong,
     required bool current,
+    Animation<double>? transitionAnimation,
   }) {
     final Song song = forSong;
     // Tag must match NowPlayingBar's so the artwork flies between the mini bar
@@ -474,28 +491,27 @@ class _CoverStage extends ConsumerWidget {
           ),
           child: ClipRRect(
             borderRadius: PlayerTokens.brLg,
-            child: AlbumArtImage(
-              url: song.coverUrl ?? '',
-              filename: song.filename,
-              cacheVersion: song.mtime,
-              width: size,
-              height: size,
-              // Decoded at the size it is actually drawn at.
-              //
-              // This is the one cover in the app big enough to miss
-              // AlbumArtImage's small-image fallback, so without a cap a
-              // 3000x3000 embedded JPEG was decoded in full — 36 MB of bitmap
-              // for a box a few hundred points wide, which on its own comes
-              // close to the whole image cache budget and evicts every list
-              // thumbnail with it.
-              //
-              // Width only: passing both dimensions resizes to exactly those
-              // numbers, which would squash a non-square cover in the
-              // sourceAspect mode below.
-              memCacheWidth:
-                  (size * MediaQuery.devicePixelRatioOf(context)).round(),
-              // autoFit crops to a square; sourceAspect keeps the original ratio.
-              fit: coverFitFor(coverSizing),
+            child: AnimatedBuilder(
+              animation: transitionAnimation ?? kAlwaysCompleteAnimation,
+              builder: (context, _) {
+                final moving = transitionAnimation != null &&
+                    transitionAnimation.value > 0 &&
+                    transitionAnimation.value < 1;
+                return AlbumArtImage(
+                  url: song.coverUrl ?? '',
+                  filename: song.filename,
+                  cacheVersion: song.mtime,
+                  width: size,
+                  height: size,
+                  fadeDuration: Duration.zero,
+                  filterQuality:
+                      moving ? FilterQuality.low : FilterQuality.high,
+                  // Decoded at the size it is actually drawn at.
+                  memCacheWidth:
+                      (size * MediaQuery.devicePixelRatioOf(context)).round(),
+                  fit: coverFitFor(coverSizing),
+                );
+              },
             ),
           ),
         ),

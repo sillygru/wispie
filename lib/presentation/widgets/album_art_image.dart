@@ -32,6 +32,7 @@ class AlbumArtImage extends StatefulWidget {
   final int? memCacheWidth;
   final int? memCacheHeight;
   final FilterQuality filterQuality;
+  final Duration fadeDuration;
 
   /// Crops baked-in black bars; see [CoverBorderTrim].
   final bool trimBorders;
@@ -52,6 +53,7 @@ class AlbumArtImage extends StatefulWidget {
     this.memCacheWidth,
     this.memCacheHeight,
     this.filterQuality = FilterQuality.medium,
+    this.fadeDuration = const Duration(milliseconds: 300),
     this.trimBorders = false,
   });
 
@@ -165,7 +167,7 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
           if (wasSynchronouslyLoaded) return child;
           return AnimatedOpacity(
             opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
+            duration: widget.fadeDuration,
             curve: Curves.easeOut,
             child: child,
           );
@@ -200,7 +202,7 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
           if (wasSynchronouslyLoaded) return child;
           return AnimatedOpacity(
             opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 300),
+            duration: widget.fadeDuration,
             curve: Curves.easeOut,
             child: child,
           );

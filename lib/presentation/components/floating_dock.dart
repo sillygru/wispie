@@ -491,7 +491,9 @@ class _MorphingMini extends ConsumerWidget {
         final Rect art = Rect.lerp(barArt, ballArt, t)!;
         // The cover is a record for the whole morph, so it stays round rather
         // than passing through a rounded square on the way.
-        final double artRadius = art.shortestSide / 2;
+        final double circleRadius = art.shortestSide / 2;
+        final double artRadius =
+            PlayerTokens.rSm + (circleRadius - PlayerTokens.rSm) * t;
 
         return Pressable(
           onTap: collapse > 0.5

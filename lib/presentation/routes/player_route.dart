@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +28,7 @@ class PlayerPageRoute extends PageRoute<void> {
 
   bool _dragging = false;
   bool _settling = false;
+  int _settleGeneration = 0;
   // Tracks whether nav.didStartUserGesture() was actually called, so the stop
   // call stays balanced when a grab happens mid-open and no gesture was started.
   bool _gestureHeld = false;
@@ -36,6 +38,9 @@ class PlayerPageRoute extends PageRoute<void> {
   // the page. This flag swaps in a catch-all detector so a settling sheet
   // can still be grabbed back.
   final ValueNotifier<bool> _catchable = ValueNotifier(false);
+
+  VelocityTracker _velocity = VelocityTracker.withKind(PointerDeviceKind.touch);
+  bool _ignoreCurrentPointer = false;
 
   // Distance the sheet's top edge travels: from the mini player's top edge
   // (or the screen's bottom edge without one) up to the top of the screen.
@@ -87,9 +92,10 @@ class PlayerPageRoute extends PageRoute<void> {
   void dismissDragStart() {
     final c = controller;
     final nav = navigator;
-    if (c == null || nav == null || _dragging) return;
+    if (c == null || nav == null || _dragging || _ignoreCurrentPointer) return;
     if (_settling) {
       _settling = false;
+      _settleGeneration++;
       c.stop();
     } else {
       if (!isCurrent) return;
@@ -121,9 +127,17 @@ class PlayerPageRoute extends PageRoute<void> {
     if (!_dragging || c == null) return;
     _dragging = false;
     final double travel = _travel ?? height;
-    final v = travel > 0 ? velocity / travel : 0.0;
-    // Final flick direction wins, so down-then-quickly-up reopens.
-    final close = v.abs() > 0.25 ? v > 0 : c.value < 0.6;
+    final trackedVelocity = _velocity.getVelocity().pixelsPerSecond.dy;
+    final effectiveVelocity =
+        trackedVelocity.isFinite && trackedVelocity.abs() > 1
+            ? trackedVelocity
+            : velocity;
+    const flingVelocity = 500.0;
+    // A fast final flick wins over position. Otherwise the sheet settles to
+    // whichever side owns most of the travel, like the reference miniplayer.
+    final close = effectiveVelocity > flingVelocity ||
+        (effectiveVelocity.abs() <= flingVelocity && c.value < 0.6);
+    final v = travel > 0 ? effectiveVelocity / travel : 0.0;
     _settle(close ? 0 : 1, -v);
   }
 
@@ -136,10 +150,11 @@ class PlayerPageRoute extends PageRoute<void> {
   // Popped only once landed, so a late grab can still pull it back.
   void _settle(double target, double velocity) {
     final c = controller!;
+    final int generation = ++_settleGeneration;
     _settling = true;
     _catchable.value = true;
     c.animateWith(_SnapSimulation(c.value, target, velocity)).then((_) {
-      if (!_settling) return;
+      if (!_settling || generation != _settleGeneration) return;
       _settling = false;
       final nav = navigator;
       if (target == 0 && nav != null && isActive) nav.pop();
@@ -246,6 +261,7 @@ class PlayerPageRoute extends PageRoute<void> {
       child: UnifiedPlayerScreen(
         initialPane: initialPane,
         queueShowsHistory: queueShowsHistory,
+        transitionAnimation: animation,
       ),
     );
   }
@@ -325,16 +341,29 @@ class PlayerPageRoute extends PageRoute<void> {
       child: stack,
       builder: (context, catchable, stack) {
         final double height = MediaQuery.sizeOf(context).height;
-        return GestureDetector(
+        return Listener(
           behavior: HitTestBehavior.translucent,
-          onVerticalDragStart: catchable ? (_) => dismissDragStart() : null,
-          onVerticalDragUpdate:
-              catchable ? (d) => dismissDragUpdate(d.delta.dy, height) : null,
-          onVerticalDragEnd: catchable
-              ? (d) => dismissDragEnd(d.primaryVelocity ?? 0, height)
-              : null,
-          onVerticalDragCancel: catchable ? dismissDragCancel : null,
-          child: stack,
+          onPointerDown: (event) {
+            _ignoreCurrentPointer = event.position.dy >=
+                MediaQuery.sizeOf(context).height -
+                    PlayerTokens.sheetGestureDeadSpace;
+            _velocity = VelocityTracker.withKind(event.kind);
+            _velocity.addPosition(event.timeStamp, event.position);
+          },
+          onPointerMove: (event) {
+            _velocity.addPosition(event.timeStamp, event.position);
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: catchable ? (_) => dismissDragStart() : null,
+            onVerticalDragUpdate:
+                catchable ? (d) => dismissDragUpdate(d.delta.dy, height) : null,
+            onVerticalDragEnd: catchable
+                ? (d) => dismissDragEnd(d.primaryVelocity ?? 0, height)
+                : null,
+            onVerticalDragCancel: catchable ? dismissDragCancel : null,
+            child: stack,
+          ),
         );
       },
     );
@@ -444,7 +473,7 @@ class _SnapSimulation extends Simulation {
       : _spring = SpringSimulation(
           SpringDescription.withDampingRatio(
             mass: 1,
-            stiffness: 420,
+            stiffness: 520,
             ratio: 1,
           ),
           from,
@@ -465,7 +494,9 @@ class _SnapSimulation extends Simulation {
   @override
   bool isDone(double time) {
     final x = _spring.x(time);
-    return _spring.isDone(time) || (_target == 0 ? x <= 0 : x >= 1);
+    return _spring.isDone(time) ||
+        (_target == 0 ? x <= 0 : x >= 1) ||
+        time >= 0.3;
   }
 }
 

@@ -44,7 +44,7 @@ class PlayerSegmentedPill extends StatelessWidget {
     final fontSize = compact ? 11.5 : 13.0;
     final height = compact ? 26.0 : 30.0;
 
-    return _RouteEntrance(
+    return PlayerRouteEntrance(
       child: SizedBox(
         height: height,
         child: LayoutBuilder(
@@ -127,10 +127,10 @@ class PlayerSegmentedPill extends StatelessWidget {
 /// Holds the pill back while the player sheet opens, then lifts it in once the
 /// sheet is mostly up. Otherwise it sits at the top of the sheet and is on
 /// screen from the first frame, right where the mini player is.
-class _RouteEntrance extends StatelessWidget {
+class PlayerRouteEntrance extends StatelessWidget {
   final Widget child;
 
-  const _RouteEntrance({required this.child});
+  const PlayerRouteEntrance({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -140,8 +140,8 @@ class _RouteEntrance extends StatelessWidget {
       animation: route,
       child: child,
       builder: (context, child) {
-        final double t = PlayerTokens.cStandard
-            .transform(((route.value - 0.35) / 0.55).clamp(0.0, 1.0));
+        final double t =
+            PlayerTokens.cStandard.transform(route.value.clamp(0.0, 1.0));
         // Same structure at every value so the pill never remounts.
         return Opacity(
           opacity: t,

@@ -30,7 +30,7 @@ class PlayerTokens {
   /// Cover progress for a sheet progress [p]. The cover leads the sheet a
   /// little so it is already near full size while the sheet is still landing,
   /// yet stays inside the rising sheet the whole way.
-  static double coverFlight(double p) => Curves.easeOutQuad.transform(p);
+  static double coverFlight(double p) => Curves.easeOutCubic.transform(p);
 
   /// Cover corner radius during the open/close flight. A straight blend from
   /// the mini art's radius to [landed]: any swell in between reads as the
@@ -128,10 +128,18 @@ class PlayerTokens {
 
   /// Player sheet open/close. The curve is baked into the route controller so
   /// the sheet, the flying cover and a grabbing finger all share one value.
-  static const Duration dRouteIn = Duration(milliseconds: 400);
-  static const Duration dRouteOut = Duration(milliseconds: 320);
-  static const Curve cRouteIn = Cubic(0.2, 0.8, 0.2, 1.0);
-  static const Curve cRouteOut = Cubic(0.3, 0.7, 0.2, 1.0);
+  /// Keep both directions short enough to feel immediate while leaving the
+  /// landing long enough to read as a deliberate sheet transition.
+  static const Duration dRouteIn = Duration(milliseconds: 300);
+  static const Duration dRouteOut = Duration(milliseconds: 300);
+  static const Duration dTrackSwitch = Duration(milliseconds: 600);
+  static const Duration dTrackSwitchTimeout = Duration(milliseconds: 700);
+  static const Duration dPaneSwitch = Duration(milliseconds: 300);
+  static const double sheetGestureDeadSpace = 12;
+  static const Curve cRouteIn = Cubic(0.05, 0.7, 0.1, 1.0);
+  static const Curve cRouteOut = Cubic(0.175, 0.885, 0.32, 1.0);
+  static const Curve cTrackSwitch = Curves.fastLinearToSlowEaseIn;
+  static const Curve cPaneSwitch = Curves.fastEaseInToSlowEaseOut;
 
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;

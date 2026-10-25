@@ -58,11 +58,13 @@ const bool kFullBleedParticlesEnabled = true;
 class FullBleedPlayerScreen extends ConsumerStatefulWidget {
   final PlayerPane initialPane;
   final bool queueShowsHistory;
+  final Animation<double>? transitionAnimation;
 
   const FullBleedPlayerScreen({
     super.key,
     this.initialPane = PlayerPane.player,
     this.queueShowsHistory = false,
+    this.transitionAnimation,
   });
 
   @override
@@ -313,8 +315,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     DisplayRefreshService.instance.boost120();
     _pageController.animateToPage(
       index,
-      duration: PlayerTokens.dBase,
-      curve: PlayerTokens.cEmphasized,
+      duration: PlayerTokens.dPaneSwitch,
+      curve: PlayerTokens.cPaneSwitch,
     );
   }
 
@@ -544,6 +546,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                           paneVisible: _nowPlayingVisible,
                           audioManager: _manager,
                           pagePosition: _pagePosition,
+                          transitionAnimation: widget.transitionAnimation,
                         ),
                       ),
                     ),
@@ -652,6 +655,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                             coverKey: _coverKey,
                             paneVisible: _nowPlayingVisible,
                             audioManager: _manager,
+                            transitionAnimation: widget.transitionAnimation,
                           ),
                         ),
                       ),
@@ -748,76 +752,78 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     bool wide = false,
   }) {
     final double topPad = MediaQuery.paddingOf(context).top;
-    return GestureDetector(
-      // Wide: the header floats over the Lyrics/Queue switch, so it must let
-      // taps through to it.
-      behavior: wide ? HitTestBehavior.deferToChild : HitTestBehavior.opaque,
-      onVerticalDragStart: wide ? null : _onDismissDragStart,
-      onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
-      onVerticalDragEnd: wide ? null : _onDismissDragEnd,
-      onVerticalDragCancel: wide ? null : _onDismissDragCancel,
-      child: Stack(
-        children: [
-          // The narrow layout lays its own eased scrim under the whole chrome
-          // block; stacking this one on top read as a dark band over the art.
-          if (scrim)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: CoverGradientPalette.topScrim(),
+    return PlayerRouteEntrance(
+      child: GestureDetector(
+        // Wide: the header floats over the Lyrics/Queue switch, so it must let
+        // taps through to it.
+        behavior: wide ? HitTestBehavior.deferToChild : HitTestBehavior.opaque,
+        onVerticalDragStart: wide ? null : _onDismissDragStart,
+        onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
+        onVerticalDragEnd: wide ? null : _onDismissDragEnd,
+        onVerticalDragCancel: wide ? null : _onDismissDragCancel,
+        child: Stack(
+          children: [
+            // The narrow layout lays its own eased scrim under the whole chrome
+            // block; stacking this one on top read as a dark band over the art.
+            if (scrim)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: CoverGradientPalette.topScrim(),
+                    ),
                   ),
                 ),
               ),
-            ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              WideLayoutGutter.of(context),
-              topPad + PlayerTokens.s1,
-              PlayerTokens.s3,
-              2,
-            ),
-            child: Column(
-              children: [
-                if (!wide)
-                  Container(
-                    width: 38,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: PlayerTokens.s1),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.38),
-                      borderRadius: PlayerTokens.brPill,
-                    ),
-                  ),
-                Row(
-                  children: [
-                    GlassCircleButton(
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                      tooltip: wide
-                          ? context.l10n.playerCloseEsc
-                          : context.l10n.actionClose,
-                      onPressed: () => Navigator.of(context).maybePop(),
-                    ),
-                    const Spacer(),
-                    GlassCircleButton(
-                      icon: const Icon(Icons.more_vert_rounded),
-                      tooltip: context.l10n.playerSongOptions,
-                      onPressed: () => showSongOptionsMenu(
-                        context,
-                        ref,
-                        song.filename,
-                        song.title,
-                        song: song,
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                WideLayoutGutter.of(context),
+                topPad + PlayerTokens.s1,
+                PlayerTokens.s3,
+                2,
+              ),
+              child: Column(
+                children: [
+                  if (!wide)
+                    Container(
+                      width: 38,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: PlayerTokens.s1),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.38),
+                        borderRadius: PlayerTokens.brPill,
                       ),
                     ),
-                  ],
-                ),
-              ],
+                  Row(
+                    children: [
+                      GlassCircleButton(
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                        tooltip: wide
+                            ? context.l10n.playerCloseEsc
+                            : context.l10n.actionClose,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
+                      const Spacer(),
+                      GlassCircleButton(
+                        icon: const Icon(Icons.more_vert_rounded),
+                        tooltip: context.l10n.playerSongOptions,
+                        onPressed: () => showSongOptionsMenu(
+                          context,
+                          ref,
+                          song.filename,
+                          song.title,
+                          song: song,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -832,6 +838,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
   final GlobalKey coverKey;
   final ValueListenable<bool> paneVisible;
   final AudioPlayerManager audioManager;
+  final Animation<double>? transitionAnimation;
 
   /// Page position in pane units (1.0 = this pane). When given, the cover
   /// dissolves into the shell's blurred backdrop while swiping away instead
@@ -845,6 +852,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
     required this.coverKey,
     required this.paneVisible,
     required this.audioManager,
+    this.transitionAnimation,
     this.pagePosition,
   });
 
@@ -924,7 +932,17 @@ class _FullBleedPlayerPane extends ConsumerWidget {
                           item: song,
                           idOf: (s) => s.filename,
                           audioManager: audioManager,
-                          fade: 0.3,
+                          fade: 0,
+                          canSwipe: (direction) => direction > 0
+                              ? audioManager.player.hasNext
+                              : audioManager.player.hasPrevious,
+                          onSwipe: (direction) {
+                            if (direction > 0) {
+                              audioManager.player.seekToNext();
+                            } else {
+                              audioManager.player.seekToPrevious();
+                            }
+                          },
                           builder: (context, s, current) => Align(
                             alignment: Alignment.bottomCenter,
                             child: _buildCover(
@@ -1043,16 +1061,28 @@ class _FullBleedPlayerPane extends ConsumerWidget {
             width: double.infinity,
             height: height,
             color: Colors.black,
-            child: AlbumArtImage(
-              url: song.coverUrl ?? '',
-              filename: song.filename,
-              cacheVersion: song.mtime,
-              width: MediaQuery.sizeOf(context).width,
-              height: height,
-              memCacheWidth: (MediaQuery.sizeOf(context).width *
-                      MediaQuery.devicePixelRatioOf(context))
-                  .round(),
-              fit: BoxFit.cover,
+            child: AnimatedBuilder(
+              animation: transitionAnimation ?? kAlwaysCompleteAnimation,
+              builder: (context, _) {
+                final animation = transitionAnimation;
+                final moving = animation != null &&
+                    animation.value > 0 &&
+                    animation.value < 1;
+                return AlbumArtImage(
+                  url: song.coverUrl ?? '',
+                  filename: song.filename,
+                  cacheVersion: song.mtime,
+                  width: MediaQuery.sizeOf(context).width,
+                  height: height,
+                  fadeDuration: Duration.zero,
+                  filterQuality:
+                      moving ? FilterQuality.low : FilterQuality.high,
+                  memCacheWidth: (MediaQuery.sizeOf(context).width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .round(),
+                  fit: BoxFit.cover,
+                );
+              },
             ),
           ),
         );
