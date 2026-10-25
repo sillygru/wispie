@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../models/song.dart';
@@ -16,6 +15,7 @@ import 'audio_visualizer.dart';
 import 'duration_display.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../motion/motion.dart';
 
 /// A song in any of the app's lists.
 ///
@@ -83,7 +83,7 @@ class SongListItem extends ConsumerWidget {
                 ref
                     .read(selectionProvider.notifier)
                     .enterSelectionMode(song.filename);
-                HapticFeedback.heavyImpact();
+                MotionHaptics.heavy();
               } else {
                 showSongOptionsMenu(context, ref, song.filename, song.title,
                     song: song, playlistId: playlistId);

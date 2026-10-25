@@ -4,7 +4,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -28,6 +27,7 @@ import '../../widgets/clickable_artist_text.dart';
 import '../../widgets/now_playing_lyric_peek.dart';
 import '../../widgets/player_motion.dart';
 import '../../widgets/shrink_then_wrap_text.dart';
+import '../../motion/motion.dart';
 
 /// Center pane. Content only — the shell owns the backdrop, header, pill and
 /// transport dock. Do not add a Scaffold, AppBar or background here.
@@ -402,7 +402,7 @@ class _VideoModeToggle extends StatelessWidget {
 
         return TextButton.icon(
           onPressed: () {
-            HapticFeedback.selectionClick();
+            MotionHaptics.selection();
             audioManager.setPreferredMediaMode(
               isVideo ? PlaybackMediaMode.audio : PlaybackMediaMode.video,
             );

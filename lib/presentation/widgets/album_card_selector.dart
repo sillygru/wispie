@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -151,7 +150,7 @@ class _AlbumCard extends StatelessWidget {
       child: Pressable(
         pressedScale: 0.96,
         onTap: () {
-          HapticFeedback.selectionClick();
+          MotionHaptics.selection();
           onTap();
         },
         child: SizedBox(

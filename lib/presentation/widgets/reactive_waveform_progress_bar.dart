@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/services/spectrum_bars.dart';
@@ -14,6 +13,7 @@ import '../../services/waveform_service.dart';
 import '../tokens/player_tokens.dart';
 import 'spectrum_controller.dart';
 import 'waveform_progress_bar.dart';
+import '../motion/motion.dart';
 
 /// A sound-reactive progress bar driven by the offline beat analysis pipeline
 /// and real-time [SpectrumController].
@@ -373,7 +373,7 @@ class _ReactiveWaveformProgressBarState
             if (_lastHapticBarIndex != null &&
                 currentBar != _lastHapticBarIndex) {
               if (ref.read(settingsProvider).waveformHapticsEnabled) {
-                HapticFeedback.selectionClick();
+                MotionHaptics.selection();
               }
             }
             _lastHapticBarIndex = currentBar;

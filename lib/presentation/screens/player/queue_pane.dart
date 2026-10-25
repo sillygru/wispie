@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -522,7 +521,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   }
 
   void _showSongOptions(Song song) {
-    HapticFeedback.mediumImpact();
+    MotionHaptics.medium();
     showSongOptionsMenu(context, ref, song.filename, song.title, song: song);
   }
 
@@ -669,7 +668,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                                                 VisualizerMode.off,
                                         visualizerMode: visualizerMode,
                                         onIndicatorTap: () {
-                                          HapticFeedback.selectionClick();
+                                          MotionHaptics.selection();
                                           audioManager.togglePlayPause();
                                         },
                                       ),
@@ -829,7 +828,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
     int oldIndex,
     int newIndex,
   ) {
-    HapticFeedback.selectionClick();
+    MotionHaptics.selection();
 
     final moved = upcoming[oldIndex];
     final fromAbsolute =
@@ -862,7 +861,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   /// whether that means moving an upcoming entry up or copying a played one,
   /// so nothing before the current track is ever disturbed.
   void _jumpTo(AudioPlayerManager audioManager, QueueItem item) {
-    HapticFeedback.selectionClick();
+    MotionHaptics.selection();
     unawaited(audioManager.jumpToQueueItem(item.queueId));
   }
 
@@ -914,7 +913,7 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             icon: const Icon(Icons.shuffle_rounded, size: 20),
             color: Colors.white.withValues(alpha: PlayerTokens.aSecondary),
             onPressed: () {
-              HapticFeedback.selectionClick();
+              MotionHaptics.selection();
               // A one-off reshuffle of what is already queued — this does not
               // touch the shuffle/ordered mode, which lives on the player pane.
               audioManager.shuffleUpcoming();
@@ -1623,7 +1622,7 @@ class _PlayChip extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          HapticFeedback.selectionClick();
+          MotionHaptics.selection();
           onTap();
         },
         child: SizedBox(

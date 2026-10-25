@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../tokens/app_tokens.dart';
+import '../motion/motion.dart';
 
 /// The app's segmented control — the counterpart to the player's underline
 /// pill, in the app's own language: a tonal track with an accent-washed thumb
@@ -85,7 +85,7 @@ class AppSegmentedTabs extends StatelessWidget implements PreferredSizeWidget {
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
                                 if (controller.index == index) return;
-                                HapticFeedback.selectionClick();
+                                MotionHaptics.selection();
                                 controller.animateTo(index);
                               },
                               child: Center(

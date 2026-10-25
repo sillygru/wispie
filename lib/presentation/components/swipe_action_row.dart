@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../tokens/player_tokens.dart';
+import '../motion/motion.dart';
 
 class SwipeAction {
   final IconData icon;
@@ -59,9 +59,7 @@ class _SwipeActionRowState extends State<SwipeActionRow> {
     _progress.value = d.progress;
     if (d.reached != _reached.value) {
       _reached.value = d.reached;
-      d.reached
-          ? HapticFeedback.mediumImpact()
-          : HapticFeedback.selectionClick();
+      d.reached ? MotionHaptics.medium() : MotionHaptics.selection();
     }
   }
 

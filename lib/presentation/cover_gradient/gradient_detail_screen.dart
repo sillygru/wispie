@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -48,6 +47,7 @@ import '../../providers/browse_palette_provider.dart';
 import 'floating_mini_player.dart';
 import 'glass_chrome.dart';
 import '../components/animated_removal.dart';
+import '../motion/motion.dart';
 
 /// Shared artist/album/playlist layout over a continuous cover gradient.
 ///
@@ -1606,7 +1606,7 @@ class _GradientSongRow extends ConsumerWidget {
                         ref
                             .read(selectionProvider.notifier)
                             .enterSelectionMode(song.filename);
-                        HapticFeedback.heavyImpact();
+                        MotionHaptics.heavy();
                       } else {
                         showSongOptionsMenu(
                             context, ref, song.filename, song.title,

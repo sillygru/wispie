@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/search_result.dart';
 import '../../l10n/l10n.dart';
@@ -76,7 +75,7 @@ class SearchResultItem extends ConsumerWidget {
               ref
                   .read(selectionProvider.notifier)
                   .enterSelectionMode(song.filename);
-              HapticFeedback.heavyImpact();
+              MotionHaptics.heavy();
             } else {
               showSongOptionsMenu(
                 context,

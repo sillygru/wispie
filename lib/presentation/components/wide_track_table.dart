@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -14,6 +13,7 @@ import '../widgets/album_art_image.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/song_options_menu.dart';
 import '../components/pop_icon.dart';
+import '../motion/motion.dart';
 
 /// Wide-window track table shared by browse surfaces.
 ///
@@ -168,7 +168,7 @@ class _WideTrackRowState extends ConsumerState<WideTrackRow> {
                 ref
                     .read(selectionProvider.notifier)
                     .enterSelectionMode(song.filename);
-                HapticFeedback.heavyImpact();
+                MotionHaptics.heavy();
               }
             },
             onSecondaryTap: () {

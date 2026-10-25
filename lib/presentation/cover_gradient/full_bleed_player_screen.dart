@@ -1470,7 +1470,7 @@ class _FullBleedVideoToggle extends StatelessWidget {
         final bool isVideo = mode == PlaybackMediaMode.video;
         return TextButton.icon(
           onPressed: () {
-            HapticFeedback.selectionClick();
+            MotionHaptics.selection();
             audioManager.setPreferredMediaMode(
               isVideo ? PlaybackMediaMode.audio : PlaybackMediaMode.video,
             );

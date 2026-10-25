@@ -3,13 +3,13 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/waveform_service.dart';
+import '../motion/motion.dart';
 
 class WaveformProgressBar extends ConsumerStatefulWidget {
   final String filename;
@@ -331,7 +331,7 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
             if (_lastHapticBarIndex != null &&
                 currentBar != _lastHapticBarIndex) {
               if (ref.read(settingsProvider).waveformHapticsEnabled) {
-                HapticFeedback.selectionClick();
+                MotionHaptics.selection();
               }
             }
             _lastHapticBarIndex = currentBar;

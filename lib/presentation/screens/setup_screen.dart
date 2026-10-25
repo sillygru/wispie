@@ -3,7 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
@@ -24,6 +23,7 @@ import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../widgets/beat_particle_field.dart';
 import '../widgets/player_motion.dart';
+import '../motion/motion.dart';
 
 const _stepCount = 4;
 
@@ -1404,7 +1404,7 @@ class _BlockButton extends StatelessWidget {
       onTap: onPressed == null
           ? null
           : () {
-              HapticFeedback.lightImpact();
+              MotionHaptics.light();
               onPressed!();
             },
       child: AnimatedContainer(
@@ -1529,7 +1529,7 @@ class _Toggle extends StatelessWidget {
       onChanged: onChanged == null
           ? null
           : (v) {
-              HapticFeedback.selectionClick();
+              MotionHaptics.selection();
               onChanged!(v);
             },
     );
@@ -1561,7 +1561,7 @@ class _Choice<T> extends StatelessWidget {
               padding: EdgeInsets.only(left: i == 0 ? 0 : AppTokens.s1),
               child: _Pressable(
                 onTap: () {
-                  HapticFeedback.selectionClick();
+                  MotionHaptics.selection();
                   onChanged(option.$1);
                 },
                 child: AnimatedContainer(

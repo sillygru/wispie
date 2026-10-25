@@ -1,8 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../motion/motion.dart';
 
 /// Renders artist metadata where individual artist names within multi-artist
 /// strings (e.g. "Artist 1, Artist 2 & Artist 3") are independently clickable.
@@ -69,7 +69,7 @@ class _ClickableArtistTextState extends State<ClickableArtistText> {
       final trimmed = artistField.trim();
       final recognizer = TapGestureRecognizer()
         ..onTap = () {
-          HapticFeedback.lightImpact();
+          MotionHaptics.light();
           widget.onArtistTap(trimmed);
         };
       _recognizers.add(recognizer);
@@ -107,7 +107,7 @@ class _ClickableArtistTextState extends State<ClickableArtistText> {
 
       final recognizer = TapGestureRecognizer()
         ..onTap = () {
-          HapticFeedback.lightImpact();
+          MotionHaptics.light();
           widget.onArtistTap(trimmed);
         };
       _recognizers.add(recognizer);

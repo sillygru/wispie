@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../tokens/player_tokens.dart';
+import '../motion/motion.dart';
 
 /// Pane switcher: plain labels sitting directly on the backdrop with a sliding
 /// underline. No container, no border — the labels are there so the panes are
@@ -70,7 +70,7 @@ class PlayerSegmentedPill extends StatelessWidget {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
-                              HapticFeedback.selectionClick();
+                              MotionHaptics.selection();
                               onSelected(index);
                             },
                             child: Center(

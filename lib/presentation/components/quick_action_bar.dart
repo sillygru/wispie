@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
@@ -12,6 +11,7 @@ import '../widgets/heart_context_menu.dart';
 import 'song_actions.dart';
 import 'app_icon.dart';
 import '../tokens/app_icons.dart';
+import '../motion/motion.dart';
 
 /// The configurable row of actions on the Now Playing pane.
 ///
@@ -97,7 +97,7 @@ class _QuickActionButton extends ConsumerWidget {
         onTap: () => _invoke(context, ref, isFavorite, isSuggestLess),
         onLongPress: action == QuickAction.toggleFavorite
             ? () {
-                HapticFeedback.mediumImpact();
+                MotionHaptics.medium();
                 showHeartContextMenu(
                   context: context,
                   ref: ref,
@@ -125,7 +125,7 @@ class _QuickActionButton extends ConsumerWidget {
     bool isFavorite,
     bool isSuggestLess,
   ) {
-    HapticFeedback.selectionClick();
+    MotionHaptics.selection();
 
     switch (action) {
       case QuickAction.toggleFavorite:
