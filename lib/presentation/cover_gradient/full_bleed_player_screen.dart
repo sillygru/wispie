@@ -499,6 +499,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     double coverH,
   ) {
     final double chromeHeight = MediaQuery.paddingOf(context).top + 100;
+    final swipePanes =
+        ref.watch(settingsProvider.select((s) => s.playerSwipeChangesPane));
     return Stack(
       children: [
         Positioned.fill(
@@ -507,7 +509,10 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
               Expanded(
                 child: PageView(
                   controller: _pageController,
-                  physics: const ClampingScrollPhysics(),
+                  // Tracks mode hands swipes to the cover; panes move by pill.
+                  physics: swipePanes
+                      ? const ClampingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
                   children: [
                     _PaneTransition(
                       position: _pagePosition,
@@ -850,6 +855,10 @@ class _FullBleedPlayerPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // With pane swiping on, the cover keeps its track animation but stops
+    // claiming horizontal drags, so the pager behind it receives them.
+    final swipePanes =
+        ref.watch(settingsProvider.select((s) => s.playerSwipeChangesPane));
     // Flex cover: the artwork takes exactly the leftover viewport space, so
     // no slack can pool anywhere - no mid-screen void, no top seam. Falls
     // back to a fixed small cover with scroll on tiny windows and video
@@ -925,6 +934,7 @@ class _FullBleedPlayerPane extends ConsumerWidget {
                           idOf: (s) => s.filename,
                           audioManager: audioManager,
                           fade: 0,
+                          swipeEnabled: !swipePanes,
                           canSwipe: (direction) => direction > 0
                               ? audioManager.player.hasNext
                               : audioManager.player.hasPrevious,

@@ -175,6 +175,14 @@ class _AppearanceSettingsScreenState
               value: settings.fullBleedDesignEnabled,
               onChanged: notifier.setFullBleedDesignEnabled,
             ),
+            AppSettingsSwitch(
+              icon: AppIcons.swapHoriz,
+              searchId: 'appearance.player_swipe',
+              title: l10n.appearancePlayerSwipeTitle,
+              subtitle: l10n.appearancePlayerSwipeSubtitle,
+              value: settings.playerSwipeChangesPane,
+              onChanged: notifier.setPlayerSwipeChangesPane,
+            ),
           ],
         ),
         AppSettingsGroup(

@@ -232,6 +232,10 @@ class _CoverStage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final beatReactive =
         ref.watch(settingsProvider.select((s) => s.beatReactiveCoverEnabled));
+    // With pane swiping on, the cover keeps its track animation but stops
+    // claiming horizontal drags, so the pager behind it receives them.
+    final swipePanes =
+        ref.watch(settingsProvider.select((s) => s.playerSwipeChangesPane));
 
     return ValueListenableBuilder<PlaybackMediaMode>(
       valueListenable: audioManager.effectiveMediaModeNotifier,
@@ -265,6 +269,7 @@ class _CoverStage extends ConsumerWidget {
                         audioManager: audioManager,
                         travel: 1.25,
                         fade: 0,
+                        swipeEnabled: !swipePanes,
                         canSwipe: (direction) => direction > 0
                             ? audioManager.player.hasNext
                             : audioManager.player.hasPrevious,

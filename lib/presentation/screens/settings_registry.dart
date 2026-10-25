@@ -400,6 +400,17 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
       ),
     ),
     SettingsDestination(
+      anchorId: 'appearance.player_swipe',
+      icon: AppIcons.swapHoriz,
+      title: l.appearancePlayerSwipeTitle,
+      subtitle: l.appearancePlayerSwipeSubtitle,
+      breadcrumb: l.settingsCrumbAppearanceNowPlaying,
+      keywords: _kw(l.settingsKwPlayerSwipe),
+      open: () => const AppearanceSettingsScreen(
+        highlightId: 'appearance.player_swipe',
+      ),
+    ),
+    SettingsDestination(
       anchorId: 'appearance.app_icon',
       icon: AppIcons.album,
       title: l.appearanceAppIcon,

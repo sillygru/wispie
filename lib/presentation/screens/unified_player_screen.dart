@@ -490,6 +490,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   }
 
   Widget _buildBody(BuildContext context, Song song, Color accent) {
+    final swipePanes =
+        ref.watch(settingsProvider.select((s) => s.playerSwipeChangesPane));
     final showParticles = !_reduceMotion &&
         ref.watch(
             settingsProvider.select((s) => s.beatReactiveParticlesEnabled));
@@ -575,7 +577,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                     Expanded(
                       child: PageView(
                         controller: _pageController,
-                        physics: const ClampingScrollPhysics(),
+                        // Tracks mode hands horizontal swipes to the cover's
+                        // track switcher and navigates panes by the pill only.
+                        physics: swipePanes
+                            ? const ClampingScrollPhysics()
+                            : const NeverScrollableScrollPhysics(),
                         children: [
                           LyricsPane(
                             song: song,

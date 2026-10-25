@@ -29,6 +29,10 @@ class TrackSwipeSwitcher<T> extends StatefulWidget {
   final ValueChanged<int>? onSwipe;
   final bool Function(int direction)? canSwipe;
 
+  /// When false the stack still animates track changes but installs no drag
+  /// recognizer, so horizontal swipes reach the pane pager behind it.
+  final bool swipeEnabled;
+
   const TrackSwipeSwitcher({
     super.key,
     required this.item,
@@ -39,6 +43,7 @@ class TrackSwipeSwitcher<T> extends StatefulWidget {
     this.fade = 0.4,
     this.onSwipe,
     this.canSwipe,
+    this.swipeEnabled = true,
   });
 
   static int? _hintDir;
@@ -286,7 +291,7 @@ class _TrackSwipeSwitcherState<T> extends State<TrackSwipeSwitcher<T>>
       ],
     );
 
-    if (widget.onSwipe == null) return stack;
+    if (widget.onSwipe == null || !widget.swipeEnabled) return stack;
 
     return LayoutBuilder(
       builder: (context, constraints) {

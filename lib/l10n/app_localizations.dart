@@ -1881,6 +1881,18 @@ abstract class AppLocalizations {
   /// **'Full-bleed player cover and gradient detail screens'**
   String get appearanceImmersiveSubtitle;
 
+  /// Title for the toggle that chooses what a horizontal swipe in the player does
+  ///
+  /// In en, this message translates to:
+  /// **'Swipe changes pane'**
+  String get appearancePlayerSwipeTitle;
+
+  /// Subtitle for the toggle that chooses what a horizontal swipe in the player does
+  ///
+  /// In en, this message translates to:
+  /// **'Left and right swipes move between lyrics, player and queue. Turn off to switch tracks instead.'**
+  String get appearancePlayerSwipeSubtitle;
+
   /// Group header label for player motion settings
   ///
   /// In en, this message translates to:
@@ -4028,6 +4040,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'sidebar,panel,desktop,queue,lyrics'**
   String get settingsKwSidebar;
+
+  /// Comma-separated search keywords for the Swipe changes pane setting
+  ///
+  /// In en, this message translates to:
+  /// **'swipe,gesture,panes,lyrics,queue,skip,track'**
+  String get settingsKwPlayerSwipe;
 
   /// Comma-separated search keywords for the Keep Screen Awake on Lyrics setting
   ///

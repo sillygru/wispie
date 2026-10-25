@@ -50,6 +50,7 @@ class SettingsState {
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
   final bool fullBleedDesignEnabled;
+  final bool playerSwipeChangesPane;
   final AppIconStyle appIconStyle;
   final bool spinArtworkWhilePlaying;
 
@@ -99,6 +100,7 @@ class SettingsState {
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
     this.fullBleedDesignEnabled = true,
+    this.playerSwipeChangesPane = true,
     this.appIconStyle = AppIconStyle.newIcon,
     this.spinArtworkWhilePlaying = false,
   })  : progressBarType = progressBarType ??
@@ -155,6 +157,7 @@ class SettingsState {
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
     bool? fullBleedDesignEnabled,
+    bool? playerSwipeChangesPane,
     AppIconStyle? appIconStyle,
     bool? spinArtworkWhilePlaying,
   }) {
@@ -201,6 +204,8 @@ class SettingsState {
           keepScreenAwakeOnLyrics ?? this.keepScreenAwakeOnLyrics,
       desktopSidebarEnabled:
           desktopSidebarEnabled ?? this.desktopSidebarEnabled,
+      playerSwipeChangesPane:
+          playerSwipeChangesPane ?? this.playerSwipeChangesPane,
       coverSizingMode: coverSizingMode ?? this.coverSizingMode,
       beatReactiveCoverEnabled:
           beatReactiveCoverEnabled ?? this.beatReactiveCoverEnabled,
@@ -265,6 +270,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyPauseFadeDuration = 'pause_fade_duration';
   static const _keyKeepScreenAwakeOnLyrics = 'keep_screen_awake_on_lyrics';
   static const _keyDesktopSidebarEnabled = 'desktop_sidebar_enabled';
+  static const _keyPlayerSwipeChangesPane = 'player_swipe_changes_pane';
   static const _keyCoverSizingMode = 'cover_sizing_mode';
   static const _keyBeatReactiveCoverEnabled = 'beat_reactive_cover_enabled';
   static const _keyBeatReactiveParticlesEnabled =
@@ -379,6 +385,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       keepScreenAwakeOnLyrics:
           prefs.getBool(_keyKeepScreenAwakeOnLyrics) ?? true,
       desktopSidebarEnabled: prefs.getBool(_keyDesktopSidebarEnabled) ?? true,
+      playerSwipeChangesPane: prefs.getBool(_keyPlayerSwipeChangesPane) ?? true,
       coverSizingMode: coverSizingModeIndex != null &&
               coverSizingModeIndex >= 0 &&
               coverSizingModeIndex < PlayerCoverSizingMode.values.length
@@ -648,6 +655,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(desktopSidebarEnabled: enabled);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyDesktopSidebarEnabled, enabled);
+  }
+
+  Future<void> setPlayerSwipeChangesPane(bool enabled) async {
+    state = state.copyWith(playerSwipeChangesPane: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyPlayerSwipeChangesPane, enabled);
   }
 
   Future<void> setKeepScreenAwakeOnLyrics(bool enabled) async {

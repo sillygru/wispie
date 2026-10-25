@@ -1063,6 +1063,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Full-bleed player cover and gradient detail screens';
 
   @override
+  String get appearancePlayerSwipeTitle => 'Swipe changes pane';
+
+  @override
+  String get appearancePlayerSwipeSubtitle =>
+      'Left and right swipes move between lyrics, player and queue. Turn off to switch tracks instead.';
+
+  @override
   String get appearanceGroupPlayerMotion => 'Player motion';
 
   @override
@@ -2316,6 +2323,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsKwSidebar => 'sidebar,panel,desktop,queue,lyrics';
+
+  @override
+  String get settingsKwPlayerSwipe =>
+      'swipe,gesture,panes,lyrics,queue,skip,track';
 
   @override
   String get settingsKwKeepAwake => 'sleep,wakelock,display,lyrics';

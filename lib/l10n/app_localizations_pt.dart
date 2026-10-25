@@ -1084,6 +1084,13 @@ class AppLocalizationsPt extends AppLocalizations {
       'Capa do player em tela cheia e telas de detalhes com gradiente';
 
   @override
+  String get appearancePlayerSwipeTitle => 'Swipe changes pane';
+
+  @override
+  String get appearancePlayerSwipeSubtitle =>
+      'Left and right swipes move between lyrics, player and queue. Turn off to switch tracks instead.';
+
+  @override
   String get appearanceGroupPlayerMotion => 'Movimento do player';
 
   @override
@@ -2359,6 +2366,10 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsKwSidebar => 'barra lateral,painel,desktop,fila,letras';
+
+  @override
+  String get settingsKwPlayerSwipe =>
+      'swipe,gesture,panes,lyrics,queue,skip,track';
 
   @override
   String get settingsKwKeepAwake => 'sono,manter ativo,tela,letras';
