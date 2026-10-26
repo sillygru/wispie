@@ -8,6 +8,7 @@ import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/library_logic.dart';
 import '../../services/audius_service.dart';
+import '../../services/youtube_service.dart';
 import '../../services/online_metadata_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -92,11 +93,11 @@ Future<void> songActionPlayNext(
         .playNext(song, allowDuplicate: allowDuplicate);
   } on AudiusApiException catch (error) {
     if (!host.mounted) return;
-    ScaffoldMessenger.of(host).showSnackBar(
-      SnackBar(
-        content: Text(AudiusErrorMessage.forError(error, l10n)),
-      ),
-    );
+    _showOnlinePlaybackError(host, error);
+    return;
+  } on YouTubeApiException catch (error) {
+    if (!host.mounted) return;
+    _showOnlinePlaybackError(host, error);
     return;
   }
   if (!host.mounted) return;
@@ -121,9 +122,20 @@ void songActionShare(BuildContext host, Song song) {
 /// Adds to the most recently updated playlist directly, offering a "Change"
 /// escape hatch — falling back to the full selector when that would be
 /// ambiguous (no playlists, or the song is already in the latest one).
+void _showOnlinePlaybackError(BuildContext host, Object error) {
+  if (!host.mounted) return;
+  ScaffoldMessenger.of(host).showSnackBar(
+    SnackBar(
+      content: Text(
+        YouTubeErrorMessage.forError(error, AppLocalizations.of(host)),
+      ),
+    ),
+  );
+}
+
 void songActionAddToPlaylist(BuildContext host, WidgetRef ref, String filename,
     {Song? song}) {
-  if (song?.isAudius == true) {
+  if (song?.isRemote == true) {
     ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
   }
   final playlists = ref
@@ -163,7 +175,7 @@ void songActionAddToPlaylist(BuildContext host, WidgetRef ref, String filename,
 void songActionAddToNewPlaylist(
     BuildContext host, WidgetRef ref, String filename,
     {Song? song}) {
-  if (song?.isAudius == true) {
+  if (song?.isRemote == true) {
     ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
   }
   final l10n = AppLocalizations.of(host);

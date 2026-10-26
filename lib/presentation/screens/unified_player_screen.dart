@@ -21,7 +21,7 @@ import '../cover_gradient/full_bleed_player_screen.dart';
 import '../player_panel/player_panel.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
-import '../widgets/basic_progress_bar.dart';
+import '../components/track_progress_bar.dart';
 import '../motion/motion.dart';
 import '../motion/player_motion_ensemble.dart';
 import '../widgets/beat_cover_glow.dart';
@@ -31,8 +31,6 @@ import '../widgets/clickable_artist_text.dart';
 import '../widgets/player_motion.dart';
 import '../widgets/smooth_color_builder.dart';
 import '../widgets/song_options_menu.dart';
-import '../widgets/reactive_waveform_progress_bar.dart';
-import '../widgets/waveform_progress_bar.dart';
 import 'player/lyrics_pane.dart';
 import 'player/now_playing_pane.dart';
 import 'player/queue_pane.dart';
@@ -896,8 +894,6 @@ class _TransportDock extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final player = audioManager.player;
-    final progressBarType =
-        ref.watch(settingsProvider.select((s) => s.progressBarType));
 
     // Deliberately sits directly on the backdrop — no card, no border. Nesting
     // the controls inside another surface just stacks boxes on boxes. Narrow
@@ -923,45 +919,11 @@ class _TransportDock extends ConsumerWidget {
               initialData: player.duration,
               builder: (context, snapshot) {
                 final total = snapshot.data ?? song.duration ?? Duration.zero;
-
-                if (song.isAudius) {
-                  return BasicProgressBar(
-                    key: ValueKey('basic_${song.filename}'),
-                    player: player,
-                    total: total,
-                    onSeek: player.seek,
-                  );
-                }
-
-                switch (progressBarType) {
-                  case ProgressBarType.reactive:
-                    return ReactiveWaveformProgressBar(
-                      key: ValueKey('reactive_${song.filename}'),
-                      filename: song.filename,
-                      path: song.url,
-                      progress: player.position,
-                      total: total,
-                      positionStream: player.positionStream,
-                      onSeek: player.seek,
-                    );
-                  case ProgressBarType.waveform:
-                    return WaveformProgressBar(
-                      key: ValueKey('waveform_${song.filename}'),
-                      filename: song.filename,
-                      path: song.url,
-                      progress: player.position,
-                      total: total,
-                      positionStream: player.positionStream,
-                      onSeek: player.seek,
-                    );
-                  case ProgressBarType.basic:
-                    return BasicProgressBar(
-                      key: ValueKey('basic_${song.filename}'),
-                      player: player,
-                      total: total,
-                      onSeek: player.seek,
-                    );
-                }
+                return TrackProgressBar(
+                  song: song,
+                  total: total,
+                  player: player,
+                );
               },
             ),
           ),

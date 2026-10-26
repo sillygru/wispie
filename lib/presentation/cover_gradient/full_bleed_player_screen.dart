@@ -32,17 +32,15 @@ import '../tokens/player_tokens.dart';
 import '../../l10n/l10n.dart';
 import '../utils/wide_layout.dart';
 import '../widgets/album_art_image.dart';
-import '../widgets/basic_progress_bar.dart';
+import '../components/track_progress_bar.dart';
 import '../widgets/beat_particle_field.dart';
 import '../widgets/blurred_background.dart';
 import '../widgets/smooth_color_builder.dart';
 import '../widgets/clickable_artist_text.dart';
 import '../widgets/now_playing_lyric_peek.dart';
 import '../widgets/player_motion.dart';
-import '../widgets/reactive_waveform_progress_bar.dart';
 import '../widgets/shrink_then_wrap_text.dart';
 import '../widgets/song_options_menu.dart';
-import '../widgets/waveform_progress_bar.dart';
 import '../motion/player_motion_ensemble.dart';
 import '../screens/player/lyrics_pane.dart';
 import '../screens/player/queue_pane.dart';
@@ -1736,8 +1734,6 @@ class _FullBleedTransportDock extends ConsumerWidget {
     final AudioPlayerManager audioManager =
         ref.watch(audioPlayerManagerProvider);
     final AudioPlayer player = audioManager.player;
-    final ProgressBarType progressBarType =
-        ref.watch(settingsProvider.select((s) => s.progressBarType));
     final bool compact = WideLayout.isCompact(context);
     final double bottomSafe = MediaQuery.paddingOf(context).bottom;
     final double bottomPad =
@@ -1759,43 +1755,11 @@ class _FullBleedTransportDock extends ConsumerWidget {
               builder: (context, snapshot) {
                 final Duration total =
                     snapshot.data ?? song.duration ?? Duration.zero;
-                if (song.isAudius) {
-                  return BasicProgressBar(
-                    key: ValueKey<String>('basic_${song.filename}'),
-                    player: player,
-                    total: total,
-                    onSeek: player.seek,
-                  );
-                }
-                switch (progressBarType) {
-                  case ProgressBarType.reactive:
-                    return ReactiveWaveformProgressBar(
-                      key: ValueKey<String>('reactive_${song.filename}'),
-                      filename: song.filename,
-                      path: song.url,
-                      progress: player.position,
-                      total: total,
-                      positionStream: player.positionStream,
-                      onSeek: player.seek,
-                    );
-                  case ProgressBarType.waveform:
-                    return WaveformProgressBar(
-                      key: ValueKey<String>('waveform_${song.filename}'),
-                      filename: song.filename,
-                      path: song.url,
-                      progress: player.position,
-                      total: total,
-                      positionStream: player.positionStream,
-                      onSeek: player.seek,
-                    );
-                  case ProgressBarType.basic:
-                    return BasicProgressBar(
-                      key: ValueKey<String>('basic_${song.filename}'),
-                      player: player,
-                      total: total,
-                      onSeek: player.seek,
-                    );
-                }
+                return TrackProgressBar(
+                  song: song,
+                  total: total,
+                  player: player,
+                );
               },
             ),
           ),

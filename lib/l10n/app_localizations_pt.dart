@@ -1777,6 +1777,28 @@ class AppLocalizationsPt extends AppLocalizations {
       'Disponibilidade e texto das letras em cache';
 
   @override
+  String get storageOnlineAudioTitle => 'Online Audio Cache';
+
+  @override
+  String get storageOnlineAudioSubtitle =>
+      'Streamed tracks kept on disk for instant, offline replay';
+
+  @override
+  String get storageClearOnlineAudioTitle => 'Clear online audio cache?';
+
+  @override
+  String get storageClearOnlineAudioBody =>
+      'Downloaded tracks will stream from the internet again. Your library, playlists and favorites are untouched.';
+
+  @override
+  String get storageClearOnlineAudioSuccess => 'Online audio cache cleared';
+
+  @override
+  String storageClearOnlineAudioError(Object error) {
+    return 'Error clearing online audio cache: $error';
+  }
+
+  @override
   String get storageBlurredCacheTitle => 'Cache de desfoque';
 
   @override
@@ -4842,6 +4864,33 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get onlineNoResults => 'Nenhuma faixa encontrada';
+
+  @override
+  String get onlineFallbackNotice =>
+      'YouTube is unavailable, so these results come from Audius.';
+
+  @override
+  String get onlineYoutubeError => 'Could not load from YouTube.';
+
+  @override
+  String get onlineYoutubeErrorNetwork =>
+      'Could not reach YouTube. Check your connection.';
+
+  @override
+  String get onlineYoutubeErrorRateLimited =>
+      'YouTube is rate limiting requests. Wait a moment and try again.';
+
+  @override
+  String get onlineYoutubeErrorUnavailable =>
+      'This video is not available on YouTube.';
+
+  @override
+  String get onlineYoutubeErrorBlocked =>
+      'YouTube refused this track. Try another result.';
+
+  @override
+  String get onlineYoutubeErrorResponse =>
+      'YouTube returned an unexpected response.';
 
   @override
   String get onlineError =>

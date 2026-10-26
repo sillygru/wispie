@@ -13,6 +13,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/library_logic.dart';
 import '../../services/online_metadata_service.dart';
 import '../../services/audius_service.dart';
+import '../../services/youtube_service.dart';
 import '../../services/passive_art_fetcher_service.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_dialog.dart';
@@ -655,7 +656,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                                 ref.read(songsByFilenameProvider);
                             final selectedSong =
                                 songByFilename[song.filename] ?? song;
-                            if (selectedSong.isAudius &&
+                            if (selectedSong.isRemote &&
                                 !selectedSong.isAvailable) {
                               return;
                             }
@@ -673,7 +674,17 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                               if (!context.mounted) return;
                               appSnack(
                                 context,
-                                AudiusErrorMessage.forError(
+                                YouTubeErrorMessage.forError(
+                                  error,
+                                  AppLocalizations.of(context),
+                                ),
+                                tone: AppTone.danger,
+                              );
+                            } on YouTubeApiException catch (error) {
+                              if (!context.mounted) return;
+                              appSnack(
+                                context,
+                                YouTubeErrorMessage.forError(
                                   error,
                                   AppLocalizations.of(context),
                                 ),

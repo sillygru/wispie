@@ -37,6 +37,9 @@ import '../providers/theme_provider.dart';
 import '../providers/queue_history_provider.dart';
 import 'permission_service.dart';
 import 'audius_service.dart';
+import 'online_audio_cache.dart';
+import 'youtube_audio_source.dart';
+import 'youtube_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/settings_provider.dart';
@@ -85,6 +88,19 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   Song? _lookupSong(String filename) =>
       _songMap[filename] ?? _transientSongs[filename];
+
+  /// Remote tracks are not part of the library map — they only exist in the
+  /// queue (plus cached user data). Without this fallback the now-playing bar
+  /// and the player panel had no song to show or open for anything streamed.
+  Song? _lookupQueuedSong(String filename) {
+    for (final item in _effectiveQueue) {
+      if (item.song.filename == filename) return item.song;
+    }
+    return null;
+  }
+
+  Song? _resolveSong(String filename) =>
+      _lookupSong(filename) ?? _lookupQueuedSong(filename);
 
   // Active queue snapshot ID for auto-save tracking
   String? _currentQueueSnapshotId;
@@ -663,7 +679,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           _foregroundDuration = 0.0;
           _backgroundDuration = 0.0;
           _playStartTime = _player.playing ? DateTime.now() : null;
-          final song = _lookupSong(newFilename);
+          final song = _resolveSong(newFilename);
           currentSongNotifier.value = song;
           _updateEffectivePlaybackMode(song);
           _warmBeatAnalysis(song);
@@ -1404,7 +1420,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final service = _ref!.read(beatAnalysisServiceProvider);
 
-    if (current != null) {
+    // Streamed tracks have no local file to decode; the progress bar already
+    // falls back to the plain bar for them.
+    if (current != null && current.isLocal) {
       service.prefetch(current.filename, current.url);
     }
 
@@ -1414,7 +1432,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (nextIndex >= _effectiveQueue.length) return;
 
     final next = _effectiveQueue[nextIndex].song;
-    service.prefetch(next.filename, next.url);
+    if (next.isLocal) service.prefetch(next.filename, next.url);
   }
 
   void _warmThemePalette(String? coverUrl) {
@@ -1429,7 +1447,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   void _optimizeCoverForCurrentSong(Song? song) {
     if (_isBackground) return;
-    if (song == null || song.coverUrl == null || song.coverUrl!.isEmpty) return;
+    if (song == null || !song.isLocal) return;
+    if (song.coverUrl == null || song.coverUrl!.isEmpty) return;
     final coverPath = song.coverUrl!;
     if (p.basename(coverPath).startsWith('c_')) return;
 
@@ -1630,7 +1649,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (_currentSongFilename == null) return;
     if (_playStartTime != null) _updateDurations();
 
-    final song = _lookupSong(_currentSongFilename!);
+    final song = _resolveSong(_currentSongFilename!);
     final totalLength =
         (song?.duration?.inMilliseconds.toDouble() ?? 0.0) / 1000.0;
     double effectiveTotalLength = totalLength;
@@ -1751,8 +1770,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           for (final item in effItems) item.song.url,
           for (final item in origItems) item.song.url,
         });
-        bool exists(QueueItem item) =>
-            item.song.url.isNotEmpty && !missing.contains(item.song.url);
+        // Remote entries have no local path to lose; their audio is either
+        // cached or resolved when playback reaches them. Filtering them out
+        // here would drop an online queue on every restart.
+        bool exists(QueueItem item) => item.song.isLocal
+            ? item.song.url.isNotEmpty && !missing.contains(item.song.url)
+            : true;
 
         _effectiveQueue = effItems.where(exists).toList();
         _originalQueue = origItems.where(exists).toList();
@@ -1933,7 +1956,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     bool resolveRemoteNow = false,
   }) async {
     final song = item.song;
-    late final Uri audioUri;
+    Uri? audioUri;
+    String? lazyYouTubeId;
     late final String playbackAudioPath;
     String? videoPath;
     if (song.isAudius) {
@@ -1959,6 +1983,26 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       }
       audioUri = streamUrl;
       playbackAudioPath = streamUrl.toString();
+    } else if (song.isYoutube) {
+      final videoId = song.remoteId;
+      if (videoId == null || videoId.isEmpty) {
+        throw const YouTubeApiException('YouTube video ID is missing.');
+      }
+      unawaited(OnlineAudioCache.instance.ensureSwept());
+      final cached = await OnlineAudioCache.instance.completeFile(
+        OnlineAudioCache.providerYouTube,
+        videoId,
+      );
+      if (cached != null) {
+        unawaited(OnlineAudioCache.instance.touch(cached));
+        audioUri = Uri.file(cached.path);
+        playbackAudioPath = cached.path;
+      } else {
+        // Resolved on the first byte request, so a queue of search results
+        // costs no network until a track is actually played.
+        lazyYouTubeId = videoId;
+        playbackAudioPath = '';
+      }
     } else {
       final mediaPaths = await _resolvePlayableMediaPaths(song);
       audioUri = _mediaUri(mediaPaths.audioPath);
@@ -1971,7 +2015,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       final coverSizingMode = _ref?.read(settingsProvider).coverSizingMode ??
           PlayerCoverSizingMode.sourceAspect;
       String? coverPath;
-      if (song.isAudius) {
+      if (song.isRemote) {
         coverPath = song.coverUrl;
       } else if (awaitCover) {
         final fileManager = _ref?.read(fileManagerServiceProvider);
@@ -2008,26 +2052,33 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       }
     }
 
-    return AudioSource.uri(
-      audioUri,
-      tag: MediaItem(
-        id: song.filename,
-        album: song.album,
+    final tag = MediaItem(
+      id: song.filename,
+      album: song.album,
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      artUri: artUri,
+      extras: {
+        'hasLyrics': song.hasLyrics,
+        'hasVideo': song.hasVideo,
+        'remoteUrl': song.isLocal ? song.url : '',
+        'queueId': item.queueId,
+        'audioPath': song.isLocal ? song.url : '',
+        'playbackAudioPath': playbackAudioPath,
+        if (videoPath != null) 'videoPath': videoPath,
+      },
+    );
+
+    if (lazyYouTubeId != null) {
+      return YouTubeAudioSource(
+        videoId: lazyYouTubeId,
         title: song.title,
         artist: song.artist,
-        duration: song.duration,
-        artUri: artUri,
-        extras: {
-          'hasLyrics': song.hasLyrics,
-          'hasVideo': song.hasVideo,
-          'remoteUrl': song.isAudius ? '' : song.url,
-          'queueId': item.queueId,
-          'audioPath': song.isAudius ? '' : song.url,
-          'playbackAudioPath': playbackAudioPath,
-          if (videoPath != null) 'videoPath': videoPath,
-        },
-      ),
-    );
+        tag: tag,
+      );
+    }
+    return AudioSource.uri(audioUri!, tag: tag);
   }
 
   Future<({String audioPath, String? videoPath})> _resolvePlayableMediaPaths(
@@ -2184,7 +2235,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _effectiveQueue,
       entries,
       (filename) {
-        final song = _lookupSong(filename);
+        final song = _resolveSong(filename);
         return song == null ? null : QueueItem(song: song);
       },
     );

@@ -3063,6 +3063,42 @@ abstract class AppLocalizations {
   /// **'Cached lyrics availability and text'**
   String get storageLyricsCacheSubtitle;
 
+  /// Title for the downloaded YouTube audio row in the storage usage list
+  ///
+  /// In en, this message translates to:
+  /// **'Online Audio Cache'**
+  String get storageOnlineAudioTitle;
+
+  /// Subtitle for the online audio cache row
+  ///
+  /// In en, this message translates to:
+  /// **'Streamed tracks kept on disk for instant, offline replay'**
+  String get storageOnlineAudioSubtitle;
+
+  /// Confirmation title before deleting downloaded online audio
+  ///
+  /// In en, this message translates to:
+  /// **'Clear online audio cache?'**
+  String get storageClearOnlineAudioTitle;
+
+  /// Confirmation body before deleting downloaded online audio
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded tracks will stream from the internet again. Your library, playlists and favorites are untouched.'**
+  String get storageClearOnlineAudioBody;
+
+  /// Snackbar shown when the online audio cache is cleared
+  ///
+  /// In en, this message translates to:
+  /// **'Online audio cache cleared'**
+  String get storageClearOnlineAudioSuccess;
+
+  /// Snackbar shown when clearing the online audio cache fails
+  ///
+  /// In en, this message translates to:
+  /// **'Error clearing online audio cache: {error}'**
+  String storageClearOnlineAudioError(Object error);
+
   /// Title for the Blurred Cache row in the storage usage list
   ///
   /// In en, this message translates to:
@@ -8007,35 +8043,77 @@ abstract class AppLocalizations {
   /// **'Search songs, artists, albums...'**
   String get searchFieldHint;
 
-  /// Navigation destination and screen title for Audius
+  /// Navigation destination and screen title for online tracks
   ///
   /// In en, this message translates to:
-  /// **'Online'**
+  /// **'YouTube'**
   String get onlineTab;
 
-  /// Placeholder in the Audius track search field
+  /// Placeholder in the online track search field
   ///
   /// In en, this message translates to:
-  /// **'Search tracks on Audius'**
+  /// **'Search YouTube'**
   String get onlineSearchHint;
 
-  /// Initial state on the Audius screen
+  /// Initial state on the online screen
   ///
   /// In en, this message translates to:
-  /// **'Search Audius for tracks'**
+  /// **'Search YouTube for tracks'**
   String get onlineSearchPrompt;
 
-  /// Accessible label while Audius search is loading
+  /// Accessible label while online search is loading
   ///
   /// In en, this message translates to:
-  /// **'Searching Audius...'**
+  /// **'Searching YouTube...'**
   String get onlineLoading;
 
-  /// Audius search returned no tracks
+  /// Online search returned no tracks
   ///
   /// In en, this message translates to:
   /// **'No tracks found'**
   String get onlineNoResults;
+
+  /// Banner shown when search fell back from YouTube to Audius
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube is unavailable, so these results come from Audius.'**
+  String get onlineFallbackNotice;
+
+  /// Fallback when a YouTube request fails without a more specific cause
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load from YouTube.'**
+  String get onlineYoutubeError;
+
+  /// YouTube request failed at the network level
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach YouTube. Check your connection.'**
+  String get onlineYoutubeErrorNetwork;
+
+  /// YouTube returned 429 or is cooling down
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube is rate limiting requests. Wait a moment and try again.'**
+  String get onlineYoutubeErrorRateLimited;
+
+  /// The video was removed, private, or refused by YouTube
+  ///
+  /// In en, this message translates to:
+  /// **'This video is not available on YouTube.'**
+  String get onlineYoutubeErrorUnavailable;
+
+  /// YouTube demanded a signature or bot check this build cannot satisfy
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube refused this track. Try another result.'**
+  String get onlineYoutubeErrorBlocked;
+
+  /// YouTube returned something that is not the expected JSON
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube returned an unexpected response.'**
+  String get onlineYoutubeErrorResponse;
 
   /// Fallback when an Audius request fails without a more specific cause
   ///
@@ -8085,10 +8163,10 @@ abstract class AppLocalizations {
   /// **'Added {title} to the queue'**
   String onlineSongQueued(String title);
 
-  /// A cached Audius track is no longer available to stream
+  /// A cached online track is no longer available to stream
   ///
   /// In en, this message translates to:
-  /// **'Unavailable on Audius'**
+  /// **'Unavailable online'**
   String get onlineUnavailable;
 
   /// Add an Audius track to a local playlist

@@ -36,6 +36,7 @@ class _StorageManagementScreenState
   int _colorCacheSize = 0;
   int _lyricsCacheSize = 0;
   int _blurredCacheSize = 0;
+  int _onlineAudioCacheSize = 0;
   bool _isClearing = false;
 
   @override
@@ -68,6 +69,8 @@ class _StorageManagementScreenState
           await StorageAnalysisService.instance.getLyricsCacheSize();
       final blurredSize =
           await StorageAnalysisService.instance.getBlurredCacheSize();
+      final onlineAudioSize =
+          await StorageAnalysisService.instance.getOnlineAudioCacheSize();
 
       if (mounted) {
         setState(() {
@@ -81,6 +84,7 @@ class _StorageManagementScreenState
           _colorCacheSize = colorSize;
           _lyricsCacheSize = lyricsSize;
           _blurredCacheSize = blurredSize;
+          _onlineAudioCacheSize = onlineAudioSize;
           _isLoading = false;
         });
       }
@@ -527,6 +531,34 @@ class _StorageManagementScreenState
     }
   }
 
+  Future<void> _handleClearOnlineAudioCache() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await _showConfirmationDialog(
+      title: l10n.storageClearOnlineAudioTitle,
+      content: l10n.storageClearOnlineAudioBody,
+      confirmText: l10n.storageClearCache,
+      confirmColor: AppTokens.warning,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isClearing = true);
+
+    try {
+      await StorageAnalysisService.instance.clearOnlineAudioCache();
+      await _loadSizes();
+      if (mounted) {
+        setState(() => _isClearing = false);
+        appSnack(context, l10n.storageClearOnlineAudioSuccess);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isClearing = false);
+        appSnack(context, l10n.storageClearOnlineAudioError('$e'));
+      }
+    }
+  }
+
   Future<void> _handleDangerousClear() async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmationDialog(
@@ -650,6 +682,16 @@ class _StorageManagementScreenState
                       color: AppTokens.info,
                       onClear:
                           _lyricsCacheSize > 0 ? _handleClearLyricsCache : null,
+                    ),
+                    _buildStorageCard(
+                      title: l10n.storageOnlineAudioTitle,
+                      subtitle: l10n.storageOnlineAudioSubtitle,
+                      size: _onlineAudioCacheSize,
+                      icon: AppIcons.download,
+                      color: AppTokens.info,
+                      onClear: _onlineAudioCacheSize > 0
+                          ? _handleClearOnlineAudioCache
+                          : null,
                     ),
                     _buildStorageCard(
                       title: l10n.storageBlurredCacheTitle,

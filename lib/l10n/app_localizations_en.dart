@@ -1743,6 +1743,28 @@ class AppLocalizationsEn extends AppLocalizations {
       'Cached lyrics availability and text';
 
   @override
+  String get storageOnlineAudioTitle => 'Online Audio Cache';
+
+  @override
+  String get storageOnlineAudioSubtitle =>
+      'Streamed tracks kept on disk for instant, offline replay';
+
+  @override
+  String get storageClearOnlineAudioTitle => 'Clear online audio cache?';
+
+  @override
+  String get storageClearOnlineAudioBody =>
+      'Downloaded tracks will stream from the internet again. Your library, playlists and favorites are untouched.';
+
+  @override
+  String get storageClearOnlineAudioSuccess => 'Online audio cache cleared';
+
+  @override
+  String storageClearOnlineAudioError(Object error) {
+    return 'Error clearing online audio cache: $error';
+  }
+
+  @override
   String get storageBlurredCacheTitle => 'Blurred Cache';
 
   @override
@@ -4751,19 +4773,46 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchFieldHint => 'Search songs, artists, albums...';
 
   @override
-  String get onlineTab => 'Online';
+  String get onlineTab => 'YouTube';
 
   @override
-  String get onlineSearchHint => 'Search tracks on Audius';
+  String get onlineSearchHint => 'Search YouTube';
 
   @override
-  String get onlineSearchPrompt => 'Search Audius for tracks';
+  String get onlineSearchPrompt => 'Search YouTube for tracks';
 
   @override
-  String get onlineLoading => 'Searching Audius...';
+  String get onlineLoading => 'Searching YouTube...';
 
   @override
   String get onlineNoResults => 'No tracks found';
+
+  @override
+  String get onlineFallbackNotice =>
+      'YouTube is unavailable, so these results come from Audius.';
+
+  @override
+  String get onlineYoutubeError => 'Could not load from YouTube.';
+
+  @override
+  String get onlineYoutubeErrorNetwork =>
+      'Could not reach YouTube. Check your connection.';
+
+  @override
+  String get onlineYoutubeErrorRateLimited =>
+      'YouTube is rate limiting requests. Wait a moment and try again.';
+
+  @override
+  String get onlineYoutubeErrorUnavailable =>
+      'This video is not available on YouTube.';
+
+  @override
+  String get onlineYoutubeErrorBlocked =>
+      'YouTube refused this track. Try another result.';
+
+  @override
+  String get onlineYoutubeErrorResponse =>
+      'YouTube returned an unexpected response.';
 
   @override
   String get onlineError => 'Could not load from Audius.';
@@ -4798,7 +4847,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get onlineUnavailable => 'Unavailable on Audius';
+  String get onlineUnavailable => 'Unavailable online';
 
   @override
   String get onlineAddToPlaylist => 'Add to playlist';

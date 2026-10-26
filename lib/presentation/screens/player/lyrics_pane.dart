@@ -745,15 +745,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       await DatabaseService.instance.getLyricsTimingOffset(filename),
     );
     if (!mounted || _loadedFilename != filename) return;
-    if (widget.song.isAudius) {
-      setState(() => _loading = false);
-      return;
-    }
 
-    // The repository caches to disk, so re-entering the pane is cheap.
-    final content = await ref.read(songRepositoryProvider).getLyrics(
-          widget.song,
-        );
+    // A streamed track has no file to read tags from, so its lyrics come from
+    // the lyrics API. The repository caches to disk, so the local path only
+    // costs one read on re-entry.
+    final content = widget.song.isRemote
+        ? await _fetchOnlineLyrics(widget.song)
+        : await ref.read(songRepositoryProvider).getLyrics(widget.song);
 
     if (!mounted || _loadedFilename != filename) return;
 
@@ -869,6 +867,23 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     // Land on the right line straight away rather than waiting for the next
     // playhead tick.
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
+  }
+
+  /// Session cache: the pane reloads on every track change, and a track the
+  /// user only glanced at should not cost a second lookup to come back to.
+  static final Map<String, Future<String?>> _onlineLyrics = {};
+
+  Future<String?> _fetchOnlineLyrics(Song song) {
+    return _onlineLyrics.putIfAbsent(song.filename, () async {
+      final result = await _lrclibService.fetchForSong(song);
+      final lyrics = result?.lyricsFor();
+      if (lyrics == null || lyrics.trim().isEmpty) {
+        // Not cached: an offline answer must not become permanent.
+        _onlineLyrics.remove(song.filename);
+        return null;
+      }
+      return lyrics;
+    });
   }
 
   Future<void> _loadRichSync(String filename, List<LyricLine> local) async {

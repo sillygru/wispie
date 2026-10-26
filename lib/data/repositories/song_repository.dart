@@ -27,7 +27,7 @@ class SongRepository {
   /// Gets lyrics from embedded metadata in the audio file using FFmpeg.
   /// Always tries to read lyrics regardless of hasLyrics flag.
   Future<String?> getLyrics(Song song) {
-    if (song.isAudius) return Future.value(null);
+    if (!song.isLocal) return Future.value(null);
     final resolved = _resolvedLyrics[song.url];
     if (resolved != null) return Future.value(resolved);
     return _inFlightLyrics.putIfAbsent(song.filename, () async {

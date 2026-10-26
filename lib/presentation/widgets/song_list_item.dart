@@ -160,7 +160,7 @@ class _SongMeta extends StatelessWidget {
             ),
           ),
         ],
-        if (song.isAudius && !song.isAvailable) ...[
+        if (song.isRemote && !song.isAvailable) ...[
           const SizedBox(height: 2),
           Text(
             context.l10n.onlineUnavailable,

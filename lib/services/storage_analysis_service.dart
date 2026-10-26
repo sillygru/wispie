@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'color_extraction_service.dart';
 import 'cover_refresh_service.dart';
 import 'database_service.dart';
+import 'online_audio_cache.dart';
 import 'wispie_paths.dart';
 
 class StorageAnalysisService {
@@ -185,6 +186,26 @@ class StorageAnalysisService {
       debugPrint('Error calculating lyrics cache size: $e');
     }
     return 0;
+  }
+
+  /// Audio streamed from YouTube and kept for offline replay. Video is never
+  /// written to disk, so it has no entry here.
+  Future<int> getOnlineAudioCacheSize() async {
+    try {
+      return await OnlineAudioCache.instance.totalBytes();
+    } catch (e) {
+      debugPrint('Error calculating online audio cache size: $e');
+    }
+    return 0;
+  }
+
+  Future<void> clearOnlineAudioCache() async {
+    try {
+      await OnlineAudioCache.instance.clear();
+    } catch (e) {
+      debugPrint('Error clearing online audio cache: $e');
+      rethrow;
+    }
   }
 
   Future<int> getBlurredCacheSize() async {
@@ -440,6 +461,9 @@ class StorageAnalysisService {
 
       // Clear Blurred Cache
       await clearBlurredCache();
+
+      // Clear the streamed audio cache
+      await clearOnlineAudioCache();
 
       // Clear Shared Preferences
       final prefs = await SharedPreferences.getInstance();

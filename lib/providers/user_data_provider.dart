@@ -236,15 +236,19 @@ class UserDataNotifier extends Notifier<UserDataState> {
         for (final playlist in localPlaylists)
           for (final item in playlist.songs) item.songFilename,
       }.where((filename) =>
-          filename.startsWith('audius:') && filename.length > 'audius:'.length);
+          filename.startsWith(Song.audiusPrefix) ||
+          filename.startsWith(Song.youtubePrefix));
       final remoteSongs = <String, Song>{
+        // Placeholder until the real row loads (or is re-cached by playing it):
+        // enough for the row to exist and for the artist line to fall back to
+        // the localized unknown-artist label.
         for (final filename in referencedRemoteFilenames)
-          filename: Song.audius(
-            trackId: filename.substring('audius:'.length),
-            title: filename.substring('audius:'.length),
-            artist: 'Audius',
-            isAvailable: false,
-          ),
+          filename: Song.fromJson({
+            'filename': filename,
+            'title': filename.split(':').last,
+            'artist': '',
+            'is_available': false,
+          }),
         for (final song in localRemoteSongs) song.filename: song,
       };
 
@@ -274,7 +278,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
   }
 
   Future<void> cacheRemoteSong(Song song) async {
-    if (!song.isAudius) return;
+    if (!song.isRemote) return;
     await DatabaseService.instance.upsertRemoteSong(song);
     final remoteSongs = Map<String, Song>.from(state.remoteSongs)
       ..[song.filename] = song;
@@ -282,7 +286,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
   }
 
   Future<void> markRemoteSongUnavailable(Song song) async {
-    if (!song.isAudius) return;
+    if (!song.isRemote) return;
     await cacheRemoteSong(song.copyWith(isAvailable: false));
   }
 
@@ -327,7 +331,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
     Song? remoteSong,
   }) async {
     final metadata = remoteSong ?? state.remoteSongs[songFilename];
-    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
+    if (metadata?.isRemote == true) await cacheRemoteSong(metadata!);
     final isFav = state.isFavorite(songFilename);
     final isSL = state.isSuggestLess(songFilename);
 
@@ -487,7 +491,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
   ]) async {
     final metadata =
         remoteSong ?? (firstSong == null ? null : state.remoteSongs[firstSong]);
-    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
+    if (metadata?.isRemote == true) await cacheRemoteSong(metadata!);
     final id = const Uuid().v4();
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
     final playlist = Playlist(
@@ -514,7 +518,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
     Song? remoteSong,
   }) async {
     final metadata = remoteSong ?? state.remoteSongs[songFilename];
-    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
+    if (metadata?.isRemote == true) await cacheRemoteSong(metadata!);
     if (_isRecommendationPlaylistMutationBlocked(
         playlistId, 'addSongToPlaylist')) {
       return;

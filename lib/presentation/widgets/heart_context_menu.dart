@@ -139,7 +139,7 @@ void _handleAddToPlaylist(
   String songFilename,
   Song? song,
 ) {
-  if (song?.isAudius == true) {
+  if (song?.isRemote == true) {
     ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
   }
   final playlists = ref

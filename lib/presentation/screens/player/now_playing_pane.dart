@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+
+import '../../../services/youtube_service.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../domain/services/video_sync_policy.dart';
@@ -525,7 +527,9 @@ class _VideoSurfaceState extends State<_VideoSurface>
       final path = tag.extras?['videoPath'];
       if (path is String && path.isNotEmpty) return path;
     }
-    return widget.song.hasVideo ? widget.song.url : null;
+    if (widget.song.isYoutube) return null;
+    final url = widget.song.url;
+    return widget.song.hasVideo && url.isNotEmpty ? url : null;
   }
 
   Future<void> _setUp() async {
@@ -534,16 +538,35 @@ class _VideoSurfaceState extends State<_VideoSurface>
     // never construct a controller that can only throw MissingPluginException.
     if (Platform.isLinux || Platform.isWindows) return;
     final path = _resolveVideoPath();
-    if (path == null) return;
+    final videoId = widget.song.isYoutube ? widget.song.remoteId : null;
+    if (path == null && videoId == null) return;
 
-    final controller = VideoPlayerController.file(
-      File(path),
-      // Without this the video's own ExoPlayer requests audio focus the moment
-      // it plays, and the system duly tells just_audio it has lost focus — the
-      // music ducks or stops. Muting the video does not prevent that; only
-      // declining to handle focus does.
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-    );
+    // Without these options the video's own ExoPlayer requests audio focus the
+    // moment it plays, and the system duly tells just_audio it has lost focus —
+    // the music ducks or stops. Muting the video does not prevent that; only
+    // declining to handle focus does.
+    final options = VideoPlayerOptions(mixWithOthers: true);
+    late final VideoPlayerController controller;
+    if (path != null) {
+      controller =
+          VideoPlayerController.file(File(path), videoPlayerOptions: options);
+    } else {
+      // YouTube video is fetched straight into the platform player's own RAM
+      // buffer and never written to disk. The audio cache already keeps the
+      // track; a second copy of the pixels would dwarf it, and a music video is
+      // rarely rewatched.
+      try {
+        final stream =
+            await YouTubeService.instance.resolveVideoStream(videoId!);
+        controller = VideoPlayerController.networkUrl(
+          stream.url,
+          videoPlayerOptions: options,
+        );
+      } on Object catch (error) {
+        if (mounted) setState(() => _error = error);
+        return;
+      }
+    }
     _controller = controller;
 
     try {

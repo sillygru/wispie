@@ -923,7 +923,7 @@ class DatabaseService {
   }
 
   Future<void> upsertRemoteSong(Song song) async {
-    if (!song.isAudius || song.remoteId == null || song.remoteId!.isEmpty) {
+    if (!song.isRemote || song.remoteId == null || song.remoteId!.isEmpty) {
       return;
     }
     await _ensureInitialized();
@@ -950,17 +950,20 @@ class DatabaseService {
     final db = _userDataDatabase;
     if (db == null) return [];
     final rows = await db.query('remote_song');
+    // The source is not a column: the filename prefix already carries it, and
+    // rebuilding through fromJson keeps one parser for every remote track.
     return rows
-        .map((row) => Song.audius(
-              trackId: row['remote_id'] as String,
-              title: row['title'] as String,
-              artist: row['artist'] as String,
-              coverUrl: row['cover_url'] as String?,
-              duration: row['duration_ms'] == null
+        .map((row) => Song.fromJson({
+              'filename': row['filename'],
+              'remote_id': row['remote_id'],
+              'title': row['title'],
+              'artist': row['artist'],
+              'cover_url': row['cover_url'],
+              'duration': row['duration_ms'] == null
                   ? null
-                  : Duration(milliseconds: row['duration_ms'] as int),
-              isAvailable: (row['is_available'] as int? ?? 1) == 1,
-            ))
+                  : (row['duration_ms'] as int) / 1000.0,
+              'is_available': (row['is_available'] as int? ?? 1) == 1,
+            }))
         .toList();
   }
 
@@ -3097,8 +3100,11 @@ class DatabaseService {
     Database importedDb,
     Iterable<String> filenames,
   ) async {
-    final remoteFilenames =
-        filenames.where((filename) => filename.startsWith('audius:')).toList();
+    final remoteFilenames = filenames
+        .where((filename) =>
+            filename.startsWith(Song.audiusPrefix) ||
+            filename.startsWith(Song.youtubePrefix))
+        .toList();
     if (remoteFilenames.isEmpty) return;
     final table = await importedDb.rawQuery(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='remote_song'",

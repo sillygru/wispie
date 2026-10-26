@@ -72,23 +72,64 @@ class LrclibService {
     );
   }
 
+  Map<String, String> _getParams({
+    required String trackName,
+    required String artistName,
+    String? albumName,
+    Duration? duration,
+    String? videoId,
+  }) {
+    return {
+      'track_name': trackName,
+      'artist_name': artistName,
+      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
+      if (duration != null) 'duration': '${duration.inSeconds}',
+      if (videoId != null && videoId.isNotEmpty) 'video_id': videoId,
+      'include_rich_sync': 'true',
+      'sync_type': 'richsync',
+    };
+  }
+
   /// music-utils `/api/lyrics/get`, with direct LRCLIB fallback.
+  ///
+  /// A [videoId] pins the exact recording, which matters for streamed tracks:
+  /// their artist tag is often the channel name ("Dan Music" for an Eminem
+  /// upload), so the tag-based lookup alone misses. The lookup is repeated
+  /// without the id when the service has nothing for it.
   Future<LrclibResult?> getExact({
     required String trackName,
     required String artistName,
     String? albumName,
     Duration? duration,
+    String? videoId,
   }) async {
     if (trackName.isEmpty || artistName.isEmpty) return null;
 
-    final unified = await _musicUtils.getJson('/lyrics/get', {
-      'track_name': trackName,
-      'artist_name': artistName,
-      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
-      if (duration != null) 'duration': '${duration.inSeconds}',
-      'include_rich_sync': 'true',
-      'sync_type': 'richsync',
-    });
+    if (videoId != null && videoId.isNotEmpty) {
+      final byVideo = _resultFromObject(
+        await _musicUtils.getJson(
+          '/lyrics/get',
+          _getParams(
+            trackName: trackName,
+            artistName: artistName,
+            albumName: albumName,
+            duration: duration,
+            videoId: videoId,
+          ),
+        ),
+      );
+      if (byVideo != null) return byVideo;
+    }
+
+    final unified = await _musicUtils.getJson(
+      '/lyrics/get',
+      _getParams(
+        trackName: trackName,
+        artistName: artistName,
+        albumName: albumName,
+        duration: duration,
+      ),
+    );
     final unifiedResult = _resultFromObject(unified);
     if (unifiedResult != null) return unifiedResult;
 
@@ -98,6 +139,63 @@ class LrclibService {
       albumName: albumName,
       duration: duration,
     );
+  }
+
+  /// Best online lyrics for a streamed track, which has no file to read them
+  /// from.
+  ///
+  /// The chain narrows from exact to loose because a catalogue track's tags are
+  /// frequently the uploader's, not the release's. A video-id hit is not
+  /// automatically the winner: it is often a transcript with no timings, which
+  /// would throw away the synced view, so a timed record from a later tier
+  /// outranks it and the untimed hit is only the last resort.
+  Future<LrclibResult?> fetchForSong(Song song) async {
+    final rawTitle = cleanTag(song.title);
+    final artistName = cleanTag(song.artist);
+    if (rawTitle == null) return null;
+    final trackName = cleanSearchTitle(rawTitle, artist: artistName ?? '');
+    if (trackName.isEmpty) return null;
+
+    bool timed(LrclibResult? result) =>
+        result != null && (result.hasSynced || result.hasRichSync);
+
+    LrclibResult? videoResult;
+    final videoId = song.isYoutube ? song.remoteId : null;
+    if (videoId != null && videoId.isNotEmpty && artistName != null) {
+      videoResult = _resultFromObject(
+        await _musicUtils.getJson(
+          '/lyrics/get',
+          _getParams(
+            trackName: trackName,
+            artistName: artistName,
+            albumName: cleanTag(song.album),
+            duration: song.duration,
+            videoId: videoId,
+          ),
+        ),
+      );
+      if (timed(videoResult)) return videoResult;
+    }
+
+    final byTags = artistName == null
+        ? null
+        : await getExact(
+            trackName: trackName,
+            artistName: artistName,
+            albumName: cleanTag(song.album),
+            duration: song.duration,
+          );
+    if (timed(byTags)) return byTags;
+
+    final found = await searchFreeText(trackName);
+    if (found.isNotEmpty) {
+      final ranked = rankLrclibResults(found, song);
+      final synced = ranked.where((r) => r.hasSynced || r.hasRichSync);
+      if (synced.isNotEmpty) return synced.first;
+      if (ranked.isNotEmpty) return ranked.first;
+    }
+
+    return videoResult ?? byTags;
   }
 
   /// Fetches the optional word/syllable payload without replacing local lyrics.
@@ -126,15 +224,24 @@ class LrclibService {
     final artistName = cleanTag(song.artist);
     if (trackName == null || artistName == null) return null;
 
-    final decoded = await _musicUtils.getJson('/lyrics/get', {
-      'track_name': cleanSearchTitle(trackName, artist: artistName),
-      'artist_name': artistName,
-      if (cleanTag(song.album) case final album?) 'album_name': album,
-      if (song.duration case final duration?)
-        'duration': '${duration.inSeconds}',
-      'include_rich_sync': 'true',
-      'sync_type': 'richsync',
-    });
+    final params = _getParams(
+      trackName: cleanSearchTitle(trackName, artist: artistName),
+      artistName: artistName,
+      albumName: cleanTag(song.album),
+      duration: song.duration,
+    );
+    final videoId = song.isYoutube ? song.remoteId : null;
+    if (videoId != null && videoId.isNotEmpty) {
+      final byVideo = _resultFromObject(
+        await _musicUtils.getJson(
+          '/lyrics/get',
+          {...params, 'video_id': videoId},
+        ),
+      );
+      if (byVideo?.richLyrics != null) return byVideo!.richLyrics;
+    }
+
+    final decoded = await _musicUtils.getJson('/lyrics/get', params);
     final result = _resultFromObject(decoded);
     return result?.richLyrics;
   }

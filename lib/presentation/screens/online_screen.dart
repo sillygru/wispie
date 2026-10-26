@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
-import '../../models/song.dart';
 import '../../presentation/components/ambient_scaffold.dart';
 import '../../presentation/components/app_icon.dart';
 import '../../presentation/components/app_list_row.dart';
@@ -15,7 +14,7 @@ import '../../presentation/utils/audius_error_message.dart';
 import '../../presentation/widgets/album_art_image.dart';
 import '../../presentation/widgets/playlist_selector_dialog.dart';
 import '../../providers/providers.dart';
-import '../../services/audius_service.dart';
+import '../../services/online_music_service.dart';
 
 class OnlineScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
@@ -29,10 +28,11 @@ class OnlineScreen extends ConsumerStatefulWidget {
 class _OnlineScreenState extends ConsumerState<OnlineScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  List<AudiusTrack> _tracks = const [];
+  List<OnlineTrack> _tracks = const [];
   String _text = '';
   int _generation = 0;
   bool _loading = false;
+  bool _usedAudiusFallback = false;
   Object? _error;
 
   @override
@@ -51,6 +51,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       _text = value;
       _tracks = const [];
       _error = null;
+      _usedAudiusFallback = false;
       _loading = query.isNotEmpty;
     });
     if (query.isEmpty) return;
@@ -62,10 +63,11 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
   Future<void> _search(String query, int generation) async {
     try {
-      final tracks = await AudiusService.instance.searchTracks(query);
+      final outcome = await OnlineMusicService.instance.search(query);
       if (!mounted || generation != _generation) return;
       setState(() {
-        _tracks = tracks;
+        _tracks = outcome.tracks;
+        _usedAudiusFallback = outcome.usedAudiusFallback;
         _loading = false;
       });
     } on Object catch (error) {
@@ -82,30 +84,24 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     _onSearchChanged('');
   }
 
-  Song _toSong(AudiusTrack track) => Song.audius(
-        trackId: track.id,
-        title: track.title,
-        artist: track.artist,
-        coverUrl: track.artworkUrl,
-        duration: track.duration,
-      );
-
-  Future<void> _play(AudiusTrack track) async {
+  Future<void> _play(OnlineTrack track) async {
+    final song = track.toSong();
     try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(_toSong(track));
+      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
       await ref.read(audioPlayerManagerProvider).playSong(
-            _toSong(track),
-            contextQueue: _tracks.map(_toSong).toList(),
+            song,
+            contextQueue: _tracks.map((item) => item.toSong()).toList(),
           );
     } on Object catch (error) {
       _showPlaybackError(error);
     }
   }
 
-  Future<void> _playNext(AudiusTrack track) async {
+  Future<void> _playNext(OnlineTrack track) async {
+    final song = track.toSong();
     try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(_toSong(track));
-      await ref.read(audioPlayerManagerProvider).playNext(_toSong(track));
+      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
+      await ref.read(audioPlayerManagerProvider).playNext(song);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.songAddedToNextUp(track.title))),
@@ -115,10 +111,11 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     }
   }
 
-  Future<void> _addToQueue(AudiusTrack track) async {
+  Future<void> _addToQueue(OnlineTrack track) async {
+    final song = track.toSong();
     try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(_toSong(track));
-      await ref.read(audioPlayerManagerProvider).addToQueue(_toSong(track));
+      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
+      await ref.read(audioPlayerManagerProvider).addToQueue(song);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.onlineSongQueued(track.title))),
@@ -128,8 +125,8 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     }
   }
 
-  Future<void> _addToPlaylist(AudiusTrack track) async {
-    final song = _toSong(track);
+  Future<void> _addToPlaylist(OnlineTrack track) async {
+    final song = track.toSong();
     await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
     if (!mounted) return;
     showPlaylistSelector(context, ref, song.filename);
@@ -139,7 +136,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(AudiusErrorMessage.forError(error, context.l10n)),
+        content: Text(YouTubeErrorMessage.forError(error, context.l10n)),
       ),
     );
   }
@@ -162,6 +159,29 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         ),
       );
 
+  Widget _buildFallbackNotice() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s1,
+        AppTokens.s4,
+        AppTokens.s1,
+      ),
+      child: Row(
+        children: [
+          const AppIcon(AppIcons.info, size: 16, color: AppTokens.warning),
+          const SizedBox(width: AppTokens.s2),
+          Expanded(
+            child: Text(
+              context.l10n.onlineFallbackNotice,
+              style: AppTokens.rowSubtitle(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResults() {
     if (_loading) {
       return Center(
@@ -174,7 +194,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     if (_error != null) {
       return _message(
         AppIcons.search,
-        AudiusErrorMessage.forError(_error!, context.l10n),
+        YouTubeErrorMessage.forError(_error!, context.l10n),
       );
     }
     if (_text.trim().isEmpty) {
@@ -191,12 +211,12 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: AppTokens.s1),
       itemBuilder: (context, index) {
         final track = _tracks[index];
-        final song = _toSong(track);
+        final song = track.toSong();
         final isFavorite = ref.watch(
           userDataProvider.select((state) => state.isFavorite(song.filename)),
         );
         return AppListRow(
-          key: ValueKey(track.id),
+          key: ValueKey('${track.provider.name}:${track.id}'),
           tall: true,
           title: track.title,
           titleMaxLines: 1,
@@ -204,7 +224,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
           subtitleMaxLines: 1,
           onTap: () => _play(track),
           leading: AlbumArtImage(
-            url: track.artworkUrl ?? '',
+            url: track.coverUrl ?? '',
             width: 52,
             height: 52,
             borderRadius: AppTokens.rSm,
@@ -310,6 +330,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
               ),
             ),
           ),
+          if (_usedAudiusFallback) _buildFallbackNotice(),
           Expanded(child: _buildResults()),
         ],
       ),

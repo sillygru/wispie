@@ -1,7 +1,9 @@
+import 'shared_http_client.dart';
 import 'debug_sandbox.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
@@ -841,7 +843,13 @@ class FFmpegService {
         normalizedInput = Uri.parse(inputPath).toFilePath();
       }
 
-      final bytes = await File(normalizedInput).readAsBytes();
+      // Streamed tracks carry a cover URL rather than a path, so the bytes are
+      // fetched before the decode instead of probing a nonexistent file.
+      final bytes = normalizedInput.startsWith('http://') ||
+              normalizedInput.startsWith('https://')
+          ? await _fetchRemoteArt(normalizedInput)
+          : await File(normalizedInput).readAsBytes();
+      if (bytes == null) return false;
       final jpgBytes = await Isolate.run(
         () => generateBlurredImageBytes(
           bytes,
@@ -862,6 +870,30 @@ class FFmpegService {
       }
     }
     return false;
+  }
+
+  /// Bounded download for remote cover art: a blurred backdrop is drawn at a
+  /// few hundred points, so a full-size original is never worth the bytes.
+  Future<Uint8List?> _fetchRemoteArt(String url) async {
+    try {
+      final request = await SharedHttpClient.instance
+          .getUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
+      final response =
+          await request.close().timeout(const Duration(seconds: 10));
+      if (response.statusCode != HttpStatus.ok) return null;
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        builder.add(chunk);
+        if (builder.length > 4 << 20) return null;
+      }
+      return builder.takeBytes();
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('FFmpegService: cover download failed for $url: $error');
+      }
+      return null;
+    }
   }
 
   Future<double?> _getMediaDurationSeconds(String filePath) async {

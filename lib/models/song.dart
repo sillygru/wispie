@@ -17,7 +17,7 @@ enum PlayerCoverSizingMode {
   sourceAspect,
 }
 
-enum SongSource { local, audius }
+enum SongSource { local, audius, youtube }
 
 /// What the four-bar audio visualiser does while a song plays.
 ///
@@ -59,6 +59,11 @@ enum ProgressBarType {
 }
 
 class Song extends Equatable {
+  /// Filename prefixes are the durable identity of a remote track: they are
+  /// written once and survive cache eviction, backups and renames.
+  static const String audiusPrefix = 'audius:';
+  static const String youtubePrefix = 'youtube:';
+
   static const Set<String> videoExtensions = {
     '.mp4',
     '.m4v',
@@ -130,21 +135,44 @@ class Song extends Equatable {
     );
   }
 
+  factory Song.youtube({
+    required String videoId,
+    required String title,
+    required String artist,
+    String? coverUrl,
+    Duration? duration,
+    int playCount = 0,
+    bool isAvailable = true,
+  }) {
+    final id = videoId.trim();
+    if (id.isEmpty) throw ArgumentError.value(videoId, 'videoId');
+    return Song(
+      title: title,
+      artist: artist,
+      album: '',
+      filename: '${Song.youtubePrefix}$id',
+      url: '',
+      source: SongSource.youtube,
+      remoteId: id,
+      isAvailable: isAvailable,
+      coverUrl: coverUrl,
+      duration: duration,
+      playCount: playCount,
+    );
+  }
+
   factory Song.fromJson(Map<String, dynamic> json) {
     final filename = json['filename']?.toString() ?? '';
-    final isAudius = json['source'] == SongSource.audius.name ||
-        filename.startsWith('audius:');
+    final source = _sourceFromJson(json['source']?.toString(), filename);
     return Song(
       title: json['title'] ?? 'Unknown Title',
       artist: json['artist'] ?? 'Unknown Artist',
       album: json['album'] ?? 'Unknown Album',
       filename: filename,
       url: json['url'] ?? '',
-      source: isAudius ? SongSource.audius : SongSource.local,
-      remoteId: json['remote_id']?.toString() ??
-          (filename.startsWith('audius:')
-              ? filename.substring('audius:'.length)
-              : null),
+      source: source,
+      remoteId:
+          json['remote_id']?.toString() ?? _remoteIdFromFilename(filename),
       isAvailable: json['is_available'] != false && json['is_available'] != 0,
       coverUrl: json['cover_url'],
       hasLyrics: json['has_lyrics'] ?? false,
@@ -220,9 +248,30 @@ class Song extends Equatable {
     };
   }
 
+  static SongSource _sourceFromJson(String? raw, String filename) {
+    for (final candidate in SongSource.values) {
+      if (raw == candidate.name) return candidate;
+    }
+    if (filename.startsWith(youtubePrefix)) return SongSource.youtube;
+    if (filename.startsWith(audiusPrefix)) return SongSource.audius;
+    return SongSource.local;
+  }
+
+  static String? _remoteIdFromFilename(String filename) {
+    for (final prefix in const [audiusPrefix, youtubePrefix]) {
+      if (filename.startsWith(prefix)) return filename.substring(prefix.length);
+    }
+    return null;
+  }
+
   bool get isLocal => source == SongSource.local;
 
   bool get isAudius => source == SongSource.audius;
+
+  bool get isYoutube => source == SongSource.youtube;
+
+  /// Streamed from a catalogue rather than read off the device.
+  bool get isRemote => source != SongSource.local;
 
   @override
   List<Object?> get props => [
@@ -244,6 +293,9 @@ class Song extends Equatable {
       ];
 
   bool get hasVideo {
+    // Streamed tracks deliberately report no video: the only stream available
+    // is the muxed 360p rendition of someone else's upload, so surfacing a video
+    // pane for them was noise.
     if (source != SongSource.local) return false;
     final dotIndex = filename.lastIndexOf('.');
     if (dotIndex < 0 || dotIndex >= filename.length - 1) return false;
