@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
+import 'online_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -118,6 +119,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
           label: l10n.libraryTitle,
         ),
         AppNavItem(
+          icon: AppIcons.musicNote,
+          selectedIcon: AppIcons.musicNote,
+          label: l10n.onlineTab,
+        ),
+        AppNavItem(
           icon: AppIcons.person,
           selectedIcon: AppIcons.person,
           label: l10n.profileTitle,
@@ -152,7 +158,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   List<Widget> get _screens => [
         HomeScreen(scrollController: _scrollControllers[0]),
         LibraryTabNavigator(scrollController: _scrollControllers[1]),
-        ProfileScreen(scrollController: _scrollControllers[2]),
+        OnlineScreen(scrollController: _scrollControllers[2]),
+        ProfileScreen(scrollController: _scrollControllers[3]),
       ];
 
   Future<void> _closeDrawer() async {
@@ -313,7 +320,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     // Width is not readable until dependencies are in: the geometry starts
     // unbound and is given its first real width in didChangeDependencies.
     _drawerGeometry = DrawerGeometry(_drawerController, restWidth: 0);
-    _scrollControllers = List.generate(3, (_) => ScrollController());
+    _scrollControllers = List.generate(4, (_) => ScrollController());
     WidgetsBinding.instance.addObserver(this);
     // Report app launch telemetry
     unawaited(TelemetryService.instance.reportLaunch());
@@ -646,7 +653,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 }
 
-/// Side rail for wide windows: the same three destinations as [AppNavBar],
+/// Side rail for wide windows: the same destinations as [AppNavBar],
 /// laid out vertically desktop-style rather than as a bottom dock.
 class _WideNavRail extends StatelessWidget {
   final int selectedIndex;
@@ -677,7 +684,7 @@ class _WideNavRail extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: AppTokens.s4),
-            for (var i = 0; i < 3; i++)
+            for (var i = 0; i < 4; i++)
               _WideNavDestination(
                 index: i,
                 selected: i == selectedIndex,
@@ -787,6 +794,7 @@ class _WideNavDestination extends StatelessWidget {
     final data = switch (index) {
       0 => (AppIcons.home, context.l10n.shellNavHome),
       1 => (AppIcons.library, context.l10n.libraryTitle),
+      2 => (AppIcons.musicNote, context.l10n.onlineTab),
       _ => (AppIcons.person, context.l10n.profileTitle),
     };
     final iconColor = selected ? accent : AppTokens.fg(AppTokens.aTertiary);

@@ -3440,6 +3440,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeQuickPicks => 'Escolhas rápidas';
 
   @override
+  String get homeDailyDiscover => 'Descobertas diárias';
+
+  @override
   String get homeRecentQueues => 'Filas recentes';
 
   @override
@@ -4824,6 +4827,60 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get searchFieldHint => 'Buscar músicas, artistas, álbuns...';
+
+  @override
+  String get onlineTab => 'Online';
+
+  @override
+  String get onlineSearchHint => 'Buscar faixas no Audius';
+
+  @override
+  String get onlineSearchPrompt => 'Busque faixas no Audius';
+
+  @override
+  String get onlineLoading => 'Buscando no Audius...';
+
+  @override
+  String get onlineNoResults => 'Nenhuma faixa encontrada';
+
+  @override
+  String get onlineError =>
+      'Não foi possível acessar o Audius. Verifique a conexão e a API key.';
+
+  @override
+  String get onlineErrorNetwork =>
+      'Could not reach Audius. Check your connection.';
+
+  @override
+  String onlineErrorAuth(int status) {
+    return 'Audius rejected the API key (HTTP $status).';
+  }
+
+  @override
+  String get onlineErrorRateLimited =>
+      'Audius is rate limiting requests. Wait a moment and try again.';
+
+  @override
+  String onlineErrorServer(int status) {
+    return 'Audius is temporarily unavailable (HTTP $status).';
+  }
+
+  @override
+  String get onlineErrorResponse => 'Audius returned an unexpected response.';
+
+  @override
+  String get onlineAddToQueue => 'Adicionar à fila';
+
+  @override
+  String onlineSongQueued(String title) {
+    return 'Adicionada à fila: $title';
+  }
+
+  @override
+  String get onlineUnavailable => 'Indisponível no Audius';
+
+  @override
+  String get onlineAddToPlaylist => 'Adicionar à playlist';
 
   @override
   String get searchEmptyTitle => 'Busque na sua coleção de músicas';
@@ -8755,6 +8812,9 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get homeQuickPicks => 'Escolhas rápidas';
 
   @override
+  String get homeDailyDiscover => 'Descobertas diárias';
+
+  @override
   String get homeRecentQueues => 'Filas recentes';
 
   @override
@@ -10140,6 +10200,39 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get searchFieldHint => 'Pesquisar músicas, artistas, álbuns...';
+
+  @override
+  String get onlineTab => 'Online';
+
+  @override
+  String get onlineSearchHint => 'Pesquisar faixas no Audius';
+
+  @override
+  String get onlineSearchPrompt => 'Pesquisa faixas no Audius';
+
+  @override
+  String get onlineLoading => 'A pesquisar no Audius...';
+
+  @override
+  String get onlineNoResults => 'Não foram encontradas faixas';
+
+  @override
+  String get onlineError =>
+      'Não foi possível aceder ao Audius. Verifica a ligação e a API key.';
+
+  @override
+  String get onlineAddToQueue => 'Adicionar à fila';
+
+  @override
+  String onlineSongQueued(String title) {
+    return 'Adicionada à fila: $title';
+  }
+
+  @override
+  String get onlineUnavailable => 'Indisponível no Audius';
+
+  @override
+  String get onlineAddToPlaylist => 'Adicionar à playlist';
 
   @override
   String get searchEmptyTitle => 'Pesquisa na tua coleção de músicas';

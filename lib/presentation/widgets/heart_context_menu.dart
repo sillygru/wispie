@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../models/playlist.dart';
+import '../../models/song.dart';
 import 'playlist_selector_dialog.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
@@ -12,6 +13,7 @@ void showHeartContextMenu({
   required WidgetRef ref,
   required String songFilename,
   required String songTitle,
+  Song? song,
 }) {
   showModalBottomSheet(
     context: context,
@@ -72,7 +74,7 @@ void showHeartContextMenu({
                       onTap: () {
                         ref
                             .read(userDataProvider.notifier)
-                            .toggleFavorite(songFilename);
+                            .toggleFavorite(songFilename, remoteSong: song);
                         Navigator.pop(context);
                       },
                     ),
@@ -81,7 +83,7 @@ void showHeartContextMenu({
                       title: Text(l10n.songMenuAddToPlaylist),
                       onTap: () {
                         Navigator.pop(context);
-                        _handleAddToPlaylist(context, ref, songFilename);
+                        _handleAddToPlaylist(context, ref, songFilename, song);
                       },
                     ),
                     ListTile(
@@ -89,7 +91,8 @@ void showHeartContextMenu({
                       title: Text(l10n.songMenuAddToNewPlaylist),
                       onTap: () {
                         Navigator.pop(context);
-                        _showNewPlaylistDialog(context, ref, songFilename);
+                        _showNewPlaylistDialog(
+                            context, ref, songFilename, song);
                       },
                     ),
                     if (latestPlaylistWithSong != null)
@@ -131,7 +134,14 @@ void showHeartContextMenu({
 }
 
 void _handleAddToPlaylist(
-    BuildContext context, WidgetRef ref, String songFilename) {
+  BuildContext context,
+  WidgetRef ref,
+  String songFilename,
+  Song? song,
+) {
+  if (song?.isAudius == true) {
+    ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
+  }
   final playlists = ref
       .read(userDataProvider)
       .playlists
@@ -150,7 +160,7 @@ void _handleAddToPlaylist(
     } else {
       ref
           .read(userDataProvider.notifier)
-          .addSongToPlaylist(latest.id, songFilename);
+          .addSongToPlaylist(latest.id, songFilename, remoteSong: song);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.l10n.songAddedToPlaylist(latest.name)),
@@ -189,7 +199,11 @@ void _handleRemoveFromPlaylist(BuildContext context, WidgetRef ref,
 }
 
 void _showNewPlaylistDialog(
-    BuildContext context, WidgetRef ref, String songFilename) {
+  BuildContext context,
+  WidgetRef ref,
+  String songFilename,
+  Song? song,
+) {
   final l10n = context.l10n;
   final controller = TextEditingController();
   showDialog(
@@ -204,7 +218,7 @@ void _showNewPlaylistDialog(
           if (value.trim().isNotEmpty) {
             ref
                 .read(userDataProvider.notifier)
-                .createPlaylist(value.trim(), songFilename);
+                .createPlaylist(value.trim(), songFilename, song);
             Navigator.pop(dialogContext);
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(l10n.playlistCreated(value))),
@@ -223,7 +237,7 @@ void _showNewPlaylistDialog(
             if (name.isNotEmpty) {
               ref
                   .read(userDataProvider.notifier)
-                  .createPlaylist(name, songFilename);
+                  .createPlaylist(name, songFilename, song);
               Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(l10n.playlistCreated(name))),

@@ -7,6 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/library_logic.dart';
+import '../../services/audius_service.dart';
 import '../../services/online_metadata_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -15,6 +16,7 @@ import '../tokens/app_tokens.dart';
 import '../routes/app_page_route.dart';
 import '../screens/edit_metadata_screen.dart';
 import '../screens/song_list_screen.dart';
+import '../utils/audius_error_message.dart';
 import '../widgets/folder_picker.dart';
 import '../widgets/playlist_selector_dialog.dart';
 
@@ -35,10 +37,13 @@ void songActionToggleFavorite(
   String filename,
   String title, {
   bool showFeedback = true,
+  Song? song,
 }) {
   final l10n = AppLocalizations.of(host);
   final wasFavorite = ref.read(userDataProvider).isFavorite(filename);
-  ref.read(userDataProvider.notifier).toggleFavorite(filename);
+  ref
+      .read(userDataProvider.notifier)
+      .toggleFavorite(filename, remoteSong: song);
   if (!showFeedback || !host.mounted) return;
   ScaffoldMessenger.of(host).showSnackBar(
     SnackBar(
@@ -74,9 +79,26 @@ void songActionToggleSuggestLess(
   );
 }
 
-void songActionPlayNext(BuildContext host, WidgetRef ref, Song song) {
+Future<void> songActionPlayNext(
+  BuildContext host,
+  WidgetRef ref,
+  Song song, {
+  bool allowDuplicate = false,
+}) async {
   final l10n = AppLocalizations.of(host);
-  ref.read(audioPlayerManagerProvider).playNext(song);
+  try {
+    await ref
+        .read(audioPlayerManagerProvider)
+        .playNext(song, allowDuplicate: allowDuplicate);
+  } on AudiusApiException catch (error) {
+    if (!host.mounted) return;
+    ScaffoldMessenger.of(host).showSnackBar(
+      SnackBar(
+        content: Text(AudiusErrorMessage.forError(error, l10n)),
+      ),
+    );
+    return;
+  }
   if (!host.mounted) return;
   ScaffoldMessenger.of(host).showSnackBar(
     SnackBar(
@@ -87,6 +109,7 @@ void songActionPlayNext(BuildContext host, WidgetRef ref, Song song) {
 }
 
 void songActionShare(BuildContext host, Song song) {
+  if (!song.isLocal) return;
   SharePlus.instance.share(
     ShareParams(
       files: [XFile(song.url)],
@@ -98,11 +121,11 @@ void songActionShare(BuildContext host, Song song) {
 /// Adds to the most recently updated playlist directly, offering a "Change"
 /// escape hatch — falling back to the full selector when that would be
 /// ambiguous (no playlists, or the song is already in the latest one).
-void songActionAddToPlaylist(
-  BuildContext host,
-  WidgetRef ref,
-  String filename,
-) {
+void songActionAddToPlaylist(BuildContext host, WidgetRef ref, String filename,
+    {Song? song}) {
+  if (song?.isAudius == true) {
+    ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
+  }
   final playlists = ref
       .read(userDataProvider)
       .playlists
@@ -121,7 +144,9 @@ void songActionAddToPlaylist(
     return;
   }
 
-  ref.read(userDataProvider.notifier).addSongToPlaylist(latest.id, filename);
+  ref
+      .read(userDataProvider.notifier)
+      .addSongToPlaylist(latest.id, filename, remoteSong: song);
   if (!host.mounted) return;
   final l10n = AppLocalizations.of(host);
   ScaffoldMessenger.of(host).showSnackBar(
@@ -136,17 +161,18 @@ void songActionAddToPlaylist(
 }
 
 void songActionAddToNewPlaylist(
-  BuildContext host,
-  WidgetRef ref,
-  String filename,
-) {
+    BuildContext host, WidgetRef ref, String filename,
+    {Song? song}) {
+  if (song?.isAudius == true) {
+    ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
+  }
   final l10n = AppLocalizations.of(host);
   final controller = TextEditingController();
 
   void create(BuildContext dialogContext, String rawName) {
     final name = rawName.trim();
     if (name.isEmpty) return;
-    ref.read(userDataProvider.notifier).createPlaylist(name, filename);
+    ref.read(userDataProvider.notifier).createPlaylist(name, filename, song);
     Navigator.pop(dialogContext);
     if (!host.mounted) return;
     ScaffoldMessenger.of(
@@ -210,6 +236,7 @@ void songActionRemoveFromPlaylist(
 }
 
 void songActionEditMetadata(BuildContext host, Song song) {
+  if (!song.isLocal) return;
   Navigator.push(
     host,
     MaterialPageRoute(builder: (_) => EditMetadataScreen(song: song)),
@@ -221,6 +248,7 @@ Future<void> songActionMoveToFolder(
   WidgetRef ref,
   Song song,
 ) async {
+  if (!song.isLocal) return;
   final l10n = AppLocalizations.of(host);
   final rootPath = await ref.read(storageServiceProvider).getMusicFolderPath();
   if (rootPath == null || !host.mounted) return;
@@ -243,6 +271,7 @@ Future<void> songActionMoveToFolder(
 }
 
 Future<void> songActionHide(BuildContext host, WidgetRef ref, Song song) async {
+  if (!song.isLocal) return;
   final l10n = AppLocalizations.of(host);
   await ref.read(songsProvider.notifier).hideSong(song);
   if (!host.mounted) return;
@@ -257,6 +286,7 @@ Future<void> songActionDelete(
   WidgetRef ref,
   Song song,
 ) async {
+  if (!song.isLocal) return;
   if (!host.mounted) return;
   final l10n = AppLocalizations.of(host);
 

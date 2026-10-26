@@ -36,6 +36,7 @@ import '../domain/services/cover_optimizer.dart';
 import '../providers/theme_provider.dart';
 import '../providers/queue_history_provider.dart';
 import 'permission_service.dart';
+import 'audius_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/settings_provider.dart';
@@ -529,7 +530,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _updateQueueNotifier();
     final insertWatch = Stopwatch()..start();
     try {
-      final source = await _createAudioSource(duplicate, awaitCover: true);
+      final source = await _createAudioSource(
+        duplicate,
+        awaitCover: true,
+        resolveRemoteNow: true,
+      );
       await _player.insertAudioSource(targetIndex, source);
     } catch (e) {
       _effectiveQueue.removeAt(targetIndex);
@@ -1917,20 +1922,58 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   /// cached cover if there is one, otherwise the raw art, with the square
   /// version left to [NotificationCoverWarmer]. Awaiting it for a whole queue
   /// is what used to stall a cold start for the best part of a minute.
+  ///
+  /// [resolveRemoteNow] is the same idea for Audius: only the track that is
+  /// starting asks the API for a signed URL. Queued entries keep the stable
+  /// endpoint and follow its redirect when playback reaches them, because
+  /// resolving a whole search result at once gets the client rate limited.
   Future<AudioSource> _createAudioSource(
     QueueItem item, {
     bool awaitCover = false,
+    bool resolveRemoteNow = false,
   }) async {
     final song = item.song;
-    final mediaPaths = await _resolvePlayableMediaPaths(song);
-    final Uri audioUri = _mediaUri(mediaPaths.audioPath);
+    late final Uri audioUri;
+    late final String playbackAudioPath;
+    String? videoPath;
+    if (song.isAudius) {
+      final remoteId = song.remoteId;
+      if (remoteId == null || remoteId.isEmpty) {
+        throw const AudiusApiException('Audius track ID is missing.');
+      }
+      final streamUrl = resolveRemoteNow
+          ? await AudiusService.instance.getStreamUrl(remoteId)
+          : AudiusService.instance.playbackUri(remoteId);
+      if (streamUrl == null) {
+        final ref = _ref;
+        if (ref != null) {
+          await ref
+              .read(userDataProvider.notifier)
+              .markRemoteSongUnavailable(song);
+        }
+        throw const AudiusApiException(
+          'Audius track is unavailable.',
+          kind: AudiusErrorKind.unavailable,
+          statusCode: 404,
+        );
+      }
+      audioUri = streamUrl;
+      playbackAudioPath = streamUrl.toString();
+    } else {
+      final mediaPaths = await _resolvePlayableMediaPaths(song);
+      audioUri = _mediaUri(mediaPaths.audioPath);
+      playbackAudioPath = mediaPaths.audioPath;
+      videoPath = mediaPaths.videoPath;
+    }
 
     Uri? artUri;
     if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
       final coverSizingMode = _ref?.read(settingsProvider).coverSizingMode ??
           PlayerCoverSizingMode.sourceAspect;
       String? coverPath;
-      if (awaitCover) {
+      if (song.isAudius) {
+        coverPath = song.coverUrl;
+      } else if (awaitCover) {
         final fileManager = _ref?.read(fileManagerServiceProvider);
         coverPath = fileManager == null
             ? song.coverUrl
@@ -1949,7 +1992,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         // strict and drop on large or missing covers.
         // content:// URIs are resolved by the provider, file paths must exist.
         final isContentUri = coverPath.startsWith('content://');
-        final fileExists = isContentUri || !_isMissingLocalFile(coverPath);
+        final isRemoteUri =
+            coverPath.startsWith('http://') || coverPath.startsWith('https://');
+        final fileExists =
+            isContentUri || isRemoteUri || !_isMissingLocalFile(coverPath);
         if (fileExists) {
           try {
             artUri = _mediaUri(coverPath);
@@ -1974,11 +2020,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         extras: {
           'hasLyrics': song.hasLyrics,
           'hasVideo': song.hasVideo,
-          'remoteUrl': song.url,
+          'remoteUrl': song.isAudius ? '' : song.url,
           'queueId': item.queueId,
-          'audioPath': song.url,
-          'playbackAudioPath': mediaPaths.audioPath,
-          if (mediaPaths.videoPath != null) 'videoPath': mediaPaths.videoPath,
+          'audioPath': song.isAudius ? '' : song.url,
+          'playbackAudioPath': playbackAudioPath,
+          if (videoPath != null) 'videoPath': videoPath,
         },
       ),
     );
@@ -3130,7 +3176,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // SD card, revoked permission). Feeding them to ExoPlayer stalls the
     // whole queue with no audible error.
     final missing = _effectiveQueue
-        .where((item) => _isMissingLocalFile(item.song.url))
+        .where(
+            (item) => item.song.isLocal && _isMissingLocalFile(item.song.url))
         .toList();
     if (missing.isNotEmpty) {
       _effectiveQueue.removeWhere((item) => missing.contains(item));
@@ -3181,7 +3228,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final buildWatch = Stopwatch()..start();
     final sources = await Future.wait([
       for (int i = 0; i < _effectiveQueue.length; i++)
-        _createAudioSource(_effectiveQueue[i], awaitCover: i == targetIndex),
+        _createAudioSource(
+          _effectiveQueue[i],
+          awaitCover: i == targetIndex,
+          resolveRemoteNow: i == targetIndex,
+        ),
     ]);
     _logSlow('rebuild: built ${sources.length} sources', buildWatch);
 
@@ -3426,6 +3477,32 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     });
   }
 
+  Future<void> addToQueue(Song song) async {
+    if (_effectiveQueue.isEmpty) return playSong(song);
+
+    await _runSerializedQueueMutation(() async {
+      final item = QueueItem(song: song);
+      final originalItem = QueueItem(song: song);
+      _tagSource(item.queueId, PlaySource.queued);
+      _effectiveQueue.add(item);
+      _originalQueue.add(originalItem);
+
+      try {
+        await _player.addAudioSource(await _createAudioSource(item));
+      } catch (_) {
+        _effectiveQueue.remove(item);
+        _originalQueue.remove(originalItem);
+        _itemSource.remove(item.queueId);
+        rethrow;
+      }
+
+      _updateQueueNotifier();
+      _savePlaybackState();
+      await _updateCurrentSnapshotSongs();
+      _syncCoverWarmer(_player.currentIndex);
+    });
+  }
+
   Future<void> removeFromQueue(int index) async {
     return _runSerializedQueueMutation(() async {
       if (_effectiveQueue.isEmpty) return;
@@ -3522,7 +3599,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         final copy = QueueItem(song: _effectiveQueue[sourceIndex].song);
         _effectiveQueue.insert(targetIndex, copy);
         try {
-          final source = await _createAudioSource(copy);
+          final source = await _createAudioSource(
+            copy,
+            resolveRemoteNow: true,
+          );
           await _player.insertAudioSource(targetIndex, source);
         } catch (e) {
           _effectiveQueue.removeAt(targetIndex);

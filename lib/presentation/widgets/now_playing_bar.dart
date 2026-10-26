@@ -215,6 +215,7 @@ class _NowPlayingContent extends ConsumerWidget {
       child: FavoriteHeartButton(
         filename: metadata.id,
         title: metadata.title,
+        song: ref.watch(songsByFilenameProvider)[metadata.id],
         accent: accent,
         inactiveColor: AppTokens.fgTertiary,
         iconSize: 20,

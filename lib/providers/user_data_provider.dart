@@ -16,6 +16,7 @@ import '../domain/models/play_session.dart';
 
 class UserDataState {
   final List<String> favorites;
+  final Map<String, Song> remoteSongs;
   final List<String> suggestLess;
   final List<String> hidden;
   final List<Playlist> playlists;
@@ -33,6 +34,7 @@ class UserDataState {
 
   UserDataState({
     this.favorites = const [],
+    this.remoteSongs = const {},
     this.suggestLess = const [],
     this.hidden = const [],
     this.playlists = const [],
@@ -114,6 +116,7 @@ class UserDataState {
 
   UserDataState copyWith({
     List<String>? favorites,
+    Map<String, Song>? remoteSongs,
     List<String>? suggestLess,
     List<String>? hidden,
     List<Playlist>? playlists,
@@ -126,6 +129,7 @@ class UserDataState {
   }) {
     return UserDataState(
       favorites: favorites ?? this.favorites,
+      remoteSongs: remoteSongs ?? this.remoteSongs,
       suggestLess: suggestLess ?? this.suggestLess,
       hidden: hidden ?? this.hidden,
       playlists: playlists ?? this.playlists,
@@ -206,6 +210,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
     // Load from local database
     try {
       final localFavs = await DatabaseService.instance.getFavorites();
+      final localRemoteSongs = await DatabaseService.instance.getRemoteSongs();
       final localSL = await DatabaseService.instance.getSuggestLess();
       final localHidden = await DatabaseService.instance.getHidden();
       final localPlaylists = await DatabaseService.instance.getPlaylists();
@@ -226,8 +231,26 @@ class UserDataNotifier extends Notifier<UserDataState> {
         priorities[entry.key] = entry.value.priorityFilename;
       }
 
+      final referencedRemoteFilenames = <String>{
+        ...localFavs,
+        for (final playlist in localPlaylists)
+          for (final item in playlist.songs) item.songFilename,
+      }.where((filename) =>
+          filename.startsWith('audius:') && filename.length > 'audius:'.length);
+      final remoteSongs = <String, Song>{
+        for (final filename in referencedRemoteFilenames)
+          filename: Song.audius(
+            trackId: filename.substring('audius:'.length),
+            title: filename.substring('audius:'.length),
+            artist: 'Audius',
+            isAvailable: false,
+          ),
+        for (final song in localRemoteSongs) song.filename: song,
+      };
+
       state = state.copyWith(
         favorites: localFavs,
+        remoteSongs: remoteSongs,
         suggestLess: localSL,
         hidden: localHidden,
         playlists: localPlaylists,
@@ -248,6 +271,19 @@ class UserDataNotifier extends Notifier<UserDataState> {
     } catch (e) {
       debugPrint('Error loading local user data: $e');
     }
+  }
+
+  Future<void> cacheRemoteSong(Song song) async {
+    if (!song.isAudius) return;
+    await DatabaseService.instance.upsertRemoteSong(song);
+    final remoteSongs = Map<String, Song>.from(state.remoteSongs)
+      ..[song.filename] = song;
+    state = state.copyWith(remoteSongs: remoteSongs);
+  }
+
+  Future<void> markRemoteSongUnavailable(Song song) async {
+    if (!song.isAudius) return;
+    await cacheRemoteSong(song.copyWith(isAvailable: false));
   }
 
   void _updateManager() {
@@ -285,7 +321,13 @@ class UserDataNotifier extends Notifier<UserDataState> {
   }
 
   /// Toggle favorite (local-only)
-  Future<void> toggleFavorite(String songFilename, {bool sync = false}) async {
+  Future<void> toggleFavorite(
+    String songFilename, {
+    bool sync = false,
+    Song? remoteSong,
+  }) async {
+    final metadata = remoteSong ?? state.remoteSongs[songFilename];
+    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
     final isFav = state.isFavorite(songFilename);
     final isSL = state.isSuggestLess(songFilename);
 
@@ -438,7 +480,14 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
   // --- Playlist Management ---
 
-  Future<void> createPlaylist(String name, [String? firstSong]) async {
+  Future<void> createPlaylist(
+    String name, [
+    String? firstSong,
+    Song? remoteSong,
+  ]) async {
+    final metadata =
+        remoteSong ?? (firstSong == null ? null : state.remoteSongs[firstSong]);
+    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
     final id = const Uuid().v4();
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
     final playlist = Playlist(
@@ -458,8 +507,14 @@ class UserDataNotifier extends Notifier<UserDataState> {
     state = state.copyWith(playlists: newPlaylists);
   }
 
-  Future<void> addSongToPlaylist(String playlistId, String songFilename,
-      {bool sync = false}) async {
+  Future<void> addSongToPlaylist(
+    String playlistId,
+    String songFilename, {
+    bool sync = false,
+    Song? remoteSong,
+  }) async {
+    final metadata = remoteSong ?? state.remoteSongs[songFilename];
+    if (metadata?.isAudius == true) await cacheRemoteSong(metadata!);
     if (_isRecommendationPlaylistMutationBlocked(
         playlistId, 'addSongToPlaylist')) {
       return;

@@ -127,6 +127,7 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
       ref,
       widget.songFilename,
       widget.songTitle,
+      song: widget.song,
     );
   }
 
@@ -158,12 +159,14 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
 
   void _handleAddToPlaylist() {
     _closePopup();
-    songActionAddToPlaylist(widget.parentContext, ref, widget.songFilename);
+    songActionAddToPlaylist(widget.parentContext, ref, widget.songFilename,
+        song: widget.song);
   }
 
   void _handleAddToNewPlaylist() {
     _closePopup();
-    songActionAddToNewPlaylist(widget.parentContext, ref, widget.songFilename);
+    songActionAddToNewPlaylist(widget.parentContext, ref, widget.songFilename,
+        song: widget.song);
   }
 
   void _handleShare() {
@@ -284,7 +287,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
       key: const ValueKey(_SongMenuView.root),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (hasSongActions)
+        if (hasSongActions &&
+            (widget.song?.isLocal == true || widget.playlistId != null))
           _sectionCard(
             icon: AppIcons.play,
             title: l10n.settingsPagePlaybackTitle,
@@ -339,20 +343,12 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
           onTap: () async {
             _closePopup();
             if (widget.song == null) return;
-            ref
-                .read(audioPlayerManagerProvider)
-                .playNext(widget.song!, allowDuplicate: true);
-            if (widget.parentContext.mounted) {
-              ScaffoldMessenger.of(widget.parentContext).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    AppLocalizations.of(widget.parentContext)
-                        .songAddedToNextUp(widget.song!.title),
-                  ),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-            }
+            await songActionPlayNext(
+              widget.parentContext,
+              ref,
+              widget.song!,
+              allowDuplicate: true,
+            );
           },
         ),
         _submenuEntry(
@@ -378,50 +374,55 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
   }
 
   Widget _buildLibraryView() {
+    final isLocalSong = widget.song?.isLocal ?? false;
     return Column(
       key: const ValueKey(_SongMenuView.library),
       children: [
-        _submenuEntry(
-          icon: AppIcons.imageSearch,
-          label: l10n.songMenuFetchCover,
-          subtitle: l10n.songMenuFetchCoverHint,
-          onTap: () async {
-            final song = widget.song;
-            if (song == null) return;
-            _closePopup();
-            await songActionFetchMissingCover(widget.parentContext, ref, song);
-          },
-        ),
-        _submenuEntry(
-          icon: AppIcons.manageSearch,
-          label: l10n.songMenuFetchMetadata,
-          subtitle: l10n.songMenuFetchMetadataHint,
-          onTap: () async {
-            final song = widget.song;
-            if (song == null) return;
-            _closePopup();
-            await songActionFetchMissingMetadata(
-                widget.parentContext, ref, song);
-          },
-        ),
-        _submenuEntry(
-          icon: AppIcons.folderMove,
-          label: l10n.songMenuMoveToFolder,
-          subtitle: l10n.songMenuMoveToFolderHint,
-          onTap: _handleMoveToFolder,
-        ),
+        if (isLocalSong) ...[
+          _submenuEntry(
+            icon: AppIcons.imageSearch,
+            label: l10n.songMenuFetchCover,
+            subtitle: l10n.songMenuFetchCoverHint,
+            onTap: () async {
+              final song = widget.song;
+              if (song == null) return;
+              _closePopup();
+              await songActionFetchMissingCover(
+                  widget.parentContext, ref, song);
+            },
+          ),
+          _submenuEntry(
+            icon: AppIcons.manageSearch,
+            label: l10n.songMenuFetchMetadata,
+            subtitle: l10n.songMenuFetchMetadataHint,
+            onTap: () async {
+              final song = widget.song;
+              if (song == null) return;
+              _closePopup();
+              await songActionFetchMissingMetadata(
+                  widget.parentContext, ref, song);
+            },
+          ),
+          _submenuEntry(
+            icon: AppIcons.folderMove,
+            label: l10n.songMenuMoveToFolder,
+            subtitle: l10n.songMenuMoveToFolderHint,
+            onTap: _handleMoveToFolder,
+          ),
+        ],
         _submenuEntry(
           icon: AppIcons.playlistAdd,
           label: l10n.songMenuManagePlaylists,
           subtitle: l10n.songMenuManagePlaylistsHint,
           onTap: _handleManagePlaylists,
         ),
-        _submenuEntry(
-          icon: AppIcons.edit,
-          label: l10n.songMenuEditMetadata,
-          subtitle: l10n.songMenuEditMetadataHint,
-          onTap: _handleEditMetadata,
-        ),
+        if (isLocalSong)
+          _submenuEntry(
+            icon: AppIcons.edit,
+            label: l10n.songMenuEditMetadata,
+            subtitle: l10n.songMenuEditMetadataHint,
+            onTap: _handleEditMetadata,
+          ),
       ],
     );
   }
@@ -467,20 +468,22 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
             subtitle: l10n.songMenuRemoveFromPlaylistHint,
             onTap: _handleRemoveFromCurrentPlaylist,
           ),
-        _submenuEntry(
-          icon: AppIcons.visibilityOff,
-          iconColor: AppTokens.fgTertiary,
-          label: l10n.songMenuRemoveFromLibrary,
-          subtitle: l10n.songMenuRemoveFromLibraryHint,
-          onTap: _handleHideFromLibrary,
-        ),
-        _submenuEntry(
-          icon: AppIcons.delete,
-          iconColor: AppTokens.danger,
-          label: l10n.actionDeletePermanently,
-          subtitle: l10n.songMenuDeleteHint,
-          onTap: _handleDeleteSong,
-        ),
+        if (widget.song?.isLocal == true) ...[
+          _submenuEntry(
+            icon: AppIcons.visibilityOff,
+            iconColor: AppTokens.fgTertiary,
+            label: l10n.songMenuRemoveFromLibrary,
+            subtitle: l10n.songMenuRemoveFromLibraryHint,
+            onTap: _handleHideFromLibrary,
+          ),
+          _submenuEntry(
+            icon: AppIcons.delete,
+            iconColor: AppTokens.danger,
+            label: l10n.actionDeletePermanently,
+            subtitle: l10n.songMenuDeleteHint,
+            onTap: _handleDeleteSong,
+          ),
+        ],
       ],
     );
   }

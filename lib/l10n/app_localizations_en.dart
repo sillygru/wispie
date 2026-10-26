@@ -3380,6 +3380,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeQuickPicks => 'Quick Picks';
 
   @override
+  String get homeDailyDiscover => 'Daily Discover';
+
+  @override
   String get homeRecentQueues => 'Recent Queues';
 
   @override
@@ -4746,6 +4749,59 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchFieldHint => 'Search songs, artists, albums...';
+
+  @override
+  String get onlineTab => 'Online';
+
+  @override
+  String get onlineSearchHint => 'Search tracks on Audius';
+
+  @override
+  String get onlineSearchPrompt => 'Search Audius for tracks';
+
+  @override
+  String get onlineLoading => 'Searching Audius...';
+
+  @override
+  String get onlineNoResults => 'No tracks found';
+
+  @override
+  String get onlineError => 'Could not load from Audius.';
+
+  @override
+  String get onlineErrorNetwork =>
+      'Could not reach Audius. Check your connection.';
+
+  @override
+  String onlineErrorAuth(int status) {
+    return 'Audius rejected the API key (HTTP $status).';
+  }
+
+  @override
+  String get onlineErrorRateLimited =>
+      'Audius is rate limiting requests. Wait a moment and try again.';
+
+  @override
+  String onlineErrorServer(int status) {
+    return 'Audius is temporarily unavailable (HTTP $status).';
+  }
+
+  @override
+  String get onlineErrorResponse => 'Audius returned an unexpected response.';
+
+  @override
+  String get onlineAddToQueue => 'Add to queue';
+
+  @override
+  String onlineSongQueued(String title) {
+    return 'Added $title to the queue';
+  }
+
+  @override
+  String get onlineUnavailable => 'Unavailable on Audius';
+
+  @override
+  String get onlineAddToPlaylist => 'Add to playlist';
 
   @override
   String get searchEmptyTitle => 'Search your music collection';

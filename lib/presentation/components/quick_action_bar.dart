@@ -36,8 +36,17 @@ class QuickActionBar extends ConsumerWidget {
     );
 
     // actionOrder is the master ordering; enabledActions is the subset shown.
+    const localOnlyActions = {
+      QuickAction.share,
+      QuickAction.editMetadata,
+      QuickAction.moveToFolder,
+      QuickAction.hide,
+      QuickAction.delete,
+    };
     final actions = config.actionOrder
-        .where((a) => config.enabledActions.contains(a))
+        .where((a) =>
+            config.enabledActions.contains(a) &&
+            (song.isLocal || !localOnlyActions.contains(a)))
         .toList();
 
     if (actions.isEmpty) return const SizedBox.shrink();
@@ -103,6 +112,7 @@ class _QuickActionButton extends ConsumerWidget {
                   ref: ref,
                   songFilename: song.filename,
                   songTitle: song.title,
+                  song: song,
                 );
               }
             : null,
@@ -136,15 +146,16 @@ class _QuickActionButton extends ConsumerWidget {
           song.filename,
           song.title,
           showFeedback: false,
+          song: song,
         );
       case QuickAction.toggleSuggestLess:
         songActionToggleSuggestLess(context, ref, song.filename, song.title);
       case QuickAction.playNext:
         songActionPlayNext(context, ref, song);
       case QuickAction.addToPlaylist:
-        songActionAddToPlaylist(context, ref, song.filename);
+        songActionAddToPlaylist(context, ref, song.filename, song: song);
       case QuickAction.addToNewPlaylist:
-        songActionAddToNewPlaylist(context, ref, song.filename);
+        songActionAddToNewPlaylist(context, ref, song.filename, song: song);
       case QuickAction.share:
         songActionShare(context, song);
       case QuickAction.editMetadata:

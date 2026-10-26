@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
@@ -43,6 +44,8 @@ class SongListItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final song =
+        ref.watch(songsByFilenameProvider)[this.song.filename] ?? this.song;
     final userData = ref.watch(userDataProvider);
     final settings = ref.watch(settingsProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
@@ -155,6 +158,15 @@ class _SongMeta extends StatelessWidget {
               color: AppTokens.fgTertiary,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
+          ),
+        ],
+        if (song.isAudius && !song.isAvailable) ...[
+          const SizedBox(height: 2),
+          Text(
+            context.l10n.onlineUnavailable,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTokens.meta(context).copyWith(color: AppTokens.danger),
           ),
         ],
       ],
@@ -280,8 +292,10 @@ class _Actions extends ConsumerWidget {
           activeColor: accent,
           inactiveColor: AppTokens.fgTertiary,
           size: 20,
-          onTap: () =>
-              ref.read(userDataProvider.notifier).toggleFavorite(song.filename),
+          onTap: () => ref.read(userDataProvider.notifier).toggleFavorite(
+                song.filename,
+                remoteSong: song,
+              ),
         ),
         Builder(
           builder: (btnContext) => IconButton(

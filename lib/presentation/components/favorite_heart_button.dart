@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/providers.dart';
+import '../../models/song.dart';
 import '../widgets/heart_context_menu.dart';
 import 'pop_icon.dart';
 import 'song_actions.dart';
@@ -11,6 +12,7 @@ import 'song_actions.dart';
 class FavoriteHeartButton extends ConsumerWidget {
   final String filename;
   final String title;
+  final Song? song;
   final Color accent;
   final Color inactiveColor;
   final double iconSize;
@@ -20,6 +22,7 @@ class FavoriteHeartButton extends ConsumerWidget {
     super.key,
     required this.filename,
     required this.title,
+    this.song,
     required this.accent,
     required this.inactiveColor,
     this.iconSize = 28,
@@ -43,12 +46,14 @@ class FavoriteHeartButton extends ConsumerWidget {
         filename,
         title,
         showFeedback: false,
+        song: song,
       ),
       onLongPress: () => showHeartContextMenu(
         context: context,
         ref: ref,
         songFilename: filename,
         songTitle: title,
+        song: song,
       ),
     );
   }

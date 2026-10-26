@@ -22,6 +22,7 @@ class Filename {
     var name = raw.trim();
     if (name.isEmpty) return '';
     name = p.basename(name);
+    if (name.startsWith('audius:')) return name;
     return name.toLowerCase();
   }
 

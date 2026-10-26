@@ -745,6 +745,10 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       await DatabaseService.instance.getLyricsTimingOffset(filename),
     );
     if (!mounted || _loadedFilename != filename) return;
+    if (widget.song.isAudius) {
+      setState(() => _loading = false);
+      return;
+    }
 
     // The repository caches to disk, so re-entering the pane is cheap.
     final content = await ref.read(songRepositoryProvider).getLyrics(
@@ -934,6 +938,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// The write bumps `lyricsRevisionProvider`, which is what reloads this pane —
   /// no explicit reload here, so applying from anywhere else refreshes it too.
   Future<void> _findLyricsOnline() async {
+    if (!widget.song.isLocal) return;
     final chosen = await showLyricsSearchSheet(context, song: widget.song);
     if (chosen == null || !mounted) return;
 
@@ -1525,7 +1530,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                     ),
                   ],
                 ),
-                if (!stripCollapsed)
+                if (!stripCollapsed && widget.song.isLocal)
                   IconButton(
                     icon: const Icon(Icons.travel_explore_rounded),
                     color:
@@ -1737,15 +1742,16 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               style: PlayerTokens.trackSubtitle(context),
             ),
             const SizedBox(height: PlayerTokens.s5),
-            FilledButton.icon(
-              onPressed: _findLyricsOnline,
-              icon: const Icon(Icons.travel_explore_rounded, size: 18),
-              label: Text(context.l10n.lyricsFindOnline),
-              style: FilledButton.styleFrom(
-                backgroundColor: widget.accent,
-                foregroundColor: PlayerTokens.onAccent(widget.accent),
+            if (widget.song.isLocal)
+              FilledButton.icon(
+                onPressed: _findLyricsOnline,
+                icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                label: Text(context.l10n.lyricsFindOnline),
+                style: FilledButton.styleFrom(
+                  backgroundColor: widget.accent,
+                  foregroundColor: PlayerTokens.onAccent(widget.accent),
+                ),
               ),
-            ),
           ],
         ),
       ),

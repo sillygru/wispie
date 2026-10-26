@@ -1417,6 +1417,7 @@ class _FullBleedInfoBlock extends ConsumerWidget {
           child: FavoriteHeartButton(
             filename: song.filename,
             title: song.title,
+            song: song,
             accent: accent,
             inactiveColor:
                 Colors.white.withValues(alpha: PlayerTokens.aSecondary),
@@ -1758,6 +1759,14 @@ class _FullBleedTransportDock extends ConsumerWidget {
               builder: (context, snapshot) {
                 final Duration total =
                     snapshot.data ?? song.duration ?? Duration.zero;
+                if (song.isAudius) {
+                  return BasicProgressBar(
+                    key: ValueKey<String>('basic_${song.filename}'),
+                    player: player,
+                    total: total,
+                    onSeek: player.seek,
+                  );
+                }
                 switch (progressBarType) {
                   case ProgressBarType.reactive:
                     return ReactiveWaveformProgressBar(

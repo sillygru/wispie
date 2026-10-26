@@ -17,6 +17,8 @@ enum PlayerCoverSizingMode {
   sourceAspect,
 }
 
+enum SongSource { local, audius }
+
 /// What the four-bar audio visualiser does while a song plays.
 ///
 /// Persisted by index, so only ever append to this list.
@@ -73,6 +75,9 @@ class Song extends Equatable {
   final String album;
   final String filename;
   final String url;
+  final SongSource source;
+  final String? remoteId;
+  final bool isAvailable;
   final String? coverUrl;
   final bool hasLyrics;
   final int playCount;
@@ -87,6 +92,9 @@ class Song extends Equatable {
     required this.album,
     required this.filename,
     required this.url,
+    this.source = SongSource.local,
+    this.remoteId,
+    this.isAvailable = true,
     this.coverUrl,
     this.hasLyrics = false,
     this.playCount = 0,
@@ -96,13 +104,48 @@ class Song extends Equatable {
     this.songDateEpochSec,
   });
 
+  factory Song.audius({
+    required String trackId,
+    required String title,
+    required String artist,
+    String? coverUrl,
+    Duration? duration,
+    int playCount = 0,
+    bool isAvailable = true,
+  }) {
+    final id = trackId.trim();
+    if (id.isEmpty) throw ArgumentError.value(trackId, 'trackId');
+    return Song(
+      title: title,
+      artist: artist,
+      album: '',
+      filename: 'audius:$id',
+      url: '',
+      source: SongSource.audius,
+      remoteId: id,
+      isAvailable: isAvailable,
+      coverUrl: coverUrl,
+      duration: duration,
+      playCount: playCount,
+    );
+  }
+
   factory Song.fromJson(Map<String, dynamic> json) {
+    final filename = json['filename']?.toString() ?? '';
+    final isAudius = json['source'] == SongSource.audius.name ||
+        filename.startsWith('audius:');
     return Song(
       title: json['title'] ?? 'Unknown Title',
       artist: json['artist'] ?? 'Unknown Artist',
       album: json['album'] ?? 'Unknown Album',
-      filename: json['filename'] ?? '',
+      filename: filename,
       url: json['url'] ?? '',
+      source: isAudius ? SongSource.audius : SongSource.local,
+      remoteId: json['remote_id']?.toString() ??
+          (filename.startsWith('audius:')
+              ? filename.substring('audius:'.length)
+              : null),
+      isAvailable: json['is_available'] != false && json['is_available'] != 0,
       coverUrl: json['cover_url'],
       hasLyrics: json['has_lyrics'] ?? false,
       playCount: json['play_count'] ?? 0,
@@ -125,6 +168,10 @@ class Song extends Equatable {
     String? album,
     String? filename,
     String? url,
+    SongSource? source,
+    String? remoteId,
+    bool clearRemoteId = false,
+    bool? isAvailable,
     String? coverUrl,
     bool clearCoverUrl = false,
     bool? hasLyrics,
@@ -140,6 +187,9 @@ class Song extends Equatable {
       album: album ?? this.album,
       filename: filename ?? this.filename,
       url: url ?? this.url,
+      source: source ?? this.source,
+      remoteId: clearRemoteId ? null : (remoteId ?? this.remoteId),
+      isAvailable: isAvailable ?? this.isAvailable,
       coverUrl: clearCoverUrl ? null : (coverUrl ?? this.coverUrl),
       hasLyrics: hasLyrics ?? this.hasLyrics,
       playCount: playCount ?? this.playCount,
@@ -157,6 +207,9 @@ class Song extends Equatable {
       'album': album,
       'filename': filename,
       'url': url,
+      'source': source.name,
+      if (remoteId != null) 'remote_id': remoteId,
+      'is_available': isAvailable,
       'cover_url': coverUrl,
       'has_lyrics': hasLyrics,
       'play_count': playCount,
@@ -167,6 +220,10 @@ class Song extends Equatable {
     };
   }
 
+  bool get isLocal => source == SongSource.local;
+
+  bool get isAudius => source == SongSource.audius;
+
   @override
   List<Object?> get props => [
         title,
@@ -174,6 +231,9 @@ class Song extends Equatable {
         album,
         filename,
         url,
+        source,
+        remoteId,
+        isAvailable,
         coverUrl,
         hasLyrics,
         playCount,
@@ -184,6 +244,7 @@ class Song extends Equatable {
       ];
 
   bool get hasVideo {
+    if (source != SongSource.local) return false;
     final dotIndex = filename.lastIndexOf('.');
     if (dotIndex < 0 || dotIndex >= filename.length - 1) return false;
     final ext = filename.substring(dotIndex).toLowerCase();

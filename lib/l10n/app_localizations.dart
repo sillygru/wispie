@@ -5823,6 +5823,12 @@ abstract class AppLocalizations {
   /// **'Quick Picks'**
   String get homeQuickPicks;
 
+  /// Section label for the Audius-based home recommendations
+  ///
+  /// In en, this message translates to:
+  /// **'Daily Discover'**
+  String get homeDailyDiscover;
+
   /// Recent Queues label shared by the home section header and the settings search entry
   ///
   /// In en, this message translates to:
@@ -8000,6 +8006,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search songs, artists, albums...'**
   String get searchFieldHint;
+
+  /// Navigation destination and screen title for Audius
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get onlineTab;
+
+  /// Placeholder in the Audius track search field
+  ///
+  /// In en, this message translates to:
+  /// **'Search tracks on Audius'**
+  String get onlineSearchHint;
+
+  /// Initial state on the Audius screen
+  ///
+  /// In en, this message translates to:
+  /// **'Search Audius for tracks'**
+  String get onlineSearchPrompt;
+
+  /// Accessible label while Audius search is loading
+  ///
+  /// In en, this message translates to:
+  /// **'Searching Audius...'**
+  String get onlineLoading;
+
+  /// Audius search returned no tracks
+  ///
+  /// In en, this message translates to:
+  /// **'No tracks found'**
+  String get onlineNoResults;
+
+  /// Fallback when an Audius request fails without a more specific cause
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load from Audius.'**
+  String get onlineError;
+
+  /// Audius request failed at the network level
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach Audius. Check your connection.'**
+  String get onlineErrorNetwork;
+
+  /// Audius returned 401 or 403
+  ///
+  /// In en, this message translates to:
+  /// **'Audius rejected the API key (HTTP {status}).'**
+  String onlineErrorAuth(int status);
+
+  /// Audius returned 429
+  ///
+  /// In en, this message translates to:
+  /// **'Audius is rate limiting requests. Wait a moment and try again.'**
+  String get onlineErrorRateLimited;
+
+  /// Audius returned a 5xx error
+  ///
+  /// In en, this message translates to:
+  /// **'Audius is temporarily unavailable (HTTP {status}).'**
+  String onlineErrorServer(int status);
+
+  /// Audius returned something that is not the expected JSON
+  ///
+  /// In en, this message translates to:
+  /// **'Audius returned an unexpected response.'**
+  String get onlineErrorResponse;
+
+  /// Tooltip for appending an Audius track to the queue
+  ///
+  /// In en, this message translates to:
+  /// **'Add to queue'**
+  String get onlineAddToQueue;
+
+  /// Confirmation after adding an Audius track to the queue
+  ///
+  /// In en, this message translates to:
+  /// **'Added {title} to the queue'**
+  String onlineSongQueued(String title);
+
+  /// A cached Audius track is no longer available to stream
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable on Audius'**
+  String get onlineUnavailable;
+
+  /// Add an Audius track to a local playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Add to playlist'**
+  String get onlineAddToPlaylist;
 
   /// Search screen empty state before typing
   ///

@@ -88,6 +88,10 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
         data: (songs) {
           var playlists =
               userData.playlists.where((p) => !p.isRecommendation).toList();
+          final songsByFilename = {
+            for (final song in songs) song.filename: song,
+            ...userData.remoteSongs,
+          };
 
           if (_searchQuery.isNotEmpty) {
             playlists = playlists
@@ -111,9 +115,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
             itemCount: playlists.length,
             itemBuilder: (context, index) {
               final playlist = playlists[index];
-              final playlistSongs = songs
-                  .where((s) =>
-                      playlist.songs.any((ps) => ps.songFilename == s.filename))
+              final playlistSongs = playlist.songs
+                  .map((item) => songsByFilename[item.songFilename])
+                  .whereType<Song>()
                   .toList();
 
               return RemovableEntry(

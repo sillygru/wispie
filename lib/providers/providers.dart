@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,7 @@ import '../services/notification_cover_warmer.dart';
 import '../services/update_service.dart';
 import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
+import '../services/audius_service.dart';
 import '../domain/services/search_service.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
@@ -1171,6 +1173,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   /// every piece of user data, so anything continuing to act on the old value
   /// after this point would be writing to a path that no longer exists.
   Future<Song> renameSong(Song song, String newFilename) async {
+    if (!song.isLocal) {
+      throw UnsupportedError('Only local songs can be renamed.');
+    }
     final notifier = ref.read(metadataSaveProvider.notifier);
     notifier.start();
     try {
@@ -1269,7 +1274,8 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     void Function(String label, int done, int total)? onProgress,
     bool Function()? isCancelled,
   }) async {
-    final actionable = plans.where((entry) => entry.willRename).toList();
+    final actionable =
+        plans.where((entry) => entry.willRename && entry.song.isLocal).toList();
     if (actionable.isEmpty) return const BulkRenameResult.empty();
 
     final notifier = ref.read(metadataSaveProvider.notifier);
@@ -1710,6 +1716,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   }
 
   Future<void> updateLyrics(Song song, String lyricsContent) async {
+    if (!song.isLocal) {
+      throw UnsupportedError('Lyrics cannot be written to remote tracks.');
+    }
     final notifier = ref.read(metadataSaveProvider.notifier);
     notifier.start();
     try {
@@ -1924,6 +1933,8 @@ Song extractFeatFromSong(Song song) {
     album: song.album,
     filename: song.filename,
     url: song.url,
+    source: song.source,
+    remoteId: song.remoteId,
     coverUrl: song.coverUrl,
     hasLyrics: song.hasLyrics,
     playCount: song.playCount,
@@ -1942,10 +1953,14 @@ final songsProvider =
 /// rather than rebuilding its own map per widget.
 final songsByFilenameProvider = Provider<Map<String, Song>>((ref) {
   final songsAsync = ref.watch(songsProvider);
+  final remoteSongs = ref.watch(userDataProvider).remoteSongs;
   if (songsAsync is AsyncData<List<Song>>) {
-    return {for (final song in songsAsync.value) song.filename: song};
+    return {
+      for (final song in songsAsync.value) song.filename: song,
+      ...remoteSongs,
+    };
   }
-  return const {};
+  return remoteSongs;
 });
 
 final recommendationsProvider = Provider<List<Song>>((ref) {
@@ -1968,6 +1983,101 @@ final recommendationsProvider = Provider<List<Song>>((ref) {
       .map((ps) => songByFilename[ps.songFilename])
       .whereType<Song>()
       .toList();
+});
+
+final _homeAudiusRecommendationCache =
+    <String, ({DateTime day, List<Song> songs})>{};
+
+final homeAudiusRecommendationsProvider =
+    FutureProvider<List<Song>>((ref) async {
+  final songsAsync = ref.watch(songsProvider);
+  if (songsAsync is! AsyncData || songsAsync.value == null) {
+    return const [];
+  }
+
+  final today = DateTime.now();
+  final dayKey = DateTime(today.year, today.month, today.day).toIso8601String();
+  final cached = _homeAudiusRecommendationCache[dayKey];
+  if (cached != null) return cached.songs;
+
+  final allSongs = songsAsync.value!;
+  final artistScores = <String, double>{};
+  final playCounts = ref.watch(playCountsProvider);
+  final lastPlayed =
+      ref.watch(lastPlayedTimestampsProvider).asData?.value ?? const {};
+  final nowSec = DateTime.now().millisecondsSinceEpoch / 1000.0;
+
+  for (final song in allSongs) {
+    if (song.isAudius || song.artist.trim().isEmpty) continue;
+    final score =
+        ((playCounts[song.filename] ?? song.playCount) * 0.8).toDouble();
+    final lastPlayedAt = lastPlayed[song.filename];
+    final recencyBoost = lastPlayedAt == null
+        ? 0.0
+        : (7.0 - ((nowSec - lastPlayedAt) / 86400.0).clamp(0.0, 7.0));
+    artistScores[song.artist] =
+        (artistScores[song.artist] ?? 0.0) + score + recencyBoost;
+  }
+
+  final artistHints = artistScores.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  if (artistHints.isEmpty) return const [];
+
+  final recommendations = <Song>[];
+  final seenRemoteIds = <String>{};
+
+  try {
+    for (final artist in artistHints.take(5).map((entry) => entry.key)) {
+      final tracks =
+          await AudiusService.instance.searchTracks(artist, limit: 6);
+      for (final track in tracks) {
+        final remoteId = track.id.trim();
+        if (remoteId.isEmpty) continue;
+        if (!seenRemoteIds.add(remoteId)) continue;
+        recommendations.add(Song.audius(
+          trackId: remoteId,
+          title: track.title,
+          artist: track.artist,
+          coverUrl: track.artworkUrl,
+          duration: track.duration,
+        ));
+        if (recommendations.length >= 6) break;
+      }
+      if (recommendations.length >= 6) break;
+    }
+  } catch (_) {
+    // Best-effort only: if the network layer fails, the home screen keeps the
+    // local quick picks and the app remains fully usable offline.
+  }
+
+  if (recommendations.isEmpty) {
+    try {
+      final trending = await AudiusService.instance.getTrendingTracks(limit: 8);
+      for (final track in trending) {
+        final remoteId = track.id.trim();
+        if (remoteId.isEmpty) continue;
+        if (!seenRemoteIds.add(remoteId)) continue;
+        recommendations.add(Song.audius(
+          trackId: remoteId,
+          title: track.title,
+          artist: track.artist,
+          coverUrl: track.artworkUrl,
+          duration: track.duration,
+        ));
+        if (recommendations.length >= 6) break;
+      }
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  _homeAudiusRecommendationCache[dayKey] = (
+    day: today,
+    songs: recommendations,
+  );
+
+  return recommendations;
 });
 
 final playCountsProvider = Provider<Map<String, int>>((ref) {

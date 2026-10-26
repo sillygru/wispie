@@ -80,6 +80,7 @@ class DatabaseService {
           if (oldV < 5) await upgradeUserDataFrom4To5(db);
           if (oldV < 6) await upgradeUserDataFrom5To6(db);
           if (oldV < 7) await upgradeUserDataFrom6To7(db);
+          if (oldV < 8) await upgradeUserDataFrom7To8(db);
         },
       );
     } catch (e) {
@@ -919,6 +920,48 @@ class DatabaseService {
     );
     if (results.isEmpty) return null;
     return _mapToSong(results.first);
+  }
+
+  Future<void> upsertRemoteSong(Song song) async {
+    if (!song.isAudius || song.remoteId == null || song.remoteId!.isEmpty) {
+      return;
+    }
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return;
+    await db.insert(
+      'remote_song',
+      {
+        'filename': song.filename,
+        'remote_id': song.remoteId,
+        'title': song.title,
+        'artist': song.artist,
+        'cover_url': song.coverUrl,
+        'duration_ms': song.duration?.inMilliseconds,
+        'is_available': song.isAvailable ? 1 : 0,
+        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Song>> getRemoteSongs() async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return [];
+    final rows = await db.query('remote_song');
+    return rows
+        .map((row) => Song.audius(
+              trackId: row['remote_id'] as String,
+              title: row['title'] as String,
+              artist: row['artist'] as String,
+              coverUrl: row['cover_url'] as String?,
+              duration: row['duration_ms'] == null
+                  ? null
+                  : Duration(milliseconds: row['duration_ms'] as int),
+              isAvailable: (row['is_available'] as int? ?? 1) == 1,
+            ))
+        .toList();
   }
 
   Future<double> getLyricsTimingOffset(String filename) async {
@@ -3040,8 +3083,43 @@ class DatabaseService {
         await txn.insert('favorite', fav,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _importRemoteSongsForFilenames(
+        txn,
+        importedDb,
+        favorites.map((row) => row['filename'] as String),
+      );
       await _markRestoredDirty(txn, 'favorite');
     });
+  }
+
+  Future<void> _importRemoteSongsForFilenames(
+    Transaction txn,
+    Database importedDb,
+    Iterable<String> filenames,
+  ) async {
+    final remoteFilenames =
+        filenames.where((filename) => filename.startsWith('audius:')).toList();
+    if (remoteFilenames.isEmpty) return;
+    final table = await importedDb.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='remote_song'",
+    );
+    if (table.isEmpty) return;
+
+    for (final chunk in _chunked(remoteFilenames)) {
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      final rows = await importedDb.query(
+        'remote_song',
+        where: 'filename IN ($placeholders)',
+        whereArgs: chunk,
+      );
+      for (final row in rows) {
+        await txn.insert(
+          'remote_song',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
   }
 
   Future<void> _importSuggestless(Database importedDb, bool additive) async {
@@ -3142,6 +3220,11 @@ class DatabaseService {
         await txn.insert('playlist_song', psMap,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _importRemoteSongsForFilenames(
+        txn,
+        importedDb,
+        playlistSongs.map((row) => row['song_filename'] as String),
+      );
       await _markRestoredDirty(txn, 'playlist');
       await _markRestoredDirty(txn, 'playlist_song');
     });

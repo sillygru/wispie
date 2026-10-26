@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../services/sync/hlc.dart';
 
 const int kStatsDbVersion = 6;
-const int kUserDataDbVersion = 7;
+const int kUserDataDbVersion = 8;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -71,6 +71,17 @@ const List<String> _userDataTableStmts = [
   'CREATE TABLE IF NOT EXISTS suggestless (filename TEXT PRIMARY KEY, added_at REAL$_syncCols)',
   'CREATE TABLE IF NOT EXISTS hidden (filename TEXT PRIMARY KEY, hidden_at REAL$_syncCols)',
   'CREATE TABLE IF NOT EXISTS cover_miss (filename TEXT PRIMARY KEY, file_mtime REAL, checked_at REAL)',
+  '''
+    CREATE TABLE IF NOT EXISTS remote_song (
+      filename TEXT PRIMARY KEY,
+      remote_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT NOT NULL,
+      cover_url TEXT,
+      duration_ms INTEGER,
+      is_available INTEGER NOT NULL DEFAULT 1,
+      updated_at REAL NOT NULL
+    )''',
   '''
     CREATE TABLE IF NOT EXISTS song (
       filename TEXT PRIMARY KEY,
@@ -505,6 +516,12 @@ Future<void> upgradeUserDataFrom5To6(Database db) async {
 Future<void> upgradeUserDataFrom6To7(Database db) async {
   await db.execute(_songIdentityStmt);
   await _createSongIdentityIndexes(db);
+}
+
+Future<void> upgradeUserDataFrom7To8(Database db) async {
+  await db.execute(
+    _userDataTableStmts.firstWhere((stmt) => stmt.contains('remote_song')),
+  );
 }
 
 Future<void> _createSongIdentityIndexes(Database db) async {

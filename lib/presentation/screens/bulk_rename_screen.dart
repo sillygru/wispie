@@ -135,7 +135,9 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
 
   /// The whole library. A maintenance sweep with no selection to make: the user
   /// came here to fix the library, not a handful of songs they had lined up.
-  List<Song> get _library => ref.read(songsProvider).value ?? const [];
+  List<Song> get _library => (ref.read(songsProvider).value ?? const [])
+      .where((song) => song.isLocal)
+      .toList();
 
   /// Set by the cancel button and read by the batch between files.
   bool _shouldCancel() => _cancelRequested;

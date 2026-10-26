@@ -178,6 +178,7 @@ class _NowPlayingPaneState extends ConsumerState<NowPlayingPane>
           FavoriteHeartButton(
             filename: widget.song.filename,
             title: widget.song.title,
+            song: widget.song,
             accent: widget.accent,
             inactiveColor:
                 Colors.white.withValues(alpha: PlayerTokens.aSecondary),

@@ -924,6 +924,15 @@ class _TransportDock extends ConsumerWidget {
               builder: (context, snapshot) {
                 final total = snapshot.data ?? song.duration ?? Duration.zero;
 
+                if (song.isAudius) {
+                  return BasicProgressBar(
+                    key: ValueKey('basic_${song.filename}'),
+                    player: player,
+                    total: total,
+                    onSeek: player.seek,
+                  );
+                }
+
                 switch (progressBarType) {
                   case ProgressBarType.reactive:
                     return ReactiveWaveformProgressBar(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../models/song.dart';
 import '../../l10n/l10n.dart';
 import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
@@ -151,8 +152,13 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                   onTap: () async {
                     final songs = await ref.read(songsProvider.future);
                     final userDataState = ref.read(userDataProvider);
-                    final favSongs = songs
-                        .where((s) => userDataState.isFavorite(s.filename))
+                    final songsByFilename = {
+                      for (final song in songs) song.filename: song,
+                      ...userDataState.remoteSongs,
+                    };
+                    final favSongs = userDataState.favorites
+                        .map((filename) => songsByFilename[filename])
+                        .whereType<Song>()
                         .toList();
                     if (context.mounted) {
                       _navigateTo(SongListScreen(

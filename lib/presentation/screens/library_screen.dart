@@ -340,6 +340,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final isRoot = widget.relativePath == null;
     final playlists =
         userData.playlists.where((p) => !p.isRecommendation).toList();
+    final songsByFilename = {
+      for (final song in allSongs) song.filename: song,
+      ...userData.remoteSongs,
+    };
     final wideFolders = WideLayout.isWide(context);
 
     // Desktop-only inline filter. Narrow windows never show the field, so
@@ -363,14 +367,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     List<Song> songsOfPlaylist(String id) {
       final playlist = playlists.where((pl) => pl.id == id).firstOrNull;
       if (playlist == null) return const [];
-      final names = playlist.songs.map((ps) => ps.songFilename).toSet();
-      return allSongs.where((s) => names.contains(s.filename)).toList();
+      return playlist.songs
+          .map((item) => songsByFilename[item.songFilename])
+          .whereType<Song>()
+          .toList();
     }
+
+    List<Song> favoritesSongs() => userData.favorites
+        .map((filename) => songsByFilename[filename])
+        .whereType<Song>()
+        .toList();
 
     final List<Song> tableSource = !inlineCollections || _collection == null
         ? immediateSongs
         : _collection == _favoritesKey
-            ? allSongs.where((s) => userData.isFavorite(s.filename)).toList()
+            ? favoritesSongs()
             : songsOfPlaylist(_collection!);
     final tableSongs = query.isEmpty
         ? tableSource
@@ -390,8 +401,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       // 1. Favorites Folder (at root only)
       if (showFavorites) {
         if (cursor == 0) {
-          final favSongs =
-              allSongs.where((s) => userData.isFavorite(s.filename)).toList();
+          final favSongs = favoritesSongs();
 
           return _desktopRow(
             child: AppListRow(
@@ -485,10 +495,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       if (isRoot) {
         if (cursor < visiblePlaylists.length) {
           final playlist = visiblePlaylists[cursor];
-          final playlistSongs = allSongs
-              .where((s) =>
-                  playlist.songs.any((ps) => ps.songFilename == s.filename))
-              .toList();
+          final playlistSongs = songsOfPlaylist(playlist.id);
           void showPlaylistOptions() {
             showAppSheet(
               context,
