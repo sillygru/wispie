@@ -27,6 +27,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:wispie/domain/models/lrclib_result.dart';
+import 'package:wispie/domain/services/lrclib_merge.dart';
 import 'package:wispie/domain/services/youtube_library.dart';
 import 'package:wispie/domain/services/youtube_session.dart';
 
@@ -491,6 +493,48 @@ Future<void> _protocol() async {
         detail: server.browseCalls.length);
     check('looping page is parsed once', looped.length == 2,
         detail: looped.length);
+
+    stdout.writeln('\nLyrics merge');
+    final videoOnly = LrclibResult(
+      id: 11,
+      trackName: 'Song',
+      artistName: 'Uploader',
+      albumName: '',
+      plainLyrics: 'auto transcript',
+    );
+    final tagTimed = LrclibResult(
+      id: 22,
+      trackName: 'Song',
+      artistName: 'Artist',
+      albumName: 'Album',
+      syncedLyrics: '[00:01.00]first line',
+    );
+    final mergedLyrics = mergeLrclibResults(videoOnly, tagTimed);
+    check(
+      'merge: timed lookup wins',
+      mergedLyrics?.syncedLyrics == '[00:01.00]first line',
+      detail: mergedLyrics?.syncedLyrics,
+    );
+    check(
+      'merge: plain body filled from the other lookup',
+      mergedLyrics?.plainLyrics == 'auto transcript',
+      detail: mergedLyrics?.plainLyrics,
+    );
+    check(
+      'merge: album kept from the tag lookup',
+      mergedLyrics?.albumName == 'Album',
+      detail: mergedLyrics?.albumName,
+    );
+    check(
+      'merge: order does not matter',
+      mergeLrclibResults(tagTimed, videoOnly)?.syncedLyrics ==
+          '[00:01.00]first line',
+    );
+    check(
+      'merge: one side alone is returned',
+      mergeLrclibResults(null, tagTimed)?.id == 22 &&
+          mergeLrclibResults(videoOnly, null)?.id == 11,
+    );
 
     stdout.writeln('\nHome feed');
     server.reset();

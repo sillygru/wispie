@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../domain/models/lrclib_result.dart';
 import '../domain/models/rich_lyrics.dart';
 import '../domain/services/lrclib_match.dart';
+import '../domain/services/lrclib_merge.dart';
 import '../domain/services/lrclib_query.dart';
 import '../models/song.dart';
 import 'cache_service.dart';
@@ -191,22 +192,19 @@ class LrclibService {
     bool timed(LrclibResult? result) =>
         result != null && (result.hasSynced || result.hasRichSync);
 
+    // Two independent lookups: one asks the service for this exact video, the
+    // other searches the release by its tags. Neither is reliably enough alone,
+    // so both are made and merged.
     LrclibResult? videoResult;
     final videoId = song.isYoutube ? song.remoteId : null;
-    if (videoId != null && videoId.isNotEmpty && artistName != null) {
-      videoResult = _resultFromObject(
-        await _musicUtils.getJson(
-          '/lyrics/get',
-          _getParams(
-            trackName: trackName,
-            artistName: artistName,
-            albumName: cleanTag(song.album),
-            duration: song.duration,
-            videoId: videoId,
-          ),
-        ),
-      );
-      if (timed(videoResult)) return videoResult;
+    if (videoId != null && videoId.isNotEmpty) {
+      try {
+        videoResult = _resultFromObject(
+          await _musicUtils.getJson('/lyrics/get', {'videoId': videoId}),
+        );
+      } on Object catch (error) {
+        stderr.writeln('Lyrics: video lookup failed for $videoId: $error');
+      }
     }
 
     final byTags = artistName == null
@@ -217,7 +215,9 @@ class LrclibService {
             albumName: cleanTag(song.album),
             duration: song.duration,
           );
-    if (timed(byTags)) return byTags;
+
+    final merged = mergeLrclibResults(videoResult, byTags);
+    if (timed(merged)) return merged;
 
     final found = await searchFreeText(trackName);
     if (found.isNotEmpty) {
@@ -227,7 +227,7 @@ class LrclibService {
       if (ranked.isNotEmpty) return ranked.first;
     }
 
-    return videoResult ?? byTags;
+    return merged;
   }
 
   /// Fetches the optional word/syllable payload without replacing local lyrics.

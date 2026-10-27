@@ -5519,6 +5519,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get youtubeFeedFromLibrary => 'From artists you play';
 
   @override
+  String get youtubeFeedFilterPlaylists => 'Choose playlists';
+
+  @override
+  String get youtubeFeedPlaylistsHidden =>
+      'All playlists are hidden on this tab.';
+
+  @override
   String get youtubeFeedPlaylists => 'Your playlists';
 
   @override

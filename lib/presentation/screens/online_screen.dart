@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/youtube_library.dart';
 import '../../l10n/l10n.dart';
 import '../../presentation/components/ambient_scaffold.dart';
 import '../../presentation/components/app_icon.dart';
@@ -343,76 +344,175 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     );
   }
 
+  Future<void> _showPlaylistFilter(List<YouTubeAccountPlaylist> items) async {
+    final l10n = context.l10n;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Consumer(
+          builder: (context, ref, _) {
+            final hidden =
+                ref.watch(youtubeHiddenPlaylistsProvider).asData?.value ??
+                    YouTubeHiddenPlaylistsNotifier.defaults;
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s4,
+                    0,
+                    AppTokens.s4,
+                    AppTokens.s2,
+                  ),
+                  child: Text(
+                    l10n.youtubeFeedFilterPlaylists,
+                    style: AppTokens.screenTitle(context),
+                  ),
+                ),
+                for (final playlist in items)
+                  CheckboxListTile(
+                    value: !hidden.contains(playlist.id),
+                    title: Text(
+                      playlist.isLikedVideos
+                          ? l10n.youtubeAccountLikedVideos
+                          : playlist.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onChanged: (visible) => ref
+                        .read(youtubeHiddenPlaylistsProvider.notifier)
+                        .setHidden(playlist.id, visible != true),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _playlistsRail() {
     final playlists = ref.watch(youtubeAccountPlaylistsProvider);
+    final hidden = ref.watch(youtubeHiddenPlaylistsProvider).asData?.value ??
+        YouTubeHiddenPlaylistsNotifier.defaults;
     return playlists.when(
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (items) {
         if (items.isEmpty) return const SizedBox.shrink();
+        final visible =
+            items.where((playlist) => !hidden.contains(playlist.id)).toList();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _sectionHeader(context.l10n.youtubeFeedPlaylists),
-            SizedBox(
-              height: 176,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s4,
-                ),
-                itemCount: items.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(width: AppTokens.s3),
-                itemBuilder: (context, index) {
-                  final playlist = items[index];
-                  final title = playlist.isLikedVideos
-                      ? context.l10n.youtubeAccountLikedVideos
-                      : playlist.title;
-                  return SizedBox(
-                    width: 132,
-                    child: InkWell(
-                      borderRadius: AppTokens.brMd,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => YouTubePlaylistPreviewScreen(
-                            playlist: playlist,
-                          ),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AlbumArtImage(
-                            url: playlist.thumbnailUrl ?? '',
-                            width: 132,
-                            height: 132,
-                            borderRadius: AppTokens.rSm,
-                          ),
-                          const SizedBox(height: AppTokens.s2),
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTokens.rowTitle(context),
-                          ),
-                          if (playlist.itemCount != null)
-                            Text(
-                              context.l10n.youtubeAccountPlaylistTracks(
-                                playlist.itemCount!,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTokens.rowSubtitle(context),
-                            ),
-                        ],
-                      ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s4,
+                AppTokens.s4,
+                AppTokens.s2,
+                AppTokens.s2,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      context.l10n.youtubeFeedPlaylists,
+                      style: AppTokens.sectionLabel(context),
                     ),
-                  );
-                },
+                  ),
+                  IconButton(
+                    tooltip: context.l10n.youtubeFeedFilterPlaylists,
+                    onPressed: () => _showPlaylistFilter(items),
+                    icon: const AppIcon(
+                      AppIcons.filterList,
+                      size: AppTokens.iconMd,
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (visible.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.s4,
+                  vertical: AppTokens.s2,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        context.l10n.youtubeFeedPlaylistsHidden,
+                        style: AppTokens.rowSubtitle(context),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _showPlaylistFilter(items),
+                      child: Text(context.l10n.youtubeFeedFilterPlaylists),
+                    ),
+                  ],
+                ),
+              ),
+            if (visible.isNotEmpty)
+              SizedBox(
+                height: 176,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTokens.s4,
+                  ),
+                  itemCount: visible.length,
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(width: AppTokens.s3),
+                  itemBuilder: (context, index) {
+                    final playlist = visible[index];
+                    final title = playlist.isLikedVideos
+                        ? context.l10n.youtubeAccountLikedVideos
+                        : playlist.title;
+                    return SizedBox(
+                      width: 132,
+                      child: InkWell(
+                        borderRadius: AppTokens.brMd,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => YouTubePlaylistPreviewScreen(
+                              playlist: playlist,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AlbumArtImage(
+                              url: playlist.thumbnailUrl ?? '',
+                              width: 132,
+                              height: 132,
+                              borderRadius: AppTokens.rSm,
+                            ),
+                            const SizedBox(height: AppTokens.s2),
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTokens.rowTitle(context),
+                            ),
+                            if (playlist.itemCount != null)
+                              Text(
+                                context.l10n.youtubeAccountPlaylistTracks(
+                                  playlist.itemCount!,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTokens.rowSubtitle(context),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
           ],
         );
       },

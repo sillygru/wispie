@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../domain/models/youtube_playlist_link.dart';
@@ -431,4 +432,43 @@ final youtubePlaylistTracksProvider =
       rethrow;
     }
   },
+);
+
+/// Playlists hidden from the YouTube tab's rail.
+///
+/// Watch later is hidden on first run: it collects one-off videos rather than
+/// music, and it is the playlist most likely to be noise on a music screen. The
+/// filter sheet can bring it (or anything else) back.
+class YouTubeHiddenPlaylistsNotifier extends AsyncNotifier<List<String>> {
+  static const String prefsKey = 'youtube_hidden_playlists';
+  static const List<String> defaults = ['WL'];
+
+  @override
+  Future<List<String>> build() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(prefsKey) ?? defaults;
+  }
+
+  Future<void> setHidden(String playlistId, bool hidden) async {
+    final current = [...(state.value ?? defaults)];
+    if (hidden) {
+      if (!current.contains(playlistId)) current.add(playlistId);
+    } else {
+      current.remove(playlistId);
+    }
+    await _save(current);
+  }
+
+  Future<void> clear() => _save(const []);
+
+  Future<void> _save(List<String> hidden) async {
+    state = AsyncData(hidden);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(prefsKey, hidden);
+  }
+}
+
+final youtubeHiddenPlaylistsProvider =
+    AsyncNotifierProvider<YouTubeHiddenPlaylistsNotifier, List<String>>(
+  YouTubeHiddenPlaylistsNotifier.new,
 );

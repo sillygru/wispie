@@ -9165,6 +9165,18 @@ abstract class AppLocalizations {
   /// **'From artists you play'**
   String get youtubeFeedFromLibrary;
 
+  /// Sheet title and tooltip for filtering playlists on the YouTube tab
+  ///
+  /// In en, this message translates to:
+  /// **'Choose playlists'**
+  String get youtubeFeedFilterPlaylists;
+
+  /// Shown when every playlist in the YouTube rail is filtered out
+  ///
+  /// In en, this message translates to:
+  /// **'All playlists are hidden on this tab.'**
+  String get youtubeFeedPlaylistsHidden;
+
   /// Section header for the account's YouTube playlists
   ///
   /// In en, this message translates to:

@@ -7193,6 +7193,14 @@
   "@youtubeFeedFromLibrary": {
     "description": "Section header for recommendations built from the local library"
   },
+  "youtubeFeedFilterPlaylists": "Choose playlists",
+  "@youtubeFeedFilterPlaylists": {
+    "description": "Sheet title and tooltip for filtering playlists on the YouTube tab"
+  },
+  "youtubeFeedPlaylistsHidden": "All playlists are hidden on this tab.",
+  "@youtubeFeedPlaylistsHidden": {
+    "description": "Shown when every playlist in the YouTube rail is filtered out"
+  },
   "youtubeFeedPlaylists": "Your playlists",
   "@youtubeFeedPlaylists": {
     "description": "Section header for the account's YouTube playlists"
