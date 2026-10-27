@@ -5354,4 +5354,197 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get indexerStop => 'Stop';
+
+  @override
+  String get youtubeAccountTitle => 'YouTube account';
+
+  @override
+  String get youtubeAccountLoading => 'Loading your YouTube account...';
+
+  @override
+  String get youtubeAccountSignedOutTitle =>
+      'Bring your YouTube playlists here';
+
+  @override
+  String get youtubeAccountSignedOutBody =>
+      'Signing in lets you import your YouTube playlists into this library. Search, playback, favorites and listening stats work without an account.';
+
+  @override
+  String get youtubeAccountSignIn => 'Sign in with Google';
+
+  @override
+  String get youtubeAccountSignInTryWeb => 'Try in-app sign-in';
+
+  @override
+  String get youtubeAccountSignInHint =>
+      'Opens Google\'s own sign-in page in the app. Wispie keeps the resulting YouTube session on this device and never sees your password.';
+
+  @override
+  String get youtubeAccountSignInHintManual =>
+      'Sign in to YouTube in a browser, then bring the session cookies over: the account screen imports a Cookie header, a cookies.txt export or cookie JSON. The cookies stay on this device and are the only thing wispie needs.';
+
+  @override
+  String get youtubeAccountWebTitle => 'Google sign-in';
+
+  @override
+  String get youtubeAccountWebTrouble =>
+      'Trouble signing in? Use cookies instead';
+
+  @override
+  String get youtubeAccountWebTroubleAction => 'Use cookies';
+
+  @override
+  String get youtubeAccountWebFailed =>
+      'That page could not load. Check your connection, or use cookies instead.';
+
+  @override
+  String get youtubeAccountWebUnsupported =>
+      'This platform has no in-app browser.';
+
+  @override
+  String get youtubeAccountWebBlockedTitle =>
+      'Google blocked the in-app sign-in';
+
+  @override
+  String get youtubeAccountWebBlockedBody =>
+      'Google will not sign in from inside other apps, so a password typed here cannot be accepted. Sign in to YouTube in your browser, then import the session cookies on the account screen: the result is the same and your password is never typed into wispie.';
+
+  @override
+  String get youtubeAccountWebPasskeyTitle => 'Google is asking for a passkey';
+
+  @override
+  String get youtubeAccountWebPasskeyBody =>
+      'A passkey cannot be used from inside another app, so that step cannot finish here. Sign in with your password instead; the rest of the flow works normally.';
+
+  @override
+  String get youtubeAccountWebPasskeyAction => 'Use my password';
+
+  @override
+  String get youtubeAccountOpenYouTube => 'Open youtube.com';
+
+  @override
+  String get youtubeAccountSignOut => 'Sign out';
+
+  @override
+  String youtubeAccountSignedInAs(String name) {
+    return 'Signed in as $name';
+  }
+
+  @override
+  String get youtubeAccountSessionExpired =>
+      'Your YouTube session expired. Sign in again to keep syncing playlists.';
+
+  @override
+  String get youtubeAccountCookiesTitle => 'Paste YouTube cookies';
+
+  @override
+  String get youtubeAccountCookiesBody =>
+      'Sign in to YouTube in a browser, then copy the Cookie request header of any youtube.com request (devtools: Network -> Headers), or export a cookies.txt file, and paste it here. Only the youtube.com cookies are kept.';
+
+  @override
+  String get youtubeAccountCookiesHint =>
+      'Cookie header, cookies.txt, or exported cookie JSON';
+
+  @override
+  String get youtubeAccountCookiesImport => 'Import cookies';
+
+  @override
+  String get youtubeAccountCookiesFile => 'Choose a cookies.txt file';
+
+  @override
+  String get youtubeAccountCookiesEmpty => 'No cookies found in that text.';
+
+  @override
+  String get youtubeAccountCookiesUnreadable => 'That file could not be read.';
+
+  @override
+  String get youtubeAccountPlaylistsTitle => 'Your playlists';
+
+  @override
+  String get youtubeAccountLikedVideos => 'Liked videos';
+
+  @override
+  String youtubeAccountPlaylistTracks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count tracks',
+      one: '1 track',
+      zero: 'No tracks',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get youtubeAccountImport => 'Import';
+
+  @override
+  String get youtubeAccountSync => 'Sync';
+
+  @override
+  String get youtubeAccountSyncAll => 'Sync all imported playlists';
+
+  @override
+  String get youtubeAccountSyncHint =>
+      'Syncing only adds tracks. Nothing is ever removed from your playlists.';
+
+  @override
+  String youtubeAccountImportDone(int count, String name) {
+    return 'Imported $count tracks from $name';
+  }
+
+  @override
+  String youtubeAccountSyncDone(int count, String name) {
+    return 'Added $count new tracks to $name';
+  }
+
+  @override
+  String youtubeAccountSyncUpToDate(String name) {
+    return '$name is up to date';
+  }
+
+  @override
+  String youtubeAccountSyncLimited(int count) {
+    return 'Only the first $count new tracks were added. Sync again for the rest.';
+  }
+
+  @override
+  String get youtubeAccountPlaylistEmpty =>
+      'That playlist has no playable tracks.';
+
+  @override
+  String get youtubeAccountLoadFailed => 'Could not load your playlists.';
+
+  @override
+  String get youtubeAccountTryAgain => 'Try again';
+
+  @override
+  String get youtubeAccountErrorNetwork =>
+      'Could not reach YouTube. Check your connection and try again.';
+
+  @override
+  String get youtubeAccountErrorUnauthorized =>
+      'Your YouTube session is no longer valid. Sign in again.';
+
+  @override
+  String get youtubeAccountErrorResponse =>
+      'YouTube returned an unexpected response.';
+
+  @override
+  String get youtubeAccountErrorRateLimited =>
+      'YouTube is limiting requests right now. Try again in a few minutes.';
+
+  @override
+  String get youtubeAccountErrorStorage =>
+      'Could not store the session securely on this device.';
+
+  @override
+  String get youtubeAccountErrorGeneric =>
+      'Could not reach your YouTube account.';
+
+  @override
+  String get playlistSyncFromYoutube => 'Sync from YouTube';
+
+  @override
+  String get playlistYoutubeBadge => 'YouTube';
 }

@@ -36,13 +36,20 @@ final listeningInsightsProvider =
     FutureProvider<ListeningInsights>((ref) async {
   final range = ref.watch(statsRangeProvider);
   final library = await ref.watch(songsProvider.future);
+  final remoteSongs = ref.watch(userDataProvider.select((s) => s.remoteSongs));
   final favorites = ref.watch(userDataProvider.select((s) => s.favorites));
   final repository = ref.watch(insightsRepositoryProvider);
 
   final events = await repository.loadPlayEvents();
   return buildInsights(
     events: events,
-    library: {for (final song in library) song.filename: song},
+    // Streamed tracks (YouTube, Audius) are played from the same play log, so
+    // leaving them out of the lookup would silently drop their plays from every
+    // leaderboard on this screen.
+    library: {
+      for (final song in library) song.filename: song,
+      ...remoteSongs,
+    },
     favorites: favorites.toSet(),
     range: range,
     now: DateTime.now(),

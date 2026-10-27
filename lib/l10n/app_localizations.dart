@@ -9020,6 +9020,312 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Stop'**
   String get indexerStop;
+
+  /// Screen title and entry point for the signed-in YouTube account
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube account'**
+  String get youtubeAccountTitle;
+
+  /// Progress label while the account or its playlists load
+  ///
+  /// In en, this message translates to:
+  /// **'Loading your YouTube account...'**
+  String get youtubeAccountLoading;
+
+  /// Heading on the signed-out account screen
+  ///
+  /// In en, this message translates to:
+  /// **'Bring your YouTube playlists here'**
+  String get youtubeAccountSignedOutTitle;
+
+  /// Explanation of what signing in adds
+  ///
+  /// In en, this message translates to:
+  /// **'Signing in lets you import your YouTube playlists into this library. Search, playback, favorites and listening stats work without an account.'**
+  String get youtubeAccountSignedOutBody;
+
+  /// Button that opens Google sign-in in the in-app browser
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with Google'**
+  String get youtubeAccountSignIn;
+
+  /// Secondary action on platforms where Google blocks in-app sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Try in-app sign-in'**
+  String get youtubeAccountSignInTryWeb;
+
+  /// How the in-app sign-in works
+  ///
+  /// In en, this message translates to:
+  /// **'Opens Google\'s own sign-in page in the app. Wispie keeps the resulting YouTube session on this device and never sees your password.'**
+  String get youtubeAccountSignInHint;
+
+  /// How the cookie import works on platforms without an in-app browser
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to YouTube in a browser, then bring the session cookies over: the account screen imports a Cookie header, a cookies.txt export or cookie JSON. The cookies stay on this device and are the only thing wispie needs.'**
+  String get youtubeAccountSignInHintManual;
+
+  /// Title of the in-app browser screen that hosts Google sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Google sign-in'**
+  String get youtubeAccountWebTitle;
+
+  /// Button under the in-app browser that switches to pasting cookies
+  ///
+  /// In en, this message translates to:
+  /// **'Trouble signing in? Use cookies instead'**
+  String get youtubeAccountWebTrouble;
+
+  /// Tooltip on the action that switches to pasting cookies
+  ///
+  /// In en, this message translates to:
+  /// **'Use cookies'**
+  String get youtubeAccountWebTroubleAction;
+
+  /// Shown when the Google sign-in page fails to load
+  ///
+  /// In en, this message translates to:
+  /// **'That page could not load. Check your connection, or use cookies instead.'**
+  String get youtubeAccountWebFailed;
+
+  /// Shown when the WebView screen is opened on a platform without WebView support
+  ///
+  /// In en, this message translates to:
+  /// **'This platform has no in-app browser.'**
+  String get youtubeAccountWebUnsupported;
+
+  /// Title of the dialog shown when Google refuses WebView sign-in
+  ///
+  /// In en, this message translates to:
+  /// **'Google blocked the in-app sign-in'**
+  String get youtubeAccountWebBlockedTitle;
+
+  /// Explains the Google embedded-browser block and the cookie path
+  ///
+  /// In en, this message translates to:
+  /// **'Google will not sign in from inside other apps, so a password typed here cannot be accepted. Sign in to YouTube in your browser, then import the session cookies on the account screen: the result is the same and your password is never typed into wispie.'**
+  String get youtubeAccountWebBlockedBody;
+
+  /// Title of the hint shown when Google's sign-in page offers only a passkey
+  ///
+  /// In en, this message translates to:
+  /// **'Google is asking for a passkey'**
+  String get youtubeAccountWebPasskeyTitle;
+
+  /// Explains why Google's passkey step cannot complete in the in-app browser
+  ///
+  /// In en, this message translates to:
+  /// **'A passkey cannot be used from inside another app, so that step cannot finish here. Sign in with your password instead; the rest of the flow works normally.'**
+  String get youtubeAccountWebPasskeyBody;
+
+  /// Button that opens Google's other verification methods instead of a passkey
+  ///
+  /// In en, this message translates to:
+  /// **'Use my password'**
+  String get youtubeAccountWebPasskeyAction;
+
+  /// Button that opens youtube.com so the user can sign in
+  ///
+  /// In en, this message translates to:
+  /// **'Open youtube.com'**
+  String get youtubeAccountOpenYouTube;
+
+  /// Button that removes the stored YouTube session
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get youtubeAccountSignOut;
+
+  /// Label on the signed-in card
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in as {name}'**
+  String youtubeAccountSignedInAs(String name);
+
+  /// Shown when YouTube stopped accepting the stored cookies
+  ///
+  /// In en, this message translates to:
+  /// **'Your YouTube session expired. Sign in again to keep syncing playlists.'**
+  String get youtubeAccountSessionExpired;
+
+  /// Title of the screen that imports a browser cookie jar
+  ///
+  /// In en, this message translates to:
+  /// **'Paste YouTube cookies'**
+  String get youtubeAccountCookiesTitle;
+
+  /// Instructions for importing cookies
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to YouTube in a browser, then copy the Cookie request header of any youtube.com request (devtools: Network -> Headers), or export a cookies.txt file, and paste it here. Only the youtube.com cookies are kept.'**
+  String get youtubeAccountCookiesBody;
+
+  /// Placeholder inside the cookie input field
+  ///
+  /// In en, this message translates to:
+  /// **'Cookie header, cookies.txt, or exported cookie JSON'**
+  String get youtubeAccountCookiesHint;
+
+  /// Button that imports the pasted cookies
+  ///
+  /// In en, this message translates to:
+  /// **'Import cookies'**
+  String get youtubeAccountCookiesImport;
+
+  /// Button that reads a cookie file from disk
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a cookies.txt file'**
+  String get youtubeAccountCookiesFile;
+
+  /// Shown when the pasted text does not parse as cookies
+  ///
+  /// In en, this message translates to:
+  /// **'No cookies found in that text.'**
+  String get youtubeAccountCookiesEmpty;
+
+  /// Shown when the chosen cookie file cannot be opened
+  ///
+  /// In en, this message translates to:
+  /// **'That file could not be read.'**
+  String get youtubeAccountCookiesUnreadable;
+
+  /// Heading above the account's YouTube playlists
+  ///
+  /// In en, this message translates to:
+  /// **'Your playlists'**
+  String get youtubeAccountPlaylistsTitle;
+
+  /// Name used for the account's liked videos, which YouTube does not expose as a playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Liked videos'**
+  String get youtubeAccountLikedVideos;
+
+  /// Track count under a YouTube playlist
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No tracks} =1{1 track} other{{count} tracks}}'**
+  String youtubeAccountPlaylistTracks(int count);
+
+  /// Button that imports a YouTube playlist into the local library
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get youtubeAccountImport;
+
+  /// Button that adds new tracks from an already imported YouTube playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get youtubeAccountSync;
+
+  /// Button that syncs every linked playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Sync all imported playlists'**
+  String get youtubeAccountSyncAll;
+
+  /// Explains the additive sync behaviour
+  ///
+  /// In en, this message translates to:
+  /// **'Syncing only adds tracks. Nothing is ever removed from your playlists.'**
+  String get youtubeAccountSyncHint;
+
+  /// Snackbar after importing a YouTube playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Imported {count} tracks from {name}'**
+  String youtubeAccountImportDone(int count, String name);
+
+  /// Snackbar after a playlist sync added tracks
+  ///
+  /// In en, this message translates to:
+  /// **'Added {count} new tracks to {name}'**
+  String youtubeAccountSyncDone(int count, String name);
+
+  /// Snackbar when a sync found nothing new
+  ///
+  /// In en, this message translates to:
+  /// **'{name} is up to date'**
+  String youtubeAccountSyncUpToDate(String name);
+
+  /// Shown when a playlist exceeded the per-import track limit
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first {count} new tracks were added. Sync again for the rest.'**
+  String youtubeAccountSyncLimited(int count);
+
+  /// Shown when a YouTube playlist turned out to be empty or unplayable
+  ///
+  /// In en, this message translates to:
+  /// **'That playlist has no playable tracks.'**
+  String get youtubeAccountPlaylistEmpty;
+
+  /// Shown when the account playlist list fails to load
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load your playlists.'**
+  String get youtubeAccountLoadFailed;
+
+  /// Button that retries a failed account request
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get youtubeAccountTryAgain;
+
+  /// A YouTube request failed at the network level
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach YouTube. Check your connection and try again.'**
+  String get youtubeAccountErrorNetwork;
+
+  /// The stored cookies are missing or were rejected
+  ///
+  /// In en, this message translates to:
+  /// **'Your YouTube session is no longer valid. Sign in again.'**
+  String get youtubeAccountErrorUnauthorized;
+
+  /// The YouTube response could not be read
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube returned an unexpected response.'**
+  String get youtubeAccountErrorResponse;
+
+  /// YouTube answered with a throttling status
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube is limiting requests right now. Try again in a few minutes.'**
+  String get youtubeAccountErrorRateLimited;
+
+  /// The OS keychain refused to store the session
+  ///
+  /// In en, this message translates to:
+  /// **'Could not store the session securely on this device.'**
+  String get youtubeAccountErrorStorage;
+
+  /// Fallback for an unexpected account request failure
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach your YouTube account.'**
+  String get youtubeAccountErrorGeneric;
+
+  /// Playlist option that pulls new tracks from the linked YouTube playlist
+  ///
+  /// In en, this message translates to:
+  /// **'Sync from YouTube'**
+  String get playlistSyncFromYoutube;
+
+  /// Badge on a playlist that mirrors a YouTube account playlist
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube'**
+  String get playlistYoutubeBadge;
 }
 
 class _AppLocalizationsDelegate

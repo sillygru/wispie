@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../data/migrations.dart';
 import '../data/repositories/song_identity_repository.dart';
 import '../domain/models/listening_insights.dart';
+import '../domain/models/youtube_playlist_link.dart';
 import '../domain/services/fun_stats_export.dart';
 import '../domain/services/insights_builder.dart';
 import '../domain/services/lyrics_timing_offset.dart';
@@ -81,6 +82,7 @@ class DatabaseService {
           if (oldV < 6) await upgradeUserDataFrom5To6(db);
           if (oldV < 7) await upgradeUserDataFrom6To7(db);
           if (oldV < 8) await upgradeUserDataFrom7To8(db);
+          if (oldV < 9) await upgradeUserDataFrom8To9(db);
         },
       );
     } catch (e) {
@@ -1368,6 +1370,8 @@ class DatabaseService {
       await txn.delete('playlist_song',
           where: 'playlist_id = ?', whereArgs: [playlistId]);
       await txn.delete('playlist', where: 'id = ?', whereArgs: [playlistId]);
+      await txn.delete('youtube_playlist_link',
+          where: 'local_playlist_id = ?', whereArgs: [playlistId]);
       await _tombstone(txn, tombPlaylists, playlistId);
       for (final row in songs) {
         final fn = row['song_filename'] as String?;
@@ -1376,6 +1380,43 @@ class DatabaseService {
         }
       }
     });
+  }
+
+  // ==========================================================================
+  // YOUTUBE ACCOUNT PLAYLINKS
+  // ==========================================================================
+
+  Future<List<YouTubePlaylistLink>> getYouTubePlaylistLinks() async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return [];
+    final rows = await db.query('youtube_playlist_link');
+    return rows.map(YouTubePlaylistLink.fromRow).toList();
+  }
+
+  Future<void> upsertYouTubePlaylistLink(YouTubePlaylistLink link) async {
+    await _ensureInitialized();
+    await _userDataDatabase?.insert(
+      'youtube_playlist_link',
+      link.toRow(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteYouTubePlaylistLink(String remotePlaylistId) async {
+    await _ensureInitialized();
+    await _userDataDatabase?.delete(
+      'youtube_playlist_link',
+      where: 'remote_playlist_id = ?',
+      whereArgs: [remotePlaylistId],
+    );
+  }
+
+  /// Drops mappings whose local playlist is gone, so a restore or a delete
+  /// cannot leave a link pointing at nothing.
+  Future<void> _pruneYouTubeLinks(DatabaseExecutor txn) async {
+    await txn.delete('youtube_playlist_link',
+        where: 'local_playlist_id NOT IN (SELECT id FROM playlist)');
   }
 
   Future<void> addSongToPlaylist(String playlistId, String songFilename) async {
@@ -2893,6 +2934,7 @@ class DatabaseService {
           await txn.insert('playlist', pl,
               conflictAlgorithm: ConflictAlgorithm.ignore);
         }
+        await _pruneYouTubeLinks(txn);
 
         // Import playlist_song
         final playlistSongs = await importedDataDb.query('playlist_song');
@@ -3218,6 +3260,7 @@ class DatabaseService {
         await txn.insert('playlist', pl,
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
+      await _pruneYouTubeLinks(txn);
 
       final playlistSongs = await importedDb.query('playlist_song');
       for (final ps in playlistSongs) {

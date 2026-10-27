@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/models/youtube_playlist_link.dart';
 import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
+import '../../providers/youtube_account_provider.dart';
 import '../widgets/collection_cover.dart';
 import '../widgets/duration_display.dart';
 import 'song_list_screen.dart';
@@ -11,9 +13,11 @@ import 'select_songs_screen.dart';
 import '../components/app_surface.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_sheet.dart';
+import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../components/animated_removal.dart';
+import '../utils/youtube_account_error_message.dart';
 
 class PlaylistsScreen extends ConsumerStatefulWidget {
   const PlaylistsScreen({super.key});
@@ -37,6 +41,9 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
   Widget build(BuildContext context) {
     final songsAsync = ref.watch(songsProvider);
     final userData = ref.watch(userDataProvider);
+    final youtubeLinks =
+        ref.watch(youtubePlaylistLinksProvider).asData?.value ??
+            const <String, YouTubePlaylistLink>{};
     final colorScheme = Theme.of(context).colorScheme;
 
     return AmbientScaffold(
@@ -191,6 +198,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                               ref,
                               playlist.id,
                               playlist.name,
+                              youtubeLinks[playlist.id],
                             ),
                             icon: const AppIcon(AppIcons.moreVert),
                           ),
@@ -324,12 +332,26 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     WidgetRef ref,
     String playlistId,
     String playlistName,
+    YouTubePlaylistLink? youtubeLink,
   ) {
+    // A linked playlist outlives the session, but syncing it does not: hide the
+    // action instead of offering one that can only fail.
+    final signedIn =
+        ref.read(youtubeAccountProvider).asData?.value.signedIn ?? false;
     showAppSheet(
       context,
       builder: (context) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (youtubeLink != null && signedIn)
+            AppSheetAction(
+              icon: AppIcons.syncAlt,
+              label: context.l10n.playlistSyncFromYoutube,
+              onTap: () {
+                Navigator.pop(context);
+                _syncFromYoutube(context, ref, youtubeLink);
+              },
+            ),
           AppSheetAction(
             icon: AppIcons.edit,
             label: context.l10n.actionRename,
@@ -347,13 +369,49 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
               final notifier = ref.read(userDataProvider.notifier);
               AnimatedRemoval.run(
                 playlistId,
-                () => notifier.deletePlaylist(playlistId),
+                () async {
+                  await notifier.deletePlaylist(playlistId);
+                  // The link row went with the playlist; the account screen
+                  // must stop offering to sync it.
+                  ref.invalidate(youtubePlaylistLinksProvider);
+                },
               );
             },
           ),
         ],
       ),
     );
+  }
+
+  /// Pulls new tracks from the linked account playlist. Additive only.
+  Future<void> _syncFromYoutube(
+    BuildContext context,
+    WidgetRef ref,
+    YouTubePlaylistLink link,
+  ) async {
+    final l10n = context.l10n;
+    try {
+      final summary =
+          await ref.read(youtubeAccountProvider.notifier).syncPlaylist(link);
+      if (!context.mounted) return;
+      if (summary.added == 0) {
+        appSnack(
+            context, l10n.youtubeAccountSyncUpToDate(summary.playlistName));
+      } else {
+        appSnack(
+          context,
+          l10n.youtubeAccountSyncDone(summary.added, summary.playlistName),
+          tone: AppTone.success,
+        );
+      }
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      appSnack(
+        context,
+        YouTubeAccountErrorMessage.forError(error, l10n),
+        tone: AppTone.danger,
+      );
+    }
   }
 
   Future<void> _showRenameDialog(

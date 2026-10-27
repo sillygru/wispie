@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../services/sync/hlc.dart';
 
 const int kStatsDbVersion = 6;
-const int kUserDataDbVersion = 8;
+const int kUserDataDbVersion = 9;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -189,6 +189,19 @@ const List<String> _userDataTableStmts = [
     CREATE TABLE IF NOT EXISTS lyrics_timing_offset (
       filename TEXT PRIMARY KEY,
       offset_seconds REAL NOT NULL DEFAULT 0
+    )''',
+  // Which local playlist came from which YouTube account playlist. Deliberately
+  // outside E2EE sync: the link names a playlist on one Google account, so it
+  // must not reach a device signed in as another. A backup may carry it (same
+  // account) and restore prunes links whose playlist is gone. Playback identity
+  // is still the song filename.
+  '''
+    CREATE TABLE IF NOT EXISTS youtube_playlist_link (
+      remote_playlist_id TEXT PRIMARY KEY,
+      local_playlist_id TEXT NOT NULL,
+      remote_title TEXT,
+      last_synced_at REAL,
+      item_count INTEGER
     )''',
   // Durable filename -> audio content id memory. Not synced as rows: each
   // device derives it from its own files, and ids travel inside sync payloads.
@@ -524,6 +537,15 @@ Future<void> upgradeUserDataFrom7To8(Database db) async {
   );
 }
 
+/// User data v8 -> v9: local playlists that mirror a YouTube account playlist.
+Future<void> upgradeUserDataFrom8To9(Database db) async {
+  await db.execute(
+    _userDataTableStmts
+        .firstWhere((stmt) => stmt.contains('youtube_playlist_link')),
+  );
+  await _createYouTubeLinkIndexes(db);
+}
+
 Future<void> _createSongIdentityIndexes(Database db) async {
   await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_song_identity_cid ON song_identity(cid)');
@@ -622,6 +644,11 @@ Future<void> _createStatsIndexes(Database db) async {
       'CREATE INDEX IF NOT EXISTS idx_stats_tombstone_dirty ON sync_tombstone(dirty)');
 }
 
+Future<void> _createYouTubeLinkIndexes(Database db) async {
+  await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_youtube_playlist_link_local ON youtube_playlist_link(local_playlist_id)');
+}
+
 Future<void> _createUserDataIndexes(Database db) async {
   await db
       .execute('CREATE INDEX IF NOT EXISTS idx_song_artist ON song(artist)');
@@ -637,6 +664,7 @@ Future<void> _createUserDataIndexes(Database db) async {
       'CREATE INDEX IF NOT EXISTS idx_queue_snapshot_song_snapshot_id ON queue_snapshot_song(snapshot_id)');
   await _createMembershipIndexes(db);
   await _createSongIdentityIndexes(db);
+  await _createYouTubeLinkIndexes(db);
   await _createSyncUserDataIndexes(db);
 }
 

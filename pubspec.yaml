@@ -1,7 +1,7 @@
 name: wispie
 description: "A feature packed local music player."
 publish_to: "none"
-version: 2.3.0-release+45
+version: 2.3.0-release+46
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -46,6 +46,7 @@ dependencies:
   cryptography: ^2.9.0
   flutter_secure_storage: ^11.2.0
   unorm_dart: ^0.3.3
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:

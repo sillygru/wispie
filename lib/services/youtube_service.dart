@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../domain/services/youtube_library.dart' show kYouTubeWebApiKey;
 import 'shared_http_client.dart';
 
 /// One search hit from YouTube.
@@ -577,7 +578,7 @@ class YouTubeService {
     required _ClientProfile profile,
   }) async {
     final uri = Uri.https(_host, '/youtubei/v1/$endpoint', {
-      'key': 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+      'key': kYouTubeWebApiKey,
       'prettyPrint': 'false',
     });
 

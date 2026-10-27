@@ -8,12 +8,14 @@ import '../../l10n/l10n.dart';
 import '../../presentation/components/ambient_scaffold.dart';
 import '../../presentation/components/app_icon.dart';
 import '../../presentation/components/app_list_row.dart';
+import '../../presentation/screens/youtube_account_screen.dart';
 import '../../presentation/tokens/app_icons.dart';
 import '../../presentation/tokens/app_tokens.dart';
 import '../../presentation/utils/audius_error_message.dart';
 import '../../presentation/widgets/album_art_image.dart';
 import '../../presentation/widgets/playlist_selector_dialog.dart';
 import '../../providers/providers.dart';
+import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
 
 class OnlineScreen extends ConsumerStatefulWidget {
@@ -292,8 +294,30 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final account = ref.watch(youtubeAccountProvider).asData?.value;
+
     return AmbientScaffold(
-      appBar: AppBar(title: Text(context.l10n.onlineTab)),
+      appBar: AppBar(
+        title: Text(context.l10n.onlineTab),
+        actions: [
+          IconButton(
+            tooltip: context.l10n.youtubeAccountTitle,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const YouTubeAccountScreen(),
+              ),
+            ),
+            icon: AppIcon(
+              AppIcons.person,
+              size: AppTokens.iconMd,
+              color: account?.signedIn == true
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(

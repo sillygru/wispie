@@ -171,6 +171,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Ensure NuGet CLI
+        shell: pwsh
+        # flutter_inappwebview_windows restores the WebView2 SDK with `nuget`
+        # during CMake configure; the runner does not always ship it on PATH.
+        run: |
+          if (-not (Get-Command nuget -ErrorAction SilentlyContinue)) {
+            choco install nuget.commandline -y --no-progress
+            "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+            $env:Path = "C:\ProgramData\chocolatey\bin;$env:Path"
+          }
+          nuget help | Select-Object -First 2
+
       - name: Build Windows release (x64)
         run: flutter build windows --release
 
@@ -269,18 +281,26 @@ jobs:
           rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
           rm -rf build/macos macos/build
 
-      - name: Assert CocoaPods fully deintegrated
-        # All macos plugins are Swift Packages; leftover CocoaPods
-        # integration breaks the build with "module 'Flutter' not found".
+      - name: Assert CocoaPods integration kept
+        # flutter_inappwebview (the YouTube sign-in WebView) has no SwiftPM
+        # support, so macOS runs Flutter's mixed mode: Swift Packages for every
+        # other plugin, CocoaPods for this one. The Podfile and its lock are
+        # committed; the pods are installed after `flutter pub get` below.
         run: |
-          test ! -e macos/Podfile || (echo "macos/Podfile still present" && exit 1)
-          ! grep -r "Pods/" macos/Flutter/*.xcconfig macos/Runner.xcworkspace/contents.xcworkspacedata || \
-            (echo "Pods references remain in macos config" && exit 1)
+          test -f macos/Podfile || (echo "macos/Podfile is missing" && exit 1)
+          grep -q flutter_inappwebview macos/Podfile.lock || \
+            (echo "macos/Podfile.lock is stale" && exit 1)
 
       - name: Install dependencies
         run: |
           flutter pub get
           flutter precache --macos
+
+      - name: Install macOS pods
+        # Surfaces a pod failure before the long SPM artifact prep and build.
+        run: |
+          pod --version
+          (cd macos && pod install)
 
       - name: Build macOS release (universal)
         id: build-attempt-1

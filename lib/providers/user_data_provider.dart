@@ -285,6 +285,21 @@ class UserDataNotifier extends Notifier<UserDataState> {
     state = state.copyWith(remoteSongs: remoteSongs);
   }
 
+  /// Metadata for a whole imported playlist at once. One state emission, so a
+  /// 500-track import does not copy the map 500 times.
+  Future<void> cacheRemoteSongs(Iterable<Song> songs) async {
+    final remote = songs.where((song) => song.isRemote).toList();
+    if (remote.isEmpty) return;
+    for (final song in remote) {
+      await DatabaseService.instance.upsertRemoteSong(song);
+    }
+    final remoteSongs = Map<String, Song>.from(state.remoteSongs);
+    for (final song in remote) {
+      remoteSongs[song.filename] = song;
+    }
+    state = state.copyWith(remoteSongs: remoteSongs);
+  }
+
   Future<void> markRemoteSongUnavailable(Song song) async {
     if (!song.isRemote) return;
     await cacheRemoteSong(song.copyWith(isAvailable: false));
