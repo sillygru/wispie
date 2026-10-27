@@ -116,9 +116,25 @@ class TasteSnapshot {
 }
 
 /// Normalized artist key. Untagged songs get a per-file key so they never pool.
+///
+/// YouTube channel decoration is stripped: a streamed track credited to
+/// `Aurora - Topic` or `AuroraVEVO` is the same artist as a local file tagged
+/// `Aurora`, and keying them apart would hide half of a mixed history.
 String tasteArtistKey(String artist, String filename) {
-  final a = artist.trim().toLowerCase();
+  final a = _stripChannelDecoration(artist).toLowerCase();
   return a.isEmpty ? '\u0000$filename' : a;
+}
+
+/// Removes the `- Topic`, `VEVO` and `Official` suffixes YouTube puts on the
+/// auto-generated artist channels. Local tags pass through untouched.
+String _stripChannelDecoration(String raw) {
+  var value = raw.trim();
+  const topic = ' - topic';
+  if (value.toLowerCase().endsWith(topic)) {
+    value = value.substring(0, value.length - topic.length).trim();
+  }
+  value = value.replaceAll(RegExp(r'\s*-?\s*vevo$', caseSensitive: false), '');
+  return value.trim();
 }
 
 const double _negativeCap = 3.0;

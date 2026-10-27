@@ -66,6 +66,9 @@ class _QueuePaneState extends ConsumerState<QueuePane>
 
   Timer? _chromeSettleTimer;
 
+  /// The manager whose played-set signal this pane follows.
+  AudioPlayerManager? _playedSource;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -83,6 +86,16 @@ class _QueuePaneState extends ConsumerState<QueuePane>
       parent: _chrome,
       curve: PlayerTokens.cStandard,
     );
+    final manager = ref.read(audioPlayerManagerProvider);
+    _playedSource = manager;
+    manager.queuePlayedRevision.addListener(_reloadPlayed);
+  }
+
+  void _reloadPlayed() {
+    if (!mounted) return;
+    final queueId = _playedSource?.currentQueueId;
+    if (queueId == null) return;
+    ref.invalidate(queuePlayedSongsProvider(queueId));
   }
 
   @override
@@ -93,6 +106,7 @@ class _QueuePaneState extends ConsumerState<QueuePane>
 
   @override
   void dispose() {
+    _playedSource?.queuePlayedRevision.removeListener(_reloadPlayed);
     _cancelChromeSettle();
     _segment.dispose();
     _chrome.dispose();
@@ -588,9 +602,15 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             final currentIndex = snapshot.data ?? -1;
             _autoScrollToCurrent(currentIndex);
 
-            final played = currentIndex > 0
-                ? queue.take(currentIndex).toList()
-                : <QueueItem>[];
+            // Played songs come from the play events recorded against this
+            // queue's id, so they are what was actually heard. Slicing the
+            // queue by the current index also counted entries a restored or
+            // reordered queue had merely moved behind the playhead.
+            final queueId = audioManager.currentQueueId;
+            final played = queueId == null
+                ? const <Song>[]
+                : ref.watch(queuePlayedSongsProvider(queueId)).value ??
+                    const <Song>[];
             final current = currentIndex >= 0 && currentIndex < queue.length
                 ? queue[currentIndex]
                 : null;
@@ -627,13 +647,13 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                                     horizontal: PlayerTokens.s3,
                                   ),
                                   child: PlayerTrackRow(
-                                    song: played[index].song,
+                                    song: played[index],
                                     accent: widget.accent,
                                     isPlayed: true,
-                                    onTap: () =>
-                                        _jumpTo(audioManager, played[index]),
+                                    onTap: () => _jumpToPlayed(
+                                        audioManager, played[index]),
                                     onLongPress: () =>
-                                        _showSongOptions(played[index].song),
+                                        _showSongOptions(played[index]),
                                   ),
                                 ),
                               ),
@@ -863,6 +883,18 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   void _jumpTo(AudioPlayerManager audioManager, QueueItem item) {
     MotionHaptics.selection();
     unawaited(audioManager.jumpToQueueItem(item.queueId));
+  }
+
+  /// Jumps to the queue entry holding a song that has already played.
+  ///
+  /// The entry is looked up by filename because a reorder gives the same track
+  /// a new queue id; a track that has since left the queue does nothing.
+  void _jumpToPlayed(AudioPlayerManager audioManager, Song song) {
+    final item = audioManager.queueNotifier.value
+        .where((queued) => queued.song.filename == song.filename)
+        .firstOrNull;
+    if (item == null) return;
+    _jumpTo(audioManager, item);
   }
 
   Widget _buildSummary(

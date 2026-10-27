@@ -184,20 +184,32 @@ class UserDataNotifier extends Notifier<UserDataState> {
     return state;
   }
 
+  /// Streamed tracks worth building mixes from.
+  ///
+  /// A playlist can name a track whose catalogue row has not arrived yet; those
+  /// placeholders carry the video id as their title and must not surface in a
+  /// mix as if they were songs.
+  Iterable<Song> get _streamedPool => state.remoteSongs.values.where(
+        (song) => song.title.trim().isNotEmpty && song.title != song.remoteId,
+      );
+
   void onLibraryChanged(List<Song> library) {
-    if (library.isEmpty) return;
+    // Streamed tracks belong to the same pool the mixes are drawn from, and a
+    // listener with no local files still has a history worth mixing.
+    final pool = [...library, ..._streamedPool];
+    if (pool.isEmpty) return;
     DatabaseService.instance.validateRecommendationPlaylists().then((dbValid) {
       if (!dbValid) {
-        updateRecommendationPlaylists(force: true, allSongs: library);
+        updateRecommendationPlaylists(force: true, allSongs: pool);
         return;
       }
       final anyResolve = state.playlists.any((p) {
         if (!p.isRecommendation || p.songs.isEmpty) return false;
         return p.songs
-            .any((ps) => library.any((s) => s.filename == ps.songFilename));
+            .any((ps) => pool.any((s) => s.filename == ps.songFilename));
       });
       if (!anyResolve) {
-        updateRecommendationPlaylists(force: true, allSongs: library);
+        updateRecommendationPlaylists(force: true, allSongs: pool);
       }
     });
   }
@@ -266,9 +278,12 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
       final songs = await DatabaseService.instance.getAllSongs();
       if (!ref.mounted) return;
-      if (songs.isNotEmpty) {
-        _latestSongs = songs;
-        await updateRecommendationPlaylists(force: true, allSongs: songs);
+      // Local files plus streamed tracks: a listener whose library is entirely
+      // imported YouTube playlists still gets mixes out of their own history.
+      final pool = [...songs, ..._streamedPool];
+      if (pool.isNotEmpty) {
+        _latestSongs = pool;
+        await updateRecommendationPlaylists(force: true, allSongs: pool);
       }
     } catch (e) {
       debugPrint('Error loading local user data: $e');

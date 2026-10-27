@@ -1,54 +1,32 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/song.dart';
 import '../models/playlist.dart';
 import 'providers.dart';
 
+/// The recommendation mixes shown on Home, with pinned ones first.
+///
+/// Membership is decided against the merged library map, so a mix built from
+/// streamed tracks survives the trip to the UI: a listener whose music is
+/// mostly imported YouTube playlists used to lose every mix here.
 final mixedPlaylistsProvider = Provider<List<Playlist>>((ref) {
   final userData = ref.watch(userDataProvider);
-  final songsAsync = ref.watch(songsProvider);
-
-  if (songsAsync is! AsyncData ||
-      songsAsync.value == null ||
-      songsAsync.value!.isEmpty) {
-    return [];
-  }
-
-  final allSongs = songsAsync.value!;
-
-  // Get all recommendation playlists except quick_picks
-  final recommendationPlaylists = userData.playlists
-      .where((p) => p.isRecommendation && p.id != 'quick_picks')
-      .toList();
+  final byFilename = ref.watch(songsByFilenameProvider);
 
   final result = <Playlist>[];
-
-  for (final pl in recommendationPlaylists) {
-    if (userData.removedRecommendations.contains(pl.id)) continue;
-
-    final playlistSongs = <Song>[];
-    for (final ps in pl.songs) {
-      final song =
-          allSongs.where((s) => s.filename == ps.songFilename).firstOrNull;
-      if (song != null) playlistSongs.add(song);
-    }
-
-    if (playlistSongs.isNotEmpty) {
-      // We need to return the playlist with resolved songs if we want to use it in UI easily,
-      // but Playlist model stores PlaylistSong (filenames).
-      // For the UI to work as before, we might need a wrapper or just use Playlist and resolve songs in UI.
-      // However, AutoPlaylist was already a wrapper.
-      // Let's just return the Playlist objects and handle song resolution in the UI or here.
-      result.add(pl);
-    }
+  for (final playlist in userData.playlists) {
+    if (!playlist.isRecommendation || playlist.id == 'quick_picks') continue;
+    if (userData.removedRecommendations.contains(playlist.id)) continue;
+    final resolves =
+        playlist.songs.any((song) => byFilename.containsKey(song.songFilename));
+    if (!resolves) continue;
+    result.add(playlist);
   }
 
-  // Final sorting: Pinned ones first
+  // Pinned mixes lead.
   result.sort((a, b) {
     final aPinned = userData.recommendationPreferences[a.id]?.isPinned ?? false;
     final bPinned = userData.recommendationPreferences[b.id]?.isPinned ?? false;
-    if (aPinned && !bPinned) return -1;
-    if (!aPinned && bPinned) return 1;
-    return 0;
+    if (aPinned == bPinned) return 0;
+    return aPinned ? -1 : 1;
   });
 
   return result;

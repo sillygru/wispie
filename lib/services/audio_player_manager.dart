@@ -301,6 +301,17 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   AudioPlayer get player => _player;
   String? get currentPlaylistId => _currentPlaylistId;
+
+  /// Id of the history entry the live queue is playing under, or null when this
+  /// queue has no snapshot yet. Play events carry it, which is what makes the
+  /// queue's played list queryable.
+  String? get currentQueueId =>
+      _currentQueueSnapshotId ?? _currentSongQueueSnapshotId;
+
+  /// Bumped whenever the played set of the current queue can have changed, so
+  /// the queue pane re-reads it instead of deriving it from the queue order.
+  final ValueNotifier<int> queuePlayedRevision = ValueNotifier<int>(0);
+
   PlaybackMediaMode get preferredMediaMode => preferredMediaModeNotifier.value;
   PlaybackMediaMode get effectiveMediaMode => effectiveMediaModeNotifier.value;
 
@@ -1580,6 +1591,22 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   String? _syncedCurrent;
   int _syncedPositionMs = 0;
 
+  Timer? _queuePositionSyncTimer;
+
+  /// Long enough that the cloud copy's playhead stays meaningful without turning
+  /// every position tick into a database write; short enough that another device
+  /// resumes close to where this one stopped.
+  static const Duration _queuePositionSyncInterval = Duration(seconds: 20);
+
+  /// Publishes the playhead to the synced queue while playing.
+  void _startQueuePositionSync() {
+    if (_queuePositionSyncTimer != null) return;
+    _queuePositionSyncTimer = Timer.periodic(_queuePositionSyncInterval, (_) {
+      if (!_player.playing || _effectiveQueue.isEmpty) return;
+      unawaited(_syncCurrentQueue(_currentSongFilename, force: true));
+    });
+  }
+
   Future<void> _syncCurrentQueue(String? current, {required bool force}) async {
     if (!_queueSyncArmed) {
       if (!_player.playing) return;
@@ -1727,6 +1754,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
     unawaited(_statsService.flush().whenComplete(() {
       _tasteDirty = true;
+      // Committed: the queue's played list now includes what just finished.
+      queuePlayedRevision.value++;
     }));
     _ref?.read(songsProvider.notifier).refreshPlayCounts();
   }
@@ -1771,6 +1800,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
     _songMap = {for (var s in songs) s.filename: s};
     await _player.setShuffleModeEnabled(false);
+    _startQueuePositionSync();
 
     await DatabaseService.instance.init();
 
@@ -2897,6 +2927,20 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _tasteDirty = false;
     try {
       final rows = await DatabaseService.instance.getTasteEvents();
+      // Streamed tracks are not in the library list, and without their metadata
+      // every one of them would key on its own filename: a listener who only
+      // uses imported playlists would never build an artist profile.
+      final streamed = await DatabaseService.instance.getRemoteSongs();
+      final meta = <String, SongMeta>{
+        for (final s in _allSongs)
+          s.filename: SongMeta(artist: s.artist, album: s.album),
+        for (final s in streamed)
+          s.filename: SongMeta(artist: s.artist, album: s.album),
+      };
+      final known = {
+        ..._allSongs.map((s) => s.filename),
+        ...streamed.map((s) => s.filename),
+      };
       final inputs = TasteInputs(
         events: [
           for (final r in rows)
@@ -2909,17 +2953,14 @@ class AudioPlayerManager extends WidgetsBindingObserver {
               source: PlaySource.parse(r.source),
             ),
         ],
-        meta: {
-          for (final s in _allSongs)
-            s.filename: SongMeta(artist: s.artist, album: s.album),
-        },
+        meta: meta,
         favorites: {
-          for (final s in _allSongs)
-            if (_isFavorite(s.filename)) s.filename,
+          for (final filename in known)
+            if (_isFavorite(filename)) filename,
         },
         suggestLess: {
-          for (final s in _allSongs)
-            if (_isSuggestLess(s.filename)) s.filename,
+          for (final filename in known)
+            if (_isSuggestLess(filename)) filename,
         },
         now: DateTime.now(),
       );
@@ -3697,6 +3738,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _trackedSubscriptions.clear();
     _fadeTimer?.cancel();
     _gapTimer?.cancel();
+    _queuePositionSyncTimer?.cancel();
+    _queuePositionSyncTimer = null;
+    queuePlayedRevision.dispose();
     _clearGapState();
     // Flush before the player goes away: the state is read from it, and a
     // coalesced write may still be pending.

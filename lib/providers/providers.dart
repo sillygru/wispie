@@ -1970,14 +1970,15 @@ final recommendationsProvider = Provider<List<Song>>((ref) {
     return [];
   }
 
-  final allSongs = songsAsync.value!;
   final quickPicks = userData.playlists
       .where((p) => p.id == 'quick_picks' && p.isRecommendation)
       .firstOrNull;
 
   if (quickPicks == null) return [];
 
-  final songByFilename = {for (final s in allSongs) s.filename: s};
+  // Streamed tracks are part of a mix too: a listener whose history is mostly
+  // YouTube still has to get its picks back.
+  final songByFilename = ref.watch(songsByFilenameProvider);
   return quickPicks.songs
       .map((ps) => songByFilename[ps.songFilename])
       .whereType<Song>()

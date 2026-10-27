@@ -302,6 +302,21 @@ class SyncService extends ChangeNotifier {
 
   // ------------------------------------------------------------- settings
 
+  /// Reattaches the engine to the database handles that exist now.
+  ///
+  /// A restore replaces the database files, and the engine holds the connections
+  /// it was built with: after one, every sync write would go to a closed
+  /// handle. Called after a restore completes.
+  Future<void> rebuildAfterDatabaseReplace() async {
+    if (!isLoggedIn) return;
+    try {
+      await _buildEngine();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('SyncService: could not rebuild after a restore: $e');
+    }
+  }
+
   Future<void> setAutoSyncEnabled(bool enabled) async {
     await _kv?.set(_kAutoEnabled, enabled);
     if (enabled) {

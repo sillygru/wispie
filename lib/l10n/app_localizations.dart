@@ -4683,6 +4683,18 @@ abstract class AppLocalizations {
   /// **'Failed to restore backup: {error}'**
   String backupRestoreFailed(Object error);
 
+  /// Progress label while the library is reloaded after a restore
+  ///
+  /// In en, this message translates to:
+  /// **'Reloading the library…'**
+  String get backupRestoreReloadingLibrary;
+
+  /// Progress label while playlists and recommendation mixes are rebuilt after a restore
+  ///
+  /// In en, this message translates to:
+  /// **'Refreshing playlists and mixes…'**
+  String get backupRestoreRefreshingPlaylists;
+
   /// Title of the dialog confirming deletion of a backup
   ///
   /// In en, this message translates to:
@@ -5906,6 +5918,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Recent Queues'**
   String get homeRecentQueues;
+
+  /// Home section header for the user's own playlists, including imported YouTube ones
+  ///
+  /// In en, this message translates to:
+  /// **'Your Playlists'**
+  String get homePlaylists;
 
   /// For You label shared by the home section header and the settings search entry
   ///

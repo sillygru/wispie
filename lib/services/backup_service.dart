@@ -812,15 +812,24 @@ class BackupService {
     // Always runs — repair is idempotent and cheap when nothing needs changing,
     // and every import path (app data, backup restore, Namida) should reconcile
     // the library against the filesystem so orphaned paths don't accumulate.
+    // The repair pass is the visible bulk of an import, but it is not the end:
+    // its own progress is capped below 1 so the bar cannot read "done" while
+    // identity reconciliation is still reading the library.
     await LibraryRepairService.instance.repairLibrary(
       preImportSongs: preImportSongs,
       importedRows: importedRows,
-      onProgress: onProgress,
+      onProgress: onProgress == null
+          ? null
+          : (value, label) => onProgress(value.clamp(0.0, 0.85), label),
     );
 
     // Backup rows are keyed by the names files had when it was taken; files
-    // renamed since are matched back by audio content.
+    // renamed since are matched back by audio content. This walks the library
+    // and reads files it has not identified yet, so it is reported rather than
+    // left to look like a hang at 100%.
+    onProgress?.call(0.9, 'Matching renamed files…');
     await SongIdentityService.instance.reconcileFromLibrary();
+    onProgress?.call(1.0, 'Done');
   }
 
   /// Imports a previously validated archive, then removes the extracted copy.
@@ -879,6 +888,7 @@ class BackupService {
     final importOptions = options ?? ImportOptions.defaultImport;
 
     try {
+      onProgress?.call(0.02, 'Extracting the archive…');
       final tempDir = await Directory.systemTemp.createTemp('gru_restore_');
 
       try {
@@ -961,6 +971,8 @@ class BackupService {
           await DatabaseService.instance.init();
         }
 
+        onProgress?.call(0.08, 'Replacing local data…');
+
         await _applyImport(
           importPath: contentPath,
           statsDbPath: statsDbPath,
@@ -971,7 +983,9 @@ class BackupService {
           onProgress: onProgress,
         );
 
+        onProgress?.call(0.97, 'Rebuilding the search index…');
         await _invalidateSearchIndexIfStale(importOptions);
+        onProgress?.call(1.0, 'Done');
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);

@@ -2278,6 +2278,32 @@ class DatabaseService {
     }
   }
 
+  /// Filenames already played in [queueId], earliest first, once per track.
+  ///
+  /// Play events carry the queue id, so this is the only record of what a queue
+  /// actually played. An index into the live queue cannot answer it: a restored
+  /// or reordered queue would count tracks the user skipped past as played.
+  Future<List<String>> getPlayedFilenamesForQueue(String queueId) async {
+    await _ensureInitialized();
+    final stats = _statsDatabase;
+    if (stats == null || queueId.isEmpty) return const [];
+    try {
+      final rows = await stats.rawQuery(
+        'SELECT song_filename, MIN(timestamp) AS first_played '
+        'FROM playevent WHERE queue_id = ?'
+        ' GROUP BY song_filename ORDER BY first_played ASC',
+        [queueId],
+      );
+      return [
+        for (final row in rows)
+          if (row['song_filename'] is String) row['song_filename'] as String,
+      ];
+    } catch (e) {
+      debugPrint('Error reading played songs for a queue: $e');
+      return const [];
+    }
+  }
+
   Future<Map<String, double>> getLastPlayedTimestamps() async {
     await _ensureInitialized();
     if (_statsDatabase == null) return {};

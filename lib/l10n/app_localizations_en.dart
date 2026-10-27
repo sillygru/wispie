@@ -2694,6 +2694,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get backupRestoreReloadingLibrary => 'Reloading the library…';
+
+  @override
+  String get backupRestoreRefreshingPlaylists =>
+      'Refreshing playlists and mixes…';
+
+  @override
   String get backupDeleteTitle => 'Delete Backup';
 
   @override
@@ -3426,6 +3433,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeRecentQueues => 'Recent Queues';
+
+  @override
+  String get homePlaylists => 'Your Playlists';
 
   @override
   String get homeForYou => 'For You';

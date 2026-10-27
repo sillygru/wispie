@@ -167,16 +167,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetRef ref,
   ) {
     final userData = ref.watch(userDataProvider);
-    final songs = ref.watch(songsProvider).value ?? [];
+    // Streamed tracks resolve from their own table, so a mix of imported
+    // YouTube playlists and local music shows up whole.
+    final byFilename = ref.watch(songsByFilenameProvider);
     final isPinned =
         userData.recommendationPreferences[playlist.id]?.isPinned ?? false;
 
-    final playlistSongs = <Song>[];
-    for (final ps in playlist.songs) {
-      final song =
-          songs.where((s) => s.filename == ps.songFilename).firstOrNull;
-      if (song != null) playlistSongs.add(song);
-    }
+    final playlistSongs = <Song>[
+      for (final ps in playlist.songs)
+        if (byFilename[ps.songFilename] case final song?) song,
+    ];
 
     if (playlistSongs.isEmpty) return const SizedBox.shrink();
 
@@ -217,13 +217,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// A user playlist, including ones imported from YouTube.
+  Widget _buildPlaylistCard(
+    BuildContext context,
+    WidgetRef ref,
+    Playlist playlist,
+  ) {
+    final byFilename = ref.watch(songsByFilenameProvider);
+    final playlistSongs = <Song>[
+      for (final ps in playlist.songs)
+        if (byFilename[ps.songFilename] case final song?) song,
+    ];
+    if (playlistSongs.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(right: AppTokens.s4),
+      child: AppMediaCard(
+        size: _cardSize,
+        title: playlist.name,
+        subtitle: context.l10n.libraryTrackCount(playlistSongs.length),
+        artwork: CollectionCover(songs: playlistSongs, size: _cardSize),
+        onTap: () => context.pushApp(
+          SongListScreen(
+            title: playlist.name,
+            songs: playlistSongs,
+            playlistId: playlist.id,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildQueueCard(
     BuildContext context,
     WidgetRef ref,
     QueueSnapshot snapshot,
     AudioPlayerManager audioManager,
   ) {
-    final songsAsync = ref.watch(songsProvider);
     final trackCount = snapshot.songFilenames.length;
 
     return Padding(
@@ -236,7 +266,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           trackCount,
         ),
         artwork: QueueCoverMosaic(
-          songs: _queueSnapshotSongs(songsAsync, snapshot),
+          songs:
+              _queueSnapshotSongs(ref.watch(songsByFilenameProvider), snapshot),
           accent: AppTokens.accentOf(context, ref),
           seed: snapshot.id,
           size: _queueCardSize,
@@ -483,7 +514,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           onAction: () => ref.invalidate(songsProvider),
         ),
         data: (songs) {
-          if (songs.isEmpty) {
+          final userData = ref.watch(userDataProvider);
+          // A streamed-only listener has playlists and no files: the library
+          // grid is legitimately empty, but that is not a setup problem.
+          if (songs.isEmpty && userData.remoteSongs.isEmpty) {
             return AppEmptyState(
               icon: AppIcons.musicOff,
               title: context.l10n.homeNoSongsTitle,
@@ -494,7 +528,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             );
           }
 
-          final userData = ref.watch(userDataProvider);
           final shuffleState =
               ref.watch(audioPlayerManagerProvider).shuffleStateNotifier.value;
           final playCounts = ref.watch(playCountsProvider);
@@ -520,6 +553,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           final mixedPlaylists = ref.watch(mixedPlaylistsProvider);
           final queueHistory = ref.watch(queueHistoryProvider).value ?? [];
           final displayQueues = queueHistory.take(10).toList();
+          final userPlaylists = userData.playlists
+              .where((playlist) => !playlist.isRecommendation)
+              .toList();
           final quickPickColumns = WideLayout.gridColumns(context, base: 2);
 
           return RefreshIndicator(
@@ -630,6 +666,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ),
                     ],
 
+                    // Your playlists, including the ones imported from
+                    // YouTube, which live here rather than in the song grid.
+                    if (userPlaylists.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: AppSectionHeader(
+                          label: context.l10n.homePlaylists,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: _computeMediaCarouselHeight(
+                            context,
+                            _cardSize,
+                          ),
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTokens.s5,
+                            ),
+                            itemCount: userPlaylists.length,
+                            itemBuilder: (context, index) => _buildPlaylistCard(
+                              context,
+                              ref,
+                              userPlaylists[index],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
                     // For You
                     if (settings.showForYou) ...[
                       SliverToBoxAdapter(
@@ -665,33 +731,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     ],
 
                     // Library
-                    SliverToBoxAdapter(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: AppSectionHeader(
-                              label: context.l10n.libraryTitle,
+                    if (sortedSongs.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: AppSectionHeader(
+                                label: context.l10n.libraryTitle,
+                              ),
                             ),
-                          ),
-                          SortMenu(
-                            sortOrder: _homeSort,
-                            onSelected: (order) =>
-                                setState(() => _homeSort = order),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: AppTokens.s2,
-                              right: AppTokens.s5,
-                              top: AppTokens.s2,
+                            SortMenu(
+                              sortOrder: _homeSort,
+                              onSelected: (order) =>
+                                  setState(() => _homeSort = order),
                             ),
-                            child: Text(
-                              context.l10n.libraryTrackCount(songs.length),
-                              style: AppTokens.meta(context),
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: AppTokens.s2,
+                                right: AppTokens.s5,
+                                top: AppTokens.s2,
+                              ),
+                              child: Text(
+                                context.l10n.libraryTrackCount(songs.length),
+                                style: AppTokens.meta(context),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
                     SliverList(
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final song = sortedSongs[index];
@@ -724,17 +791,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 /// Resolves a saved queue's filenames back to songs, in queue order. Deleted
 /// tracks drop out; the thumbnail uses the first remaining song's cover.
 List<Song> _queueSnapshotSongs(
-  AsyncValue<List<Song>> songsAsync,
+  Map<String, Song> byFilename,
   QueueSnapshot snapshot,
 ) {
-  return songsAsync.maybeWhen(
-    data: (allSongs) {
-      final songMap = {for (final song in allSongs) song.filename: song};
-      return snapshot.songFilenames
-          .map((filename) => songMap[filename])
-          .whereType<Song>()
-          .toList();
-    },
-    orElse: () => const <Song>[],
-  );
+  return [
+    for (final filename in snapshot.songFilenames)
+      if (byFilename[filename] case final song?) song,
+  ];
 }

@@ -32,6 +32,7 @@ import 'package:wispie/domain/services/lrclib_match.dart';
 import 'package:wispie/domain/services/lrclib_query.dart';
 import 'package:wispie/domain/services/youtube_library.dart';
 import 'package:wispie/models/song.dart';
+import 'package:wispie/domain/services/taste_model.dart';
 import 'package:wispie/domain/services/youtube_music_feed.dart';
 import 'package:wispie/domain/services/youtube_session.dart';
 
@@ -834,6 +835,61 @@ Future<void> _protocol() async {
     ]);
     check('engine: channel decoration folded into one artist',
         artistKey('Aurora - Topic') == artistKey('AuroraVEVO'));
+
+    stdout.writeln('\nTaste model');
+    check(
+      'taste: a channel name and a local tag are the same artist',
+      tasteArtistKey('Aurora - Topic', 'youtube:abc') ==
+          tasteArtistKey('Aurora', 'local.flac'),
+      detail: [
+        tasteArtistKey('Aurora - Topic', 'youtube:abc'),
+        tasteArtistKey('Aurora', 'local.flac'),
+      ].join(' / '),
+    );
+    check(
+      'taste: VEVO decoration is dropped too',
+      tasteArtistKey('AuroraVEVO', 'youtube:abc') ==
+          tasteArtistKey('Aurora', 'local.flac'),
+    );
+    check(
+      'taste: an untagged file keeps its own bucket',
+      tasteArtistKey('', 'youtube:abc') != tasteArtistKey('', 'local.flac'),
+    );
+    final mixedSignals = TasteInputs(
+      events: [
+        PlaySignal(
+          filename: 'local.flac',
+          timestamp: 1000,
+          ratio: 1,
+          secondsPlayed: 210,
+          sessionId: 's1',
+        ),
+        PlaySignal(
+          filename: 'youtube:abc',
+          timestamp: 1400,
+          ratio: 1,
+          secondsPlayed: 200,
+          sessionId: 's1',
+        ),
+      ],
+      meta: const {
+        'local.flac': SongMeta(artist: 'Aurora'),
+        'youtube:abc': SongMeta(artist: 'Aurora - Topic'),
+      },
+      now: DateTime.fromMillisecondsSinceEpoch(1500000),
+    );
+    final mixedTaste = buildTasteSnapshot(mixedSignals);
+    check(
+      'taste: a local track and a streamed one credit one artist',
+      mixedTaste.artists.length == 1 &&
+          (mixedTaste.artists['aurora']?.longMass ?? 0) > 1.5,
+      detail: mixedTaste.artists.keys,
+    );
+    check(
+      'taste: both tracks are in the snapshot',
+      mixedTaste.songs.containsKey('local.flac') &&
+          mixedTaste.songs.containsKey('youtube:abc'),
+    );
     check('engine: strongest artist first', taste.topArtists.first == 'Aurora',
         detail: taste.topArtists);
     check(

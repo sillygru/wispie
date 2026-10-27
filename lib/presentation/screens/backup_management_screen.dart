@@ -9,6 +9,7 @@ import '../../services/backup_service.dart';
 import '../../services/database_service.dart';
 import '../../services/import_options.dart';
 import '../../services/storage_service.dart';
+import '../../services/sync_service.dart';
 import '../../presentation/widgets/import_options_dialog.dart';
 import '../../presentation/widgets/import_progress_dialog.dart';
 import '../../presentation/widgets/backup_options_dialog.dart';
@@ -33,6 +34,10 @@ class _BackupManagementScreenState
     extends ConsumerState<BackupManagementScreen> {
   List<BackupInfo> _backups = [];
   bool _isLoading = true;
+
+  /// Guards against a second restore starting while one is running: it would
+  /// close the databases under the first one.
+  bool _restoring = false;
   bool _isCreatingBackup = false;
 
   @override
@@ -197,19 +202,24 @@ class _BackupManagementScreenState
       if (confirmed != true) return;
     }
 
-    if (!mounted) return;
+    if (!mounted || _restoring) return;
+    _restoring = true;
+
     final progress = ValueNotifier<ImportProgress>(
       ImportProgress(progress: 0, label: context.l10n.backupRestoringLabel),
     );
+    // Captured before the first await: the dialog lives on the root navigator,
+    // and this widget may be gone by the time it has to be closed.
+    final navigator = Navigator.of(context, rootNavigator: true);
+    var dialogOpen = true;
 
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => ImportProgressDialog(progress: progress),
-      );
-    }
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ImportProgressDialog(progress: progress),
+    );
 
+    Object? failure;
     try {
       await BackupService.instance.restoreFromBackup(
         backupInfo,
@@ -217,41 +227,78 @@ class _BackupManagementScreenState
         onProgress: (value, label) =>
             progress.value = ImportProgress(progress: value, label: label),
       );
-
-      final songs = await DatabaseService.instance.getAllSongs();
-      await ref.read(audioPlayerManagerProvider).init(songs);
-
-      await ref.read(userDataProvider.notifier).refresh();
-      ref.invalidate(songsProvider);
-      await ref.read(songsProvider.notifier).refreshPlayCounts();
-
-      if (mounted) {
-        Navigator.pop(context); // Pop loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.backupRestoreSuccess),
-            backgroundColor: AppTokens.success,
-          ),
-        );
-
-        // Show restart dialog after a brief delay
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            _showRestartDialog();
-          }
-        });
-      }
+      await _reloadAfterRestore(progress);
     } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Pop loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(context.l10n.backupRestoreFailed('$e')),
-            backgroundColor: AppTokens.danger,
-          ),
-        );
+      failure = e;
+    } finally {
+      _restoring = false;
+      // Always, whatever happened: this dialog cannot be dismissed by the user,
+      // so a throw here used to leave the app on a modal that never closed.
+      if (dialogOpen && navigator.canPop()) {
+        dialogOpen = false;
+        navigator.pop();
       }
     }
+
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (failure != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(context.l10n.backupRestoreFailed('$failure')),
+          backgroundColor: AppTokens.danger,
+        ),
+      );
+      return;
+    }
+
+    await _loadBackups();
+    if (!mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(context.l10n.backupRestoreSuccess),
+        backgroundColor: AppTokens.success,
+      ),
+    );
+    // Show restart dialog after a brief delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _showRestartDialog();
+    });
+  }
+
+  /// Refreshes the screens after the databases were replaced.
+  ///
+  /// Only what is on screen depends on this: the restore itself has already
+  /// finished, so every step is best-effort and bounded. A model rebuild over a
+  /// large library can take a while, and making the modal wait on it is what
+  /// made a finished restore look stuck. The restart prompt covers the rest.
+  Future<void> _reloadAfterRestore(
+      ValueNotifier<ImportProgress> progress) async {
+    final reloadLabel = context.l10n.backupRestoreReloadingLibrary;
+    final playlistsLabel = context.l10n.backupRestoreRefreshingPlaylists;
+
+    Future<void> step(String label, Future<void> Function() run) async {
+      progress.value = ImportProgress(progress: 1, label: label);
+      try {
+        await run().timeout(const Duration(seconds: 45));
+      } catch (e) {
+        debugPrint('Restore: $label failed: $e');
+      }
+    }
+
+    await step(reloadLabel, () async {
+      final songs = await DatabaseService.instance.getAllSongs();
+      await ref.read(audioPlayerManagerProvider).init(songs);
+      ref.invalidate(songsProvider);
+      await ref.read(songsProvider.future);
+    });
+
+    await step(playlistsLabel, () async {
+      // The old engine still points at the database files this restore
+      // replaced; reattach it before anything tries to sync.
+      await SyncService.instance.rebuildAfterDatabaseReplace();
+      await ref.read(userDataProvider.notifier).refresh();
+    });
   }
 
   Future<void> _deleteBackup(BackupInfo backupInfo) async {
