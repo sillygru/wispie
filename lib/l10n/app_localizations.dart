@@ -6975,6 +6975,12 @@ abstract class AppLocalizations {
   /// **'No lyrics found. Try a different title or artist, or check your connection.'**
   String get lyricsNoResults;
 
+  /// Message shown when the online lyrics search itself failed, rather than finding nothing
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics search failed: {error}'**
+  String lyricsSearchFailed(String error);
+
   /// Warning shown when applying an instrumental lyrics result
   ///
   /// In en, this message translates to:

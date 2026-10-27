@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:wispie/domain/models/lrclib_result.dart';
+import 'package:wispie/domain/models/rich_lyrics.dart';
 import 'package:wispie/domain/services/lrclib_match.dart';
 import 'package:wispie/domain/services/lrclib_query.dart';
 import 'package:wispie/models/song.dart';
@@ -167,6 +168,51 @@ Future<void> main(List<String> args) async {
     return;
   }
 
+  // What the "find lyrics" picker used to ask: one reading of the file's own
+  // tags. It returns nothing for an upload whose artist tag is the channel, so
+  // the sheet reported "no results" for tracks the player had lyrics for. The
+  // picker now asks the query set above; this number is the regression guard.
+  final pickerTitle = cleanSearchTitle(rawTitle, artist: artist);
+  final pickerFound = <int, LrclibResult>{};
+  void keepPicker(LrclibResult? result) {
+    if (result != null) pickerFound.putIfAbsent(result.id, () => result);
+  }
+
+  void keepPickerAll(Object? decoded) {
+    if (decoded is! List) return;
+    for (final entry in decoded) {
+      if (entry is Map<String, dynamic>) keepPicker(_result(entry));
+    }
+  }
+
+  await Future.wait([
+    _getJson(
+      '/get',
+      {
+        'track_name': pickerTitle,
+        'artist_name': artist,
+        'include_rich_sync': 'true',
+        'sync_type': 'richsync',
+      },
+      base: _lrclibUrl,
+    ).then(_result).then(keepPicker),
+    _getJson(
+      '/search',
+      {'track_name': pickerTitle, 'artist_name': artist},
+      base: _lrclibUrl,
+    ).then(keepPickerAll),
+  ]);
+  if (pickerFound.isEmpty) {
+    await _getJson(
+      '/search',
+      {'q': '$pickerTitle $artist'},
+      base: _lrclibUrl,
+    ).then(keepPickerAll);
+  }
+  print('one-reading shape ("$pickerTitle" / "$artist"): '
+      '${pickerFound.length} candidates, where the picker asks '
+      '${attempts.length} readings and found ${found.length}');
+
   final ranked = rankLrclibResults(
     found.values.toList(),
     Song(
@@ -183,6 +229,72 @@ Future<void> main(List<String> args) async {
 
   print('chosen (${timed.isNotEmpty ? 'timed' : 'untimed'} of '
       '${ranked.length} candidates):');
-  print('  ${_describe(timed.isNotEmpty ? timed.first : ranked.first)}');
+  final chosen = timed.isNotEmpty ? timed.first : ranked.first;
+  print('  ${_describe(chosen)}');
+
+  // Word-level timings are saved to disk, so the payload has to survive the
+  // round trip through RichLyrics.toJson/fromJson with its timings intact.
+  final rich = chosen.richLyrics;
+  if (rich == null) {
+    print('word sync: none in the chosen record; line sync is the fallback');
+  } else {
+    final restored = RichLyrics.fromJson(jsonDecode(jsonEncode(rich.toJson())));
+    final firstWords = rich.lines.isEmpty ? 0 : rich.lines.first.words.length;
+    final same = restored != null &&
+        restored.lines.length == rich.lines.length &&
+        (restored.lines.isEmpty
+            ? true
+            : restored.lines.first.start == rich.lines.first.start &&
+                restored.lines.first.words.length == firstWords);
+    print('word sync: ${rich.lines.length} lines, word timings survive a save: '
+        '$same');
+    if (!same) exitCode = 1;
+  }
+
+  // Word sync only comes from the aggregator, so the format is checked against
+  // a payload of our own: this is what the on-disk cache holds and reads back.
+  const sample = RichLyrics(
+    title: 'sample',
+    artist: 'sample',
+    duration: Duration(minutes: 3),
+    lines: [
+      RichLyricLine(
+        start: Duration(milliseconds: 1500),
+        end: Duration(milliseconds: 3200),
+        text: 'hello world',
+        words: [
+          RichLyricWord(
+            start: Duration(milliseconds: 1500),
+            end: Duration(milliseconds: 2400),
+            text: 'hello',
+          ),
+          RichLyricWord(
+            start: Duration(milliseconds: 2400),
+            end: Duration(milliseconds: 3200),
+            text: 'world',
+          ),
+        ],
+      ),
+      RichLyricLine(
+        start: Duration(milliseconds: 4000),
+        end: Duration(milliseconds: 5000),
+        text: 'estimated line',
+        isSimulated: true,
+      ),
+    ],
+  );
+  final restored = RichLyrics.fromJson(jsonDecode(jsonEncode(sample.toJson())));
+  final intact = restored != null &&
+      restored.duration == const Duration(minutes: 3) &&
+      restored.lines.length == 2 &&
+      restored.lines.first.words.length == 2 &&
+      restored.lines.first.words[1].start ==
+          const Duration(milliseconds: 2400) &&
+      restored.lines.first.words[1].end == const Duration(milliseconds: 3200) &&
+      restored.lines[1].isSimulated &&
+      restored.lines[1].words.isEmpty;
+  print('cache format: word timings, simulated flags and duration survive a '
+      'save: $intact');
+  if (!intact) exitCode = 1;
   print('RESULT: ok');
 }

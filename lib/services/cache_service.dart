@@ -440,6 +440,15 @@ class CacheService {
       File(p.join(_v3Dir.path, 'lyrics_cache', '${_cacheKey(after.url)}.json')),
     );
 
+    // Word-level timings are keyed on the filename, so a rename would strand
+    // them and make the player fetch them again.
+    await _moveCacheFile(
+      File(p.join(_v3Dir.path, 'lyrics_cache',
+          'rich_${_cacheKey(before.filename)}.json')),
+      File(p.join(_v3Dir.path, 'lyrics_cache',
+          'rich_${_cacheKey(after.filename)}.json')),
+    );
+
     if (coverUrl != null) {
       await _refreshNotificationCoverKeys(before, coverUrl);
     }
@@ -528,6 +537,7 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
       p.join(supportDir.path, 'gru_cache_v3', 'notification_cover_cache'));
   final lyricsDir =
       Directory(p.join(supportDir.path, 'gru_cache_v3', 'lyrics_cache'));
+  final cacheKey = CacheService._cacheKey;
   final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
   final extractedCoversDir =
       Directory(p.join(supportDir.path, 'extracted_covers'));
@@ -542,6 +552,11 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
 
     final filename = (song['filename'] as String?) ?? '';
     if (filename.isNotEmpty) {
+      // Word-level timings live beside the lyrics, keyed on the filename, so
+      // they survive a sweep for both local files and streamed tracks.
+      currentLyricsPaths.add(
+        p.normalize(p.join(lyricsDir.path, 'rich_${cacheKey(filename)}.json')),
+      );
       currentBlurredPaths.add(
         p.normalize(p.join(blurredDir.path,
             'blurred_${CacheService._cacheKey(filename)}.jpg')),
@@ -567,9 +582,8 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
     // Chosen lyrics for a streamed track live in the same directory, keyed on
     // the filename rather than the audio URL, and must survive this sweep.
     if (filename.startsWith(Song.youtubePrefix)) {
-      final digest = sha1.convert(utf8.encode(filename)).toString();
       currentLyricsPaths.add(
-        p.normalize(p.join(lyricsDir.path, 'remote_$digest.lrc')),
+        p.normalize(p.join(lyricsDir.path, 'remote_${cacheKey(filename)}.lrc')),
       );
     }
 

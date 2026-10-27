@@ -39,9 +39,9 @@ class LrclibResult extends Equatable {
   });
 
   factory LrclibResult.fromJson(Map<String, dynamic> json) {
-    final seconds = (json['duration'] as num?)?.toDouble();
+    final seconds = _asDouble(json['duration']);
     return LrclibResult(
-      id: (json['id'] as num?)?.toInt() ?? 0,
+      id: _asDouble(json['id'])?.toInt() ?? 0,
       trackName: (json['trackName'] ?? json['name'] ?? '').toString(),
       artistName: (json['artistName'] ?? '').toString(),
       albumName: (json['albumName'] ?? '').toString(),
@@ -53,6 +53,15 @@ class LrclibResult extends Equatable {
       syncedLyrics: _nonEmpty(json['syncedLyrics']),
       richLyrics: _richLyrics(json['richSync']),
     );
+  }
+
+  /// Providers are not agreed on whether numbers arrive as numbers: the
+  /// aggregator has sent both. A cast here used to throw out of the whole
+  /// search, so anything unparseable now reads as null.
+  static double? _asDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+    return null;
   }
 
   static RichLyrics? _richLyrics(Object? value) {

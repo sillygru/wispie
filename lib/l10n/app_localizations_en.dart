@@ -4093,6 +4093,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'No lyrics found. Try a different title or artist, or check your connection.';
 
   @override
+  String lyricsSearchFailed(String error) {
+    return 'Lyrics search failed: $error';
+  }
+
+  @override
   String get lyricsInstrumentalWarning =>
       'Marked as instrumental. Applying this clears any lyrics stored on the file.';
 

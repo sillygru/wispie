@@ -140,6 +140,91 @@ class RichLyrics {
     );
   }
 
+  /// Serialised form of the parsed payload, for the on-disk cache.
+  ///
+  /// Milliseconds, not seconds: this is our own shape, and the API's
+  /// seconds-or-milliseconds guesswork belongs to [RichLyrics.fromApi] alone.
+  Map<String, dynamic> toJson() => {
+        if (title != null) 'title': title,
+        if (artist != null) 'artist': artist,
+        if (duration != null) 'durationMs': duration!.inMilliseconds,
+        'lines': [
+          for (final line in lines)
+            {
+              'startMs': line.start.inMilliseconds,
+              'endMs': line.end.inMilliseconds,
+              'text': line.text,
+              if (line.isSimulated) 'simulated': true,
+              if (line.words.isNotEmpty)
+                'words': [
+                  for (final word in line.words)
+                    {
+                      'startMs': word.start.inMilliseconds,
+                      'endMs': word.end.inMilliseconds,
+                      'text': word.text,
+                    },
+                ],
+            },
+        ],
+      };
+
+  /// Reads what [toJson] wrote, or null when the value is not that shape — a
+  /// truncated cache file must be refetched, never half-believed.
+  static RichLyrics? fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final rawLines = value['lines'];
+    if (rawLines is! List) return null;
+
+    final lines = <RichLyricLine>[];
+    for (final rawLine in rawLines) {
+      if (rawLine is! Map) continue;
+      final start = _milliseconds(rawLine['startMs']);
+      final end = _milliseconds(rawLine['endMs']);
+      final text = rawLine['text'];
+      if (start == null || end == null || text is! String) continue;
+
+      final words = <RichLyricWord>[];
+      final rawWords = rawLine['words'];
+      if (rawWords is List) {
+        for (final rawWord in rawWords) {
+          if (rawWord is! Map) continue;
+          final wordStart = _milliseconds(rawWord['startMs']);
+          final wordEnd = _milliseconds(rawWord['endMs']);
+          final wordText = rawWord['text'];
+          if (wordStart == null || wordEnd == null || wordText is! String) {
+            continue;
+          }
+          words.add(RichLyricWord(
+            start: wordStart,
+            end: wordEnd,
+            text: wordText,
+          ));
+        }
+      }
+
+      lines.add(RichLyricLine(
+        start: start,
+        end: end,
+        text: text,
+        words: words,
+        isSimulated: rawLine['simulated'] == true,
+      ));
+    }
+    if (lines.isEmpty) return null;
+
+    return RichLyrics(
+      title: _string(value['title']),
+      artist: _string(value['artist']),
+      duration: _milliseconds(value['durationMs']),
+      lines: lines,
+    );
+  }
+
+  static Duration? _milliseconds(Object? value) {
+    if (value is! num) return null;
+    return Duration(milliseconds: value.round());
+  }
+
   bool get hasWordSync => lines.any((line) => line.words.isNotEmpty);
 
   /// Makes a renderable line list while retaining the source line indexes.

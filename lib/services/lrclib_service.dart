@@ -35,6 +35,11 @@ class LrclibService {
     return v;
   }
 
+  /// Every usable record for [song], best first, for the picker to choose from.
+  ///
+  /// Plain and timed records both belong here — the user is looking at a list,
+  /// not asking to play the track — where [preferPlain] only decides which of
+  /// two near-equal records wins.
   Future<List<LrclibResult>> findFor(
     Song song, {
     String? titleOverride,
@@ -42,36 +47,146 @@ class LrclibService {
     bool preferPlain = false,
   }) async {
     final artist = cleanTag(artistOverride ?? song.artist) ?? '';
-    final album = cleanTag(song.album);
-    final rawTitle = cleanTag(titleOverride ?? song.title) ?? '';
-    final title = cleanSearchTitle(rawTitle, artist: artist);
-    if (title.isEmpty && artist.isEmpty) return const [];
+    final title = cleanTag(titleOverride ?? song.title);
+    if (title == null && artist.isEmpty) return const [];
 
-    final exactFuture = getExact(
-      trackName: title,
-      artistName: artist,
-      albumName: album,
-      duration: song.duration,
+    return _rankedCandidates(
+      song,
+      titleOverride: titleOverride,
+      artistOverride: artistOverride,
+      preferPlain: preferPlain,
     );
-    final searchFuture = search(trackName: title, artistName: artist);
-    final exact = await exactFuture;
-    var found = await searchFuture;
-    if (found.isEmpty) {
-      found = await searchFreeText(
-        [title, artist].where((s) => s.isNotEmpty).join(' '),
-      );
-    }
+  }
 
-    final merged = <int, LrclibResult>{};
-    if (exact != null) merged[exact.id] = exact;
-    for (final result in found) {
-      merged.putIfAbsent(result.id, () => result);
-    }
+  /// Asks every plausible reading of the tags, then ranks what came back.
+  ///
+  /// One reading is not enough for a streamed track. Its title carries an
+  /// "Artist - " prefix and its artist tag is a channel name, so a field query
+  /// built from those two finds nothing even when the words are right there.
+  /// The picker used to ask exactly that one question and report "no results"
+  /// for uploads the player could find lyrics for; both now go through here.
+  Future<List<LrclibResult>> _rankedCandidates(
+    Song song, {
+    String? titleOverride,
+    String? artistOverride,
+    bool preferPlain = false,
+  }) async {
+    final collected = await _collectCandidates(
+      song,
+      titleOverride: titleOverride,
+      artistOverride: artistOverride,
+    );
+    if (collected.results.isEmpty) return const [];
 
     return rankLrclibResults(
-      merged.values.toList(),
-      song,
+      collected.results,
+      song.copyWith(
+        title: collected.title,
+        artist: collected.artist ?? song.artist,
+      ),
       preferPlain: preferPlain,
+    );
+  }
+
+  /// The candidates plus the title/artist the ranking should score them
+  /// against: the primary reading of the tags, which is far more likely to name
+  /// the release than the upload's own tags are.
+  Future<
+      ({
+        List<LrclibResult> results,
+        String title,
+        String? artist,
+      })> _collectCandidates(
+    Song song, {
+    String? titleOverride,
+    String? artistOverride,
+  }) async {
+    const none = <LrclibResult>[];
+    final rawTitle = cleanTag(titleOverride ?? song.title);
+    if (rawTitle == null) {
+      return (results: none, title: song.title, artist: null);
+    }
+    final artist = cleanTag(artistOverride ?? song.artist) ?? '';
+    final queries = lyricsQueriesFor(
+      title: rawTitle,
+      artist: artist,
+      remote: song.isRemote,
+    );
+    if (queries.isEmpty) {
+      final cleaned = cleanSearchTitle(rawTitle, artist: artist);
+      return (
+        results: none,
+        title: cleaned,
+        artist: artist.isEmpty ? null : artist,
+      );
+    }
+    final rankedAgainst = (
+      title: queries.first.title,
+      artist: queries.first.artist ?? (artist.isEmpty ? null : artist),
+    );
+
+    final album = cleanTag(song.album);
+    final videoId = song.isYoutube ? song.remoteId : null;
+    final found = <int, LrclibResult>{};
+
+    void keep(Iterable<LrclibResult> results) {
+      for (final result in results) {
+        if (result.isUsable) found.putIfAbsent(result.id, () => result);
+      }
+    }
+
+    // Three readings is enough to cover every tag shape a catalogue produces;
+    // more only multiplies requests for records that would lose the ranking.
+    final attempts = queries.take(3).toList();
+    final lookups = <Future<void>>[];
+    for (var i = 0; i < attempts.length; i++) {
+      final query = attempts[i];
+      final queryArtist = query.artist;
+      if (queryArtist != null) {
+        lookups.add(
+          getExact(
+            trackName: query.title,
+            artistName: queryArtist,
+            albumName: album,
+            duration: song.duration,
+            videoId: i == 0 ? videoId : null,
+          ).then((result) {
+            if (result != null) keep([result]);
+          }).catchError((Object error) {
+            stderr.writeln('Lyrics: exact lookup failed: $error');
+          }),
+        );
+      }
+      lookups.add(
+        search(trackName: query.title, artistName: queryArtist)
+            .then(keep)
+            .catchError(
+          (Object error) {
+            stderr.writeln('Lyrics: search failed: $error');
+          },
+        ),
+      );
+    }
+    await Future.wait(lookups);
+
+    // Last resort for uploads whose title matches no field query.
+    if (found.isEmpty) {
+      final freeText = <String>{
+        for (final query in attempts)
+          [query.title, query.artist].whereType<String>().join(' ').trim(),
+      };
+      await Future.wait([
+        for (final query in freeText)
+          searchFreeText(query).then(keep).catchError((Object error) {
+            stderr.writeln('Lyrics: free-text search failed: $error');
+          }),
+      ]);
+    }
+
+    return (
+      results: found.values.toList(),
+      title: rankedAgainst.title,
+      artist: rankedAgainst.artist,
     );
   }
 
@@ -186,107 +301,80 @@ class LrclibService {
   /// artist agreement decide. A timed record always beats an untimed one: a
   /// transcript with no timings would throw away the synced view.
   Future<LrclibResult?> fetchForSong(Song song) async {
-    final rawTitle = cleanTag(song.title);
-    if (rawTitle == null) return null;
-    final queries = lyricsQueriesFor(
-      title: rawTitle,
-      artist: cleanTag(song.artist) ?? '',
-      remote: song.isRemote,
-    );
-    if (queries.isEmpty) return null;
+    if (cleanTag(song.title) == null) return null;
+    final ranked = await _rankedCandidates(song);
+    if (ranked.isEmpty) return null;
 
-    final album = cleanTag(song.album);
-    final videoId = song.isYoutube ? song.remoteId : null;
-    final found = <int, LrclibResult>{};
-
-    void keep(Iterable<LrclibResult> results) {
-      for (final result in results) {
-        if (result.isUsable) found.putIfAbsent(result.id, () => result);
-      }
-    }
-
-    // Three readings is enough to cover every tag shape a catalogue produces;
-    // more only multiplies requests for records that would lose the ranking.
-    final attempts = queries.take(3).toList();
-    final lookups = <Future<void>>[];
-    for (var i = 0; i < attempts.length; i++) {
-      final query = attempts[i];
-      final artist = query.artist;
-      if (artist != null) {
-        lookups.add(
-          getExact(
-            trackName: query.title,
-            artistName: artist,
-            albumName: album,
-            duration: song.duration,
-            videoId: i == 0 ? videoId : null,
-          ).then((result) {
-            if (result != null) keep([result]);
-          }).catchError((Object error) {
-            stderr.writeln('Lyrics: exact lookup failed: $error');
-          }),
-        );
-      }
-      lookups.add(
-        search(trackName: query.title, artistName: artist)
-            .then(keep)
-            .catchError(
-          (Object error) {
-            stderr.writeln('Lyrics: search failed: $error');
-          },
-        ),
-      );
-    }
-    await Future.wait(lookups);
-
-    // Last resort for uploads whose title matches no field query.
-    if (found.isEmpty) {
-      final freeText = <String>{
-        for (final query in attempts)
-          [query.title, query.artist].whereType<String>().join(' ').trim(),
-      };
-      await Future.wait([
-        for (final query in freeText)
-          searchFreeText(query).then(keep).catchError((Object error) {
-            stderr.writeln('Lyrics: free-text search failed: $error');
-          }),
-      ]);
-    }
-    if (found.isEmpty) return null;
-
-    final ranked = rankLrclibResults(
-      found.values.toList(),
-      song.copyWith(
-        title: attempts.first.title,
-        artist: attempts.first.artist ?? song.artist,
-      ),
-    );
+    // A transcript with no timings would throw the synced view away, so a timed
+    // record wins even when the ranking preferred an untimed one.
     final timed = ranked.where((r) => r.hasSynced || r.hasRichSync);
     return timed.isNotEmpty ? timed.first : ranked.first;
   }
 
-  /// Fetches the optional word/syllable payload without replacing local lyrics.
-  /// A missing rich result is normal: callers should keep line-synced lyrics.
-  Future<RichLyrics?> getRichSync(Song song) {
-    // Every lyrics view builds its own service, so the cache is static: the
-    // sidebar and the player screen must agree, and a transient failure in one
-    // must not leave the other showing "no lyrics".
+  /// The optional word/syllable payload, without replacing local lyrics.
+  ///
+  /// Kept on disk beside the chosen lyrics: a streamed track has no file to
+  /// write tags into and a local file has nowhere to put syllable timings, so
+  /// the word view used to be re-fetched once per session per track and lost
+  /// outright whenever the provider was down. A missing rich result is normal:
+  /// callers keep line-synced lyrics.
+  ///
+  /// The in-memory map is static as well, because every lyrics view builds its
+  /// own service: the sidebar and the player screen must agree, and a transient
+  /// failure in one must not leave the other showing "no lyrics".
+  Future<RichLyrics?> getRichSync(Song song) async {
     final key = song.filename;
-    final cached = _richSyncCache[key];
-    if (cached != null) return cached;
-    final future = _fetchRichSync(song);
-    _richSyncCache[key] = future;
-    future.then((value) {
-      if (value == null) _richSyncCache.remove(key);
-    }, onError: (_) {
-      _richSyncCache.remove(key);
-    });
-    return future;
+    final lookup = _richSyncCache[key] ??= _readRichSync(song);
+    final result = await lookup;
+    // Only a lookup the providers actually answered is remembered: a track they
+    // have no word timings for is asked about once per session rather than on
+    // every open of the pane, while a timeout or a 5xx is retried next time.
+    if (result.lyrics == null && !result.settled) _richSyncCache.remove(key);
+    return result.lyrics;
   }
 
-  static final Map<String, Future<RichLyrics?>> _richSyncCache = {};
+  Future<({RichLyrics? lyrics, bool settled})> _readRichSync(Song song) async {
+    final file = await _richCacheFileFor(song);
+    try {
+      if (await file.exists()) {
+        final saved =
+            RichLyrics.fromJson(jsonDecode(await file.readAsString()));
+        // Saved is settled: nothing to ask about until the file is gone.
+        if (saved != null) return (lyrics: saved, settled: true);
+      }
+    } on Object catch (_) {
+      // An unreadable entry is refetched below rather than trusted.
+    }
 
-  Future<RichLyrics?> _fetchRichSync(Song song) async {
+    final fetched = await _fetchRichSync(song);
+    final lyrics = fetched.lyrics;
+    if (lyrics == null || lyrics.lines.isEmpty) {
+      return (lyrics: null, settled: fetched.settled);
+    }
+    try {
+      await file.parent.create(recursive: true);
+      await file.writeAsString(jsonEncode(lyrics.toJson()));
+    } on Object catch (error) {
+      stderr.writeln('Lyrics: could not save word sync: $error');
+    }
+    return (lyrics: lyrics, settled: true);
+  }
+
+  Future<File> _richCacheFileFor(Song song) async {
+    final digest = sha1.convert(utf8.encode(song.filename)).toString();
+    final base = await CacheService.instance.getV3File('lyrics_cache');
+    return File(p.join(base.parent.path, 'lyrics_cache', 'rich_$digest.json'));
+  }
+
+  static final Map<String, Future<({RichLyrics? lyrics, bool settled})>>
+      _richSyncCache = {};
+
+  /// Asks for the word payload, and reports whether the answer was definitive.
+  ///
+  /// [MusicUtilsStatus.transient] means nobody really answered — the tunnel was
+  /// down, the request timed out — so the result must not be remembered either
+  /// way. A 404, or a record that simply has no word timings, is an answer.
+  Future<({RichLyrics? lyrics, bool settled})> _fetchRichSync(Song song) async {
     final rawTitle = cleanTag(song.title);
     final queries = rawTitle == null
         ? const <LyricsQuery>[]
@@ -295,31 +383,35 @@ class LrclibService {
             artist: cleanTag(song.artist) ?? '',
             remote: song.isRemote,
           );
-    if (queries.isEmpty) return null;
+    // Nothing to ask about, and nothing will change that by asking again.
+    if (queries.isEmpty) return (lyrics: null, settled: true);
     final query = queries.first;
-    final trackName = query.title;
     final artistName = query.artist ?? '';
 
     final params = _getParams(
-      trackName: trackName,
+      trackName: query.title,
       artistName: artistName,
       albumName: cleanTag(song.album),
       duration: song.duration,
     );
     final videoId = song.isYoutube ? song.remoteId : null;
+    var settled = false;
     if (videoId != null && videoId.isNotEmpty) {
-      final byVideo = _resultFromObject(
-        await _musicUtils.getJson(
-          '/lyrics/get',
-          {...params, 'video_id': videoId},
-        ),
+      final byVideo = await _musicUtils.getJsonResult(
+        '/lyrics/get',
+        {...params, 'video_id': videoId},
       );
-      if (byVideo?.richLyrics != null) return byVideo!.richLyrics;
+      settled |= byVideo.status != MusicUtilsStatus.transient;
+      final result = _resultFromObject(byVideo.json);
+      if (result?.richLyrics != null) {
+        return (lyrics: result!.richLyrics, settled: true);
+      }
     }
 
-    final decoded = await _musicUtils.getJson('/lyrics/get', params);
-    final result = _resultFromObject(decoded);
-    return result?.richLyrics;
+    final decoded = await _musicUtils.getJsonResult('/lyrics/get', params);
+    settled |= decoded.status != MusicUtilsStatus.transient;
+    final result = _resultFromObject(decoded.json);
+    return (lyrics: result?.richLyrics, settled: settled);
   }
 
   /// music-utils `/api/lyrics/search`, with direct LRCLIB fallback.

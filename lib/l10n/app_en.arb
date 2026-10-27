@@ -5299,6 +5299,15 @@
   "@lyricsNoResults": {
     "description": "Message shown when an online lyrics search returns no results"
   },
+  "lyricsSearchFailed": "Lyrics search failed: {error}",
+  "@lyricsSearchFailed": {
+    "description": "Message shown when the online lyrics search itself failed, rather than finding nothing",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "lyricsInstrumentalWarning": "Marked as instrumental. Applying this clears any lyrics stored on the file.",
   "@lyricsInstrumentalWarning": {
     "description": "Warning shown when applying an instrumental lyrics result"

@@ -78,19 +78,29 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
       _error = null;
     });
 
-    final results = await ref.read(lrclibServiceProvider).findFor(
-          widget.song,
-          titleOverride: _titleController.text,
-          artistOverride: _artistController.text,
-          preferPlain: _preferPlain,
-        );
+    // Never let a provider failure hold the spinner: without this the sheet
+    // stayed disabled until the user backed out and came in again.
+    List<LrclibResult>? results;
+    Object? failure;
+    try {
+      results = await ref.read(lrclibServiceProvider).findFor(
+            widget.song,
+            titleOverride: _titleController.text,
+            artistOverride: _artistController.text,
+            preferPlain: _preferPlain,
+          );
+    } catch (error) {
+      failure = error;
+    }
 
     if (!mounted || token != _searchToken) return;
 
     setState(() {
       _searching = false;
-      _results = results;
-      _error = results.isEmpty ? context.l10n.lyricsNoResults : null;
+      _results = results ?? const [];
+      _error = failure != null
+          ? context.l10n.lyricsSearchFailed('$failure')
+          : (results!.isEmpty ? context.l10n.lyricsNoResults : null);
     });
   }
 

@@ -4164,6 +4164,11 @@ class AppLocalizationsPt extends AppLocalizations {
       'Nenhuma letra encontrada. Tente outro título ou artista, ou verifique sua conexão.';
 
   @override
+  String lyricsSearchFailed(String error) {
+    return 'Lyrics search failed: $error';
+  }
+
+  @override
   String get lyricsInstrumentalWarning =>
       'Marcada como instrumental. Aplicar isso apaga qualquer letra armazenada no arquivo.';
 
