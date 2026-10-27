@@ -22,8 +22,10 @@ class YouTubeWebSession {
   const YouTubeWebSession({required this.cookies, this.authUser = 0});
 
   /// The origin the hash is bound to. YouTube's own web client uses its www
-  /// origin, and a hash minted for another origin is rejected.
+  /// origin, and a hash minted for another origin is rejected. YouTube Music is
+  /// a separate origin whose client needs a hash over its own URL.
   static const String origin = 'https://www.youtube.com';
+  static const String musicOrigin = 'https://music.youtube.com';
 
   /// Cookies that can sign a request. `SAPISID` is present on youtube.com
   /// sessions; `__Secure-3PAPISID` is the same secret under the 3P cookie set.
@@ -68,7 +70,7 @@ class YouTubeWebSession {
   ///
   /// The timestamp is part of the hash, so this is minted per request batch
   /// rather than stored.
-  String authorizationHeader(DateTime now) {
+  String authorizationHeader(DateTime now, {String origin = origin}) {
     final secret = this.secret;
     if (secret == null) return '';
     final seconds = now.millisecondsSinceEpoch ~/ 1000;
@@ -78,8 +80,8 @@ class YouTubeWebSession {
 
   /// Headers that make a request act as this account. The transport adds its
   /// own client identity on top.
-  Map<String, String> authHeaders(DateTime now) {
-    final authorization = authorizationHeader(now);
+  Map<String, String> authHeaders(DateTime now, {String origin = origin}) {
+    final authorization = authorizationHeader(now, origin: origin);
     return {
       if (authorization.isNotEmpty) 'Authorization': authorization,
       'X-Goog-AuthUser': '$authUser',

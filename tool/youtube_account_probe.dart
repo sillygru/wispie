@@ -30,6 +30,7 @@ import 'package:crypto/crypto.dart';
 import 'package:wispie/domain/models/lrclib_result.dart';
 import 'package:wispie/domain/services/lrclib_merge.dart';
 import 'package:wispie/domain/services/youtube_library.dart';
+import 'package:wispie/domain/services/youtube_music_feed.dart';
 import 'package:wispie/domain/services/youtube_session.dart';
 
 final List<Map<String, Object?>> _results = [];
@@ -536,27 +537,329 @@ Future<void> _protocol() async {
           mergeLrclibResults(videoOnly, null)?.id == 11,
     );
 
-    stdout.writeln('\nHome feed');
+    stdout.writeln('\nMusic home feed');
     server.reset();
-    server.handler = (call) => (status: 200, json: _homeFeedPage());
-    final feed = await api().homeFeed(maxPages: 1);
-    check('feed: videos parsed', feed.length == 2, detail: feed.length);
-    check('feed: title from renderer', feed.first.title == 'First video');
+    server.handler = (call) => (status: 200, json: _musicHomePage());
+    final feed = await api().musicHomeFeed(maxPages: 1);
+    final musicCall =
+        server.calls.firstWhere((c) => c.path.endsWith('/browse'));
+    check('music feed: shelf rows and carousel tracks parsed', feed.length == 3,
+        detail: feed.length);
+    check('music feed: page order preserved', feed.first.videoId == 'vidTwoRow',
+        detail: feed.map((i) => i.videoId).toList());
+    final shelfRow = feed.firstWhere((i) => i.videoId == 'vidRow');
+    check('music feed: title from the flex column',
+        shelfRow.title == 'First song',
+        detail: shelfRow.title);
+    check('music feed: artist before the album in a byline',
+        shelfRow.artist == 'Aurora',
+        detail: shelfRow.artist);
     check(
-      'feed: duration from clock text',
-      feed.first.duration == const Duration(minutes: 3, seconds: 52),
-      detail: feed.first.duration,
+      'music feed: duration from a byline',
+      shelfRow.duration == const Duration(minutes: 3, seconds: 52),
+      detail: shelfRow.duration,
     );
     check(
-      'feed: channel from view-model metadata',
-      feed[1].artist == 'Some Channel',
-      detail: feed[1].artist,
+      'music feed: " - Topic" stripped from a byline',
+      feed.firstWhere((i) => i.videoId == 'vidRow2').artist == 'Nova',
+      detail: feed.firstWhere((i) => i.videoId == 'vidRow2').artist,
     );
     check(
-      'feed: asks for the home tab',
-      server.browseCalls.last.body['browseId'] == 'FEwhat_to_watch',
-      detail: server.browseCalls.last.body['browseId'],
+      'music feed: two-row carousel tracks are kept',
+      feed.any((i) => i.videoId == 'vidTwoRow'),
+      detail: feed.map((i) => i.videoId).toList(),
     );
+    check(
+      'music feed: albums, artists and playlists are not tracks',
+      !feed.any((i) => i.videoId.startsWith('MPRE')),
+      detail: feed.map((i) => i.videoId).toList(),
+    );
+    check('music feed: asks for the music home',
+        musicCall.body['browseId'] == 'FEmusic_home',
+        detail: musicCall.body['browseId']);
+    check('music feed: music client id',
+        musicCall.headers['x-youtube-client-name'] == '67',
+        detail: musicCall.headers['x-youtube-client-name']);
+    check(
+        'music feed: music origin headers',
+        musicCall.headers['origin'] == 'https://music.youtube.com' &&
+            musicCall.headers['referer'] == 'https://music.youtube.com/',
+        detail: musicCall.headers['origin']);
+    check('music feed: music API key',
+        musicCall.query['key'] == kYouTubeMusicApiKey,
+        detail: musicCall.query['key']);
+    check(
+      'music feed: WEB_REMIX context',
+      mapOf(mapOf(musicCall.body['context'])['client'])['clientName'] ==
+          'WEB_REMIX',
+      detail: mapOf(mapOf(musicCall.body['context'])['client'])['clientName'],
+    );
+    check(
+      'music feed: the signature is minted for the music origin',
+      _signatureMatches(
+        musicCall.headers['authorization'] ?? '',
+        session.secret!,
+        YouTubeWebSession.musicOrigin,
+      ),
+      detail: musicCall.headers['authorization'],
+    );
+
+    stdout.writeln('\nMusic home without an account');
+    server.reset();
+    server.handler = (call) => (status: 200, json: _musicHomePage());
+    final anonymous = YouTubeLibraryApi(
+      session: () async => null,
+      baseUrl: server.base,
+      versionUrl: server.versionUrl,
+      timeout: const Duration(seconds: 10),
+    );
+    final anonymousFeed = await anonymous.musicHomeFeed(maxPages: 1);
+    final anonymousCall =
+        server.calls.firstWhere((c) => c.path.endsWith('/browse'));
+    check('music feed: answers signed out', anonymousFeed.length == 3,
+        detail: anonymousFeed.length);
+    check(
+      'music feed: sends no cookie or signature when signed out',
+      !anonymousCall.headers.containsKey('cookie') &&
+          !anonymousCall.headers.containsKey('authorization'),
+      detail: anonymousCall.headers.keys.toList(),
+    );
+    check(
+      'account data: still requires a session',
+      await _kindOf(() async {
+            await anonymous.playlists(maxPages: 1);
+          }) ==
+          YouTubeLibraryErrorKind.unauthorized,
+    );
+
+    stdout.writeln('\nMusic search');
+    server.reset();
+    server.handler = (call) => (status: 200, json: _musicSearchPage());
+    final hits = await api().musicSearch('  Aurora  ');
+    check('music search: query trimmed',
+        server.calls.last.body['query'] == 'Aurora',
+        detail: server.calls.last.body['query']);
+    check('music search: hits parsed', hits.length == 2, detail: hits.length);
+    check(
+      'music search: only playable tracks',
+      hits.every((i) => i.videoId.startsWith('vid')),
+      detail: hits.map((i) => i.videoId).toList(),
+    );
+
+    server.reset();
+    server.handler = (call) => (status: 200, json: _musicArtistSearchPage());
+    final artistHits = await api().musicSearch('Aurora', artistHint: 'Aurora');
+    check(
+      'music search: an artist page fills in the omitted artist',
+      artistHits.first.artist == 'Aurora',
+      detail: artistHits.first.artist,
+    );
+    check(
+      'music search: without a hint the artist stays empty',
+      (await api().musicSearch('Aurora'))
+          .firstWhere((i) => i.videoId == 'vidNoArtist')
+          .artist
+          .isEmpty,
+    );
+
+    stdout.writeln('\nMusic feed engine');
+    YouTubePlaylistItem track(
+      String id,
+      String title,
+      String artist, {
+      int seconds = 200,
+    }) =>
+        YouTubePlaylistItem(
+          videoId: id,
+          title: title,
+          artist: artist,
+          duration: Duration(seconds: seconds),
+        );
+    YouTubeFeedCandidate candidate(
+      YouTubePlaylistItem item, {
+      YouTubeFeedSource source = YouTubeFeedSource.libraryArtist,
+    }) =>
+        YouTubeFeedCandidate(item: item, source: source);
+
+    check(
+      'engine: a trailer is rejected',
+      !judgeMusicCandidate(
+        candidate(track('t1', 'GTA 6 - Official Trailer', 'Rockstar')),
+      ).accepted,
+    );
+    check(
+      'engine: gameplay is rejected',
+      !judgeMusicCandidate(
+        candidate(track('t2', 'Insane Gameplay Highlights', 'Some Channel')),
+      ).accepted,
+    );
+    check(
+      'engine: a Short is rejected',
+      !judgeMusicCandidate(
+        candidate(track('t3', 'Song clip', 'Aurora', seconds: 20)),
+      ).accepted,
+    );
+    check(
+      'engine: a full programme is rejected',
+      !judgeMusicCandidate(
+        candidate(track('t4', 'Radio show', 'Aurora', seconds: 45 * 60)),
+      ).accepted,
+    );
+    check(
+      'engine: an account shelf row is kept, duration or not',
+      judgeMusicCandidate(
+        candidate(
+          track('t5', 'Beat It', 'Michael Jackson'),
+          source: YouTubeFeedSource.accountFeed,
+        ),
+      ).accepted,
+    );
+    check(
+      'engine: a podcast row on a music shelf is dropped',
+      !judgeMusicCandidate(
+        candidate(
+          track('t6', 'Podcast Episode 12', 'Some Channel', seconds: 3600),
+          source: YouTubeFeedSource.accountFeed,
+        ),
+      ).accepted,
+    );
+    check(
+      'engine: a row labelled "Episode" is not an artist',
+      !judgeMusicCandidate(
+        candidate(
+          track('t9', "Someone's Secret", 'Episode'),
+          source: YouTubeFeedSource.accountFeed,
+        ),
+      ).accepted,
+    );
+    check(
+      'engine: a song actually named "Tribute" survives',
+      judgeMusicCandidate(
+        candidate(track('t10', 'Tribute', 'Tenacious D')),
+      ).accepted,
+    );
+    check(
+      'engine: a tribute-version upload is dropped',
+      !judgeMusicCandidate(
+        candidate(
+          track('t11', 'Song (Tribute Version)', 'New Tribute Kings'),
+        ),
+      ).accepted,
+    );
+    check(
+      'engine: title decoration removed',
+      cleanMusicTitle('Runaway (Official Video) [4K]') == 'Runaway',
+      detail: cleanMusicTitle('Runaway (Official Video) [4K]'),
+    );
+    check(
+      'engine: a real recording note is kept',
+      cleanMusicTitle('Runaway (Live at Wembley)') ==
+          'Runaway (Live at Wembley)',
+      detail: cleanMusicTitle('Runaway (Live at Wembley)'),
+    );
+    check(
+      'engine: artist split from a decorated upload title',
+      splitTitleAndArtist(
+                  track('t7', 'Aurora - Runaway (Official Audio)', 'Aurora'))
+              .title ==
+          'Runaway',
+    );
+    check(
+      'engine: a title with no matching channel is left alone',
+      splitTitleAndArtist(track('t8', 'Song - Part 2', 'Aurora')).title ==
+          'Song - Part 2',
+    );
+
+    final taste = buildYouTubeTasteProfile([
+      const YouTubeTasteSignal(
+        artist: 'Aurora - Topic',
+        title: 'Runaway',
+        playCount: 10,
+        favorite: true,
+      ),
+      const YouTubeTasteSignal(artist: 'Nova', title: 'Other', playCount: 1),
+      const YouTubeTasteSignal(
+        artist: 'Nova',
+        title: 'Known Thing',
+        videoId: 'knownId',
+      ),
+    ]);
+    check('engine: channel decoration folded into one artist',
+        artistKey('Aurora - Topic') == artistKey('AuroraVEVO'));
+    check('engine: strongest artist first', taste.topArtists.first == 'Aurora',
+        detail: taste.topArtists);
+    check(
+        'engine: play counts decide the weight',
+        (taste.artistWeights['aurora'] ?? 0) == 1.0 &&
+            (taste.artistWeights['nova'] ?? 0) < 0.2,
+        detail: taste.artistWeights);
+    check('engine: known remote ids remembered',
+        taste.knownVideoIds.contains('knownId'));
+    check(
+      'engine: a placeholder artist never becomes a seed',
+      buildYouTubeTasteProfile([
+        const YouTubeTasteSignal(
+          artist: 'Unknown Artist',
+          title: 'Some file',
+          playCount: 40,
+        ),
+      ]).isEmpty,
+    );
+    check(
+      'engine: a row credited to a placeholder is dropped',
+      !judgeMusicCandidate(
+        candidate(track('t12', 'Some file', 'Unknown Artist')),
+      ).accepted,
+    );
+
+    final ranked = rankYouTubeMusicFeed(
+      taste: taste,
+      limit: 10,
+      maxPerArtist: 5,
+      candidates: [
+        candidate(
+          track('acct1', 'Account pick', 'Aurora'),
+          source: YouTubeFeedSource.accountFeed,
+        ),
+        candidate(track('lib1', 'Library pick', 'Aurora')),
+        candidate(track('lib2', 'Nova pick', 'Nova')),
+        candidate(track('noise', 'GTA 6 Gameplay', 'Some Channel')),
+        candidate(track('knownId', 'Known Thing', 'Nova')),
+        candidate(track('dup1', 'Library pick (Official Video)', 'Aurora')),
+      ],
+    );
+    check(
+      'engine: the library pool outranks the account pool',
+      ranked.first.videoId == 'lib1',
+      detail: ranked.map((i) => i.videoId).toList(),
+    );
+    check(
+      'engine: an account pick still makes the cut when taste matches',
+      ranked.any((i) => i.videoId == 'acct1'),
+      detail: ranked.map((i) => i.videoId).toList(),
+    );
+    check('engine: noise is dropped', !ranked.any((i) => i.videoId == 'noise'));
+    check(
+      'engine: a track already in the library is not suggested back',
+      !ranked.any((i) => i.videoId == 'knownId'),
+    );
+    check(
+      'engine: the same song under two ids is offered once',
+      ranked.where((i) => titleKey(i.title) == 'library pick').length == 1,
+      detail: ranked.map((i) => i.title).toList(),
+    );
+
+    final capped = rankYouTubeMusicFeed(
+      taste: taste,
+      maxPerArtist: 2,
+      candidates: [
+        candidate(track('a1', 'One', 'Aurora')),
+        candidate(track('a2', 'Two', 'Aurora')),
+        candidate(track('a3', 'Three', 'Aurora')),
+      ],
+    );
+    check('engine: one artist cannot fill the feed', capped.length == 2,
+        detail: capped.length);
 
     stdout.writeln('\nResponse cache');
     final store = _ProbeStore();
@@ -569,10 +872,10 @@ Future<void> _protocol() async {
         );
 
     server.reset();
-    server.handler = (call) => (status: 200, json: _homeFeedPage());
-    final firstLoad = await cachedApi().homeFeed(maxPages: 1);
+    server.handler = (call) => (status: 200, json: _musicHomePage());
+    final firstLoad = await cachedApi().musicHomeFeed(maxPages: 1);
     final requestsAfterFirst = server.browseCalls.length;
-    final secondLoad = await cachedApi().homeFeed(maxPages: 1);
+    final secondLoad = await cachedApi().musicHomeFeed(maxPages: 1);
     check('cache: first load hits the network', requestsAfterFirst == 1,
         detail: requestsAfterFirst);
     check(
@@ -590,7 +893,7 @@ Future<void> _protocol() async {
     store.age = const Duration(hours: 1);
     server.reset();
     server.handler = (call) => (status: 500, json: const {});
-    final staleLoad = await cachedApi().homeFeed(maxPages: 1);
+    final staleLoad = await cachedApi().musicHomeFeed(maxPages: 1);
     check(
       'cache: an expired copy survives a failed refresh',
       staleLoad.length == firstLoad.length,
@@ -642,6 +945,17 @@ Future<YouTubeLibraryErrorKind?> _kindOf(Future<void> Function() run) async {
   } on YouTubeLibraryException catch (error) {
     return error.kind;
   }
+}
+
+/// Recomputes a `SAPISIDHASH` header from its timestamp and compares it, which
+/// is the only way to prove which origin the request really signed for.
+bool _signatureMatches(String header, String secret, String origin) {
+  final match =
+      RegExp(r'^SAPISIDHASH (\d{10})_([0-9a-f]{40})$').firstMatch(header);
+  if (match == null) return false;
+  final digest =
+      sha1.convert(utf8.encode('${match.group(1)} $secret $origin')).toString();
+  return digest == match.group(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -699,6 +1013,52 @@ Future<void> _live() async {
     }
   } on Object catch (error) {
     skip('live: YouTube accepts the request shape', '$error');
+  }
+
+  // The feed no longer touches www.youtube.com's home; it lives or dies on
+  // whether the music client answers anonymously.
+  try {
+    final api = YouTubeLibraryApi(
+      session: () async => null,
+      timeout: const Duration(seconds: 25),
+    );
+    final tracks = await api.musicHomeFeed(maxPages: 1);
+    check(
+      'live: YouTube Music home returns tracks',
+      tracks.isNotEmpty,
+      detail: '${tracks.length} tracks',
+    );
+    check(
+      'live: music rows carry a title and a channel',
+      tracks.every((t) => t.title.isNotEmpty && t.artist.isNotEmpty),
+      detail: tracks.take(3).map((t) => '${t.title} / ${t.artist}').toList(),
+    );
+    final playable = tracks
+        .where((t) => judgeMusicCandidate(
+              YouTubeFeedCandidate(
+                item: normalizeMusicTrack(t),
+                source: YouTubeFeedSource.accountFeed,
+              ),
+            ).accepted)
+        .length;
+    check(
+      'live: most of the music home survives the music filter',
+      playable >= tracks.length * 0.6,
+      detail: '$playable of ${tracks.length}',
+    );
+  } on YouTubeLibraryException catch (error) {
+    if (error.kind == YouTubeLibraryErrorKind.network ||
+        error.kind == YouTubeLibraryErrorKind.rateLimited) {
+      skip('live: YouTube Music home returns tracks', error.message);
+    } else {
+      check(
+        'live: YouTube Music home returns tracks',
+        false,
+        detail: '${error.kind.name}: ${error.message}',
+      );
+    }
+  } on Object catch (error) {
+    skip('live: YouTube Music home returns tracks', '$error');
   }
 }
 
@@ -842,9 +1202,11 @@ Map<String, Object?> _accountMenu() => {
       ],
     };
 
-Map<String, Object?> _homeFeedPage() => {
+/// A YouTube Music home page: one carousel of two-row items and one shelf of
+/// responsive rows, which is the shape the WEB_REMIX browse endpoint returns.
+Map<String, Object?> _musicHomePage() => {
       'contents': {
-        'twoColumnBrowseResultsRenderer': {
+        'singleColumnBrowseResultsRenderer': {
           'tabs': [
             {
               'tabRenderer': {
@@ -852,87 +1214,227 @@ Map<String, Object?> _homeFeedPage() => {
                   'sectionListRenderer': {
                     'contents': [
                       {
-                        'richItemRenderer': {
-                          'content': {
-                            'videoRenderer': {
-                              'videoId': 'vid1',
+                        'musicCarouselShelfRenderer': {
+                          'header': {
+                            'musicCarouselShelfBasicHeaderRenderer': {
                               'title': {
                                 'runs': [
-                                  {'text': 'First video'}
+                                  {'text': 'Picked for you'}
                                 ]
-                              },
-                              'shortBylineText': {
-                                'runs': [
-                                  {'text': 'Lofi Girl'}
-                                ]
-                              },
-                              'lengthText': {'simpleText': '3:52'},
-                              'thumbnail': {
-                                'thumbnails': [
-                                  {
-                                    'url': 'https://i.ytimg.com/vi/vid1/hq.jpg',
-                                    'width': 480,
-                                    'height': 360
-                                  }
-                                ]
-                              },
+                              }
                             }
-                          }
+                          },
+                          'contents': [
+                            _musicTwoRow('vidTwoRow', 'Night Drive', 'Aurora'),
+                            _musicTwoRow('MPREalbum', 'Another Album', 'Aurora',
+                                playable: false),
+                          ],
                         }
                       },
                       {
-                        'richItemRenderer': {
-                          'content': {
-                            'lockupViewModel': {
-                              'contentType': 'VIDEO',
-                              'contentId': 'vid2',
-                              'metadata': {
-                                'lockupMetadataViewModel': {
-                                  'title': {'content': 'Second video'},
-                                  'metadata': {
-                                    'metadataRows': [
-                                      {
-                                        'metadataParts': [
-                                          {
-                                            'text': {'content': 'Some Channel'}
-                                          },
-                                          {
-                                            'text': {'content': '1.2M views'}
-                                          },
-                                          {
-                                            'text': {'content': '2 days ago'}
-                                          },
+                        'musicShelfRenderer': {
+                          'contents': [
+                            _musicResponsive(
+                              'vidRow',
+                              'First song',
+                              ['Aurora', 'Album', '3:52'],
+                            ),
+                            _musicResponsive(
+                              'vidRow2',
+                              'Second song',
+                              ['Nova - Topic', 'Single', '4:10'],
+                            ),
+                            {
+                              'musicResponsiveListItemRenderer': {
+                                'flexColumns': [
+                                  {
+                                    'musicResponsiveListItemFlexColumnRenderer':
+                                        {
+                                      'text': {
+                                        'runs': [
+                                          {'text': 'A container'}
                                         ]
                                       }
-                                    ]
-                                  },
-                                }
-                              },
-                              'contentImage': {
-                                'thumbnailViewModel': {
-                                  'image': {
-                                    'sources': [
-                                      {
-                                        'url':
-                                            'https://i.ytimg.com/vi/vid2/hq.jpg',
-                                        'width': 480
-                                      }
-                                    ]
+                                    }
                                   }
-                                }
-                              },
-                            }
-                          }
+                                ],
+                                'navigationEndpoint': {
+                                  'browseEndpoint': {'browseId': 'MPRElist'},
+                                },
+                              }
+                            },
+                          ],
                         }
                       },
-                    ]
+                    ],
                   }
                 }
               }
             }
           ]
         }
-      }
+      },
+    };
+
+/// A music search response: the same renderers as the home shelves.
+Map<String, Object?> _musicSearchPage() => {
+      'contents': {
+        'tabbedSearchResultsRenderer': {
+          'tabs': [
+            {
+              'tabRenderer': {
+                'content': {
+                  'sectionListRenderer': {
+                    'contents': [
+                      {
+                        'musicShelfRenderer': {
+                          'contents': [
+                            _musicResponsive(
+                              'vidSearch1',
+                              'Search Hit',
+                              ['Aurora', 'Single', '3:20'],
+                            ),
+                            _musicResponsive(
+                              'vidSearch2',
+                              'Search Hit Two',
+                              ['Aurora', 'Single', '4:05'],
+                            ),
+                            {
+                              'musicResponsiveListItemRenderer': {
+                                'flexColumns': [
+                                  {
+                                    'musicResponsiveListItemFlexColumnRenderer':
+                                        {
+                                      'text': {
+                                        'runs': [
+                                          {'text': 'Aurora'}
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ],
+                                'navigationEndpoint': {
+                                  'browseEndpoint': {'browseId': 'UCartist'},
+                                },
+                              }
+                            },
+                          ],
+                        }
+                      },
+                    ],
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+    };
+
+/// An artist search result page: the rows name the song and its type but omit
+/// the artist, because the page header already does.
+Map<String, Object?> _musicArtistSearchPage() => {
+      'contents': {
+        'musicShelfRenderer': {
+          'contents': [
+            _musicResponsive(
+              'vidNoArtist',
+              'Top Song',
+              ['Song', '3:00'],
+            ),
+          ],
+        },
+      },
+    };
+
+Map<String, Object?> _musicResponsive(
+  String videoId,
+  String title,
+  List<String> byline,
+) =>
+    {
+      'musicResponsiveListItemRenderer': {
+        'playlistItemData': {'videoId': videoId},
+        'flexColumns': [
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': title}
+                ]
+              }
+            }
+          },
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  for (var i = 0; i < byline.length; i++) ...[
+                    if (i > 0) {'text': ' • '},
+                    {'text': byline[i]},
+                  ]
+                ]
+              }
+            }
+          },
+        ],
+        'thumbnail': {
+          'musicThumbnailRenderer': {
+            'thumbnail': {
+              'thumbnails': [
+                {
+                  'url': 'https://i.ytimg.com/vi/$videoId/default.jpg',
+                  'width': 120,
+                },
+                {
+                  'url': 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+                  'width': 480,
+                },
+              ]
+            }
+          }
+        },
+      },
+    };
+
+Map<String, Object?> _musicTwoRow(
+  String id,
+  String title,
+  String subtitle, {
+  bool playable = true,
+}) =>
+    {
+      'musicTwoRowItemRenderer': {
+        'title': {
+          'runs': [
+            {'text': title}
+          ]
+        },
+        'subtitle': {
+          'runs': [
+            {'text': subtitle}
+          ]
+        },
+        'navigationEndpoint': playable
+            ? {
+                'watchEndpoint': {'videoId': id},
+              }
+            : {
+                'browseEndpoint': {'browseId': id},
+              },
+        'thumbnailRenderer': {
+          'musicThumbnailRenderer': {
+            'thumbnail': {
+              'thumbnails': [
+                {
+                  'url': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+                  'width': 480,
+                },
+              ]
+            }
+          }
+        },
+      },
     };
 
 Map<String, Object?> _feplaylistsPage(List<Map<String, Object?>> items) => {

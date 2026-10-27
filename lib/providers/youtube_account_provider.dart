@@ -8,12 +8,12 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/models/youtube_playlist_link.dart';
 import '../domain/services/youtube_library.dart';
+import '../domain/services/youtube_music_feed.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../services/database_service.dart';
 import '../services/online_music_service.dart';
 import '../services/youtube_account_service.dart';
-import '../services/youtube_service.dart';
 import 'providers.dart';
 
 /// Signed-in state of the YouTube account.
@@ -280,12 +280,6 @@ class YouTubeAccountNotifier extends AsyncNotifier<YouTubeAccountSnapshot> {
       duration: item.duration,
     );
   }
-
-  static String? _videoIdOf(String filename) {
-    if (!filename.startsWith(Song.youtubePrefix)) return null;
-    final id = filename.substring(Song.youtubePrefix.length);
-    return id.isEmpty ? null : id;
-  }
 }
 
 /// What one import or sync changed, so the screen can report it honestly.
@@ -336,82 +330,109 @@ final youtubePlaylistLinksProvider =
   return {for (final link in links) link.localPlaylistId: link};
 });
 
-/// The signed-in home feed: YouTube's own recommendations for this account.
-final youtubeHomeTracksProvider =
-    FutureProvider<List<OnlineTrack>>((ref) async {
-  final account = await ref.watch(youtubeAccountProvider.future);
-  if (!account.signedIn) return const [];
-  try {
-    final items = await YouTubeAccountService.instance.libraryApi().homeFeed();
-    return List<OnlineTrack>.unmodifiable(
-      items.map(
-        (item) => OnlineTrack(
-          id: item.videoId,
-          title: item.title,
-          artist: item.artist,
-          coverUrl: item.thumbnailUrl,
-          duration: item.duration,
-        ),
-      ),
-    );
-  } on YouTubeLibraryException catch (error) {
-    if (error.kind == YouTubeLibraryErrorKind.unauthorized) {
-      ref.invalidate(youtubeAccountProvider);
-    }
-    rethrow;
-  }
-});
-
-/// YouTube results for the artists this device plays most.
+/// The feed on the YouTube tab: music from the catalogue, ranked by what this
+/// device actually plays.
 ///
-/// Works without an account, which is what keeps the tab useful before sign-in
-/// and for people who never sign in at all.
-final youtubeArtistTracksProvider =
+/// Two pools feed it. The library pool is a music-catalogue search per strongest
+/// artist, so it always follows the listening history. The account pool is the
+/// signed-in YouTube Music home, which is music-only by construction. Neither
+/// pool is a www.youtube.com feed: that home page follows watch history and
+/// subscriptions, which is how the tab ended up full of trailers and gameplay
+/// the moment anyone signed in.
+///
+/// Everything goes through [rankYouTubeMusicFeed], where the local taste profile
+/// outweighs the account's shelves, so the account can widen the feed but never
+/// steer it.
+final youtubeForYouTracksProvider =
     FutureProvider<List<OnlineTrack>>((ref) async {
   final songs = ref.watch(songsProvider).asData?.value ?? const <Song>[];
-  if (songs.isEmpty) return const [];
+  final userData = ref.watch(userDataProvider);
+  await ref.watch(youtubeAccountProvider.future);
 
-  // Ranked on the library snapshot only: live play counts change constantly
-  // and would re-run four searches while the user is playing something.
-  final scores = <String, double>{};
-  for (final song in songs) {
-    final artist = song.artist.trim();
-    if (artist.isEmpty) continue;
-    scores[artist] = (scores[artist] ?? 0) + song.playCount + 1;
-  }
-  if (scores.isEmpty) return const [];
-  final artists = (scores.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value)))
-      .take(4)
-      .map((entry) => entry.key);
+  final taste = buildYouTubeTasteProfile([
+    for (final song in songs)
+      YouTubeTasteSignal(
+        artist: song.artist,
+        title: song.title,
+        playCount: song.playCount,
+        favorite: userData.isFavorite(song.filename),
+        videoId: _videoIdOf(song.filename),
+      ),
+    // Saved remote tracks are listening history too, and their ids keep the
+    // feed from suggesting a song the listener already keeps.
+    for (final song in userData.remoteSongs.values)
+      YouTubeTasteSignal(
+        artist: song.artist,
+        title: song.title,
+        playCount: song.playCount,
+        videoId: _videoIdOf(song.filename),
+      ),
+  ]);
 
-  final seen = <String>{};
-  final tracks = <OnlineTrack>[];
-  for (final artist in artists) {
-    if (tracks.length >= 12) break;
-    List<YouTubeVideo> videos;
-    try {
-      videos = await YouTubeService.instance.search(artist, limit: 4);
-    } on Object {
-      // One artist the catalogue refuses must not empty the whole rail.
-      continue;
-    }
-    for (final video in videos) {
-      if (!seen.add(video.id)) continue;
-      tracks.add(
-        OnlineTrack(
-          id: video.id,
-          title: video.title,
-          artist: video.artist,
-          coverUrl: video.thumbnailUrl,
-          duration: video.duration,
+  final api = YouTubeAccountService.instance.libraryApi();
+  final candidates = <YouTubeFeedCandidate>[];
+  Object? firstError;
+
+  // The music home answers with or without an account; signed in it follows
+  // the account's own music history, signed out it is charts and popular picks.
+  try {
+    for (final item in await api.musicHomeFeed(maxPages: 2)) {
+      candidates.add(
+        YouTubeFeedCandidate(
+          item: normalizeMusicTrack(item),
+          source: YouTubeFeedSource.accountFeed,
         ),
       );
-      if (tracks.length >= 12) break;
+    }
+  } on Object catch (error) {
+    firstError = error;
+    _logFeedError(error);
+  }
+
+  // A few searches are enough to cover the top artists; each one returns only
+  // songs and music videos, so this pool cannot produce noise.
+  for (final artist in taste.topArtists.take(4)) {
+    try {
+      for (final item in await api.musicSearch(artist, artistHint: artist)) {
+        candidates.add(
+          YouTubeFeedCandidate(
+            item: normalizeMusicTrack(item),
+            source: YouTubeFeedSource.libraryArtist,
+          ),
+        );
+      }
+    } on Object catch (error) {
+      firstError ??= error;
+      _logFeedError(error);
     }
   }
-  return List<OnlineTrack>.unmodifiable(tracks);
+
+  if (candidates.isEmpty && firstError != null) throw firstError;
+
+  final ranked = rankYouTubeMusicFeed(taste: taste, candidates: candidates);
+  return List<OnlineTrack>.unmodifiable([
+    for (final item in ranked)
+      OnlineTrack(
+        id: item.videoId,
+        title: item.title,
+        artist: item.artist,
+        coverUrl: item.thumbnailUrl ?? youtubeThumbnailUrl(item.videoId),
+        duration: item.duration,
+      ),
+  ]);
 });
+
+/// A failed pool is logged, never escalated: the music client works without a
+/// session, so a rejected request says nothing about the stored cookies, and
+/// invalidating the account from here would rebuild this provider into the same
+/// failure.
+void _logFeedError(Object error) => debugPrint('YouTube feed: $error');
+
+String? _videoIdOf(String filename) {
+  if (!filename.startsWith(Song.youtubePrefix)) return null;
+  final id = filename.substring(Song.youtubePrefix.length);
+  return id.isEmpty ? null : id;
+}
 
 /// Tracks of one account playlist (or the liked-videos list), for the preview
 /// screen. Cached by the library, so opening a playlist twice is instant.

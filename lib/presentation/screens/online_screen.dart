@@ -24,9 +24,9 @@ import '../components/app_surface.dart';
 /// The YouTube tab: a search field, a recommendations feed and the account's
 /// playlists.
 ///
-/// Before sign-in the feed is built from the artists this device plays most, so
-/// the tab is useful without an account. Once signed in it shows YouTube's own
-/// home recommendations, which follow the account's history and subscriptions.
+/// The feed is music from the YouTube Music catalogue, ranked by the artists
+/// this device plays most. Signing in adds the account's music shelves as a
+/// second pool; it never replaces the local taste profile.
 class OnlineScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
 
@@ -520,9 +520,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
   }
 
   Widget _buildHome(bool signedIn) {
-    final feed = signedIn
-        ? ref.watch(youtubeHomeTracksProvider)
-        : ref.watch(youtubeArtistTracksProvider);
+    final feed = ref.watch(youtubeForYouTracksProvider);
 
     return ListView(
       controller: widget.scrollController,

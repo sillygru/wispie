@@ -117,6 +117,13 @@ const String kYouTubeWebApiKey = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 /// badly stale version, so the client re-resolves it on every launch.
 const String kYouTubeWebClientVersionFallback = '2.20261026.01.00';
 
+/// YouTube Music's web client, which only ever answers with music. Its key is
+/// as public as the www one; using it with the right client name is what keeps
+/// trailers and vlogs out of the feed.
+const String kYouTubeMusicApiKey = 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30';
+
+const String kYouTubeMusicClientVersionFallback = '1.20261020.01.00';
+
 const String kYouTubeWebUserAgent =
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -138,11 +145,59 @@ abstract class YouTubeResponseStore {
   Future<void> write(String key, Map<String, dynamic> body);
 }
 
+/// Which YouTube web client a request speaks as.
+///
+/// Both are InnerTube and both accept the same cookie signature; they differ in
+/// host, origin, key and client identity, and in what they will return. The www
+/// client answers with everything YouTube hosts, while `WEB_REMIX` (YouTube
+/// Music) only ever returns music.
+enum _ApiClient {
+  web(
+    host: 'www.youtube.com',
+    origin: YouTubeWebSession.origin,
+    clientName: 'WEB',
+    headerId: 1,
+    apiKey: kYouTubeWebApiKey,
+    versionFallback: kYouTubeWebClientVersionFallback,
+    requiresSession: true,
+  ),
+  music(
+    host: 'music.youtube.com',
+    origin: YouTubeWebSession.musicOrigin,
+    clientName: 'WEB_REMIX',
+    headerId: 67,
+    apiKey: kYouTubeMusicApiKey,
+    versionFallback: kYouTubeMusicClientVersionFallback,
+    requiresSession: false,
+  );
+
+  const _ApiClient({
+    required this.host,
+    required this.origin,
+    required this.clientName,
+    required this.headerId,
+    required this.apiKey,
+    required this.versionFallback,
+    required this.requiresSession,
+  });
+
+  final String host;
+  final String origin;
+  final String clientName;
+  final int headerId;
+  final String apiKey;
+  final String versionFallback;
+
+  /// Account data needs a cookie session; the music catalogue does not.
+  final bool requiresSession;
+}
+
 class YouTubeLibraryApi {
   YouTubeLibraryApi({
     required YouTubeSessionProvider session,
     HttpClient? client,
     Uri? baseUrl,
+    Uri? musicBaseUrl,
     Uri? versionUrl,
     String? clientVersion,
     Duration timeout = const Duration(seconds: 20),
@@ -151,29 +206,38 @@ class YouTubeLibraryApi {
   })  : _session = session,
         _client = client ?? HttpClient(),
         _base = baseUrl ?? Uri.parse('https://www.youtube.com/youtubei/v1/'),
+        _musicBase = musicBaseUrl ??
+            baseUrl ??
+            Uri.parse('https://music.youtube.com/youtubei/v1/'),
         _versionUrl = versionUrl,
-        _version = clientVersion,
         _pinnedVersion = clientVersion != null,
         _timeout = timeout,
         _clock = clock ?? DateTime.now,
-        _store = store;
+        _store = store {
+    if (clientVersion != null) {
+      for (final client in _ApiClient.values) {
+        _versions[client] = clientVersion;
+      }
+    }
+  }
 
   final YouTubeSessionProvider _session;
   final YouTubeResponseStore? _store;
   final HttpClient _client;
   final Uri _base;
+  final Uri _musicBase;
   final Uri? _versionUrl;
   final bool _pinnedVersion;
   final Duration _timeout;
   final DateTime Function() _clock;
 
-  String? _version;
-  bool _versionFromConfig = false;
+  final Map<_ApiClient, String> _versions = {};
+  final Set<_ApiClient> _resolvedVersions = {};
 
-  /// True once the client version came from YouTube itself rather than from
+  /// True once the www client version came from YouTube itself rather than from
   /// [kYouTubeWebClientVersionFallback]. Diagnostics and the probe use it to
   /// tell "resolved" from "fell back".
-  bool get hasLiveClientVersion => _versionFromConfig;
+  bool get hasLiveClientVersion => _resolvedVersions.contains(_ApiClient.web);
 
   /// Channel metadata, used for the signed-in card and to prove the cookies
   /// still work. Returns null when YouTube treats the session as signed out.
@@ -214,16 +278,70 @@ class YouTubeLibraryApi {
     return result;
   }
 
-  /// The account's recommended videos, in YouTube's order.
+  /// The account's YouTube Music home, in shelf order.
   ///
-  /// This is the same page the site's home tab loads, so it follows the
-  /// account's history and subscriptions rather than a generic popular list.
-  Future<List<YouTubePlaylistItem>> homeFeed({int maxPages = 2}) async {
+  /// Deliberately YouTube *Music* and not youtube.com's `FEwhat_to_watch`: the
+  /// www home mixes in gaming, vlogs and trailers, and a music player's feed
+  /// has no use for them. Every renderer on this page is a song, video, album or
+  /// playlist, and [parseMusicTracks] only keeps the playable tracks.
+  ///
+  /// A signed-out visitor gets the same page's charts and popular picks.
+  Future<List<YouTubePlaylistItem>> musicHomeFeed({int maxPages = 2}) {
     return _collectBrowseFeed(
-      'FEwhat_to_watch',
+      'FEmusic_home',
+      client: _ApiClient.music,
       maxPages: maxPages,
-      cacheFor: const Duration(minutes: 10),
+      cacheFor: const Duration(minutes: 30),
     );
+  }
+
+  /// Searches the music catalogue. Unlike a www search, every hit is a song or
+  /// music video, so seeding this with an artist the listener already plays
+  /// cannot return a trailer.
+  ///
+  /// An artist query answers with that artist's top songs, and those rows omit
+  /// the artist because the page header already names them. [artistHint] fills
+  /// it back in; without it those rows would rank as unknown artists.
+  Future<List<YouTubePlaylistItem>> musicSearch(
+    String query, {
+    int maxPages = 1,
+    String? artistHint,
+  }) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) return const [];
+
+    final items = <YouTubePlaylistItem>[];
+    final seen = <String>{};
+    final usedContinuations = <String>{};
+    String? continuation;
+
+    for (var page = 0; page < maxPages; page++) {
+      final json = await _post(
+        'search',
+        continuation == null
+            ? {'query': normalized}
+            : {'continuation': continuation},
+        client: _ApiClient.music,
+        cacheFor: const Duration(minutes: 30),
+      );
+      for (final item in parseMusicTracks(json, artistHint: artistHint)) {
+        if (!seen.add(item.videoId)) continue;
+        items.add(
+          YouTubePlaylistItem(
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnailUrl: item.thumbnailUrl,
+            position: items.length,
+          ),
+        );
+      }
+      final next = nextContinuation(json);
+      if (next == null || !usedContinuations.add(next)) break;
+      continuation = next;
+    }
+    return items;
   }
 
   /// Every playable track in [playlistId], in playlist order.
@@ -240,9 +358,9 @@ class YouTubeLibraryApi {
     return _collectPlaylist('VL$_kLikedBrowsePlaylistId', maxPages: maxPages);
   }
 
-  /// The client version that will be sent, resolved once per instance.
+  /// The www client version that will be sent, resolved once per instance.
   /// Exposed so diagnostics and the probe can verify what YouTube is told.
-  Future<String> resolvedClientVersion() => _clientVersion();
+  Future<String> resolvedClientVersion() => _clientVersion(_ApiClient.web);
 
   Future<List<YouTubePlaylistItem>> _collectPlaylist(
     String browseId, {
@@ -258,7 +376,7 @@ class YouTubeLibraryApi {
     String browseId, {
     required int maxPages,
     required Duration cacheFor,
-    Map<String, Object?>? body,
+    _ApiClient client = _ApiClient.web,
   }) async {
     final items = <YouTubePlaylistItem>[];
     final seen = <String>{};
@@ -269,11 +387,15 @@ class YouTubeLibraryApi {
       final json = await _post(
         'browse',
         continuation == null
-            ? {...?body, 'browseId': browseId}
+            ? {'browseId': browseId}
             : {'continuation': continuation},
+        client: client,
         cacheFor: cacheFor,
       );
-      for (final item in parsePlaylistVideoItems(json)) {
+      final parsed = client == _ApiClient.music
+          ? parseMusicTracks(json)
+          : parsePlaylistVideoItems(json);
+      for (final item in parsed) {
         if (!seen.add(item.videoId)) continue;
         items.add(
           YouTubePlaylistItem(
@@ -298,10 +420,14 @@ class YouTubeLibraryApi {
   Future<Map<String, dynamic>> _post(
     String endpoint,
     Map<String, Object?> body, {
+    _ApiClient client = _ApiClient.web,
     Duration cacheFor = Duration.zero,
   }) async {
     final session = await _session();
-    if (session == null || !session.isUsable) {
+    final usable = session != null && session.isUsable;
+    // The music client is anonymous-friendly: its home page and search answer
+    // without an account, which is what keeps the feed working signed out.
+    if (!usable && client.requiresSession) {
       throw const YouTubeLibraryException(
         YouTubeLibraryErrorKind.unauthorized,
         'Not signed in to a YouTube account.',
@@ -309,24 +435,33 @@ class YouTubeLibraryApi {
     }
 
     final store = _store;
-    final cacheKey = '$endpoint:${jsonEncode(body)}';
+    final cacheKey = '${client.host}:$endpoint:${jsonEncode(body)}';
     if (store != null && cacheFor > Duration.zero) {
       final cached = await store.read(cacheKey, cacheFor);
       if (cached != null) return cached;
     }
 
-    final uri = _base.replace(
-      path: '${_base.path.endsWith('/') ? _base.path : '${_base.path}/'}'
+    final base = client == _ApiClient.music ? _musicBase : _base;
+    final uri = base.replace(
+      path: '${base.path.endsWith('/') ? base.path : '${base.path}/'}'
           '$endpoint',
-      queryParameters: const {
-        'key': kYouTubeWebApiKey,
+      queryParameters: {
+        'key': client.apiKey,
         'prettyPrint': 'false',
       },
     );
 
     try {
       return await _request(
-          endpoint, body, uri, session, cacheKey, store, cacheFor);
+        endpoint,
+        body,
+        uri,
+        usable ? session : null,
+        client,
+        cacheKey,
+        store,
+        cacheFor,
+      );
     } on YouTubeLibraryException {
       // A refresh that fails should not blank a screen the cache can fill.
       if (store != null && cacheFor > Duration.zero) {
@@ -341,19 +476,20 @@ class YouTubeLibraryApi {
     String endpoint,
     Map<String, Object?> body,
     Uri uri,
-    YouTubeWebSession session,
+    YouTubeWebSession? session,
+    _ApiClient client,
     String cacheKey,
     YouTubeResponseStore? store,
     Duration cacheFor,
   ) async {
     var attempt = 0;
     while (true) {
-      final version = await _clientVersion();
+      final version = await _clientVersion(client);
       final payload = {
-        'context': _context(version),
+        'context': _context(version, client),
         ...body,
       };
-      final response = await _send(uri, payload, session, version);
+      final response = await _send(uri, payload, session, client, version);
       final status = response.status;
 
       if (status >= HttpStatus.ok && status < HttpStatus.multipleChoices) {
@@ -374,7 +510,7 @@ class YouTubeLibraryApi {
       // A 400 from InnerTube is usually a client version YouTube no longer
       // accepts. Re-resolve once rather than making the user restart.
       if (status == HttpStatus.badRequest && attempt == 0 && !_pinnedVersion) {
-        _version = null;
+        _versions.remove(client);
         attempt++;
         continue;
       }
@@ -414,23 +550,27 @@ class YouTubeLibraryApi {
   Future<_JsonResponse> _send(
     Uri uri,
     Map<String, Object?> payload,
-    YouTubeWebSession session,
+    YouTubeWebSession? session,
+    _ApiClient client,
     String version,
   ) async {
     try {
       final request = await _client.postUrl(uri).timeout(_timeout);
       request.headers
         ..set(HttpHeaders.contentTypeHeader, 'application/json')
-        ..set('X-YouTube-Client-Name', '1')
+        ..set('X-YouTube-Client-Name', '${client.headerId}')
         ..set('X-YouTube-Client-Version', version)
-        ..set('X-Goog-Api-Key', kYouTubeWebApiKey)
-        ..set('Origin', YouTubeWebSession.origin)
-        ..set('X-Origin', YouTubeWebSession.origin)
-        ..set('Referer', '${YouTubeWebSession.origin}/')
+        ..set('X-Goog-Api-Key', client.apiKey)
+        ..set('Origin', client.origin)
+        ..set('X-Origin', client.origin)
+        ..set('Referer', '${client.origin}/')
         ..set(HttpHeaders.userAgentHeader, kYouTubeWebUserAgent)
         ..set(HttpHeaders.acceptLanguageHeader, 'en-US,en;q=0.9');
-      for (final header in session.authHeaders(_clock()).entries) {
-        request.headers.set(header.key, header.value);
+      if (session != null) {
+        for (final header
+            in session.authHeaders(_clock(), origin: client.origin).entries) {
+          request.headers.set(header.key, header.value);
+        }
       }
       request.add(utf8.encode(jsonEncode(payload)));
 
@@ -467,16 +607,16 @@ class YouTubeLibraryApi {
   /// The web client version the page is currently shipping. YouTube rotates it
   /// every few weeks and older values start failing, so it is read at runtime
   /// with the compiled default as a last resort.
-  Future<String> _clientVersion() async {
-    final cached = _version;
+  Future<String> _clientVersion(_ApiClient client) async {
+    final cached = _versions[client];
     if (cached != null) return cached;
     final resolved =
-        await _resolveClientVersion() ?? kYouTubeWebClientVersionFallback;
-    _version = resolved;
+        await _resolveClientVersion(client) ?? client.versionFallback;
+    _versions[client] = resolved;
     return resolved;
   }
 
-  Future<String?> _resolveClientVersion() async {
+  Future<String?> _resolveClientVersion(_ApiClient client) async {
     // The homepage embeds the version in its `ytcfg`; `sw.js_data` used to
     // carry it and is kept as a second source because YouTube moves this
     // around. A caller that supplied a URL (tests, diagnostics) gets only that.
@@ -484,8 +624,8 @@ class YouTubeLibraryApi {
     final sources = configured != null
         ? <Uri>[configured]
         : <Uri>[
-            Uri.parse('https://www.youtube.com/'),
-            Uri.parse('https://www.youtube.com/sw.js_data'),
+            Uri.parse('https://${client.host}/'),
+            Uri.parse('https://${client.host}/sw.js_data'),
           ];
 
     for (final uri in sources) {
@@ -494,7 +634,7 @@ class YouTubeLibraryApi {
         final match = RegExp(r'INNERTUBE_CLIENT_VERSION"?\s*:\s*"?([0-9.]+)')
             .firstMatch(text);
         if (match != null) {
-          _versionFromConfig = true;
+          _resolvedVersions.add(client);
           return match.group(1);
         }
       } on Object catch (error) {
@@ -530,14 +670,14 @@ class YouTubeLibraryApi {
     );
   }
 
-  Map<String, Object?> _context(String version) => {
+  Map<String, Object?> _context(String version, _ApiClient client) => {
         'client': {
-          'clientName': 'WEB',
+          'clientName': client.clientName,
           'clientVersion': version,
           'hl': 'en',
           'gl': 'US',
           'userAgent': kYouTubeWebUserAgent,
-          'originalUrl': '${YouTubeWebSession.origin}/',
+          'originalUrl': '${client.origin}/',
           'platform': 'DESKTOP',
         },
         'user': const {'lockedSafetyMode': false},
@@ -667,6 +807,150 @@ List<YouTubePlaylistItem> parsePlaylistVideoItems(Object? json) {
   }
   return result;
 }
+
+/// Tracks from a YouTube Music browse or search response, in page order.
+///
+/// Music pages wrap results in `musicResponsiveListItemRenderer` (shelf rows)
+/// or `musicTwoRowItemRenderer` (carousels). Both carry a watch endpoint for a
+/// playable track and a browse id for an album or playlist, so only entries
+/// with a watch endpoint are kept: everything else is a container.
+List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
+  final result = <YouTubePlaylistItem>[];
+  final seen = <String>{};
+
+  for (final node in walkJsonMaps(json)) {
+    final responsive = node['musicResponsiveListItemRenderer'];
+    final twoRow = node['musicTwoRowItemRenderer'];
+    YouTubePlaylistItem? item;
+    if (responsive is Map) {
+      item = _itemFromMusicResponsive(responsive);
+    } else if (twoRow is Map) {
+      item = _itemFromMusicTwoRow(twoRow);
+    }
+    if (item == null) continue;
+    if (item.artist.isEmpty && artistHint != null && artistHint.isNotEmpty) {
+      item = YouTubePlaylistItem(
+        videoId: item.videoId,
+        title: item.title,
+        artist: stripTopicSuffix(artistHint),
+        duration: item.duration,
+        thumbnailUrl: item.thumbnailUrl,
+        position: item.position,
+      );
+    }
+    if (!seen.add(item.videoId)) continue;
+    result.add(
+      YouTubePlaylistItem(
+        videoId: item.videoId,
+        title: item.title,
+        artist: item.artist,
+        duration: item.duration,
+        thumbnailUrl: item.thumbnailUrl,
+        position: result.length,
+      ),
+    );
+  }
+  return result;
+}
+
+YouTubePlaylistItem? _itemFromMusicResponsive(Map renderer) {
+  final id = _watchVideoId(renderer) ??
+      mapOf(mapOf(renderer['playlistItemData']))['videoId']?.toString() ??
+      '';
+  if (id.isEmpty) return null;
+  final title = textOf(_flexColumn(renderer, 0));
+  if (!isPlayableTitle(title)) return null;
+  final byline = _musicByline(_flexColumn(renderer, 1));
+  return YouTubePlaylistItem(
+    videoId: id,
+    title: title!,
+    artist: byline.artist,
+    duration: byline.duration,
+    thumbnailUrl: bestImageUrl(renderer['thumbnail']),
+  );
+}
+
+YouTubePlaylistItem? _itemFromMusicTwoRow(Map renderer) {
+  final id = _watchVideoId(renderer) ?? '';
+  if (id.isEmpty) return null;
+  final title = textOf(renderer['title']);
+  if (!isPlayableTitle(title)) return null;
+  final byline = _musicByline(renderer['subtitle']);
+  return YouTubePlaylistItem(
+    videoId: id,
+    title: title!,
+    artist: byline.artist,
+    duration: byline.duration,
+    thumbnailUrl: bestImageUrl(renderer),
+  );
+}
+
+/// The watch endpoint a music renderer opens, or null when it opens a browse
+/// page (which is an album, an artist or a playlist rather than a track).
+String? _watchVideoId(Map renderer) {
+  final candidates = <Object?>[
+    mapOf(renderer['navigationEndpoint'])['watchEndpoint'],
+    mapOf(
+        mapOf(mapOf(renderer['overlay'])['musicItemThumbnailOverlayRenderer'])[
+            'content'])['musicPlayButtonRenderer'],
+  ];
+  for (final candidate in candidates) {
+    final watch = candidate;
+    if (watch is! Map) continue;
+    final direct = watch['videoId']?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final endpoint = mapOf(watch['playNavigationEndpoint'])['watchEndpoint'];
+    final nested = mapOf(endpoint)['videoId']?.toString();
+    if (nested != null && nested.isNotEmpty) return nested;
+    final queue = mapOf(watch['playlistItemData'])['videoId']?.toString();
+    if (queue != null && queue.isNotEmpty) return queue;
+  }
+  return null;
+}
+
+Object? _flexColumn(Map renderer, int index) {
+  final columns = renderer['flexColumns'];
+  if (columns is! List || columns.length <= index) return null;
+  final column = mapOf(columns[index]);
+  final flex = mapOf(column['musicResponsiveListItemFlexColumnRenderer']);
+  return flex['text'];
+}
+
+/// Artist and duration from a music byline (`Artist • Album • 3:52`).
+({String artist, Duration? duration}) _musicByline(Object? node) {
+  final text = textOf(node);
+  if (text == null) return (artist: '', duration: null);
+
+  Duration? duration;
+  String artist = '';
+  for (final raw in text.split('•')) {
+    final part = raw.trim();
+    if (part.isEmpty) continue;
+    if (RegExp(r'^\d{1,2}:\d{2}(?::\d{2})?$').hasMatch(part)) {
+      duration ??= parseClock(part);
+      continue;
+    }
+    if (_musicTypeLabels.contains(part.toLowerCase())) continue;
+    if (RegExp(r'^[\d.,]+[KMB]?\s*(views?|plays?|likes?)$',
+            caseSensitive: false)
+        .hasMatch(part)) {
+      continue;
+    }
+    if (artist.isEmpty) artist = stripTopicSuffix(part);
+  }
+  return (artist: artist, duration: duration);
+}
+
+/// Words the music catalogue puts in the second row where an artist would be.
+const Set<String> _musicTypeLabels = {
+  'song',
+  'video',
+  'single',
+  'album',
+  'ep',
+  'playlist',
+  'artist',
+};
 
 YouTubePlaylistItem? _itemFromPlaylistVideo(Map renderer) {
   if (renderer['isPlayable'] == false) return null;
