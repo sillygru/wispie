@@ -517,9 +517,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           );
 
           final topRecommendations = ref.watch(recommendationsProvider);
-          final dailyAudiusRecommendations =
-              ref.watch(homeAudiusRecommendationsProvider).asData?.value ??
-                  const [];
           final mixedPlaylists = ref.watch(mixedPlaylistsProvider);
           final queueHistory = ref.watch(queueHistoryProvider).value ?? [];
           final displayQueues = queueHistory.take(10).toList();
@@ -592,42 +589,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               sortedSongs,
                             ),
                             childCount: topRecommendations.length.clamp(0, 6),
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    // Daily Discover
-                    if (settings.showQuickPicks &&
-                        dailyAudiusRecommendations.isNotEmpty) ...[
-                      SliverToBoxAdapter(
-                        child: AppSectionHeader(
-                          label: context.l10n.homeDailyDiscover,
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTokens.s5,
-                          0,
-                          AppTokens.s5,
-                          AppTokens.s2,
-                        ),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: quickPickColumns,
-                            mainAxisExtent: 64,
-                            crossAxisSpacing: AppTokens.s3,
-                            mainAxisSpacing: AppTokens.s3,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildQuickPickTile(
-                              dailyAudiusRecommendations[index],
-                              audioManager,
-                              sortedSongs,
-                            ),
-                            childCount:
-                                dailyAudiusRecommendations.length.clamp(0, 6),
                           ),
                         ),
                       ),

@@ -9,15 +9,23 @@ import '../../presentation/components/ambient_scaffold.dart';
 import '../../presentation/components/app_icon.dart';
 import '../../presentation/components/app_list_row.dart';
 import '../../presentation/screens/youtube_account_screen.dart';
+import '../../presentation/screens/youtube_playlist_preview_screen.dart';
 import '../../presentation/tokens/app_icons.dart';
 import '../../presentation/tokens/app_tokens.dart';
-import '../../presentation/utils/audius_error_message.dart';
 import '../../presentation/widgets/album_art_image.dart';
 import '../../presentation/widgets/playlist_selector_dialog.dart';
+import '../../presentation/utils/youtube_error_message.dart';
 import '../../providers/providers.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
+import '../components/app_surface.dart';
 
+/// The YouTube tab: a search field, a recommendations feed and the account's
+/// playlists.
+///
+/// Before sign-in the feed is built from the artists this device plays most, so
+/// the tab is useful without an account. Once signed in it shows YouTube's own
+/// home recommendations, which follow the account's history and subscriptions.
 class OnlineScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
 
@@ -34,7 +42,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
   String _text = '';
   int _generation = 0;
   bool _loading = false;
-  bool _usedAudiusFallback = false;
   Object? _error;
 
   @override
@@ -53,7 +60,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       _text = value;
       _tracks = const [];
       _error = null;
-      _usedAudiusFallback = false;
       _loading = query.isNotEmpty;
     });
     if (query.isEmpty) return;
@@ -65,11 +71,10 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
   Future<void> _search(String query, int generation) async {
     try {
-      final outcome = await OnlineMusicService.instance.search(query);
+      final tracks = await OnlineMusicService.instance.search(query);
       if (!mounted || generation != _generation) return;
       setState(() {
-        _tracks = outcome.tracks;
-        _usedAudiusFallback = outcome.usedAudiusFallback;
+        _tracks = tracks;
         _loading = false;
       });
     } on Object catch (error) {
@@ -86,13 +91,13 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     _onSearchChanged('');
   }
 
-  Future<void> _play(OnlineTrack track) async {
+  Future<void> _play(OnlineTrack track, List<OnlineTrack> queue) async {
     final song = track.toSong();
     try {
       await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
       await ref.read(audioPlayerManagerProvider).playSong(
             song,
-            contextQueue: _tracks.map((item) => item.toSong()).toList(),
+            contextQueue: queue.map((item) => item.toSong()).toList(),
           );
     } on Object catch (error) {
       _showPlaybackError(error);
@@ -161,26 +166,276 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         ),
       );
 
-  Widget _buildFallbackNotice() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppTokens.s4,
-        AppTokens.s1,
-        AppTokens.s4,
-        AppTokens.s1,
+  Widget _trackRow(OnlineTrack track, List<OnlineTrack> queue) {
+    final song = track.toSong();
+    final isFavorite = ref.watch(
+      userDataProvider.select((state) => state.isFavorite(song.filename)),
+    );
+    return AppListRow(
+      key: ValueKey('youtube-track-${track.id}'),
+      tall: true,
+      title: track.title,
+      titleMaxLines: 1,
+      subtitle:
+          track.artist.isEmpty ? context.l10n.metaUnknownArtist : track.artist,
+      subtitleMaxLines: 1,
+      onTap: () => _play(track, queue),
+      leading: AlbumArtImage(
+        url: track.coverUrl ?? '',
+        width: 52,
+        height: 52,
+        borderRadius: AppTokens.rSm,
       ),
-      child: Row(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const AppIcon(AppIcons.info, size: 16, color: AppTokens.warning),
-          const SizedBox(width: AppTokens.s2),
-          Expanded(
-            child: Text(
-              context.l10n.onlineFallbackNotice,
-              style: AppTokens.rowSubtitle(context),
+          IconButton(
+            tooltip: isFavorite
+                ? context.l10n.songMenuRemoveFavorite
+                : context.l10n.songMenuAddFavorite,
+            onPressed: () => ref
+                .read(userDataProvider.notifier)
+                .toggleFavorite(song.filename, remoteSong: song),
+            icon: AppIcon(
+              AppIcons.favorite,
+              size: AppTokens.iconMd,
+              color: isFavorite ? AppTokens.danger : null,
             ),
+          ),
+          IconButton(
+            tooltip: context.l10n.songMenuTitle,
+            onPressed: () => showModalBottomSheet<void>(
+              context: context,
+              builder: (sheetContext) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const AppIcon(AppIcons.queuePlayNext),
+                      title: Text(context.l10n.songMenuPlayNext),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _playNext(track);
+                      },
+                    ),
+                    ListTile(
+                      leading: const AppIcon(AppIcons.playlistAdd),
+                      title: Text(context.l10n.onlineAddToQueue),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _addToQueue(track);
+                      },
+                    ),
+                    ListTile(
+                      leading: const AppIcon(AppIcons.playlistAdd),
+                      title: Text(context.l10n.onlineAddToPlaylist),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _addToPlaylist(track);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            icon: const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _sectionHeader(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTokens.s4,
+          AppTokens.s4,
+          AppTokens.s4,
+          AppTokens.s2,
+        ),
+        child: Text(label, style: AppTokens.sectionLabel(context)),
+      );
+
+  Widget _feedSection(
+    AsyncValue<List<OnlineTrack>> feed,
+    String Function(AppLocalizations l10n) label,
+  ) {
+    return feed.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppTokens.s6),
+        child: Center(
+          child: SizedBox(
+            width: AppTokens.iconMd,
+            height: AppTokens.iconMd,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+      error: (error, _) => Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: AppTokens.s2,
+        ),
+        child: Text(
+          YouTubeErrorMessage.forError(error, context.l10n),
+          style: AppTokens.rowSubtitle(context),
+        ),
+      ),
+      data: (tracks) {
+        if (tracks.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s4,
+              vertical: AppTokens.s2,
+            ),
+            child: Text(
+              context.l10n.youtubeFeedEmpty,
+              style: AppTokens.rowSubtitle(context),
+            ),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionHeader(label(context.l10n)),
+            for (final track in tracks) _trackRow(track, tracks),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _signInPrompt() {
+    final l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s3,
+        AppTokens.s4,
+        AppTokens.s1,
+      ),
+      child: AppSurface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.youtubeFeedSignInTitle,
+              style: AppTokens.screenTitle(context),
+            ),
+            const SizedBox(height: AppTokens.s2),
+            Text(
+              l10n.youtubeFeedSignInBody,
+              style: AppTokens.rowSubtitle(context),
+            ),
+            const SizedBox(height: AppTokens.s3),
+            FilledButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const YouTubeAccountScreen(),
+                ),
+              ),
+              icon: const AppIcon(AppIcons.person),
+              label: Text(l10n.youtubeFeedSignInAction),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _playlistsRail() {
+    final playlists = ref.watch(youtubeAccountPlaylistsProvider);
+    return playlists.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionHeader(context.l10n.youtubeFeedPlaylists),
+            SizedBox(
+              height: 176,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.s4,
+                ),
+                itemCount: items.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(width: AppTokens.s3),
+                itemBuilder: (context, index) {
+                  final playlist = items[index];
+                  final title = playlist.isLikedVideos
+                      ? context.l10n.youtubeAccountLikedVideos
+                      : playlist.title;
+                  return SizedBox(
+                    width: 132,
+                    child: InkWell(
+                      borderRadius: AppTokens.brMd,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => YouTubePlaylistPreviewScreen(
+                            playlist: playlist,
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AlbumArtImage(
+                            url: playlist.thumbnailUrl ?? '',
+                            width: 132,
+                            height: 132,
+                            borderRadius: AppTokens.rSm,
+                          ),
+                          const SizedBox(height: AppTokens.s2),
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTokens.rowTitle(context),
+                          ),
+                          if (playlist.itemCount != null)
+                            Text(
+                              context.l10n.youtubeAccountPlaylistTracks(
+                                playlist.itemCount!,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTokens.rowSubtitle(context),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHome(bool signedIn) {
+    final feed = signedIn
+        ? ref.watch(youtubeHomeTracksProvider)
+        : ref.watch(youtubeArtistTracksProvider);
+
+    return ListView(
+      controller: widget.scrollController,
+      padding: const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+      children: [
+        if (!signedIn) _signInPrompt(),
+        _feedSection(
+          feed,
+          (l10n) =>
+              signedIn ? l10n.youtubeFeedForYou : l10n.youtubeFeedFromLibrary,
+        ),
+        if (signedIn) _playlistsRail(),
+      ],
     );
   }
 
@@ -199,9 +454,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         YouTubeErrorMessage.forError(_error!, context.l10n),
       );
     }
-    if (_text.trim().isEmpty) {
-      return _message(AppIcons.search, context.l10n.onlineSearchPrompt);
-    }
     if (_tracks.isEmpty) {
       return _message(AppIcons.musicNote, context.l10n.onlineNoResults);
     }
@@ -211,90 +463,15 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       padding: const EdgeInsets.only(top: AppTokens.s2, bottom: AppTokens.s6),
       itemCount: _tracks.length,
       separatorBuilder: (_, __) => const SizedBox(height: AppTokens.s1),
-      itemBuilder: (context, index) {
-        final track = _tracks[index];
-        final song = track.toSong();
-        final isFavorite = ref.watch(
-          userDataProvider.select((state) => state.isFavorite(song.filename)),
-        );
-        return AppListRow(
-          key: ValueKey('${track.provider.name}:${track.id}'),
-          tall: true,
-          title: track.title,
-          titleMaxLines: 1,
-          subtitle: track.artist,
-          subtitleMaxLines: 1,
-          onTap: () => _play(track),
-          leading: AlbumArtImage(
-            url: track.coverUrl ?? '',
-            width: 52,
-            height: 52,
-            borderRadius: AppTokens.rSm,
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: isFavorite
-                    ? context.l10n.songMenuRemoveFavorite
-                    : context.l10n.songMenuAddFavorite,
-                onPressed: () => ref
-                    .read(userDataProvider.notifier)
-                    .toggleFavorite(song.filename, remoteSong: song),
-                icon: AppIcon(
-                  AppIcons.favorite,
-                  size: AppTokens.iconMd,
-                  color: isFavorite ? AppTokens.danger : null,
-                ),
-              ),
-              IconButton(
-                tooltip: context.l10n.songMenuTitle,
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  builder: (sheetContext) => SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const AppIcon(AppIcons.queuePlayNext),
-                          title: Text(context.l10n.songMenuPlayNext),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _playNext(track);
-                          },
-                        ),
-                        ListTile(
-                          leading: const AppIcon(AppIcons.playlistAdd),
-                          title: Text(context.l10n.onlineAddToQueue),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _addToQueue(track);
-                          },
-                        ),
-                        ListTile(
-                          leading: const AppIcon(AppIcons.playlistAdd),
-                          title: Text(context.l10n.onlineAddToPlaylist),
-                          onTap: () {
-                            Navigator.pop(sheetContext);
-                            _addToPlaylist(track);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                icon: const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
-              ),
-            ],
-          ),
-        );
-      },
+      itemBuilder: (context, index) => _trackRow(_tracks[index], _tracks),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final account = ref.watch(youtubeAccountProvider).asData?.value;
+    final signedIn = account?.signedIn ?? false;
+    final searching = _text.trim().isNotEmpty;
 
     return AmbientScaffold(
       appBar: AppBar(
@@ -311,9 +488,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
             icon: AppIcon(
               AppIcons.person,
               size: AppTokens.iconMd,
-              color: account?.signedIn == true
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
+              color: signedIn ? Theme.of(context).colorScheme.primary : null,
             ),
           ),
         ],
@@ -354,8 +529,9 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
               ),
             ),
           ),
-          if (_usedAudiusFallback) _buildFallbackNotice(),
-          Expanded(child: _buildResults()),
+          Expanded(
+            child: searching ? _buildResults() : _buildHome(signedIn),
+          ),
         ],
       ),
     );

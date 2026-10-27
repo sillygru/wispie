@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../domain/services/cover_path.dart';
 import '../../models/song.dart';
 import '../../services/color_extraction_service.dart';
 import '../../services/library_logic.dart';
@@ -56,10 +55,17 @@ class _CollectionAccentState extends State<CollectionAccent> {
   String? get _source {
     final custom = widget.artworkPath;
     if (custom != null && custom.isNotEmpty) return custom;
-    final cover = LibraryLogic.pickCoverSong(widget.songs)?.coverUrl;
-    if (cover == null || cover.isEmpty) return null;
-    if (!CoverPath.isLocal(cover)) return null;
-    return cover;
+    final local = LibraryLogic.pickCoverSong(widget.songs)?.coverUrl;
+    if (local != null && local.isNotEmpty) return local;
+    // Streamed collections only have URLs; the most-played song still defines
+    // the page's accent.
+    final songs = [...widget.songs]
+      ..sort((a, b) => b.playCount.compareTo(a.playCount));
+    for (final song in songs) {
+      final cover = song.coverUrl?.trim() ?? '';
+      if (cover.isNotEmpty) return cover;
+    }
+    return null;
   }
 
   @override
@@ -82,7 +88,8 @@ class _CollectionAccentState extends State<CollectionAccent> {
     if (source == null || source == _key) return;
     _key = source;
     try {
-      final palette = await ColorExtractionService.extractPalette(source);
+      final palette =
+          await ColorExtractionService.extractPaletteForCover(source);
       if (!mounted || palette == null) return;
       setState(() {
         _accent = palette.color;

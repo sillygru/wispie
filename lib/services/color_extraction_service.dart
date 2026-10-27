@@ -6,10 +6,13 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:image/image.dart' as img;
 
 import '../domain/services/cover_palette.dart';
+import '../domain/services/cover_path.dart';
+import 'shared_http_client.dart';
 
 class ExtractedPalette {
   final Color? used;
@@ -279,6 +282,52 @@ class ColorExtractionService {
       if (identical(_pendingPalettes[imagePath], extraction)) {
         _pendingPalettes.remove(imagePath);
       }
+    }
+  }
+
+  /// Palette for a cover that may be a remote URL.
+  ///
+  /// Artwork for streamed tracks is an https URL, which [extractPalette] cannot
+  /// read. It is downloaded once into a small artwork cache and then treated
+  /// exactly like a local cover, so the page gets the same accent and the next
+  /// visit costs no network.
+  static Future<ExtractedPalette?> extractPaletteForCover(String? cover) async {
+    if (cover == null || cover.isEmpty) return null;
+    if (CoverPath.isLocal(cover)) return extractPalette(cover);
+    final uri = Uri.tryParse(cover);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    final file = await _downloadArtwork(uri);
+    if (file == null) return null;
+    return extractPalette(file.path);
+  }
+
+  static Future<File?> _downloadArtwork(Uri uri) async {
+    try {
+      final support = await getSupportDirectory();
+      final directory = Directory(p.join(support.path, 'artwork_cache'));
+      if (!await directory.exists()) await directory.create(recursive: true);
+      final digest = sha1.convert(utf8.encode(uri.toString())).toString();
+      final file = File(p.join(directory.path, 'art_$digest.img'));
+      if (await file.exists() && await file.length() > 0) return file;
+
+      final request = await SharedHttpClient.instance
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 12));
+      final response =
+          await request.close().timeout(const Duration(seconds: 12));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        await response.drain<void>();
+        return null;
+      }
+      final bytes = await consolidateHttpClientResponseBytes(response);
+      if (bytes.isEmpty) return null;
+      await file.writeAsBytes(bytes, flush: false);
+      return file;
+    } on Object catch (error) {
+      debugPrint('ColorExtractionService: cover download failed: $error');
+      return null;
     }
   }
 

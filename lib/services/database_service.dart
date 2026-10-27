@@ -83,6 +83,7 @@ class DatabaseService {
           if (oldV < 7) await upgradeUserDataFrom6To7(db);
           if (oldV < 8) await upgradeUserDataFrom7To8(db);
           if (oldV < 9) await upgradeUserDataFrom8To9(db);
+          if (oldV < 10) await upgradeUserDataFrom9To10(db);
         },
       );
     } catch (e) {
@@ -3143,9 +3144,7 @@ class DatabaseService {
     Iterable<String> filenames,
   ) async {
     final remoteFilenames = filenames
-        .where((filename) =>
-            filename.startsWith(Song.audiusPrefix) ||
-            filename.startsWith(Song.youtubePrefix))
+        .where((filename) => filename.startsWith(Song.youtubePrefix))
         .toList();
     if (remoteFilenames.isEmpty) return;
     final table = await importedDb.rawQuery(

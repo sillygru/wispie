@@ -36,7 +36,6 @@ import '../domain/services/cover_optimizer.dart';
 import '../providers/theme_provider.dart';
 import '../providers/queue_history_provider.dart';
 import 'permission_service.dart';
-import 'audius_service.dart';
 import 'online_audio_cache.dart';
 import 'youtube_audio_source.dart';
 import 'youtube_service.dart';
@@ -683,6 +682,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           currentSongNotifier.value = song;
           _updateEffectivePlaybackMode(song);
           _warmBeatAnalysis(song);
+          _warmWaveform(song);
           _optimizeCoverForCurrentSong(song);
           _isResumedFromPreviousSession = false;
           _savePlaybackState();
@@ -1337,6 +1337,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (wasBackground && !isBackground) {
       final currentSong = currentSongNotifier.value;
       _warmBeatAnalysis(currentSong);
+      _warmWaveform(currentSong);
       final index = _player.currentIndex;
       if (index != null) _warmThemePalettesAroundIndex(index);
       if (currentSong != null && _ref != null) {
@@ -1433,6 +1434,33 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final next = _effectiveQueue[nextIndex].song;
     if (next.isLocal) service.prefetch(next.filename, next.url);
+  }
+
+  /// Builds the seek bar's waveform ahead of time and writes it to the cache.
+  ///
+  /// The decode is the expensive part; doing it here means the next visit to
+  /// the player reads a small JSON file instead. Local files are decoded from
+  /// the audio, streamed tracks from their completed download once it exists.
+  void _warmWaveform(Song? current) {
+    final ref = _ref;
+    if (ref == null || _isBackground) return;
+    if (!ref.read(settingsProvider).showWaveform) return;
+    final service = ref.read(waveformServiceProvider);
+
+    void warmSong(Song? song) {
+      if (song == null) return;
+      if (song.isLocal) {
+        unawaited(service.warm(song.filename, song.url));
+      }
+    }
+
+    warmSong(current);
+
+    final index = _player.currentIndex;
+    if (index == null || _effectiveQueue.isEmpty) return;
+    final next = index + 1;
+    if (next >= _effectiveQueue.length) return;
+    warmSong(_effectiveQueue[next].song);
   }
 
   void _warmThemePalette(String? coverUrl) {
@@ -1946,10 +1974,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   /// version left to [NotificationCoverWarmer]. Awaiting it for a whole queue
   /// is what used to stall a cold start for the best part of a minute.
   ///
-  /// [resolveRemoteNow] is the same idea for Audius: only the track that is
-  /// starting asks the API for a signed URL. Queued entries keep the stable
-  /// endpoint and follow its redirect when playback reaches them, because
-  /// resolving a whole search result at once gets the client rate limited.
+  /// [resolveRemoteNow] only matters for YouTube: the track that is starting
+  /// resolves its stream immediately, while queued entries stay lazy.
   Future<AudioSource> _createAudioSource(
     QueueItem item, {
     bool awaitCover = false,
@@ -1960,30 +1986,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     String? lazyYouTubeId;
     late final String playbackAudioPath;
     String? videoPath;
-    if (song.isAudius) {
-      final remoteId = song.remoteId;
-      if (remoteId == null || remoteId.isEmpty) {
-        throw const AudiusApiException('Audius track ID is missing.');
-      }
-      final streamUrl = resolveRemoteNow
-          ? await AudiusService.instance.getStreamUrl(remoteId)
-          : AudiusService.instance.playbackUri(remoteId);
-      if (streamUrl == null) {
-        final ref = _ref;
-        if (ref != null) {
-          await ref
-              .read(userDataProvider.notifier)
-              .markRemoteSongUnavailable(song);
-        }
-        throw const AudiusApiException(
-          'Audius track is unavailable.',
-          kind: AudiusErrorKind.unavailable,
-          statusCode: 404,
-        );
-      }
-      audioUri = streamUrl;
-      playbackAudioPath = streamUrl.toString();
-    } else if (song.isYoutube) {
+    if (song.isYoutube) {
       final videoId = song.remoteId;
       if (videoId == null || videoId.isEmpty) {
         throw const YouTubeApiException('YouTube video ID is missing.');
@@ -1997,6 +2000,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         unawaited(OnlineAudioCache.instance.touch(cached));
         audioUri = Uri.file(cached.path);
         playbackAudioPath = cached.path;
+        final ref = _ref;
+        if (ref != null && ref.read(settingsProvider).showWaveform) {
+          unawaited(
+            ref.read(waveformServiceProvider).warm(song.filename, cached.path),
+          );
+        }
       } else {
         // Resolved on the first byte request, so a queue of search results
         // costs no network until a track is actually played.

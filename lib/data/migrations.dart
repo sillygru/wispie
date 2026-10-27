@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../services/sync/hlc.dart';
 
 const int kStatsDbVersion = 6;
-const int kUserDataDbVersion = 9;
+const int kUserDataDbVersion = 10;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -544,6 +544,20 @@ Future<void> upgradeUserDataFrom8To9(Database db) async {
         .firstWhere((stmt) => stmt.contains('youtube_playlist_link')),
   );
   await _createYouTubeLinkIndexes(db);
+}
+
+/// The second online catalogue was removed. Its cached rows are unplayable, so
+/// they are dropped here instead of lingering as dead entries in playlists and
+/// favourites. `audius:` prefixed filenames are the marker.
+Future<void> upgradeUserDataFrom9To10(Database db) async {
+  const like = 'audius:%';
+  await db.delete('remote_song', where: 'filename LIKE ?', whereArgs: [like]);
+  await db.delete('playlist_song',
+      where: 'song_filename LIKE ?', whereArgs: [like]);
+  await db.delete('favorite', where: 'filename LIKE ?', whereArgs: [like]);
+  await db.delete('suggestless', where: 'filename LIKE ?', whereArgs: [like]);
+  await db.delete('hidden', where: 'filename LIKE ?', whereArgs: [like]);
+  await db.delete('cover_miss', where: 'filename LIKE ?', whereArgs: [like]);
 }
 
 Future<void> _createSongIdentityIndexes(Database db) async {

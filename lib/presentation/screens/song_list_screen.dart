@@ -12,7 +12,6 @@ import '../../providers/settings_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/library_logic.dart';
 import '../../services/online_metadata_service.dart';
-import '../../services/audius_service.dart';
 import '../../services/youtube_service.dart';
 import '../../services/passive_art_fetcher_service.dart';
 import '../components/ambient_scaffold.dart';
@@ -24,7 +23,7 @@ import '../components/app_sheet.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
-import '../utils/audius_error_message.dart';
+import '../utils/youtube_error_message.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../widgets/duration_display.dart';
 import '../widgets/collection_cover.dart';
@@ -669,16 +668,6 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                                 selectedSong,
                                 contextQueue: contextSongs,
                                 playlistId: playlistId,
-                              );
-                            } on AudiusApiException catch (error) {
-                              if (!context.mounted) return;
-                              appSnack(
-                                context,
-                                YouTubeErrorMessage.forError(
-                                  error,
-                                  AppLocalizations.of(context),
-                                ),
-                                tone: AppTone.danger,
                               );
                             } on YouTubeApiException catch (error) {
                               if (!context.mounted) return;

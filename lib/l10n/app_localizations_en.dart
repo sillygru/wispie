@@ -3402,9 +3402,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeQuickPicks => 'Quick Picks';
 
   @override
-  String get homeDailyDiscover => 'Daily Discover';
-
-  @override
   String get homeRecentQueues => 'Recent Queues';
 
   @override
@@ -4788,10 +4785,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onlineNoResults => 'No tracks found';
 
   @override
-  String get onlineFallbackNotice =>
-      'YouTube is unavailable, so these results come from Audius.';
-
-  @override
   String get onlineYoutubeError => 'Could not load from YouTube.';
 
   @override
@@ -4813,30 +4806,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get onlineYoutubeErrorResponse =>
       'YouTube returned an unexpected response.';
-
-  @override
-  String get onlineError => 'Could not load from Audius.';
-
-  @override
-  String get onlineErrorNetwork =>
-      'Could not reach Audius. Check your connection.';
-
-  @override
-  String onlineErrorAuth(int status) {
-    return 'Audius rejected the API key (HTTP $status).';
-  }
-
-  @override
-  String get onlineErrorRateLimited =>
-      'Audius is rate limiting requests. Wait a moment and try again.';
-
-  @override
-  String onlineErrorServer(int status) {
-    return 'Audius is temporarily unavailable (HTTP $status).';
-  }
-
-  @override
-  String get onlineErrorResponse => 'Audius returned an unexpected response.';
 
   @override
   String get onlineAddToQueue => 'Add to queue';
@@ -5459,6 +5428,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get youtubeAccountPlaylistsTitle => 'Your playlists';
+
+  @override
+  String get youtubeFeedForYou => 'For you';
+
+  @override
+  String get youtubeFeedFromLibrary => 'From artists you play';
+
+  @override
+  String get youtubeFeedPlaylists => 'Your playlists';
+
+  @override
+  String get youtubeFeedSignInTitle => 'Sign in for your own feed';
+
+  @override
+  String get youtubeFeedSignInBody =>
+      'Your YouTube home feed follows what you watch and subscribe to. Signing in also lets you preview and import your playlists.';
+
+  @override
+  String get youtubeFeedSignInAction => 'Sign in';
+
+  @override
+  String get youtubeFeedEmpty =>
+      'Nothing here yet. Search for something above.';
+
+  @override
+  String get youtubePreviewEmpty => 'This playlist has no playable tracks.';
+
+  @override
+  String get youtubePreviewPlayAll => 'Play all';
 
   @override
   String get youtubeAccountLikedVideos => 'Liked videos';

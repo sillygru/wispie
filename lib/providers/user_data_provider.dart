@@ -235,9 +235,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
         ...localFavs,
         for (final playlist in localPlaylists)
           for (final item in playlist.songs) item.songFilename,
-      }.where((filename) =>
-          filename.startsWith(Song.audiusPrefix) ||
-          filename.startsWith(Song.youtubePrefix));
+      }.where((filename) => filename.startsWith(Song.youtubePrefix));
       final remoteSongs = <String, Song>{
         // Placeholder until the real row loads (or is re-cached by playing it):
         // enough for the row to exist and for the artist line to fall back to

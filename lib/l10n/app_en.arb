@@ -4372,10 +4372,6 @@
   "@homeQuickPicks": {
     "description": "Quick Picks label shared by the home section header and the settings search entry"
   },
-  "homeDailyDiscover": "Daily Discover",
-  "@homeDailyDiscover": {
-    "description": "Section label for the Audius-based home recommendations"
-  },
   "homeRecentQueues": "Recent Queues",
   "@homeRecentQueues": {
     "description": "Recent Queues label shared by the home section header and the settings search entry"
@@ -6216,10 +6212,6 @@
   "@onlineNoResults": {
     "description": "Online search returned no tracks"
   },
-  "onlineFallbackNotice": "YouTube is unavailable, so these results come from Audius.",
-  "@onlineFallbackNotice": {
-    "description": "Banner shown when search fell back from YouTube to Audius"
-  },
   "onlineYoutubeError": "Could not load from YouTube.",
   "@onlineYoutubeError": {
     "description": "Fallback when a YouTube request fails without a more specific cause"
@@ -6244,47 +6236,13 @@
   "@onlineYoutubeErrorResponse": {
     "description": "YouTube returned something that is not the expected JSON"
   },
-  "onlineError": "Could not load from Audius.",
-  "@onlineError": {
-    "description": "Fallback when an Audius request fails without a more specific cause"
-  },
-  "onlineErrorNetwork": "Could not reach Audius. Check your connection.",
-  "@onlineErrorNetwork": {
-    "description": "Audius request failed at the network level"
-  },
-  "onlineErrorAuth": "Audius rejected the API key (HTTP {status}).",
-  "@onlineErrorAuth": {
-    "description": "Audius returned 401 or 403",
-    "placeholders": {
-      "status": {
-        "type": "int"
-      }
-    }
-  },
-  "onlineErrorRateLimited": "Audius is rate limiting requests. Wait a moment and try again.",
-  "@onlineErrorRateLimited": {
-    "description": "Audius returned 429"
-  },
-  "onlineErrorServer": "Audius is temporarily unavailable (HTTP {status}).",
-  "@onlineErrorServer": {
-    "description": "Audius returned a 5xx error",
-    "placeholders": {
-      "status": {
-        "type": "int"
-      }
-    }
-  },
-  "onlineErrorResponse": "Audius returned an unexpected response.",
-  "@onlineErrorResponse": {
-    "description": "Audius returned something that is not the expected JSON"
-  },
   "onlineAddToQueue": "Add to queue",
   "@onlineAddToQueue": {
-    "description": "Tooltip for appending an Audius track to the queue"
+    "description": "Tooltip for appending an online track to the queue"
   },
   "onlineSongQueued": "Added {title} to the queue",
   "@onlineSongQueued": {
-    "description": "Confirmation after adding an Audius track to the queue",
+    "description": "Confirmation after adding an online track to the queue",
     "placeholders": {
       "title": {
         "type": "String"
@@ -6297,7 +6255,7 @@
   },
   "onlineAddToPlaylist": "Add to playlist",
   "@onlineAddToPlaylist": {
-    "description": "Add an Audius track to a local playlist"
+    "description": "Add an online track to a local playlist"
   },
   "searchEmptyTitle": "Search your music collection",
   "@searchEmptyTitle": {
@@ -7227,6 +7185,42 @@
     "description": "Shown when the chosen cookie file cannot be opened"
   },
   "youtubeAccountPlaylistsTitle": "Your playlists",
+  "youtubeFeedForYou": "For you",
+  "@youtubeFeedForYou": {
+    "description": "Section header for the signed-in YouTube recommendations feed"
+  },
+  "youtubeFeedFromLibrary": "From artists you play",
+  "@youtubeFeedFromLibrary": {
+    "description": "Section header for recommendations built from the local library"
+  },
+  "youtubeFeedPlaylists": "Your playlists",
+  "@youtubeFeedPlaylists": {
+    "description": "Section header for the account's YouTube playlists"
+  },
+  "youtubeFeedSignInTitle": "Sign in for your own feed",
+  "@youtubeFeedSignInTitle": {
+    "description": "Card title inviting the user to sign in to YouTube"
+  },
+  "youtubeFeedSignInBody": "Your YouTube home feed follows what you watch and subscribe to. Signing in also lets you preview and import your playlists.",
+  "@youtubeFeedSignInBody": {
+    "description": "Card body explaining what signing in adds to the YouTube tab"
+  },
+  "youtubeFeedSignInAction": "Sign in",
+  "@youtubeFeedSignInAction": {
+    "description": "Button on the YouTube tab that opens the account screen"
+  },
+  "youtubeFeedEmpty": "Nothing here yet. Search for something above.",
+  "@youtubeFeedEmpty": {
+    "description": "Shown when a YouTube tab section has no results"
+  },
+  "youtubePreviewEmpty": "This playlist has no playable tracks.",
+  "@youtubePreviewEmpty": {
+    "description": "Shown when a YouTube playlist preview has nothing to play"
+  },
+  "youtubePreviewPlayAll": "Play all",
+  "@youtubePreviewPlayAll": {
+    "description": "Button that starts a YouTube playlist preview from the top"
+  },
   "youtubeAccountLikedVideos": "Liked videos",
   "youtubeAccountPlaylistTracks": "{count, plural, =0{No tracks} =1{1 track} other{{count} tracks}}",
   "youtubeAccountImport": "Import",

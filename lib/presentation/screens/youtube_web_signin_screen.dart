@@ -40,12 +40,6 @@ class YouTubeWebSignInScreen extends StatefulWidget {
         defaultTargetPlatform == TargetPlatform.windows;
   }
 
-  /// Google rejects its login form in WKWebView on macOS almost every time
-  /// ("this browser or app may not be secure"), so the account screen leads with
-  /// the cookie import there and keeps this screen as a fallback.
-  static bool get prefersCookieImport =>
-      defaultTargetPlatform == TargetPlatform.macOS;
-
   /// Drops the WebView's cookies. Called on sign-out so the next sign-in shows
   /// Google's account picker instead of silently reusing the last account.
   static Future<void> clearBrowserCookies() async {

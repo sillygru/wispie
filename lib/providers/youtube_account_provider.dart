@@ -10,7 +10,9 @@ import '../domain/services/youtube_library.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../services/database_service.dart';
+import '../services/online_music_service.dart';
 import '../services/youtube_account_service.dart';
+import '../services/youtube_service.dart';
 import 'providers.dart';
 
 /// Signed-in state of the YouTube account.
@@ -332,3 +334,101 @@ final youtubePlaylistLinksProvider =
   final links = await DatabaseService.instance.getYouTubePlaylistLinks();
   return {for (final link in links) link.localPlaylistId: link};
 });
+
+/// The signed-in home feed: YouTube's own recommendations for this account.
+final youtubeHomeTracksProvider =
+    FutureProvider<List<OnlineTrack>>((ref) async {
+  final account = await ref.watch(youtubeAccountProvider.future);
+  if (!account.signedIn) return const [];
+  try {
+    final items = await YouTubeAccountService.instance.libraryApi().homeFeed();
+    return List<OnlineTrack>.unmodifiable(
+      items.map(
+        (item) => OnlineTrack(
+          id: item.videoId,
+          title: item.title,
+          artist: item.artist,
+          coverUrl: item.thumbnailUrl,
+          duration: item.duration,
+        ),
+      ),
+    );
+  } on YouTubeLibraryException catch (error) {
+    if (error.kind == YouTubeLibraryErrorKind.unauthorized) {
+      ref.invalidate(youtubeAccountProvider);
+    }
+    rethrow;
+  }
+});
+
+/// YouTube results for the artists this device plays most.
+///
+/// Works without an account, which is what keeps the tab useful before sign-in
+/// and for people who never sign in at all.
+final youtubeArtistTracksProvider =
+    FutureProvider<List<OnlineTrack>>((ref) async {
+  final songs = ref.watch(songsProvider).asData?.value ?? const <Song>[];
+  if (songs.isEmpty) return const [];
+
+  // Ranked on the library snapshot only: live play counts change constantly
+  // and would re-run four searches while the user is playing something.
+  final scores = <String, double>{};
+  for (final song in songs) {
+    final artist = song.artist.trim();
+    if (artist.isEmpty) continue;
+    scores[artist] = (scores[artist] ?? 0) + song.playCount + 1;
+  }
+  if (scores.isEmpty) return const [];
+  final artists = (scores.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value)))
+      .take(4)
+      .map((entry) => entry.key);
+
+  final seen = <String>{};
+  final tracks = <OnlineTrack>[];
+  for (final artist in artists) {
+    if (tracks.length >= 12) break;
+    List<YouTubeVideo> videos;
+    try {
+      videos = await YouTubeService.instance.search(artist, limit: 4);
+    } on Object {
+      // One artist the catalogue refuses must not empty the whole rail.
+      continue;
+    }
+    for (final video in videos) {
+      if (!seen.add(video.id)) continue;
+      tracks.add(
+        OnlineTrack(
+          id: video.id,
+          title: video.title,
+          artist: video.artist,
+          coverUrl: video.thumbnailUrl,
+          duration: video.duration,
+        ),
+      );
+      if (tracks.length >= 12) break;
+    }
+  }
+  return List<OnlineTrack>.unmodifiable(tracks);
+});
+
+/// Tracks of one account playlist (or the liked-videos list), for the preview
+/// screen. Cached by the library, so opening a playlist twice is instant.
+final youtubePlaylistTracksProvider =
+    FutureProvider.family<List<YouTubePlaylistItem>, String>(
+  (ref, playlistId) async {
+    final account = await ref.watch(youtubeAccountProvider.future);
+    if (!account.signedIn) return const [];
+    final api = YouTubeAccountService.instance.libraryApi();
+    try {
+      return playlistId == kLikedVideosPlaylistId
+          ? await api.likedVideos()
+          : await api.playlistItems(playlistId);
+    } on YouTubeLibraryException catch (error) {
+      if (error.kind == YouTubeLibraryErrorKind.unauthorized) {
+        ref.invalidate(youtubeAccountProvider);
+      }
+      rethrow;
+    }
+  },
+);

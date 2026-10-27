@@ -50,7 +50,6 @@ class OnlineAudioCache {
 
   static const String directoryName = 'online_audio';
   static const String providerYouTube = 'youtube';
-  static const String providerAudius = 'audius';
 
   /// Long enough that albums get replayed from disk, short enough that a
   /// library of one-off listens does not live on the device forever.

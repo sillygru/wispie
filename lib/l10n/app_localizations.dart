@@ -5859,12 +5859,6 @@ abstract class AppLocalizations {
   /// **'Quick Picks'**
   String get homeQuickPicks;
 
-  /// Section label for the Audius-based home recommendations
-  ///
-  /// In en, this message translates to:
-  /// **'Daily Discover'**
-  String get homeDailyDiscover;
-
   /// Recent Queues label shared by the home section header and the settings search entry
   ///
   /// In en, this message translates to:
@@ -8073,12 +8067,6 @@ abstract class AppLocalizations {
   /// **'No tracks found'**
   String get onlineNoResults;
 
-  /// Banner shown when search fell back from YouTube to Audius
-  ///
-  /// In en, this message translates to:
-  /// **'YouTube is unavailable, so these results come from Audius.'**
-  String get onlineFallbackNotice;
-
   /// Fallback when a YouTube request fails without a more specific cause
   ///
   /// In en, this message translates to:
@@ -8115,49 +8103,13 @@ abstract class AppLocalizations {
   /// **'YouTube returned an unexpected response.'**
   String get onlineYoutubeErrorResponse;
 
-  /// Fallback when an Audius request fails without a more specific cause
-  ///
-  /// In en, this message translates to:
-  /// **'Could not load from Audius.'**
-  String get onlineError;
-
-  /// Audius request failed at the network level
-  ///
-  /// In en, this message translates to:
-  /// **'Could not reach Audius. Check your connection.'**
-  String get onlineErrorNetwork;
-
-  /// Audius returned 401 or 403
-  ///
-  /// In en, this message translates to:
-  /// **'Audius rejected the API key (HTTP {status}).'**
-  String onlineErrorAuth(int status);
-
-  /// Audius returned 429
-  ///
-  /// In en, this message translates to:
-  /// **'Audius is rate limiting requests. Wait a moment and try again.'**
-  String get onlineErrorRateLimited;
-
-  /// Audius returned a 5xx error
-  ///
-  /// In en, this message translates to:
-  /// **'Audius is temporarily unavailable (HTTP {status}).'**
-  String onlineErrorServer(int status);
-
-  /// Audius returned something that is not the expected JSON
-  ///
-  /// In en, this message translates to:
-  /// **'Audius returned an unexpected response.'**
-  String get onlineErrorResponse;
-
-  /// Tooltip for appending an Audius track to the queue
+  /// Tooltip for appending an online track to the queue
   ///
   /// In en, this message translates to:
   /// **'Add to queue'**
   String get onlineAddToQueue;
 
-  /// Confirmation after adding an Audius track to the queue
+  /// Confirmation after adding an online track to the queue
   ///
   /// In en, this message translates to:
   /// **'Added {title} to the queue'**
@@ -8169,7 +8121,7 @@ abstract class AppLocalizations {
   /// **'Unavailable online'**
   String get onlineUnavailable;
 
-  /// Add an Audius track to a local playlist
+  /// Add an online track to a local playlist
   ///
   /// In en, this message translates to:
   /// **'Add to playlist'**
@@ -9200,6 +9152,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your playlists'**
   String get youtubeAccountPlaylistsTitle;
+
+  /// Section header for the signed-in YouTube recommendations feed
+  ///
+  /// In en, this message translates to:
+  /// **'For you'**
+  String get youtubeFeedForYou;
+
+  /// Section header for recommendations built from the local library
+  ///
+  /// In en, this message translates to:
+  /// **'From artists you play'**
+  String get youtubeFeedFromLibrary;
+
+  /// Section header for the account's YouTube playlists
+  ///
+  /// In en, this message translates to:
+  /// **'Your playlists'**
+  String get youtubeFeedPlaylists;
+
+  /// Card title inviting the user to sign in to YouTube
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in for your own feed'**
+  String get youtubeFeedSignInTitle;
+
+  /// Card body explaining what signing in adds to the YouTube tab
+  ///
+  /// In en, this message translates to:
+  /// **'Your YouTube home feed follows what you watch and subscribe to. Signing in also lets you preview and import your playlists.'**
+  String get youtubeFeedSignInBody;
+
+  /// Button on the YouTube tab that opens the account screen
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get youtubeFeedSignInAction;
+
+  /// Shown when a YouTube tab section has no results
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here yet. Search for something above.'**
+  String get youtubeFeedEmpty;
+
+  /// Shown when a YouTube playlist preview has nothing to play
+  ///
+  /// In en, this message translates to:
+  /// **'This playlist has no playable tracks.'**
+  String get youtubePreviewEmpty;
+
+  /// Button that starts a YouTube playlist preview from the top
+  ///
+  /// In en, this message translates to:
+  /// **'Play all'**
+  String get youtubePreviewPlayAll;
 
   /// Name used for the account's liked videos, which YouTube does not expose as a playlist
   ///

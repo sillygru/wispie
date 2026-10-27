@@ -492,6 +492,67 @@ Future<void> _protocol() async {
     check('looping page is parsed once', looped.length == 2,
         detail: looped.length);
 
+    stdout.writeln('\nHome feed');
+    server.reset();
+    server.handler = (call) => (status: 200, json: _homeFeedPage());
+    final feed = await api().homeFeed(maxPages: 1);
+    check('feed: videos parsed', feed.length == 2, detail: feed.length);
+    check('feed: title from renderer', feed.first.title == 'First video');
+    check(
+      'feed: duration from clock text',
+      feed.first.duration == const Duration(minutes: 3, seconds: 52),
+      detail: feed.first.duration,
+    );
+    check(
+      'feed: channel from view-model metadata',
+      feed[1].artist == 'Some Channel',
+      detail: feed[1].artist,
+    );
+    check(
+      'feed: asks for the home tab',
+      server.browseCalls.last.body['browseId'] == 'FEwhat_to_watch',
+      detail: server.browseCalls.last.body['browseId'],
+    );
+
+    stdout.writeln('\nResponse cache');
+    final store = _ProbeStore();
+    YouTubeLibraryApi cachedApi() => YouTubeLibraryApi(
+          session: () async => session,
+          baseUrl: server.base,
+          versionUrl: server.versionUrl,
+          timeout: const Duration(seconds: 10),
+          store: store,
+        );
+
+    server.reset();
+    server.handler = (call) => (status: 200, json: _homeFeedPage());
+    final firstLoad = await cachedApi().homeFeed(maxPages: 1);
+    final requestsAfterFirst = server.browseCalls.length;
+    final secondLoad = await cachedApi().homeFeed(maxPages: 1);
+    check('cache: first load hits the network', requestsAfterFirst == 1,
+        detail: requestsAfterFirst);
+    check(
+      'cache: second load is served without a request',
+      server.browseCalls.length == requestsAfterFirst,
+      detail: server.browseCalls.length,
+    );
+    check('cache: entry written', store.writes > 0, detail: store.writes);
+    check(
+      'cache: same content',
+      secondLoad.length == firstLoad.length &&
+          secondLoad.first.videoId == firstLoad.first.videoId,
+    );
+
+    store.age = const Duration(hours: 1);
+    server.reset();
+    server.handler = (call) => (status: 500, json: const {});
+    final staleLoad = await cachedApi().homeFeed(maxPages: 1);
+    check(
+      'cache: an expired copy survives a failed refresh',
+      staleLoad.length == firstLoad.length,
+      detail: staleLoad.length,
+    );
+
     stdout.writeln('\nImport planning');
     const remote = [
       YouTubePlaylistItem(videoId: 'a', title: 'A', artist: ''),
@@ -735,6 +796,99 @@ Map<String, Object?> _accountMenu() => {
           },
         },
       ],
+    };
+
+Map<String, Object?> _homeFeedPage() => {
+      'contents': {
+        'twoColumnBrowseResultsRenderer': {
+          'tabs': [
+            {
+              'tabRenderer': {
+                'content': {
+                  'sectionListRenderer': {
+                    'contents': [
+                      {
+                        'richItemRenderer': {
+                          'content': {
+                            'videoRenderer': {
+                              'videoId': 'vid1',
+                              'title': {
+                                'runs': [
+                                  {'text': 'First video'}
+                                ]
+                              },
+                              'shortBylineText': {
+                                'runs': [
+                                  {'text': 'Lofi Girl'}
+                                ]
+                              },
+                              'lengthText': {'simpleText': '3:52'},
+                              'thumbnail': {
+                                'thumbnails': [
+                                  {
+                                    'url': 'https://i.ytimg.com/vi/vid1/hq.jpg',
+                                    'width': 480,
+                                    'height': 360
+                                  }
+                                ]
+                              },
+                            }
+                          }
+                        }
+                      },
+                      {
+                        'richItemRenderer': {
+                          'content': {
+                            'lockupViewModel': {
+                              'contentType': 'VIDEO',
+                              'contentId': 'vid2',
+                              'metadata': {
+                                'lockupMetadataViewModel': {
+                                  'title': {'content': 'Second video'},
+                                  'metadata': {
+                                    'metadataRows': [
+                                      {
+                                        'metadataParts': [
+                                          {
+                                            'text': {'content': 'Some Channel'}
+                                          },
+                                          {
+                                            'text': {'content': '1.2M views'}
+                                          },
+                                          {
+                                            'text': {'content': '2 days ago'}
+                                          },
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                }
+                              },
+                              'contentImage': {
+                                'thumbnailViewModel': {
+                                  'image': {
+                                    'sources': [
+                                      {
+                                        'url':
+                                            'https://i.ytimg.com/vi/vid2/hq.jpg',
+                                        'width': 480
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                            }
+                          }
+                        }
+                      },
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
     };
 
 Map<String, Object?> _feplaylistsPage(List<Map<String, Object?>> items) => {
@@ -1022,3 +1176,29 @@ final List<Map<String, Object?>> _mixedPage = [
   },
   _video('vidPrivate', 'Private video'),
 ];
+
+/// In-memory stand-in for the disk store, with an injectable age so the stale
+/// path can be exercised without waiting for a TTL.
+class _ProbeStore implements YouTubeResponseStore {
+  final Map<String, Map<String, dynamic>> bodies = {};
+  Duration age = Duration.zero;
+  int writes = 0;
+
+  @override
+  Future<Map<String, dynamic>?> read(
+    String key,
+    Duration maxAge, {
+    bool allowStale = false,
+  }) async {
+    final body = bodies[key];
+    if (body == null) return null;
+    if (allowStale || age < maxAge) return body;
+    return null;
+  }
+
+  @override
+  Future<void> write(String key, Map<String, dynamic> body) async {
+    writes++;
+    bodies[key] = body;
+  }
+}

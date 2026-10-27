@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path/path.dart' as p;
 
 import '../domain/models/lrclib_result.dart';
 import '../domain/models/rich_lyrics.dart';
 import '../domain/services/lrclib_match.dart';
 import '../domain/services/lrclib_query.dart';
 import '../models/song.dart';
+import 'cache_service.dart';
 import 'music_utils_api_client.dart';
 
 /// Lyrics client with music-utils as the primary API and direct LRCLIB as a
@@ -139,6 +142,35 @@ class LrclibService {
       albumName: albumName,
       duration: duration,
     );
+  }
+
+  /// Lyrics this app already chose for [song], or null.
+  ///
+  /// Streamed tracks have no file to write tags into, so the chosen lyrics are
+  /// kept in the cache directory instead. Keyed on the filename, which is the
+  /// durable identity of a remote track.
+  Future<String?> cachedForSong(Song song) async {
+    try {
+      final file = await _cacheFileFor(song);
+      if (!await file.exists()) return null;
+      final text = await file.readAsString();
+      return text.trim().isEmpty ? null : text;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Persists chosen lyrics for a streamed track.
+  Future<void> saveForSong(Song song, String lyrics) async {
+    final file = await _cacheFileFor(song);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(lyrics);
+  }
+
+  Future<File> _cacheFileFor(Song song) async {
+    final digest = sha1.convert(utf8.encode(song.filename)).toString();
+    final base = await CacheService.instance.getV3File('lyrics_cache');
+    return File(p.join(base.parent.path, 'lyrics_cache', 'remote_$digest.lrc'));
   }
 
   /// Best online lyrics for a streamed track, which has no file to read them

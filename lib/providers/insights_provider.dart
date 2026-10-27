@@ -43,7 +43,7 @@ final listeningInsightsProvider =
   final events = await repository.loadPlayEvents();
   return buildInsights(
     events: events,
-    // Streamed tracks (YouTube, Audius) are played from the same play log, so
+    // Streamed tracks (YouTube) are played from the same play log, so
     // leaving them out of the lookup would silently drop their plays from every
     // leaderboard on this screen.
     library: {

@@ -124,6 +124,20 @@ const String kYouTubeWebUserAgent =
 /// Supplies the cookies to sign with, or null when the user is signed out.
 typedef YouTubeSessionProvider = Future<YouTubeWebSession?> Function();
 
+/// Persists InnerTube responses. Kept abstract so this layer stays free of
+/// Flutter and file-system concerns; the app supplies a disk-backed store.
+abstract class YouTubeResponseStore {
+  /// The stored body for [key], or null when it is older than [maxAge].
+  /// [allowStale] returns an expired body, which is what a failed refresh wants.
+  Future<Map<String, dynamic>?> read(
+    String key,
+    Duration maxAge, {
+    bool allowStale = false,
+  });
+
+  Future<void> write(String key, Map<String, dynamic> body);
+}
+
 class YouTubeLibraryApi {
   YouTubeLibraryApi({
     required YouTubeSessionProvider session,
@@ -133,6 +147,7 @@ class YouTubeLibraryApi {
     String? clientVersion,
     Duration timeout = const Duration(seconds: 20),
     DateTime Function()? clock,
+    YouTubeResponseStore? store,
   })  : _session = session,
         _client = client ?? HttpClient(),
         _base = baseUrl ?? Uri.parse('https://www.youtube.com/youtubei/v1/'),
@@ -140,9 +155,11 @@ class YouTubeLibraryApi {
         _version = clientVersion,
         _pinnedVersion = clientVersion != null,
         _timeout = timeout,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _store = store;
 
   final YouTubeSessionProvider _session;
+  final YouTubeResponseStore? _store;
   final HttpClient _client;
   final Uri _base;
   final Uri? _versionUrl;
@@ -181,6 +198,7 @@ class YouTubeLibraryApi {
             // page is the one the library's playlists tab loads.
             ? const {'browseId': 'FEplaylist_aggregation'}
             : {'continuation': continuation},
+        cacheFor: const Duration(minutes: 10),
       );
       for (final playlist in parseAccountPlaylists(json)) {
         if (seen.add(playlist.id)) result.add(playlist);
@@ -194,6 +212,18 @@ class YouTubeLibraryApi {
       const YouTubeAccountPlaylist(id: kLikedVideosPlaylistId, title: ''),
     );
     return result;
+  }
+
+  /// The account's recommended videos, in YouTube's order.
+  ///
+  /// This is the same page the site's home tab loads, so it follows the
+  /// account's history and subscriptions rather than a generic popular list.
+  Future<List<YouTubePlaylistItem>> homeFeed({int maxPages = 2}) async {
+    return _collectBrowseFeed(
+      'FEwhat_to_watch',
+      maxPages: maxPages,
+      cacheFor: const Duration(minutes: 10),
+    );
   }
 
   /// Every playable track in [playlistId], in playlist order.
@@ -217,6 +247,18 @@ class YouTubeLibraryApi {
   Future<List<YouTubePlaylistItem>> _collectPlaylist(
     String browseId, {
     required int maxPages,
+  }) =>
+      _collectBrowseFeed(
+        browseId,
+        maxPages: maxPages,
+        cacheFor: const Duration(minutes: 20),
+      );
+
+  Future<List<YouTubePlaylistItem>> _collectBrowseFeed(
+    String browseId, {
+    required int maxPages,
+    required Duration cacheFor,
+    Map<String, Object?>? body,
   }) async {
     final items = <YouTubePlaylistItem>[];
     final seen = <String>{};
@@ -227,8 +269,9 @@ class YouTubeLibraryApi {
       final json = await _post(
         'browse',
         continuation == null
-            ? {'browseId': browseId}
+            ? {...?body, 'browseId': browseId}
             : {'continuation': continuation},
+        cacheFor: cacheFor,
       );
       for (final item in parsePlaylistVideoItems(json)) {
         if (!seen.add(item.videoId)) continue;
@@ -254,14 +297,22 @@ class YouTubeLibraryApi {
 
   Future<Map<String, dynamic>> _post(
     String endpoint,
-    Map<String, Object?> body,
-  ) async {
+    Map<String, Object?> body, {
+    Duration cacheFor = Duration.zero,
+  }) async {
     final session = await _session();
     if (session == null || !session.isUsable) {
       throw const YouTubeLibraryException(
         YouTubeLibraryErrorKind.unauthorized,
         'Not signed in to a YouTube account.',
       );
+    }
+
+    final store = _store;
+    final cacheKey = '$endpoint:${jsonEncode(body)}';
+    if (store != null && cacheFor > Duration.zero) {
+      final cached = await store.read(cacheKey, cacheFor);
+      if (cached != null) return cached;
     }
 
     final uri = _base.replace(
@@ -273,6 +324,28 @@ class YouTubeLibraryApi {
       },
     );
 
+    try {
+      return await _request(
+          endpoint, body, uri, session, cacheKey, store, cacheFor);
+    } on YouTubeLibraryException {
+      // A refresh that fails should not blank a screen the cache can fill.
+      if (store != null && cacheFor > Duration.zero) {
+        final stale = await store.read(cacheKey, cacheFor, allowStale: true);
+        if (stale != null) return stale;
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> _request(
+    String endpoint,
+    Map<String, Object?> body,
+    Uri uri,
+    YouTubeWebSession session,
+    String cacheKey,
+    YouTubeResponseStore? store,
+    Duration cacheFor,
+  ) async {
     var attempt = 0;
     while (true) {
       final version = await _clientVersion();
@@ -285,7 +358,13 @@ class YouTubeLibraryApi {
 
       if (status >= HttpStatus.ok && status < HttpStatus.multipleChoices) {
         final json = response.json;
-        if (json is Map) return Map<String, dynamic>.from(json);
+        if (json is Map) {
+          final result = Map<String, dynamic>.from(json);
+          if (store != null && cacheFor > Duration.zero) {
+            await store.write(cacheKey, result);
+          }
+          return result;
+        }
         throw const YouTubeLibraryException(
           YouTubeLibraryErrorKind.invalidResponse,
           'YouTube returned an unexpected response.',
@@ -634,10 +713,37 @@ YouTubePlaylistItem? _itemFromLockup(Map lockup) {
   return YouTubePlaylistItem(
     videoId: id,
     title: title!,
-    artist: '',
+    artist: artistFromMetadata(metadata['metadata']),
     duration: clockInNode(lockup),
     thumbnailUrl: bestImageUrl(lockup['contentImage']),
   );
+}
+
+/// Channel name from a view model's metadata rows.
+///
+/// The first row holds the channel and then views/age; only the channel is a
+/// byline, so anything that reads as a count or a relative time is skipped.
+String artistFromMetadata(Object? node) {
+  final rows = mapOf(node)['metadataRows'];
+  if (rows is! List) return '';
+  for (final row in rows) {
+    final parts = mapOf(row)['metadataParts'];
+    if (parts is! List) continue;
+    for (final part in parts) {
+      final text = textOf(mapOf(part)['text']);
+      if (text == null || text.isEmpty) continue;
+      if (RegExp(r'\b(views?|watching|ago|premiere[sd]?)\b',
+              caseSensitive: false)
+          .hasMatch(text)) {
+        continue;
+      }
+      if (RegExp(r'^[\d.,]+[KMB]?$', caseSensitive: false).hasMatch(text)) {
+        continue;
+      }
+      return stripTopicSuffix(text);
+    }
+  }
+  return '';
 }
 
 /// Continuation token for the next page, from either the current

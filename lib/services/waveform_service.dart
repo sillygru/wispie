@@ -54,6 +54,20 @@ class WaveformService {
     return cacheFile.exists();
   }
 
+  /// Produces and caches [filename]'s waveform in the background.
+  ///
+  /// Playback calls this so the seek bar already has its bars the first time
+  /// the player is opened, instead of decoding while the user watches. Errors
+  /// are swallowed: a waveform is decoration, never a reason to fail a play.
+  Future<void> warm(String filename, String path) async {
+    if (filename.isEmpty || path.isEmpty) return;
+    try {
+      await getWaveform(filename, path);
+    } on Object catch (error) {
+      debugPrint('WaveformService: warm failed for $filename: $error');
+    }
+  }
+
   Future<List<double>> getWaveform(String filename, String path) {
     if (path.isEmpty || path.startsWith('http')) {
       return Future.value(const []);

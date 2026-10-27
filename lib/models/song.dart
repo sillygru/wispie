@@ -17,7 +17,7 @@ enum PlayerCoverSizingMode {
   sourceAspect,
 }
 
-enum SongSource { local, audius, youtube }
+enum SongSource { local, youtube }
 
 /// What the four-bar audio visualiser does while a song plays.
 ///
@@ -61,7 +61,6 @@ enum ProgressBarType {
 class Song extends Equatable {
   /// Filename prefixes are the durable identity of a remote track: they are
   /// written once and survive cache eviction, backups and renames.
-  static const String audiusPrefix = 'audius:';
   static const String youtubePrefix = 'youtube:';
 
   static const Set<String> videoExtensions = {
@@ -108,32 +107,6 @@ class Song extends Equatable {
     this.createdEpochSec,
     this.songDateEpochSec,
   });
-
-  factory Song.audius({
-    required String trackId,
-    required String title,
-    required String artist,
-    String? coverUrl,
-    Duration? duration,
-    int playCount = 0,
-    bool isAvailable = true,
-  }) {
-    final id = trackId.trim();
-    if (id.isEmpty) throw ArgumentError.value(trackId, 'trackId');
-    return Song(
-      title: title,
-      artist: artist,
-      album: '',
-      filename: 'audius:$id',
-      url: '',
-      source: SongSource.audius,
-      remoteId: id,
-      isAvailable: isAvailable,
-      coverUrl: coverUrl,
-      duration: duration,
-      playCount: playCount,
-    );
-  }
 
   factory Song.youtube({
     required String videoId,
@@ -253,20 +226,17 @@ class Song extends Equatable {
       if (raw == candidate.name) return candidate;
     }
     if (filename.startsWith(youtubePrefix)) return SongSource.youtube;
-    if (filename.startsWith(audiusPrefix)) return SongSource.audius;
     return SongSource.local;
   }
 
   static String? _remoteIdFromFilename(String filename) {
-    for (final prefix in const [audiusPrefix, youtubePrefix]) {
+    for (final prefix in const [youtubePrefix]) {
       if (filename.startsWith(prefix)) return filename.substring(prefix.length);
     }
     return null;
   }
 
   bool get isLocal => source == SongSource.local;
-
-  bool get isAudius => source == SongSource.audius;
 
   bool get isYoutube => source == SongSource.youtube;
 

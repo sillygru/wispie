@@ -875,6 +875,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
   Future<String?> _fetchOnlineLyrics(Song song) {
     return _onlineLyrics.putIfAbsent(song.filename, () async {
+      final saved = await _lrclibService.cachedForSong(song);
+      if (saved != null) return saved;
       final result = await _lrclibService.fetchForSong(song);
       final lyrics = result?.lyricsFor();
       if (lyrics == null || lyrics.trim().isEmpty) {
@@ -882,6 +884,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         _onlineLyrics.remove(song.filename);
         return null;
       }
+      // Kept on disk so the next play does not re-query, even offline.
+      await _lrclibService.saveForSong(song, lyrics);
       return lyrics;
     });
   }
@@ -953,12 +957,20 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// The write bumps `lyricsRevisionProvider`, which is what reloads this pane —
   /// no explicit reload here, so applying from anywhere else refreshes it too.
   Future<void> _findLyricsOnline() async {
-    if (!widget.song.isLocal) return;
     final chosen = await showLyricsSearchSheet(context, song: widget.song);
     if (chosen == null || !mounted) return;
 
     try {
-      await ref.read(songsProvider.notifier).updateLyrics(widget.song, chosen);
+      if (widget.song.isRemote) {
+        await _lrclibService.saveForSong(widget.song, chosen);
+        _onlineLyrics.remove(widget.song.filename);
+      } else {
+        await ref
+            .read(songsProvider.notifier)
+            .updateLyrics(widget.song, chosen);
+      }
+      // Both paths reload this pane through the revision counter.
+      ref.read(lyricsRevisionProvider.notifier).bump();
       if (mounted) {
         appSnack(context, context.l10n.lyricsSaved, tone: AppTone.success);
       }
@@ -1545,7 +1557,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                     ),
                   ],
                 ),
-                if (!stripCollapsed && widget.song.isLocal)
+                if (!stripCollapsed)
                   IconButton(
                     icon: const Icon(Icons.travel_explore_rounded),
                     color:
@@ -1757,16 +1769,15 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               style: PlayerTokens.trackSubtitle(context),
             ),
             const SizedBox(height: PlayerTokens.s5),
-            if (widget.song.isLocal)
-              FilledButton.icon(
-                onPressed: _findLyricsOnline,
-                icon: const Icon(Icons.travel_explore_rounded, size: 18),
-                label: Text(context.l10n.lyricsFindOnline),
-                style: FilledButton.styleFrom(
-                  backgroundColor: widget.accent,
-                  foregroundColor: PlayerTokens.onAccent(widget.accent),
-                ),
+            FilledButton.icon(
+              onPressed: _findLyricsOnline,
+              icon: const Icon(Icons.travel_explore_rounded, size: 18),
+              label: Text(context.l10n.lyricsFindOnline),
+              style: FilledButton.styleFrom(
+                backgroundColor: widget.accent,
+                foregroundColor: PlayerTokens.onAccent(widget.accent),
               ),
+            ),
           ],
         ),
       ),

@@ -3462,9 +3462,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeQuickPicks => 'Escolhas rápidas';
 
   @override
-  String get homeDailyDiscover => 'Descobertas diárias';
-
-  @override
   String get homeRecentQueues => 'Filas recentes';
 
   @override
@@ -4854,20 +4851,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get onlineTab => 'Online';
 
   @override
-  String get onlineSearchHint => 'Buscar faixas no Audius';
+  String get onlineSearchHint => 'Buscar faixas no YouTube';
 
   @override
-  String get onlineSearchPrompt => 'Busque faixas no Audius';
+  String get onlineSearchPrompt => 'Busque faixas no YouTube';
 
   @override
-  String get onlineLoading => 'Buscando no Audius...';
+  String get onlineLoading => 'Buscando no YouTube...';
 
   @override
   String get onlineNoResults => 'Nenhuma faixa encontrada';
-
-  @override
-  String get onlineFallbackNotice =>
-      'YouTube is unavailable, so these results come from Audius.';
 
   @override
   String get onlineYoutubeError => 'Could not load from YouTube.';
@@ -4893,31 +4886,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'YouTube returned an unexpected response.';
 
   @override
-  String get onlineError =>
-      'Não foi possível acessar o Audius. Verifique a conexão e a API key.';
-
-  @override
-  String get onlineErrorNetwork =>
-      'Could not reach Audius. Check your connection.';
-
-  @override
-  String onlineErrorAuth(int status) {
-    return 'Audius rejected the API key (HTTP $status).';
-  }
-
-  @override
-  String get onlineErrorRateLimited =>
-      'Audius is rate limiting requests. Wait a moment and try again.';
-
-  @override
-  String onlineErrorServer(int status) {
-    return 'Audius is temporarily unavailable (HTTP $status).';
-  }
-
-  @override
-  String get onlineErrorResponse => 'Audius returned an unexpected response.';
-
-  @override
   String get onlineAddToQueue => 'Adicionar à fila';
 
   @override
@@ -4926,7 +4894,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get onlineUnavailable => 'Indisponível no Audius';
+  String get onlineUnavailable => 'Indisponível no YouTube';
 
   @override
   String get onlineAddToPlaylist => 'Adicionar à playlist';
@@ -5543,6 +5511,35 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get youtubeAccountPlaylistsTitle => 'Your playlists';
+
+  @override
+  String get youtubeFeedForYou => 'For you';
+
+  @override
+  String get youtubeFeedFromLibrary => 'From artists you play';
+
+  @override
+  String get youtubeFeedPlaylists => 'Your playlists';
+
+  @override
+  String get youtubeFeedSignInTitle => 'Sign in for your own feed';
+
+  @override
+  String get youtubeFeedSignInBody =>
+      'Your YouTube home feed follows what you watch and subscribe to. Signing in also lets you preview and import your playlists.';
+
+  @override
+  String get youtubeFeedSignInAction => 'Sign in';
+
+  @override
+  String get youtubeFeedEmpty =>
+      'Nothing here yet. Search for something above.';
+
+  @override
+  String get youtubePreviewEmpty => 'This playlist has no playable tracks.';
+
+  @override
+  String get youtubePreviewPlayAll => 'Play all';
 
   @override
   String get youtubeAccountLikedVideos => 'Liked videos';
@@ -9054,9 +9051,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get homeQuickPicks => 'Escolhas rápidas';
 
   @override
-  String get homeDailyDiscover => 'Descobertas diárias';
-
-  @override
   String get homeRecentQueues => 'Filas recentes';
 
   @override
@@ -10447,20 +10441,16 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get onlineTab => 'Online';
 
   @override
-  String get onlineSearchHint => 'Pesquisar faixas no Audius';
+  String get onlineSearchHint => 'Pesquisar faixas no YouTube';
 
   @override
-  String get onlineSearchPrompt => 'Pesquisa faixas no Audius';
+  String get onlineSearchPrompt => 'Pesquisa faixas no YouTube';
 
   @override
-  String get onlineLoading => 'A pesquisar no Audius...';
+  String get onlineLoading => 'A pesquisar no YouTube...';
 
   @override
   String get onlineNoResults => 'Não foram encontradas faixas';
-
-  @override
-  String get onlineError =>
-      'Não foi possível aceder ao Audius. Verifica a ligação e a API key.';
 
   @override
   String get onlineAddToQueue => 'Adicionar à fila';
@@ -10471,7 +10461,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   }
 
   @override
-  String get onlineUnavailable => 'Indisponível no Audius';
+  String get onlineUnavailable => 'Indisponível no YouTube';
 
   @override
   String get onlineAddToPlaylist => 'Adicionar à playlist';

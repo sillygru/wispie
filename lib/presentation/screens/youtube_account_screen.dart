@@ -20,6 +20,7 @@ import '../tokens/app_tokens.dart';
 import '../utils/youtube_account_error_message.dart';
 import '../widgets/album_art_image.dart';
 import 'youtube_cookie_import_screen.dart';
+import 'youtube_playlist_preview_screen.dart';
 import 'youtube_web_signin_screen.dart';
 
 /// Sign in to the Google account behind YouTube, then pull its playlists into
@@ -366,8 +367,10 @@ class _SignInCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final webView = YouTubeWebSignInScreen.isSupported;
-    // Only offer the in-app form first where Google accepts it.
-    final cookieFirst = !webView || YouTubeWebSignInScreen.prefersCookieImport;
+    // The in-app form is the main path: it needs no cookie copying. Import is
+    // the fallback for platforms without a WebView and for the accounts Google
+    // refuses to sign in inside one.
+    final cookieFirst = !webView;
 
     return AppSurface(
       child: Column(
@@ -593,6 +596,12 @@ class _PlaylistsSection extends ConsumerWidget {
       titleMaxLines: 1,
       subtitle: count == null ? null : l10n.youtubeAccountPlaylistTracks(count),
       subtitleMaxLines: 1,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => YouTubePlaylistPreviewScreen(playlist: playlist),
+        ),
+      ),
       trailing: busy
           ? const SizedBox(
               width: AppTokens.iconMd,

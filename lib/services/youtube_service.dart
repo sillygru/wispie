@@ -106,7 +106,7 @@ class YouTubeService {
   static const int _maxCachedSearches = 24;
   static const Duration _searchTtl = Duration(minutes: 10);
 
-  /// The player endpoint is much cheaper than Audius streaming, but a burst of
+  /// The player endpoint is much cheaper than streaming, but a burst of
   /// one request per queue row still reads as a scraper. Three keeps a search
   /// result responsive without ever hammering the endpoint.
   static const int _maxConcurrentRequests = 3;

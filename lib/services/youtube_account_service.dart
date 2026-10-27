@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/services/youtube_library.dart';
 import '../domain/services/youtube_session.dart';
 import 'shared_http_client.dart';
+import 'youtube_response_cache.dart';
 import 'sync/account_service.dart'
     show SecretStore, SecretStoreException, SecureSecretStore;
 
@@ -115,6 +116,8 @@ class YouTubeAccountService {
           'YouTube did not recognise those cookies as a signed-in session.',
         );
       }
+      // A different account must not inherit the previous feed from the cache.
+      await YouTubeResponseCache.instance.clear();
       await _storeSession(session);
       await _storeProfile(profile);
       _profile = profile;
@@ -150,6 +153,7 @@ class YouTubeAccountService {
 
   Future<void> signOut() async {
     await forgetSession(expired: false);
+    await YouTubeResponseCache.instance.clear();
     _profile = null;
     try {
       await _secrets.delete(_profileKey);
@@ -175,6 +179,7 @@ class YouTubeAccountService {
       session: session,
       client: _client ?? SharedHttpClient.instance,
       clock: _clock,
+      store: YouTubeResponseCache.instance,
     );
   }
 

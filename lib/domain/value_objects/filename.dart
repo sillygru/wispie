@@ -23,7 +23,7 @@ class Filename {
     if (name.isEmpty) return '';
     name = p.basename(name);
     // Catalogue IDs are case-sensitive, so their keys are never lowercased.
-    for (final prefix in const ['audius:', 'youtube:']) {
+    for (final prefix in const ['youtube:']) {
       if (name.startsWith(prefix)) return name;
     }
     return name.toLowerCase();

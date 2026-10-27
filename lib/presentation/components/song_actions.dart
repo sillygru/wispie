@@ -7,17 +7,16 @@ import '../../l10n/app_localizations.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/library_logic.dart';
-import '../../services/audius_service.dart';
 import '../../services/youtube_service.dart';
 import '../../services/online_metadata_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
+import '../utils/youtube_error_message.dart';
 import '../routes/app_page_route.dart';
 import '../screens/edit_metadata_screen.dart';
 import '../screens/song_list_screen.dart';
-import '../utils/audius_error_message.dart';
 import '../widgets/folder_picker.dart';
 import '../widgets/playlist_selector_dialog.dart';
 
@@ -91,10 +90,6 @@ Future<void> songActionPlayNext(
     await ref
         .read(audioPlayerManagerProvider)
         .playNext(song, allowDuplicate: allowDuplicate);
-  } on AudiusApiException catch (error) {
-    if (!host.mounted) return;
-    _showOnlinePlaybackError(host, error);
-    return;
   } on YouTubeApiException catch (error) {
     if (!host.mounted) return;
     _showOnlinePlaybackError(host, error);

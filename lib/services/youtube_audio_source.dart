@@ -12,7 +12,6 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'online_audio_cache.dart';
-import 'online_music_service.dart';
 import 'shared_http_client.dart';
 import 'youtube_service.dart';
 
@@ -42,17 +41,12 @@ class YouTubeAudioSource extends StreamAudioSource {
   static const Duration _headTimeout = Duration(seconds: 12);
 
   YouTubeAudioStream? _stream;
-  Uri? _fallbackUri;
-  bool _usedFallback = false;
-  bool _fallbackChecked = false;
 
   File? _target;
   File? _partial;
   int _writtenBytes = 0;
   bool _cacheable = true;
   bool _cacheWriteActive = false;
-
-  bool get usedFallback => _usedFallback;
 
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
@@ -155,42 +149,11 @@ class YouTubeAudioSource extends StreamAudioSource {
     try {
       final stream = await YouTubeService.instance.resolveAudioStream(videoId);
       _stream = stream;
-      _usedFallback = false;
       _cacheable = true;
       return stream;
     } on Object catch (error) {
       debugPrint('YouTube: could not resolve $videoId: $error');
-      final fallback =
-          _fallbackChecked ? _fallbackUri : await _resolveFallback();
-      if (fallback == null) rethrow;
-      return YouTubeAudioStream(
-        url: fallback,
-        mimeType: 'audio/mp4',
-        itag: 'audius',
-        contentLength: null,
-        expiresAt: DateTime.now().add(const Duration(hours: 1)),
-      );
-    }
-  }
-
-  Future<Uri?> _resolveFallback() async {
-    _fallbackChecked = true;
-    try {
-      final fallback = await OnlineMusicService.instance.fallbackAudioUri(
-        videoId: videoId,
-        title: title,
-        artist: artist,
-      );
-      if (fallback == null) return null;
-      _fallbackUri = fallback;
-      _usedFallback = true;
-      // Fallback audio is a different recording, so it is never written into
-      // the cache slot that the real video would use.
-      _cacheable = false;
-      return fallback;
-    } on Object catch (error) {
-      debugPrint('YouTube: Audius fallback failed for $videoId: $error');
-      return null;
+      rethrow;
     }
   }
 

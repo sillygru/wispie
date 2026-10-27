@@ -31,7 +31,15 @@ class TrackProgressBar extends ConsumerStatefulWidget {
 }
 
 class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
+  /// How many times a streamed track's cache is re-checked while it plays.
+  /// A track downloads as it plays, so the waveform becomes available mid-song
+  /// and the bar upgrades itself instead of waiting for the next play.
+  static const int _maxPathAttempts = 20;
+  static const Duration _pathRetryDelay = Duration(seconds: 3);
+
   Future<String?>? _path;
+  int _pathAttempts = 0;
+  bool _retryScheduled = false;
 
   @override
   void initState() {
@@ -43,8 +51,20 @@ class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
   void didUpdateWidget(TrackProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.song.filename != widget.song.filename) {
+      _pathAttempts = 0;
       _path = _resolvePath();
     }
+  }
+
+  void _retryRemotePath() {
+    if (_retryScheduled || _pathAttempts >= _maxPathAttempts) return;
+    _retryScheduled = true;
+    Future<void>.delayed(_pathRetryDelay, () {
+      _retryScheduled = false;
+      if (!mounted) return;
+      _pathAttempts++;
+      setState(() => _path = _resolvePath());
+    });
   }
 
   Future<String?> _resolvePath() async {
@@ -106,7 +126,10 @@ class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
       future: _path,
       builder: (context, snapshot) {
         final path = snapshot.data;
-        if (path == null || path.isEmpty) return basic();
+        if (path == null || path.isEmpty) {
+          _retryRemotePath();
+          return basic();
+        }
         return waveform(path);
       },
     );

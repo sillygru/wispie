@@ -531,6 +531,8 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
   final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
   final extractedCoversDir =
       Directory(p.join(supportDir.path, 'extracted_covers'));
+  final artworkDir = Directory(p.join(supportDir.path, 'artwork_cache'));
+  final currentArtworkPaths = <String>{};
 
   for (final song in songs) {
     final coverUrl = (song['coverUrl'] as String?) ?? '';
@@ -559,6 +561,22 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
       currentLyricsPaths.add(
         p.normalize(
             p.join(lyricsDir.path, '${CacheService._cacheKey(url)}.json')),
+      );
+    }
+
+    // Chosen lyrics for a streamed track live in the same directory, keyed on
+    // the filename rather than the audio URL, and must survive this sweep.
+    if (filename.startsWith(Song.youtubePrefix)) {
+      final digest = sha1.convert(utf8.encode(filename)).toString();
+      currentLyricsPaths.add(
+        p.normalize(p.join(lyricsDir.path, 'remote_$digest.lrc')),
+      );
+    }
+
+    if (coverUrl.startsWith('http')) {
+      final digest = sha1.convert(utf8.encode(coverUrl)).toString();
+      currentArtworkPaths.add(
+        p.normalize(p.join(artworkDir.path, 'art_$digest.img')),
       );
     }
 
@@ -615,6 +633,13 @@ Future<void> _pruneCachesInIsolate(Map<String, dynamic> payload) async {
   await pruneDirectory(blurredDir, currentBlurredPaths);
   await pruneDirectory(notificationDir, currentNotificationPaths);
   await pruneDirectory(lyricsDir, currentLyricsPaths);
+  // Artwork pulled down for a remote cover is only useful while a song still
+  // points at it; the extracted palette survives in its own cache.
+  await pruneDirectory(
+    artworkDir,
+    currentArtworkPaths,
+    shouldConsider: (file) => p.basename(file.path).startsWith('art_'),
+  );
   // Waveforms and beat maps share this sweep: both are per-song analysis files
   // living flat in the v3 root and keyed off the same filename hash.
   await pruneDirectory(
