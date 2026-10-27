@@ -297,6 +297,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _restoreGapStateIfNeeded();
     _track(SyncService.instance.queueApplied
         .listen((q) => unawaited(_applySyncedQueue(q))));
+    // The playhead is checkpointed when it changes meaning — a pause, a track
+    // change, going to the background — and once right before a run uploads,
+    // which is the moment another device reads it.
+    SyncService.instance.beforeRun = savePlaybackState;
   }
 
   AudioPlayer get player => _player;
@@ -627,6 +631,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         _updateDurations();
         _playStartTime = null;
         _flushStats();
+        // Checkpoint the playhead: a pause is where this device stopped
+        // listening, and where the next one should pick up.
+        _savePlaybackState();
       }
       if (state.processingState == ProcessingState.completed) {
         _isCompleting = true;
@@ -1556,7 +1563,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     });
   }
 
-  Future<void> _writePlaybackState({bool force = false}) async {
+  /// Records the playback state. [positionMs] overrides the live playhead for
+  /// callers that are adopting a position the player has not settled onto yet.
+  Future<void> _writePlaybackState(
+      {bool force = false, int? positionMs}) async {
     final currentIndex = _player.currentIndex;
     final currentSong =
         (currentIndex != null && currentIndex < _effectiveQueue.length)
@@ -1567,14 +1577,15 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       'last_song_filename': currentSong?.filename,
       'last_effective_queue': _effectiveQueue.map((e) => e.toJson()).toList(),
       'last_original_queue': _originalQueue.map((e) => e.toJson()).toList(),
-      'last_position_ms': _player.position.inMilliseconds,
+      'last_position_ms': positionMs ?? _player.position.inMilliseconds,
       'current_playlist_id': _currentPlaylistId,
       'current_queue_snapshot_id': _currentQueueSnapshotId,
       'preferred_media_mode': preferredMediaModeNotifier.value.name,
     };
 
     await _storageService.savePlaybackState(state);
-    unawaited(_syncCurrentQueue(currentSong?.filename, force: force));
+    unawaited(_syncCurrentQueue(currentSong?.filename,
+        force: force, positionMs: positionMs));
   }
 
   /// Writes the playback state immediately, cancelling any coalesced write.
@@ -1591,30 +1602,15 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   String? _syncedCurrent;
   int _syncedPositionMs = 0;
 
-  Timer? _queuePositionSyncTimer;
-
-  /// Long enough that the cloud copy's playhead stays meaningful without turning
-  /// every position tick into a database write; short enough that another device
-  /// resumes close to where this one stopped.
-  static const Duration _queuePositionSyncInterval = Duration(seconds: 20);
-
-  /// Publishes the playhead to the synced queue while playing.
-  void _startQueuePositionSync() {
-    if (_queuePositionSyncTimer != null) return;
-    _queuePositionSyncTimer = Timer.periodic(_queuePositionSyncInterval, (_) {
-      if (!_player.playing || _effectiveQueue.isEmpty) return;
-      unawaited(_syncCurrentQueue(_currentSongFilename, force: true));
-    });
-  }
-
-  Future<void> _syncCurrentQueue(String? current, {required bool force}) async {
+  Future<void> _syncCurrentQueue(String? current,
+      {required bool force, int? positionMs}) async {
     if (!_queueSyncArmed) {
       if (!_player.playing) return;
       _queueSyncArmed = true;
     }
     final eff = [for (final e in _effectiveQueue) e.song.filename];
     final orig = [for (final e in _originalQueue) e.song.filename];
-    final posMs = _player.position.inMilliseconds;
+    final posMs = positionMs ?? _player.position.inMilliseconds;
     final changed = current != _syncedCurrent ||
         !listEquals(eff, _syncedEff) ||
         !listEquals(orig, _syncedOrig);
@@ -1656,6 +1652,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final eff = items(q['effective']);
     if (eff.isEmpty) return;
     final orig = q['original'] == null ? List.of(eff) : items(q['original']);
+    final idx = eff.indexWhere((e) => e.song.filename == q['current']);
+    final pulledMs = (q['position_ms'] as num?)?.toInt() ?? 0;
     await _runSerializedQueueMutation(() async {
       _effectiveQueue = eff;
       _originalQueue = orig.isEmpty ? List.of(eff) : orig;
@@ -1664,14 +1662,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _pendingQueueSongs = null;
       _pendingQueuePlaylistId = null;
       pendingQueueNotifier.value = false;
-      final idx = eff.indexWhere((e) => e.song.filename == q['current']);
       _resetFading();
       await _rebuildQueue(
         initialIndex: idx < 0 ? 0 : idx,
         startPlaying: wasPlaying,
-        initialPosition: idx < 0
-            ? null
-            : Duration(milliseconds: (q['position_ms'] as num?)?.toInt() ?? 0),
+        initialPosition: idx < 0 ? null : Duration(milliseconds: pulledMs),
       );
       // A fresh entry owned by this device, so plays from here on carry a
       // queue id and later edits do not touch the other device's snapshot.
@@ -1683,9 +1678,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _syncedEff = [for (final e in _effectiveQueue) e.song.filename];
     _syncedOrig = [for (final e in _originalQueue) e.song.filename];
     _syncedCurrent = q['current'] as String?;
-    _syncedPositionMs = (q['position_ms'] as num?)?.toInt() ?? 0;
+    _syncedPositionMs = idx < 0 ? 0 : pulledMs;
     _updateQueueNotifier();
-    await savePlaybackState();
+    // Persist the position just adopted rather than re-reading the player, which
+    // has only just been handed the sources. No force: this row came from the
+    // cloud and rewriting it from an unsettled playhead is what lost it.
+    await _writePlaybackState(positionMs: _syncedPositionMs);
   }
 
   void _updateDurations() {
@@ -1800,7 +1798,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
     _songMap = {for (var s in songs) s.filename: s};
     await _player.setShuffleModeEnabled(false);
-    _startQueuePositionSync();
 
     await DatabaseService.instance.init();
 
@@ -3738,13 +3735,12 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _trackedSubscriptions.clear();
     _fadeTimer?.cancel();
     _gapTimer?.cancel();
-    _queuePositionSyncTimer?.cancel();
-    _queuePositionSyncTimer = null;
     queuePlayedRevision.dispose();
     _clearGapState();
     // Flush before the player goes away: the state is read from it, and a
     // coalesced write may still be pending.
     unawaited(savePlaybackState());
+    SyncService.instance.beforeRun = null;
     _player.dispose();
     shuffleNotifier.dispose();
     fastForwardNotifier.dispose();

@@ -336,6 +336,10 @@ class SyncService extends ChangeNotifier {
 
   // ----------------------------------------------------------- operations
 
+  /// Set by the player so a run publishes the live playhead once, right before
+  /// it uploads, instead of a timer writing the row while music plays.
+  Future<void> Function()? beforeRun;
+
   /// Runs [op] single-flight. Returns false if another operation is running.
   Future<bool> _run(Future<void> Function(SyncEngine e) op,
       {bool queueIfBusy = false}) async {
@@ -350,6 +354,12 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
     var ok = false;
     try {
+      // A local state refresh must never be able to fail the sync itself.
+      try {
+        await beforeRun?.call();
+      } catch (err) {
+        debugPrint('SyncService: pre-run state flush failed: $err');
+      }
       await op(e);
       ok = true;
     } on SyncEpochChangedException {
