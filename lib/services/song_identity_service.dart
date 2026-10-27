@@ -96,6 +96,25 @@ class SongIdentityService {
           {IdentityRunOptions? options}) async =>
       reconcile(await DatabaseService.instance.getAllSongs(), options: options);
 
+  /// Whether a pass could move user data to a different file at all.
+  ///
+  /// Only a name the library no longer has can carry data somewhere else: the
+  /// heal needs an orphan, or a live name whose file is gone, to hand to a file
+  /// that is present. With none of those, every record already points at a file
+  /// that exists and a pass could only rewrite what it already knows, at the
+  /// price of reading the library's audio. Reads no audio itself.
+  Future<bool> hasUnmatchedNames(List<Song> songs) async {
+    if (songs.isEmpty) return false;
+    final db = await DatabaseService.instance.userDataDb;
+    final present = {for (final s in songs) s.filename};
+    for (final r in await SongIdentityRepository.loadAll(db)) {
+      if (r.status == IdentityStatus.alias) continue;
+      if (r.status == IdentityStatus.orphan) return true;
+      if (!present.contains(r.filename)) return true;
+    }
+    return false;
+  }
+
   Future<IdentityReport> _reconcile(
       List<Song> songs, IdentityRunOptions? options) async {
     final manual = options != null;

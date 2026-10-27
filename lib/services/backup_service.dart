@@ -824,11 +824,15 @@ class BackupService {
     );
 
     // Backup rows are keyed by the names files had when it was taken; files
-    // renamed since are matched back by audio content. This walks the library
-    // and reads files it has not identified yet, so it is reported rather than
-    // left to look like a hang at 100%.
-    onProgress?.call(0.9, 'Matching renamed files…');
-    await SongIdentityService.instance.reconcileFromLibrary();
+    // renamed since are matched back by audio content. That is the only thing
+    // this pass can do, and it needs a name the library no longer has to do it,
+    // so a restore whose names all still exist skips the read of the library
+    // entirely. Nothing is lost by skipping: the pass would have moved nothing.
+    if (await SongIdentityService.instance
+        .hasUnmatchedNames(await DatabaseService.instance.getAllSongs())) {
+      onProgress?.call(0.9, 'Matching renamed files…');
+      await SongIdentityService.instance.reconcileFromLibrary();
+    }
     onProgress?.call(1.0, 'Done');
   }
 
