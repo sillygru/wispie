@@ -1704,7 +1704,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         ref.read(audioPlayerManagerProvider).currentSongNotifier.value;
     if (current?.filename != song.filename) return;
 
-    ColorExtractionService.extractPalette(song.coverUrl, useIsolate: true)
+    ColorExtractionService.extractPaletteForCover(song.coverUrl)
         .then((palette) {
       // Extraction runs in an isolate, so the container may be gone by now.
       if (!ref.mounted) return;

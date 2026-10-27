@@ -699,10 +699,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           // Extract color from cover only when foregrounded
           if (!_isBackground && song != null && _ref != null) {
             final filenameAtExtraction = newFilename;
-            ColorExtractionService.extractPalette(
-              song.coverUrl,
-              useIsolate: true,
-            ).then((palette) {
+            ColorExtractionService.extractPaletteForCover(song.coverUrl)
+                .then((palette) {
               // Extraction is async; drop results for a track the user has
               // already skipped past.
               if (_currentSongFilename != filenameAtExtraction) return;
@@ -1342,10 +1340,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       if (index != null) _warmThemePalettesAroundIndex(index);
       if (currentSong != null && _ref != null) {
         final filenameAtExtraction = currentSong.filename;
-        ColorExtractionService.extractPalette(
-          currentSong.coverUrl,
-          useIsolate: true,
-        ).then((palette) {
+        ColorExtractionService.extractPaletteForCover(currentSong.coverUrl)
+            .then((palette) {
           if (_currentSongFilename != filenameAtExtraction) return;
           _ref?.read(themeProvider.notifier).updateExtractedPalette(
                 palette,
@@ -1380,10 +1376,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final nextSong = _effectiveQueue[nextIndex].song;
     if (nextSong.coverUrl != null) {
-      ColorExtractionService.extractPalette(
-        nextSong.coverUrl,
-        useIsolate: true,
-      );
+      ColorExtractionService.extractPaletteForCover(nextSong.coverUrl);
     }
   }
 
@@ -1451,7 +1444,21 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       if (song == null) return;
       if (song.isLocal) {
         unawaited(service.warm(song.filename, song.url));
+        return;
       }
+      // A streamed track has no file of its own. Its download only becomes
+      // decodable once the whole track is cached, so the replay path warms from
+      // there; the first play is covered by the seek bar's own retry.
+      final id = song.remoteId;
+      if (!song.isYoutube || id == null || id.isEmpty) return;
+      unawaited(() async {
+        final file = await OnlineAudioCache.instance.completeFile(
+          OnlineAudioCache.providerYouTube,
+          id,
+        );
+        if (file == null) return;
+        await service.warm(song.filename, file.path);
+      }());
     }
 
     warmSong(current);
@@ -1465,12 +1472,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   void _warmThemePalette(String? coverUrl) {
     if (coverUrl == null || coverUrl.isEmpty) return;
-    unawaited(
-      ColorExtractionService.extractPalette(
-        coverUrl,
-        useIsolate: true,
-      ),
-    );
+    unawaited(ColorExtractionService.extractPaletteForCover(coverUrl));
   }
 
   void _optimizeCoverForCurrentSong(Song? song) {

@@ -103,13 +103,20 @@ class YouTubeAudioSource extends StreamAudioSource {
     }
 
     final total = _totalLength(response, from, audio.contentLength);
-    final coversWholeTrack = end == null || (total > 0 && end >= total);
 
-    // Only a whole-track request writes to the cache. Players probe with a
-    // 3-byte range and seek constantly; truncating the download for those would
-    // lose every byte already fetched and corrupt the copy in flight.
+    // Players read a file in ranges rather than asking for it whole, so caching
+    // only a whole-track request meant the download never finished and a
+    // streamed track could never produce a waveform. Write every contiguous
+    // range instead: append when it picks up exactly where the last one
+    // stopped, and restart only for a fresh request at the start of the file.
+    const int restartWindow = 64 * 1024;
+    final resumes = from == _writtenBytes;
+    final restarts = from == 0 && _writtenBytes < restartWindow;
     RandomAccessFile? sink;
-    if (_cacheable && from == 0 && coversWholeTrack && !_cacheWriteActive) {
+    if (_cacheable &&
+        total > 0 &&
+        !_cacheWriteActive &&
+        (resumes || restarts)) {
       final target = await OnlineAudioCache.instance.fileFor(
         provider: OnlineAudioCache.providerYouTube,
         id: videoId,
@@ -118,7 +125,7 @@ class YouTubeAudioSource extends StreamAudioSource {
       );
       _target ??= target;
       _partial ??= File('${target.path}.part');
-      sink = await _openSink();
+      sink = await _openSink(append: resumes && !restarts);
       _cacheWriteActive = sink != null;
     }
 
@@ -177,13 +184,16 @@ class YouTubeAudioSource extends StreamAudioSource {
     return 0;
   }
 
-  Future<RandomAccessFile?> _openSink() async {
+  Future<RandomAccessFile?> _openSink({required bool append}) async {
     final partial = _partial;
     if (partial == null) return null;
     try {
-      if (await partial.exists()) await partial.delete();
-      _writtenBytes = 0;
-      return await partial.open(mode: FileMode.write);
+      if (!append) {
+        if (await partial.exists()) await partial.delete();
+        _writtenBytes = 0;
+      }
+      return await partial.open(
+          mode: append ? FileMode.append : FileMode.write);
     } catch (error) {
       debugPrint('YouTube: cache write disabled: $error');
       _cacheable = false;
@@ -219,8 +229,8 @@ class YouTubeAudioSource extends StreamAudioSource {
   }
 
   Future<void> _closeSink(RandomAccessFile? sink) async {
-    _cacheWriteActive = false;
     if (sink == null) return;
+    _cacheWriteActive = false;
     try {
       await sink.close();
     } catch (_) {

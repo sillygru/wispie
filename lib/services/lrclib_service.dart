@@ -192,15 +192,26 @@ class LrclibService {
     bool timed(LrclibResult? result) =>
         result != null && (result.hasSynced || result.hasRichSync);
 
-    // Two independent lookups: one asks the service for this exact video, the
-    // other searches the release by its tags. Neither is reliably enough alone,
-    // so both are made and merged.
+    // Two independent lookups: one pins the video, the other searches the
+    // release by its tags. Neither is reliably enough alone, so both are made
+    // and merged. The video lookup cannot be the video id alone: the service
+    // rejects a request without track_name (HTTP 400), which used to make this
+    // tier unreachable, so the id rides along with the tags instead.
     LrclibResult? videoResult;
     final videoId = song.isYoutube ? song.remoteId : null;
     if (videoId != null && videoId.isNotEmpty) {
       try {
         videoResult = _resultFromObject(
-          await _musicUtils.getJson('/lyrics/get', {'videoId': videoId}),
+          await _musicUtils.getJson(
+            '/lyrics/get',
+            _getParams(
+              trackName: trackName,
+              artistName: artistName ?? '',
+              albumName: cleanTag(song.album),
+              duration: song.duration,
+              videoId: videoId,
+            ),
+          ),
         );
       } on Object catch (error) {
         stderr.writeln('Lyrics: video lookup failed for $videoId: $error');
@@ -296,14 +307,29 @@ class LrclibService {
       'sync_type': 'richsync',
     });
     final unifiedResults = _resultsFromObject(unified);
-    if (unifiedResults.isNotEmpty) return unifiedResults;
-
-    return _searchDirect({
+    final direct = await _searchDirect({
       'track_name': trackName,
       if (artistName != null && artistName.isNotEmpty)
         'artist_name': artistName,
       if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
     });
+    if (unifiedResults.isEmpty) return direct;
+
+    // The service aggregates several providers, but it is not the whole list:
+    // stopping at it hid every record lrclib.net has and the service does not
+    // (a synced version of a track the service only has untimed, for example).
+    // Only records with text nothing else already offers are appended.
+    final known = unifiedResults
+        .map((result) => (result.lyricsFor() ?? '').trim())
+        .where((text) => text.isNotEmpty)
+        .toSet();
+    return [
+      ...unifiedResults,
+      ...direct.where((result) {
+        final text = (result.lyricsFor() ?? '').trim();
+        return text.isNotEmpty && known.add(text);
+      }),
+    ];
   }
 
   /// music-utils free-text lyrics search, with direct LRCLIB fallback.

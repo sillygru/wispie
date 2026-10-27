@@ -31,11 +31,18 @@ class TrackProgressBar extends ConsumerStatefulWidget {
 }
 
 class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
-  /// How many times a streamed track's cache is re-checked while it plays.
-  /// A track downloads as it plays, so the waveform becomes available mid-song
-  /// and the bar upgrades itself instead of waiting for the next play.
-  static const int _maxPathAttempts = 20;
   static const Duration _pathRetryDelay = Duration(seconds: 3);
+
+  /// How many times a streamed track's cache is re-checked while it plays.
+  ///
+  /// The cache entry only appears when the last byte of the download lands,
+  /// which for a streamed track is near the end of playback, so the window has
+  /// to cover the whole song: a fixed 60s cap left every three-minute track
+  /// showing the plain bar and never generating a waveform.
+  int get _maxPathAttempts {
+    final seconds = widget.total.inSeconds;
+    return seconds <= 0 ? 40 : (seconds ~/ _pathRetryDelay.inSeconds) + 20;
+  }
 
   Future<String?>? _path;
   int _pathAttempts = 0;
