@@ -42,6 +42,10 @@ class SettingsState {
   final bool showQuickPicks;
   final bool showRecentQueues;
   final bool showForYou;
+
+  /// Whether the online (YouTube) catalogue is offered at all. Off hides the
+  /// tab and every account entry point; nothing here talks to YouTube.
+  final bool youtubeEnabled;
   final String lyricsTargetLanguage;
   final bool lyricsAutoTranslate;
   final String lyricsTranslationMode;
@@ -92,6 +96,7 @@ class SettingsState {
     this.showQuickPicks = true,
     this.showRecentQueues = true,
     this.showForYou = true,
+    this.youtubeEnabled = true,
     this.lyricsTargetLanguage = 'es',
     this.lyricsAutoTranslate = false,
     this.lyricsTranslationMode = 'subtext',
@@ -149,6 +154,7 @@ class SettingsState {
     bool? showQuickPicks,
     bool? showRecentQueues,
     bool? showForYou,
+    bool? youtubeEnabled,
     String? lyricsTargetLanguage,
     bool? lyricsAutoTranslate,
     String? lyricsTranslationMode,
@@ -223,6 +229,7 @@ class SettingsState {
       showQuickPicks: showQuickPicks ?? this.showQuickPicks,
       showRecentQueues: showRecentQueues ?? this.showRecentQueues,
       showForYou: showForYou ?? this.showForYou,
+      youtubeEnabled: youtubeEnabled ?? this.youtubeEnabled,
       lyricsTargetLanguage: lyricsTargetLanguage ?? this.lyricsTargetLanguage,
       lyricsAutoTranslate: lyricsAutoTranslate ?? this.lyricsAutoTranslate,
       lyricsTranslationMode:
@@ -284,6 +291,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const _keyShowQuickPicks = 'show_quick_picks';
   static const _keyShowRecentQueues = 'show_recent_queues';
   static const _keyShowForYou = 'show_for_you';
+  static const _keyYoutubeEnabled = 'youtube_enabled';
   static const _keyLyricsTargetLanguage = 'lyrics_target_language';
   static const _keyLyricsAutoTranslate = 'lyrics_auto_translate';
   static const _keyLyricsTranslationMode = 'lyrics_translation_mode';
@@ -404,6 +412,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
       showQuickPicks: prefs.getBool(_keyShowQuickPicks) ?? true,
       showRecentQueues: prefs.getBool(_keyShowRecentQueues) ?? true,
       showForYou: prefs.getBool(_keyShowForYou) ?? true,
+      youtubeEnabled: prefs.getBool(_keyYoutubeEnabled) ?? true,
       lyricsTargetLanguage: prefs.getString(_keyLyricsTargetLanguage) ?? 'es',
       lyricsAutoTranslate: prefs.getBool(_keyLyricsAutoTranslate) ?? false,
       lyricsTranslationMode:
@@ -739,6 +748,12 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(showForYou: show);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyShowForYou, show);
+  }
+
+  Future<void> setYoutubeEnabled(bool enabled) async {
+    state = state.copyWith(youtubeEnabled: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyYoutubeEnabled, enabled);
   }
 
   Future<void> setAutoSyncEnabled(bool enabled) async {

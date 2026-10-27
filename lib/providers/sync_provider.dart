@@ -5,6 +5,7 @@ import '../services/database_service.dart';
 import '../services/sync/api_client.dart' show SyncServerInfo;
 import '../services/sync/changeset.dart';
 import '../services/sync_service.dart';
+import 'providers.dart';
 
 class SyncState {
   final SyncStatus status;
@@ -92,7 +93,11 @@ class SyncNotifier extends Notifier<SyncState> {
     if (_disposed) return;
     final wasBusy = state.isSyncing;
     state = _snapshot();
-    if (wasBusy && !state.isSyncing) unawaited(_loadBreakdown());
+    if (!wasBusy || state.isSyncing) return;
+    unawaited(_loadBreakdown());
+    // A finished cycle merged rows the open screens are still showing: the
+    // playlists, favourites and streamed track rows that arrived with it.
+    unawaited(ref.read(userDataProvider.notifier).refresh(force: false));
   }
 
   Future<void> _loadBreakdown() async {

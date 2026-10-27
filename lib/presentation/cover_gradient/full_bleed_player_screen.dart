@@ -100,6 +100,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
 
   String? _beatMapFilename;
   int _beatMapToken = 0;
+  StreamSubscription<String>? _beatMapSub;
   late final AudioPlayerManager _manager;
 
   @override
@@ -124,6 +125,12 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     _manager.playingNotifier.addListener(_syncRefresh);
     PowerStateService.instance.powerSave.addListener(_syncMotionSettings);
     PowerStateService.instance.powerSave.addListener(_syncRefresh);
+    // A streamed track becomes decodable only once its download finishes, so
+    // its map can land long after this screen stopped waiting for one.
+    _beatMapSub = ref
+        .read(beatAnalysisServiceProvider)
+        .analyzedFilenames
+        .listen(_onBeatMapReady);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -142,6 +149,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   void dispose() {
     DisplayRefreshService.instance.leavePlayer();
     WidgetsBinding.instance.removeObserver(this);
+    _beatMapSub?.cancel();
     _manager.currentSongNotifier.removeListener(_onSongChanged);
     _manager.playingNotifier.removeListener(_syncWakeLock);
     _manager.playingNotifier.removeListener(_syncRefresh);
@@ -225,9 +233,15 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     // Analysis is heavy: let the sheet finish opening first.
     await whenRouteSettled();
     if (!mounted || token != _beatMapToken) return;
-    final analyzed = await service.analyze(song.filename, song.url);
+    final analyzed = await service.analyzeSong(song);
     if (!mounted || token != _beatMapToken) return;
     _motion.beatMap = analyzed;
+  }
+
+  /// Picks up a map that finished analysing for the track already playing.
+  void _onBeatMapReady(String filename) {
+    if (!mounted || filename != _beatMapFilename) return;
+    unawaited(_onSongChanged());
   }
 
   void _syncMotionSettings() {

@@ -49,6 +49,29 @@ class AppLocalizationsEn extends AppLocalizations {
       'Home sections, lists, quick actions';
 
   @override
+  String get settingsPageOnlineTitle => 'Online';
+
+  @override
+  String get settingsPageOnlineSubtitle => 'YouTube catalogue and account';
+
+  @override
+  String get onlineSettingsGroup => 'YouTube';
+
+  @override
+  String get settingsYoutubeEnabledTitle => 'YouTube';
+
+  @override
+  String get settingsYoutubeEnabledSubtitle =>
+      'Show the YouTube tab and play music from YouTube. Turning this off removes it entirely.';
+
+  @override
+  String get settingsYoutubeAccountSubtitle =>
+      'Sign in to import your playlists';
+
+  @override
+  String get settingsKwOnline => 'youtube,online,streaming,account,import';
+
+  @override
   String get settingsPageSyncTitle => 'Sync';
 
   @override

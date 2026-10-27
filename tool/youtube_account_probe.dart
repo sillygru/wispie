@@ -28,8 +28,10 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:wispie/domain/models/lrclib_result.dart';
-import 'package:wispie/domain/services/lrclib_merge.dart';
+import 'package:wispie/domain/services/lrclib_match.dart';
+import 'package:wispie/domain/services/lrclib_query.dart';
 import 'package:wispie/domain/services/youtube_library.dart';
+import 'package:wispie/models/song.dart';
 import 'package:wispie/domain/services/youtube_music_feed.dart';
 import 'package:wispie/domain/services/youtube_session.dart';
 
@@ -495,46 +497,92 @@ Future<void> _protocol() async {
     check('looping page is parsed once', looped.length == 2,
         detail: looped.length);
 
-    stdout.writeln('\nLyrics merge');
-    final videoOnly = LrclibResult(
-      id: 11,
-      trackName: 'Song',
-      artistName: 'Uploader',
-      albumName: '',
-      plainLyrics: 'auto transcript',
-    );
-    final tagTimed = LrclibResult(
-      id: 22,
-      trackName: 'Song',
-      artistName: 'Artist',
-      albumName: 'Album',
-      syncedLyrics: '[00:01.00]first line',
-    );
-    final mergedLyrics = mergeLrclibResults(videoOnly, tagTimed);
-    check(
-      'merge: timed lookup wins',
-      mergedLyrics?.syncedLyrics == '[00:01.00]first line',
-      detail: mergedLyrics?.syncedLyrics,
+    stdout.writeln('\nLyrics queries');
+    final uploadQueries = lyricsQueriesFor(
+      title: 'Aurora - Runaway (Official Video)',
+      artist: 'Aurora - Topic',
+      remote: true,
     );
     check(
-      'merge: plain body filled from the other lookup',
-      mergedLyrics?.plainLyrics == 'auto transcript',
-      detail: mergedLyrics?.plainLyrics,
+      'queries: the title\'s own artist beats the channel',
+      uploadQueries.first.title == 'Runaway' &&
+          uploadQueries.first.artist == 'Aurora',
+      detail: '${uploadQueries.first.title} / ${uploadQueries.first.artist}',
     );
     check(
-      'merge: album kept from the tag lookup',
-      mergedLyrics?.albumName == 'Album',
-      detail: mergedLyrics?.albumName,
+      'queries: the channel is tried as well',
+      uploadQueries.any((q) => q.artist == 'Aurora - Topic'),
+      detail: uploadQueries.map((q) => q.artist).toList(),
     );
     check(
-      'merge: order does not matter',
-      mergeLrclibResults(tagTimed, videoOnly)?.syncedLyrics ==
-          '[00:01.00]first line',
+      'queries: title alone is a fallback',
+      uploadQueries.any((q) => q.artist == null && q.title == 'Runaway'),
+      detail: uploadQueries.map((q) => '${q.title}|${q.artist}').toList(),
     );
     check(
-      'merge: one side alone is returned',
-      mergeLrclibResults(null, tagTimed)?.id == 22 &&
-          mergeLrclibResults(videoOnly, null)?.id == 11,
+      'queries: each reading appears once',
+      uploadQueries.length ==
+          {
+            for (final q in uploadQueries) '${q.title}|${q.artist}',
+          }.length,
+      detail: uploadQueries.length,
+    );
+    check(
+      'queries: a titled upload with no artist prefix is not mangled',
+      lyricsQueriesFor(
+            title: 'Midnight City (Official Video)',
+            artist: 'M83',
+            remote: true,
+          ).first.title ==
+          'Midnight City',
+    );
+    check(
+      'queries: local files get a single tag query',
+      lyricsQueriesFor(title: 'Runaway', artist: 'Aurora').length == 1,
+    );
+    check(
+      'queries: an empty title asks for nothing',
+      lyricsQueriesFor(title: '  ', artist: 'Aurora', remote: true).isEmpty,
+    );
+
+    stdout.writeln('\nLyrics ranking');
+    final remoteSong = Song(
+      title: 'Runaway',
+      artist: 'Aurora',
+      album: '',
+      filename: 'youtube:abc123',
+      url: '',
+      source: SongSource.youtube,
+      remoteId: 'abc123',
+      duration: const Duration(seconds: 200),
+    );
+    LrclibResult lyricRecord(int id,
+            {String? synced, String? plain, int seconds = 200}) =>
+        LrclibResult(
+          id: id,
+          trackName: 'Runaway',
+          artistName: 'Aurora',
+          albumName: '',
+          duration: Duration(seconds: seconds),
+          syncedLyrics: synced,
+          plainLyrics: plain,
+        );
+    final untimedVideo = lyricRecord(11, plain: 'auto transcript');
+    final timedRelease = lyricRecord(22, synced: '[00:01.00]first line');
+    final otherRecording =
+        lyricRecord(33, synced: '[00:01.00]wrong song', seconds: 260);
+    check(
+      'ranking: a timed record outranks an untimed one',
+      rankLrclibResults([untimedVideo, timedRelease], remoteSong).first.id ==
+          22,
+    );
+    check(
+      'ranking: a synchronised record is preferred over a plainly different one',
+      rankLrclibResults([otherRecording, timedRelease], remoteSong).first.id ==
+          22,
+      detail: rankLrclibResults([otherRecording, timedRelease], remoteSong)
+          .map((r) => r.id)
+          .toList(),
     );
 
     stdout.writeln('\nMusic home feed');

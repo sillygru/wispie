@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -35,6 +37,7 @@ class _BeatSyncCalibrationScreenState
   String? _beatMapFilename;
   int _beatMapToken = 0;
   bool _analyzing = false;
+  StreamSubscription<String>? _beatMapSub;
 
   @override
   void initState() {
@@ -48,6 +51,10 @@ class _BeatSyncCalibrationScreenState
       ..particleCustomIntensity = settings.particleMotionCustomIntensity
       ..latencyMs = _offsetMs;
     _manager.currentSongNotifier.addListener(_onSongChanged);
+    _beatMapSub = ref
+        .read(beatAnalysisServiceProvider)
+        .analyzedFilenames
+        .listen(_onBeatMapReady);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onSongChanged();
     });
@@ -70,10 +77,17 @@ class _BeatSyncCalibrationScreenState
     setState(() => _analyzing = true);
     final service = ref.read(beatAnalysisServiceProvider);
     final map = await service.readCached(song.filename) ??
-        await service.analyze(song.filename, song.url);
+        await service.analyzeSong(song);
     if (!mounted || token != _beatMapToken) return;
     _motion.beatMap = map;
     setState(() => _analyzing = false);
+  }
+
+  /// Picks up a map that finished analysing for the track already playing.
+  void _onBeatMapReady(String filename) {
+    if (!mounted || filename != _beatMapFilename) return;
+    _beatMapFilename = null;
+    unawaited(_onSongChanged());
   }
 
   void _setOffset(int value) {
@@ -84,6 +98,7 @@ class _BeatSyncCalibrationScreenState
 
   @override
   void dispose() {
+    _beatMapSub?.cancel();
     _manager.currentSongNotifier.removeListener(_onSongChanged);
     _motion.dispose();
     super.dispose();

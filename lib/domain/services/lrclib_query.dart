@@ -54,6 +54,70 @@ String cleanSearchTitle(String title, {String? artist}) {
   return cleaned.isEmpty ? title.trim() : cleaned;
 }
 
+/// One way to ask a lyrics provider for a track.
+class LyricsQuery {
+  final String title;
+
+  /// Null when the title alone is the query: passing a wrong artist name is a
+  /// hard filter on some providers and turns a near-hit into no hit.
+  final String? artist;
+
+  const LyricsQuery(this.title, this.artist);
+}
+
+/// The upload title's "Artist - Song" prefix, or null when it does not have one.
+final _uploadArtistPrefix = RegExp(r'^(.{2,60}?)\s+[-–—]\s+(.+)$');
+
+/// Every plausible reading of a remote track's tags, best first.
+///
+/// A streamed track's tags are the uploader's: the title is usually
+/// "Artist - Song (Official Video)" and the artist is the channel ("Dan Music",
+/// "Aurora - Topic"). Asking the lyrics API once with those tags misses even
+/// when the words are available, so each reading is tried: the title's own
+/// artist, the channel with the cleaned title, and the title alone. Local files
+/// keep a single query — their tags are the release's.
+List<LyricsQuery> lyricsQueriesFor({
+  required String title,
+  required String artist,
+  bool remote = false,
+}) {
+  final rawTitle = title.trim();
+  if (rawTitle.isEmpty) return const [];
+  final rawArtist = artist.trim();
+  final queries = <LyricsQuery>[];
+  final seen = <String>{};
+
+  void add(String candidateTitle, String? candidateArtist) {
+    final cleanTitle = candidateTitle.trim();
+    if (cleanTitle.isEmpty) return;
+    final cleanArtist = (candidateArtist ?? '').trim();
+    final key = '${_normalize(cleanTitle)}|${_normalize(cleanArtist)}';
+    if (!seen.add(key)) return;
+    queries
+        .add(LyricsQuery(cleanTitle, cleanArtist.isEmpty ? null : cleanArtist));
+  }
+
+  final split = remote ? _uploadArtistPrefix.firstMatch(rawTitle) : null;
+  if (split != null) {
+    final prefix = split.group(1)!.trim();
+    final rest = split.group(2)!.trim();
+    final restTitle = cleanSearchTitle(rest);
+    // The title itself names the recording artist, which beats the channel.
+    add(restTitle, prefix);
+    add(restTitle, null);
+    if (rawArtist.isNotEmpty) add(restTitle, rawArtist);
+  }
+
+  // The plain reading of the tags, last: it is right when the upload title is
+  // already the release title, and wrong when it carries an "Artist - " prefix
+  // the artist tag does not repeat.
+  add(cleanSearchTitle(rawTitle, artist: rawArtist), rawArtist);
+  if (!remote) return queries;
+
+  add(cleanSearchTitle(rawTitle, artist: rawArtist), null);
+  return queries;
+}
+
 /// Collapses whitespace and trims stray leading/trailing separators left behind
 /// once a bracket or prefix is removed.
 String _collapse(String value) {

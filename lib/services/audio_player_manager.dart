@@ -1414,19 +1414,17 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     final service = _ref!.read(beatAnalysisServiceProvider);
 
-    // Streamed tracks have no local file to decode; the progress bar already
-    // falls back to the plain bar for them.
-    if (current != null && current.isLocal) {
-      service.prefetch(current.filename, current.url);
-    }
+    // Streamed tracks are decoded from their cached download, which only
+    // exists once the track has been streamed through; the service skips those
+    // until then.
+    if (current != null) service.prefetchSong(current);
 
     final currentIndex = _player.currentIndex;
     if (currentIndex == null || _effectiveQueue.isEmpty) return;
     final nextIndex = currentIndex + 1;
     if (nextIndex >= _effectiveQueue.length) return;
 
-    final next = _effectiveQueue[nextIndex].song;
-    if (next.isLocal) service.prefetch(next.filename, next.url);
+    service.prefetchSong(_effectiveQueue[nextIndex].song);
   }
 
   /// Builds the seek bar's waveform ahead of time and writes it to the cache.

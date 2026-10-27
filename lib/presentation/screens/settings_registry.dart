@@ -12,6 +12,7 @@ import 'folder_management_screen.dart';
 import 'home_settings_screen.dart';
 import 'indexer_screen.dart';
 import 'lyrics_settings_screen.dart';
+import 'online_settings_screen.dart';
 import 'storage_settings_screen.dart';
 import 'playback_settings_screen.dart';
 import 'quick_actions_settings_screen.dart';
@@ -96,6 +97,14 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
       breadcrumb: l.settingsTitle,
       keywords: _kw(l.settingsKwAppearance),
       open: () => const AppearanceSettingsScreen(),
+    ),
+    SettingsDestination(
+      icon: AppIcons.musicNote,
+      title: l.settingsPageOnlineTitle,
+      subtitle: l.settingsPageOnlineSubtitle,
+      breadcrumb: l.settingsTitle,
+      keywords: _kw(l.settingsKwOnline),
+      open: () => const OnlineSettingsScreen(),
     ),
     SettingsDestination(
       icon: AppIcons.cloudUpload,

@@ -51,6 +51,34 @@
   "@settingsPageHomeNavigationSubtitle": {
     "description": "Subtitle for the Home and Navigation settings page entry"
   },
+  "settingsPageOnlineTitle": "Online",
+  "@settingsPageOnlineTitle": {
+    "description": "Title of the Online (YouTube) settings page"
+  },
+  "settingsPageOnlineSubtitle": "YouTube catalogue and account",
+  "@settingsPageOnlineSubtitle": {
+    "description": "Subtitle for the Online settings page entry"
+  },
+  "onlineSettingsGroup": "YouTube",
+  "@onlineSettingsGroup": {
+    "description": "Settings group label for the YouTube catalogue options"
+  },
+  "settingsYoutubeEnabledTitle": "YouTube",
+  "@settingsYoutubeEnabledTitle": {
+    "description": "Label of the switch that turns the online catalogue on or off"
+  },
+  "settingsYoutubeEnabledSubtitle": "Show the YouTube tab and play music from YouTube. Turning this off removes it entirely.",
+  "@settingsYoutubeEnabledSubtitle": {
+    "description": "Explains what the YouTube switch controls"
+  },
+  "settingsYoutubeAccountSubtitle": "Sign in to import your playlists",
+  "@settingsYoutubeAccountSubtitle": {
+    "description": "Subtitle of the row that opens the YouTube account screen"
+  },
+  "settingsKwOnline": "youtube,online,streaming,account,import",
+  "@settingsKwOnline": {
+    "description": "Search keywords for the Online settings entries"
+  },
   "settingsPageSyncTitle": "Sync",
   "@settingsPageSyncTitle": {
     "description": "Title of the Sync settings page"

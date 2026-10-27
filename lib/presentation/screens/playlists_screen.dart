@@ -5,6 +5,7 @@ import '../../domain/models/youtube_playlist_link.dart';
 import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
+import '../../providers/settings_provider.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../widgets/collection_cover.dart';
 import '../widgets/duration_display.dart';
@@ -335,9 +336,10 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
     YouTubePlaylistLink? youtubeLink,
   ) {
     // A linked playlist outlives the session, but syncing it does not: hide the
-    // action instead of offering one that can only fail.
-    final signedIn =
-        ref.read(youtubeAccountProvider).asData?.value.signedIn ?? false;
+    // action instead of offering one that can only fail. Turning YouTube off
+    // hides it too, since there is then no account surface at all.
+    final signedIn = ref.read(settingsProvider).youtubeEnabled &&
+        (ref.read(youtubeAccountProvider).asData?.value.signedIn ?? false);
     showAppSheet(
       context,
       builder: (context) => Column(

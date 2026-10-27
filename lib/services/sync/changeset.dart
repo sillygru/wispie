@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../data/repositories/song_identity_repository.dart';
 import '../../domain/services/song_identity.dart';
+import '../../models/song.dart';
 import 'hlc.dart';
 import 'song_refs.dart';
 
@@ -300,7 +301,9 @@ class Changeset {
       count++;
     }
     flush();
-    await _attachIdentity(batches.map((b) => b.payload));
+    final payloads = [for (final batch in batches) batch.payload];
+    await _attachIdentity(payloads);
+    await _attachRemoteSongs(payloads);
     return batches;
   }
 
@@ -318,6 +321,7 @@ class Changeset {
     }
     final batch = _wrap('snapshot', records, clears, count, categories);
     await _attachIdentity([batch.payload]);
+    await _attachRemoteSongs([batch.payload]);
     return batch;
   }
 
@@ -334,6 +338,83 @@ class Changeset {
       };
       if (ids.isNotEmpty) payload['identity'] = ids;
     }
+  }
+
+  /// Ships the catalogue metadata of every streamed track a payload names.
+  ///
+  /// A streamed track's row lives in `remote_song`, not in the library, so a
+  /// device that never imported that playlist would receive a filename with
+  /// nothing behind it: no title, no cover, nothing to play. The rows are public
+  /// catalogue data, so they ride along with the records that name them.
+  Future<void> _attachRemoteSongs(
+      Iterable<Map<String, dynamic>> payloads) async {
+    for (final payload in payloads) {
+      final names = collectSongNames(payload['records'] as Map)
+          .where((name) => name.startsWith(Song.youtubePrefix))
+          .toList();
+      if (names.isEmpty) continue;
+
+      final tracks = <String, Map<String, Object?>>{};
+      for (var i = 0; i < names.length; i += 400) {
+        final chunk = names.skip(i).take(400).toList();
+        final rows = await userData.query(
+          'remote_song',
+          where: 'filename IN (${List.filled(chunk.length, '?').join(',')})',
+          whereArgs: chunk,
+        );
+        for (final row in rows) {
+          tracks['${row['filename']}'] = {
+            'remote_id': row['remote_id'],
+            'title': row['title'],
+            'artist': row['artist'],
+            'cover_url': row['cover_url'],
+            'duration_ms': row['duration_ms'],
+            'is_available': row['is_available'],
+          };
+        }
+      }
+      if (tracks.isNotEmpty) payload['remote_tracks'] = tracks;
+    }
+  }
+
+  /// Recreates the catalogue rows a payload names, so a playlist merged from
+  /// another device lists real tracks instead of bare filenames.
+  ///
+  /// Existing rows are kept: this is public metadata that the device may
+  /// already have fresher, and nothing here is user-owned.
+  Future<void> _importRemoteTracks(Map<String, dynamic> payload) async {
+    final tracks = payload['remote_tracks'];
+    if (tracks is! Map || tracks.isEmpty) return;
+
+    final rows = <Map<String, Object?>>[];
+    for (final entry in tracks.entries) {
+      final row = entry.value;
+      if (row is! Map) continue;
+      final filename = '${entry.key}';
+      final id = '${row['remote_id'] ?? ''}';
+      if (!filename.startsWith(Song.youtubePrefix) || id.isEmpty) continue;
+      final title = '${row['title'] ?? ''}'.trim();
+      rows.add({
+        'filename': filename,
+        'remote_id': id,
+        'title': title.isEmpty ? id : title,
+        'artist': '${row['artist'] ?? ''}',
+        'cover_url': row['cover_url'],
+        'duration_ms': row['duration_ms'],
+        'is_available': row['is_available'] ?? 1,
+        'updated_at': nowMs() / 1000.0,
+      });
+    }
+    if (rows.isEmpty) return;
+
+    await userData.transaction((txn) async {
+      final b = txn.batch();
+      for (final row in rows) {
+        b.insert('remote_song', row,
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      await b.commit(noResult: true);
+    });
   }
 
   /// Rewrites every song name in [payload] to the local file holding the same
@@ -602,6 +683,7 @@ class Changeset {
     MergeProgress? onProgress,
   }) async {
     payload = await _remapIncoming(payload);
+    await _importRemoteTracks(payload);
     final records =
         ((payload['records'] as Map?) ?? const {}).cast<String, dynamic>();
     final remoteDevice = '${payload['device_id'] ?? ''}';
@@ -1036,6 +1118,7 @@ class Changeset {
     Set<String>? categories,
     MergeProgress? onProgress,
   }) async {
+    await _importRemoteTracks(payload);
     final records =
         ((payload['records'] as Map?) ?? const {}).cast<String, dynamic>();
     final total = _countRecords(payload, categories);

@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import '../domain/models/lrclib_result.dart';
 import '../domain/models/rich_lyrics.dart';
 import '../domain/services/lrclib_match.dart';
-import '../domain/services/lrclib_merge.dart';
 import '../domain/services/lrclib_query.dart';
 import '../models/song.dart';
 import 'cache_service.dart';
@@ -174,71 +173,96 @@ class LrclibService {
     return File(p.join(base.parent.path, 'lyrics_cache', 'remote_$digest.lrc'));
   }
 
-  /// Best online lyrics for a streamed track, which has no file to read them
-  /// from.
+  /// Best online lyrics for a track.
   ///
-  /// The chain narrows from exact to loose because a catalogue track's tags are
-  /// frequently the uploader's, not the release's. A video-id hit is not
-  /// automatically the winner: it is often a transcript with no timings, which
-  /// would throw away the synced view, so a timed record from a later tier
-  /// outranks it and the untimed hit is only the last resort.
+  /// A streamed track's tags are the uploader's, not the release's, so one
+  /// lookup built from them misses most of the time. Every plausible reading of
+  /// the tags is queried instead (see [lyricsQueriesFor]), in parallel — a
+  /// sequential fallback chain spent tens of seconds to end up with nothing — and
+  /// the video id rides along with the primary query, because the service
+  /// rejects a request without a track name.
+  ///
+  /// The results are then ranked against the cleaned title, so duration and
+  /// artist agreement decide. A timed record always beats an untimed one: a
+  /// transcript with no timings would throw away the synced view.
   Future<LrclibResult?> fetchForSong(Song song) async {
     final rawTitle = cleanTag(song.title);
-    final artistName = cleanTag(song.artist);
     if (rawTitle == null) return null;
-    final trackName = cleanSearchTitle(rawTitle, artist: artistName ?? '');
-    if (trackName.isEmpty) return null;
+    final queries = lyricsQueriesFor(
+      title: rawTitle,
+      artist: cleanTag(song.artist) ?? '',
+      remote: song.isRemote,
+    );
+    if (queries.isEmpty) return null;
 
-    bool timed(LrclibResult? result) =>
-        result != null && (result.hasSynced || result.hasRichSync);
-
-    // Two independent lookups: one pins the video, the other searches the
-    // release by its tags. Neither is reliably enough alone, so both are made
-    // and merged. The video lookup cannot be the video id alone: the service
-    // rejects a request without track_name (HTTP 400), which used to make this
-    // tier unreachable, so the id rides along with the tags instead.
-    LrclibResult? videoResult;
+    final album = cleanTag(song.album);
     final videoId = song.isYoutube ? song.remoteId : null;
-    if (videoId != null && videoId.isNotEmpty) {
-      try {
-        videoResult = _resultFromObject(
-          await _musicUtils.getJson(
-            '/lyrics/get',
-            _getParams(
-              trackName: trackName,
-              artistName: artistName ?? '',
-              albumName: cleanTag(song.album),
-              duration: song.duration,
-              videoId: videoId,
-            ),
-          ),
-        );
-      } on Object catch (error) {
-        stderr.writeln('Lyrics: video lookup failed for $videoId: $error');
+    final found = <int, LrclibResult>{};
+
+    void keep(Iterable<LrclibResult> results) {
+      for (final result in results) {
+        if (result.isUsable) found.putIfAbsent(result.id, () => result);
       }
     }
 
-    final byTags = artistName == null
-        ? null
-        : await getExact(
-            trackName: trackName,
-            artistName: artistName,
-            albumName: cleanTag(song.album),
+    // Three readings is enough to cover every tag shape a catalogue produces;
+    // more only multiplies requests for records that would lose the ranking.
+    final attempts = queries.take(3).toList();
+    final lookups = <Future<void>>[];
+    for (var i = 0; i < attempts.length; i++) {
+      final query = attempts[i];
+      final artist = query.artist;
+      if (artist != null) {
+        lookups.add(
+          getExact(
+            trackName: query.title,
+            artistName: artist,
+            albumName: album,
             duration: song.duration,
-          );
-
-    final merged = mergeLrclibResults(videoResult, byTags);
-    if (timed(merged)) return merged;
-
-    final found = await searchFreeText(trackName);
-    if (found.isNotEmpty) {
-      final ranked = rankLrclibResults(found, song);
-      final synced = ranked.where((r) => r.hasSynced || r.hasRichSync);
-      if (synced.isNotEmpty) return synced.first;
-      if (ranked.isNotEmpty) return ranked.first;
+            videoId: i == 0 ? videoId : null,
+          ).then((result) {
+            if (result != null) keep([result]);
+          }).catchError((Object error) {
+            stderr.writeln('Lyrics: exact lookup failed: $error');
+          }),
+        );
+      }
+      lookups.add(
+        search(trackName: query.title, artistName: artist)
+            .then(keep)
+            .catchError(
+          (Object error) {
+            stderr.writeln('Lyrics: search failed: $error');
+          },
+        ),
+      );
     }
+    await Future.wait(lookups);
 
-    return merged;
+    // Last resort for uploads whose title matches no field query.
+    if (found.isEmpty) {
+      final freeText = <String>{
+        for (final query in attempts)
+          [query.title, query.artist].whereType<String>().join(' ').trim(),
+      };
+      await Future.wait([
+        for (final query in freeText)
+          searchFreeText(query).then(keep).catchError((Object error) {
+            stderr.writeln('Lyrics: free-text search failed: $error');
+          }),
+      ]);
+    }
+    if (found.isEmpty) return null;
+
+    final ranked = rankLrclibResults(
+      found.values.toList(),
+      song.copyWith(
+        title: attempts.first.title,
+        artist: attempts.first.artist ?? song.artist,
+      ),
+    );
+    final timed = ranked.where((r) => r.hasSynced || r.hasRichSync);
+    return timed.isNotEmpty ? timed.first : ranked.first;
   }
 
   /// Fetches the optional word/syllable payload without replacing local lyrics.
@@ -263,12 +287,21 @@ class LrclibService {
   static final Map<String, Future<RichLyrics?>> _richSyncCache = {};
 
   Future<RichLyrics?> _fetchRichSync(Song song) async {
-    final trackName = cleanTag(song.title);
-    final artistName = cleanTag(song.artist);
-    if (trackName == null || artistName == null) return null;
+    final rawTitle = cleanTag(song.title);
+    final queries = rawTitle == null
+        ? const <LyricsQuery>[]
+        : lyricsQueriesFor(
+            title: rawTitle,
+            artist: cleanTag(song.artist) ?? '',
+            remote: song.isRemote,
+          );
+    if (queries.isEmpty) return null;
+    final query = queries.first;
+    final trackName = query.title;
+    final artistName = query.artist ?? '';
 
     final params = _getParams(
-      trackName: cleanSearchTitle(trackName, artist: artistName),
+      trackName: trackName,
       artistName: artistName,
       albumName: cleanTag(song.album),
       duration: song.duration,

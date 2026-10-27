@@ -23,6 +23,7 @@ import 'backup_settings_screen.dart';
 import 'about_settings_screen.dart';
 import 'home_settings_screen.dart';
 import 'lyrics_settings_screen.dart';
+import 'online_settings_screen.dart';
 import 'storage_settings_screen.dart';
 import 'sync_settings_screen.dart';
 import '../tokens/app_icons.dart';
@@ -52,6 +53,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _Page(AppIcons.palette, 'Appearance', 'Now playing, motion, app icon'),
     _Page(AppIcons.home, 'Home & Navigation',
         'Home sections, lists, quick actions'),
+    _Page(AppIcons.musicNote, 'Online', 'YouTube catalogue and account'),
     _Page(AppIcons.cloudUpload, 'Sync', 'Encrypted cross-device sync'),
     _Page(AppIcons.upload, 'Backup & Restore',
         'Export, import, automatic backups'),
@@ -69,12 +71,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             l.settingsPageHomeNavigationTitle,
             l.settingsPageHomeNavigationSubtitle
           ),
-        5 => (l.settingsPageSyncTitle, l.settingsPageSyncSubtitle),
-        6 => (
+        5 => (l.settingsPageOnlineTitle, l.settingsPageOnlineSubtitle),
+        6 => (l.settingsPageSyncTitle, l.settingsPageSyncSubtitle),
+        7 => (
             l.settingsPageBackupRestoreTitle,
             l.settingsPageBackupRestoreSubtitle
           ),
-        7 => (l.settingsPageStorageTitle, l.settingsPageStorageSubtitle),
+        8 => (l.settingsPageStorageTitle, l.settingsPageStorageSubtitle),
         _ => (l.settingsPageAboutTitle, l.settingsPageAboutSubtitle),
       };
 
@@ -280,20 +283,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               ),
                               (
                                 5,
-                                (_) => const SyncSettingsScreen(embedded: true)
+                                (h) => OnlineSettingsScreen(
+                                    highlightId: h, embedded: true)
                               ),
                               (
                                 6,
+                                (_) => const SyncSettingsScreen(embedded: true)
+                              ),
+                              (
+                                7,
                                 (h) => BackupSettingsScreen(
                                     highlightId: h, embedded: true)
                               ),
                               (
-                                7,
+                                8,
                                 (h) => StorageSettingsScreen(
                                     highlightId: h, embedded: true)
                               ),
                               (
-                                8,
+                                9,
                                 (_) => const AboutSettingsScreen(embedded: true)
                               ),
                             ])

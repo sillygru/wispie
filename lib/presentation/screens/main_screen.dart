@@ -94,6 +94,21 @@ class SyncIndicator extends ConsumerWidget {
   }
 }
 
+/// One shell destination: its screen, nav entry and scroll controller.
+class _ShellTab {
+  final String id;
+  final ScrollController controller;
+  final AppNavItem nav;
+  final Widget screen;
+
+  const _ShellTab({
+    required this.id,
+    required this.controller,
+    required this.nav,
+    required this.screen,
+  });
+}
+
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
@@ -107,28 +122,56 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _tabDirection = 1;
   final GlobalKey<FloatingDockState> _dockKey = GlobalKey<FloatingDockState>();
 
-  static List<AppNavItem> _navItemsFor(AppLocalizations l10n) => [
-        AppNavItem(
+  /// Destinations in display order. The online tab is optional, so this is
+  /// built per frame instead of being a fixed four; ids keep the built-screen
+  /// bookkeeping stable when the list changes length.
+  List<_ShellTab> _tabs(BuildContext context, bool youtubeEnabled) {
+    final l10n = context.l10n;
+    return [
+      _ShellTab(
+        id: 'home',
+        controller: _scrollControllers[0],
+        nav: AppNavItem(
           icon: AppIcons.home,
           selectedIcon: AppIcons.home,
           label: l10n.shellNavHome,
         ),
-        AppNavItem(
+        screen: HomeScreen(scrollController: _scrollControllers[0]),
+      ),
+      _ShellTab(
+        id: 'library',
+        controller: _scrollControllers[1],
+        nav: AppNavItem(
           icon: AppIcons.library,
           selectedIcon: AppIcons.library,
           label: l10n.libraryTitle,
         ),
-        AppNavItem(
-          icon: AppIcons.musicNote,
-          selectedIcon: AppIcons.musicNote,
-          label: l10n.onlineTab,
+        screen: LibraryTabNavigator(scrollController: _scrollControllers[1]),
+      ),
+      if (youtubeEnabled)
+        _ShellTab(
+          id: 'online',
+          controller: _scrollControllers[2],
+          nav: AppNavItem(
+            icon: AppIcons.musicNote,
+            selectedIcon: AppIcons.musicNote,
+            label: l10n.onlineTab,
+          ),
+          screen: OnlineScreen(scrollController: _scrollControllers[2]),
         ),
-        AppNavItem(
+      _ShellTab(
+        id: 'profile',
+        controller: _scrollControllers[3],
+        nav: AppNavItem(
           icon: AppIcons.person,
           selectedIcon: AppIcons.person,
           label: l10n.profileTitle,
         ),
-      ];
+        screen: ProfileScreen(scrollController: _scrollControllers[3]),
+      ),
+    ];
+  }
+
   bool _isDrawerOpen = false;
 
   late AnimationController _drawerController;
@@ -141,8 +184,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
   /// this only needs a little slack above it — it used to carry the gap the
   /// floating dock left on either side of its inset.
 
-  // Track which screens have been built to enable lazy loading
-  final Set<int> _builtScreens = {0};
+  // Track which screens have been built to enable lazy loading, keyed by tab
+  // id so toggling the online tab cannot make one screen stand in for another.
+  final Set<String> _builtScreens = {'home'};
+
+  /// The destinations for the current build, so tap handlers index the same
+  /// list the dock and rail drew.
+  List<_ShellTab> _visibleTabs = const [];
 
   /// True while the drawer is far enough open that chrome (scrim, panel) should
   /// stay mounted. A tiny leftover spring value must not keep a GestureDetector
@@ -154,13 +202,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _drawerController.value.abs() > 0.002;
 
   late final List<ScrollController> _scrollControllers;
-
-  List<Widget> get _screens => [
-        HomeScreen(scrollController: _scrollControllers[0]),
-        LibraryTabNavigator(scrollController: _scrollControllers[1]),
-        OnlineScreen(scrollController: _scrollControllers[2]),
-        ProfileScreen(scrollController: _scrollControllers[3]),
-      ];
 
   Future<void> _closeDrawer() async {
     if (!_isDrawerOpen &&
@@ -194,9 +235,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _onTabSelected(int index) {
+    if (index < 0 || index >= _visibleTabs.length) return;
+    final tab = _visibleTabs[index];
     if (index == _selectedIndex) {
-      if (_scrollControllers[index].hasClients) {
-        _scrollControllers[index].animateTo(
+      if (tab.controller.hasClients) {
+        tab.controller.animateTo(
           0,
           duration: MotionPolicy.read(context).duration(MotionTokens.medium),
           curve: MotionTokens.standardCurve,
@@ -206,7 +249,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       setState(() {
         _tabDirection = index > _selectedIndex ? 1 : -1;
         _selectedIndex = index;
-        _builtScreens.add(index);
+        _builtScreens.add(tab.id);
       });
     }
   }
@@ -376,6 +419,24 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final sidePanelOpen = ref.watch(_sidePanelOpenProvider);
     final topPadding = mediaQuery.padding.top;
 
+    final tabs = _visibleTabs = _tabs(context, settings.youtubeEnabled);
+    // The online tab can disappear; whatever was last in the list is always a
+    // valid landing spot for an index that no longer exists.
+    if (_selectedIndex >= tabs.length) _selectedIndex = tabs.length - 1;
+
+    ref.listen(settingsProvider.select((s) => s.youtubeEnabled),
+        (previous, next) {
+      if (previous == next || next) return;
+      final current = _selectedIndex < _visibleTabs.length
+          ? _visibleTabs[_selectedIndex].id
+          : '';
+      if (current != 'online') return;
+      setState(() {
+        _tabDirection = -1;
+        _selectedIndex = 0;
+      });
+    });
+
     final isSelectionMode =
         ref.watch(selectionProvider.select((s) => s.isSelectionMode));
     ref.listen(
@@ -407,11 +468,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listen(libraryNavigationProvider, (previous, next) {
       if (next == null) return;
       // Library is bottom-nav index 1.
-      if (_selectedIndex != 1 || !_builtScreens.contains(1)) {
+      if (_selectedIndex != 1 || !_builtScreens.contains('library')) {
         setState(() {
           _tabDirection = 1 > _selectedIndex ? 1 : -1;
           _selectedIndex = 1;
-          _builtScreens.add(1);
+          _builtScreens.add('library');
         });
       }
     });
@@ -443,17 +504,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
             },
             child: AmbientBackground(
               child: Stack(
-                children: _screens.asMap().entries.map((entry) {
+                children: tabs.asMap().entries.map((entry) {
                   final index = entry.key;
-                  final screen = entry.value;
-                  if (!_builtScreens.contains(index)) {
+                  final tab = entry.value;
+                  if (!_builtScreens.contains(tab.id)) {
                     // Only build if this screen has been selected before
                     return const SizedBox.shrink();
                   }
                   return TabSwitchTransition(
                     active: index == _selectedIndex,
                     direction: _tabDirection,
-                    child: screen,
+                    child: tab.screen,
                   );
                 }).toList(),
               ),
@@ -492,7 +553,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     : FloatingDock(
                         selectedIndex: _selectedIndex,
                         onSelected: _onTabSelected,
-                        items: _navItemsFor(context.l10n),
+                        items: [for (final tab in tabs) tab.nav],
                         key: _dockKey,
                         autoCollapse: settings.autoHideBottomBarOnScroll,
                       ),
@@ -598,6 +659,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     _WideNavRail(
                       selectedIndex: _selectedIndex,
                       onSelected: _onTabSelected,
+                      items: [for (final tab in tabs) tab.nav],
                       accent: accent,
                       onSearch: openSearch,
                       onSettings: openSettings,
@@ -658,6 +720,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 class _WideNavRail extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final List<AppNavItem> items;
   final Color accent;
   final VoidCallback? onSearch;
   final VoidCallback? onSettings;
@@ -665,6 +728,7 @@ class _WideNavRail extends StatelessWidget {
   const _WideNavRail({
     required this.selectedIndex,
     required this.onSelected,
+    required this.items,
     required this.accent,
     this.onSearch,
     this.onSettings,
@@ -684,9 +748,9 @@ class _WideNavRail extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: AppTokens.s4),
-            for (var i = 0; i < 4; i++)
+            for (var i = 0; i < items.length; i++)
               _WideNavDestination(
-                index: i,
+                item: items[i],
                 selected: i == selectedIndex,
                 accent: accent,
                 onTap: () => onSelected(i),
@@ -777,13 +841,13 @@ class _WideNavAction extends StatelessWidget {
 }
 
 class _WideNavDestination extends StatelessWidget {
-  final int index;
+  final AppNavItem item;
   final bool selected;
   final Color accent;
   final VoidCallback onTap;
 
   const _WideNavDestination({
-    required this.index,
+    required this.item,
     required this.selected,
     required this.accent,
     required this.onTap,
@@ -791,12 +855,6 @@ class _WideNavDestination extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = switch (index) {
-      0 => (AppIcons.home, context.l10n.shellNavHome),
-      1 => (AppIcons.library, context.l10n.libraryTitle),
-      2 => (AppIcons.musicNote, context.l10n.onlineTab),
-      _ => (AppIcons.person, context.l10n.profileTitle),
-    };
     final iconColor = selected ? accent : AppTokens.fg(AppTokens.aTertiary);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
@@ -819,7 +877,7 @@ class _WideNavDestination extends StatelessWidget {
               ),
               alignment: Alignment.center,
               child: AppIcon(
-                data.$1,
+                item.icon,
                 size: AppTokens.iconMd,
                 color: iconColor,
                 strokeWidth: selected
@@ -829,7 +887,7 @@ class _WideNavDestination extends StatelessWidget {
             ),
             const SizedBox(height: AppTokens.s1),
             Text(
-              data.$2,
+              item.label,
               style: AppTokens.meta(context).copyWith(
                 color: iconColor,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,

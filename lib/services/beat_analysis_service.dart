@@ -10,9 +10,11 @@ import 'package:path/path.dart' as p;
 
 import '../domain/models/beat_map.dart';
 import '../domain/services/beat_analysis.dart';
+import '../models/song.dart';
 import 'cache_service.dart';
 import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
+import 'online_audio_cache.dart';
 
 /// Produces and caches the [BeatMap] for a song.
 ///
@@ -36,6 +38,14 @@ class BeatAnalysisService {
 
   final Map<String, Future<BeatMap?>> _inFlight = {};
 
+  final StreamController<String> _analyzed =
+      StreamController<String>.broadcast();
+
+  /// Filenames whose map just landed in the cache. A streamed track is only
+  /// decodable once its download finished, which can be well after the screen
+  /// asked for a map, so consumers re-read when their track shows up here.
+  Stream<String> get analyzedFilenames => _analyzed.stream;
+
   /// Bounds how much speculative work can pile up if the user skips tracks
   /// rapidly. Prefetches beyond this are dropped rather than queued.
   static const int _maxQueuedPrefetch = 2;
@@ -55,6 +65,95 @@ class BeatAnalysisService {
       return null;
     }
   }
+
+  /// The [BeatMap] for [song], analysing it if needed.
+  ///
+  /// A streamed track has no local file to decode and `song.url` is an http
+  /// URL, so the map is built from its cached download. The first play of a
+  /// track writes that download while it streams, so this waits for it: the
+  /// map then arrives seconds into playback instead of never.
+  Future<BeatMap?> analyzeSong(Song song) async {
+    if (!song.isRemote) return analyze(song.filename, song.url);
+
+    final cached = await readCached(song.filename);
+    if (cached != null) return cached;
+    final id = song.isYoutube ? song.remoteId : null;
+    if (id == null || id.isEmpty) return null;
+
+    final file = await _streamedFile(id);
+    if (file == null) return null;
+    return analyze(song.filename, file.path);
+  }
+
+  /// Speculatively analyses [song] if its audio is already on disk.
+  ///
+  /// Unlike [analyzeSong] this never waits for a download: it is called on
+  /// every track change, including the speculative look-ahead, and a pending
+  /// wait per skipped track would pile up.
+  void prefetchSong(Song song) {
+    if (!song.isRemote) {
+      prefetch(song.filename, song.url);
+      return;
+    }
+    final id = song.isYoutube ? song.remoteId : null;
+    if (id == null || id.isEmpty || _inFlight.containsKey(song.filename)) {
+      return;
+    }
+    if (_queuedPrefetch >= _maxQueuedPrefetch) return;
+
+    _queuedPrefetch++;
+    unawaited(() async {
+      try {
+        final file = await OnlineAudioCache.instance
+            .completeFile(OnlineAudioCache.providerYouTube, id);
+        if (file == null) return;
+        if (await readCached(song.filename) != null) return;
+        await analyze(song.filename, file.path);
+      } catch (e) {
+        debugPrint(
+            'BeatAnalysisService: prefetch failed for ${song.filename}: $e');
+      } finally {
+        _queuedPrefetch--;
+      }
+    }());
+  }
+
+  /// The complete download for [id], waiting for it to finish when it is still
+  /// on its way. Returns null if nothing arrives within [_downloadWait].
+  ///
+  /// The subscription is opened before the file is checked, so a download that
+  /// finishes between the check and the wait cannot be missed.
+  Future<File?> _streamedFile(String id) async {
+    final cache = OnlineAudioCache.instance;
+    final done = Completer<void>();
+    late final StreamSubscription<String> sub;
+    sub = cache.completions.listen((completed) {
+      if (completed != id || done.isCompleted) return;
+      done.complete();
+      unawaited(sub.cancel());
+    });
+
+    Future<File?> finish() async {
+      await sub.cancel();
+      return cache.completeFile(OnlineAudioCache.providerYouTube, id);
+    }
+
+    final existing =
+        await cache.completeFile(OnlineAudioCache.providerYouTube, id);
+    if (existing != null) return finish();
+
+    try {
+      await done.future.timeout(_downloadWait);
+    } on TimeoutException {
+      await sub.cancel();
+      return null;
+    }
+    return finish();
+  }
+
+  /// A track longer than this is not going to finish while it is still worth
+  /// analysing; the next play asks again.
+  static const Duration _downloadWait = Duration(minutes: 20);
 
   /// The [BeatMap] for [filename], analysing and caching it if needed.
   ///
@@ -168,6 +267,7 @@ class BeatAnalysisService {
     try {
       final file = await _cacheService.getBeatMapCacheFile(filename);
       await file.writeAsString(jsonEncode(map.toJson()));
+      _analyzed.add(filename);
     } catch (e) {
       debugPrint('BeatAnalysisService: cache write failed for $filename: $e');
     }

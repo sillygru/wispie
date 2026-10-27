@@ -66,6 +66,14 @@ class OnlineAudioCache {
   Future<void>? _sweepInFlight;
   bool _sweptThisSession = false;
 
+  final StreamController<String> _completed =
+      StreamController<String>.broadcast();
+
+  /// Emits the id of every track whose download finished, so work that needs
+  /// the whole file (a beat map) can start the moment it exists rather than
+  /// waiting for the next track change.
+  Stream<String> get completions => _completed.stream;
+
   Future<Directory> directory() {
     return _directory ??= () async {
       final support = await getSupportDirectory();
@@ -106,14 +114,16 @@ class OnlineAudioCache {
     try {
       await File('${file.path}.ok').create();
       await file.setLastModified(DateTime.now());
+      final id = _idOf(p.basename(file.path));
       _index ??= {};
       _index![_keyFromFileName(p.basename(file.path))] = OnlineCacheEntry(
         provider: _providerOf(p.basename(file.path)),
-        id: _idOf(p.basename(file.path)) ?? '',
+        id: id ?? '',
         file: file,
         bytes: await file.length(),
         lastUsed: DateTime.now(),
       );
+      if (id != null && id.isNotEmpty) _completed.add(id);
       unawaited(_trimIfNeeded());
     } catch (error) {
       debugPrint(

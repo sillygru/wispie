@@ -15,6 +15,7 @@ import '../services/database_service.dart';
 import '../services/online_music_service.dart';
 import '../services/youtube_account_service.dart';
 import 'providers.dart';
+import 'settings_provider.dart';
 
 /// Signed-in state of the YouTube account.
 class YouTubeAccountNotifier extends AsyncNotifier<YouTubeAccountSnapshot> {
@@ -309,6 +310,9 @@ final youtubeAccountProvider =
 /// The account's playlists plus the synthetic liked-videos entry.
 final youtubeAccountPlaylistsProvider =
     FutureProvider<List<YouTubeAccountPlaylist>>((ref) async {
+  if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
+    return const [];
+  }
   final account = await ref.watch(youtubeAccountProvider.future);
   if (!account.signedIn) return const [];
   try {
@@ -324,8 +328,14 @@ final youtubeAccountPlaylistsProvider =
 });
 
 /// Local playlists that mirror an account playlist, keyed by local id.
+///
+/// Empty while the catalogue is off: a link badge and a "sync now" action would
+/// be the only trace of a feature the user disabled.
 final youtubePlaylistLinksProvider =
     FutureProvider<Map<String, YouTubePlaylistLink>>((ref) async {
+  if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
+    return const {};
+  }
   final links = await DatabaseService.instance.getYouTubePlaylistLinks();
   return {for (final link in links) link.localPlaylistId: link};
 });
@@ -345,6 +355,9 @@ final youtubePlaylistLinksProvider =
 /// steer it.
 final youtubeForYouTracksProvider =
     FutureProvider<List<OnlineTrack>>((ref) async {
+  if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
+    return const [];
+  }
   final songs = ref.watch(songsProvider).asData?.value ?? const <Song>[];
   final userData = ref.watch(userDataProvider);
   await ref.watch(youtubeAccountProvider.future);
@@ -439,6 +452,9 @@ String? _videoIdOf(String filename) {
 final youtubePlaylistTracksProvider =
     FutureProvider.family<List<YouTubePlaylistItem>, String>(
   (ref, playlistId) async {
+    if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
+      return const [];
+    }
     final account = await ref.watch(youtubeAccountProvider.future);
     if (!account.signedIn) return const [];
     final api = YouTubeAccountService.instance.libraryApi();

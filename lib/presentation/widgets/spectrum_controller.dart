@@ -80,6 +80,7 @@ class SpectrumController extends ChangeNotifier {
   Ticker? _ticker;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<String>? _beatMapSub;
   _LifecycleObserver? _observer;
 
   bool _wired = false;
@@ -171,6 +172,8 @@ class SpectrumController extends ChangeNotifier {
       _stateSub = player.playerStateStream.listen(_onPlayerState);
       _playingIntent?.addListener(_onPlayingIntent);
       _currentSong?.addListener(_loadBeatMap);
+      // A streamed track's map arrives with its download, not with the song.
+      _beatMapSub = _beatAnalysis?.analyzedFilenames.listen(_onBeatMapReady);
       PowerStateService.instance.powerSave.addListener(_onPowerSave);
       _onPowerSave();
       _observer = _LifecycleObserver(_onLifecycle);
@@ -184,6 +187,8 @@ class SpectrumController extends ChangeNotifier {
       _stateSub = null;
       _playingIntent?.removeListener(_onPlayingIntent);
       _currentSong?.removeListener(_loadBeatMap);
+      _beatMapSub?.cancel();
+      _beatMapSub = null;
       PowerStateService.instance.powerSave.removeListener(_onPowerSave);
       if (_observer != null) {
         WidgetsBinding.instance.removeObserver(_observer!);
@@ -292,9 +297,14 @@ class SpectrumController extends ChangeNotifier {
       return;
     }
 
-    final analyzed = await service.analyze(song.filename, song.url);
+    final analyzed = await service.analyzeSong(song);
     if (token != _beatMapToken) return;
     _beatMap = (analyzed?.hasBands ?? false) ? analyzed : null;
+  }
+
+  void _onBeatMapReady(String filename) {
+    if (filename != _beatMapFilename) return;
+    unawaited(_loadBeatMap());
   }
 
   void _onTick(Duration elapsed) {
@@ -394,6 +404,7 @@ class SpectrumController extends ChangeNotifier {
   void dispose() {
     _positionSub?.cancel();
     _stateSub?.cancel();
+    _beatMapSub?.cancel();
     _currentSong?.removeListener(_loadBeatMap);
     PowerStateService.instance.powerSave.removeListener(_onPowerSave);
     if (_observer != null) {

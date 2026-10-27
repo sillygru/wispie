@@ -177,6 +177,48 @@ abstract class AppLocalizations {
   /// **'Home sections, lists, quick actions'**
   String get settingsPageHomeNavigationSubtitle;
 
+  /// Title of the Online (YouTube) settings page
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get settingsPageOnlineTitle;
+
+  /// Subtitle for the Online settings page entry
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube catalogue and account'**
+  String get settingsPageOnlineSubtitle;
+
+  /// Settings group label for the YouTube catalogue options
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube'**
+  String get onlineSettingsGroup;
+
+  /// Label of the switch that turns the online catalogue on or off
+  ///
+  /// In en, this message translates to:
+  /// **'YouTube'**
+  String get settingsYoutubeEnabledTitle;
+
+  /// Explains what the YouTube switch controls
+  ///
+  /// In en, this message translates to:
+  /// **'Show the YouTube tab and play music from YouTube. Turning this off removes it entirely.'**
+  String get settingsYoutubeEnabledSubtitle;
+
+  /// Subtitle of the row that opens the YouTube account screen
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to import your playlists'**
+  String get settingsYoutubeAccountSubtitle;
+
+  /// Search keywords for the Online settings entries
+  ///
+  /// In en, this message translates to:
+  /// **'youtube,online,streaming,account,import'**
+  String get settingsKwOnline;
+
   /// Title of the Sync settings page
   ///
   /// In en, this message translates to:
