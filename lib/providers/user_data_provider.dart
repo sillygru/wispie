@@ -17,6 +17,9 @@ import '../domain/models/play_session.dart';
 class UserDataState {
   final List<String> favorites;
   final Map<String, Song> remoteSongs;
+
+  /// Streamed tracks saved to the library, keyed like every other set here.
+  final Set<String> libraryRemoteSongs;
   final List<String> suggestLess;
   final List<String> hidden;
   final List<Playlist> playlists;
@@ -35,6 +38,7 @@ class UserDataState {
   UserDataState({
     this.favorites = const [],
     this.remoteSongs = const {},
+    this.libraryRemoteSongs = const {},
     this.suggestLess = const [],
     this.hidden = const [],
     this.playlists = const [],
@@ -85,6 +89,21 @@ class UserDataState {
   bool isHidden(String filename) =>
       _hiddenKeys.contains(Filename.normalize(filename));
 
+  /// A streamed track in the library: saved directly, or hearted. Favourites
+  /// sync, so deriving from them is what keeps the library consistent across
+  /// devices instead of depending on a local-only flag.
+  bool isInRemoteLibrary(String filename) =>
+      libraryRemoteSongs.contains(Filename.normalize(filename)) ||
+      isFavorite(filename);
+
+  /// Every streamed track the library should list.
+  Set<String> get remoteLibraryFilenames => {
+        ...libraryRemoteSongs,
+        for (final filename in favorites)
+          if (filename.startsWith(Song.youtubePrefix))
+            Filename.normalize(filename),
+      };
+
   /// Checks if a song is part of a merged group
   bool isMerged(String filename) => _filenameToGroupId.containsKey(filename);
 
@@ -117,6 +136,7 @@ class UserDataState {
   UserDataState copyWith({
     List<String>? favorites,
     Map<String, Song>? remoteSongs,
+    Set<String>? libraryRemoteSongs,
     List<String>? suggestLess,
     List<String>? hidden,
     List<Playlist>? playlists,
@@ -130,6 +150,7 @@ class UserDataState {
     return UserDataState(
       favorites: favorites ?? this.favorites,
       remoteSongs: remoteSongs ?? this.remoteSongs,
+      libraryRemoteSongs: libraryRemoteSongs ?? this.libraryRemoteSongs,
       suggestLess: suggestLess ?? this.suggestLess,
       hidden: hidden ?? this.hidden,
       playlists: playlists ?? this.playlists,
@@ -223,6 +244,8 @@ class UserDataNotifier extends Notifier<UserDataState> {
     try {
       final localFavs = await DatabaseService.instance.getFavorites();
       final localRemoteSongs = await DatabaseService.instance.getRemoteSongs();
+      final localLibraryRemote =
+          await DatabaseService.instance.getLibraryRemoteFilenames();
       final localSL = await DatabaseService.instance.getSuggestLess();
       final localHidden = await DatabaseService.instance.getHidden();
       final localPlaylists = await DatabaseService.instance.getPlaylists();
@@ -257,7 +280,10 @@ class UserDataNotifier extends Notifier<UserDataState> {
             'filename': filename,
             'title': filename.split(':').last,
             'artist': '',
-            'is_available': false,
+            // Unknown metadata, not a known failure: playing it resolves the
+            // stream from the video id. Marking it unavailable made favourite
+            // rows silently unplayable until the track was played again.
+            'is_available': true,
           }),
         for (final song in localRemoteSongs) song.filename: song,
       };
@@ -265,6 +291,10 @@ class UserDataNotifier extends Notifier<UserDataState> {
       state = state.copyWith(
         favorites: localFavs,
         remoteSongs: remoteSongs,
+        libraryRemoteSongs: {
+          for (final filename in localLibraryRemote)
+            Filename.normalize(filename),
+        },
         suggestLess: localSL,
         hidden: localHidden,
         playlists: localPlaylists,
@@ -318,6 +348,46 @@ class UserDataNotifier extends Notifier<UserDataState> {
     await cacheRemoteSong(song.copyWith(isAvailable: false));
   }
 
+  /// Saves one streamed track into the library.
+  ///
+  /// The catalogue row goes in first: it is what keeps the title, artist and
+  /// cover after a restart, and what playback later resolves the stream from.
+  /// Returns false when the row could not be written, so callers can say so
+  /// instead of showing a track that is not really saved.
+  Future<bool> addSongToLibrary(Song song) async {
+    if (!song.isRemote) return false;
+    await cacheRemoteSong(song);
+    return _markInRemoteLibrary(song.filename);
+  }
+
+  Future<bool> _markInRemoteLibrary(String filename) async {
+    final saved =
+        await DatabaseService.instance.setRemoteSongInLibrary(filename, true);
+    if (!saved) return false;
+    state = state.copyWith(libraryRemoteSongs: {
+      ...state.libraryRemoteSongs,
+      Filename.normalize(filename),
+    });
+    return true;
+  }
+
+  /// Drops a streamed track out of the library, heart included: leaving the
+  /// heart behind would put it straight back on the next load.
+  Future<void> removeSongFromLibrary(String filename) async {
+    final key = Filename.normalize(filename);
+    final favorites = state.favorites
+        .where((favorite) => Filename.normalize(favorite) != key)
+        .toList();
+    if (favorites.length != state.favorites.length) {
+      await DatabaseService.instance.removeFavorite(
+          UserDataState._actualMatch(filename, state.favorites));
+    }
+    await DatabaseService.instance.setRemoteSongInLibrary(filename, false);
+    final next = {...state.libraryRemoteSongs}..remove(key);
+    state = state.copyWith(favorites: favorites, libraryRemoteSongs: next);
+    _updateManager();
+  }
+
   void _updateManager() {
     // Recommendation playlists are generated from listening data, so feeding
     // them back into shuffle weighting would amplify the engine's own output.
@@ -359,7 +429,15 @@ class UserDataNotifier extends Notifier<UserDataState> {
     Song? remoteSong,
   }) async {
     final metadata = remoteSong ?? state.remoteSongs[songFilename];
-    if (metadata?.isRemote == true) await cacheRemoteSong(metadata!);
+    if (metadata?.isRemote == true) {
+      // The favourite is the durable bit: a metadata write that fails must not
+      // take the heart down with it, since playing the track re-caches the row.
+      try {
+        await cacheRemoteSong(metadata!);
+      } catch (error) {
+        debugPrint('Favorite metadata cache failed: $error');
+      }
+    }
     final isFav = state.isFavorite(songFilename);
     final isSL = state.isSuggestLess(songFilename);
 
@@ -377,6 +455,16 @@ class UserDataNotifier extends Notifier<UserDataState> {
     } else {
       newFavs.add(songFilename);
       await DatabaseService.instance.addFavorite(songFilename);
+
+      // The row was cached above, so membership is one update: a favourite is
+      // in the library, and the row is what lets it play after a restart.
+      if (metadata?.isRemote == true) {
+        try {
+          await _markInRemoteLibrary(metadata!.filename);
+        } catch (error) {
+          debugPrint('Favorite library link failed: $error');
+        }
+      }
 
       // Remove from suggestLess if present
       if (isSL) {

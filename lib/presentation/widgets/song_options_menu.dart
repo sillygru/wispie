@@ -375,9 +375,34 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
 
   Widget _buildLibraryView() {
     final isLocalSong = widget.song?.isLocal ?? false;
+    final remoteSong = (widget.song?.isRemote ?? false) ? widget.song : null;
+    // Watched unconditionally: the watch must not depend on which song this is.
+    final isInRemoteLibrary = ref.watch(
+      userDataProvider.select(
+        (state) => state.isInRemoteLibrary(widget.songFilename),
+      ),
+    );
     return Column(
       key: const ValueKey(_SongMenuView.library),
       children: [
+        if (remoteSong != null)
+          _submenuEntry(
+            icon: AppIcons.collectionsBookmark,
+            iconColor:
+                isInRemoteLibrary ? AppTokens.accentOf(context, ref) : null,
+            label: isInRemoteLibrary
+                ? l10n.onlineLibraryRemove
+                : l10n.onlineLibraryAdd,
+            subtitle: l10n.songMenuLibrarySaveHint,
+            onTap: () {
+              _closePopup();
+              songActionToggleRemoteLibrary(
+                widget.parentContext,
+                ref,
+                remoteSong,
+              );
+            },
+          ),
         if (isLocalSong) ...[
           _submenuEntry(
             icon: AppIcons.imageSearch,

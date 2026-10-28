@@ -655,10 +655,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                                 ref.read(songsByFilenameProvider);
                             final selectedSong =
                                 songByFilename[song.filename] ?? song;
-                            if (selectedSong.isRemote &&
-                                !selectedSong.isAvailable) {
-                              return;
-                            }
+                            // Availability is resolved when the stream is
+                            // fetched, so a remote row is always worth the
+                            // attempt: refusing here made a saved track look
+                            // like a dead button.
                             final contextSongs = visibleSongs
                                 .map((item) =>
                                     songByFilename[item.filename] ?? item)

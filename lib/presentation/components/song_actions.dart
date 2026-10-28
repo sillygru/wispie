@@ -57,6 +57,39 @@ void songActionToggleFavorite(
   );
 }
 
+/// Saves a streamed track to the library, or drops it out again. One path for
+/// every surface, so the feed, a YouTube playlist and the player's menu cannot
+/// disagree about what "in the library" means.
+Future<void> songActionToggleRemoteLibrary(
+  BuildContext host,
+  WidgetRef ref,
+  Song song,
+) async {
+  final l10n = AppLocalizations.of(host);
+  final notifier = ref.read(userDataProvider.notifier);
+  final wasInLibrary =
+      ref.read(userDataProvider).isInRemoteLibrary(song.filename);
+  if (wasInLibrary) {
+    await notifier.removeSongFromLibrary(song.filename);
+  } else if (!await notifier.addSongToLibrary(song)) {
+    if (!host.mounted) return;
+    appSnack(
+      host,
+      l10n.onlineLibraryAddFailed(song.title),
+      tone: AppTone.danger,
+    );
+    return;
+  }
+  if (!host.mounted) return;
+  appSnack(
+    host,
+    wasInLibrary
+        ? l10n.onlineLibraryRemoved(song.title)
+        : l10n.onlineLibraryAdded(song.title),
+    tone: wasInLibrary ? AppTone.neutral : AppTone.success,
+  );
+}
+
 void songActionToggleSuggestLess(
   BuildContext host,
   WidgetRef ref,

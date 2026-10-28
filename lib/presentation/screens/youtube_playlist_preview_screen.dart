@@ -12,6 +12,7 @@ import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
 import '../components/app_screen_header.dart';
+import '../components/song_actions.dart';
 import '../components/ambient_scaffold.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
@@ -99,6 +100,10 @@ class _YouTubePlaylistPreviewScreenState
       );
     }
   }
+
+  /// Saves one track from the playlist into the library, or drops it out.
+  Future<void> _toggleLibrary(Song song) =>
+      songActionToggleRemoteLibrary(context, ref, song);
 
   Future<void> _play(Song song, List<Song> queue) async {
     try {
@@ -222,6 +227,10 @@ class _YouTubePlaylistPreviewScreenState
                 );
               }
               final song = songs[index - 1];
+              final inLibrary = ref.watch(
+                userDataProvider
+                    .select((state) => state.isInRemoteLibrary(song.filename)),
+              );
               return AppListRow(
                 key: ValueKey('youtube-preview-${song.filename}'),
                 tall: true,
@@ -236,6 +245,17 @@ class _YouTubePlaylistPreviewScreenState
                   width: 48,
                   height: 48,
                   borderRadius: AppTokens.rSm,
+                ),
+                trailing: IconButton(
+                  tooltip: inLibrary
+                      ? l10n.onlineLibraryRemove
+                      : l10n.onlineLibraryAdd,
+                  onPressed: () => _toggleLibrary(song),
+                  icon: AppIcon(
+                    AppIcons.collectionsBookmark,
+                    size: AppTokens.iconMd,
+                    color: inLibrary ? AppTokens.accentOf(context, ref) : null,
+                  ),
                 ),
               );
             },

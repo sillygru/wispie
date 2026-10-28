@@ -8199,6 +8199,42 @@ abstract class AppLocalizations {
   /// **'Add to playlist'**
   String get onlineAddToPlaylist;
 
+  /// Save a single streamed track to the library
+  ///
+  /// In en, this message translates to:
+  /// **'Add to library'**
+  String get onlineLibraryAdd;
+
+  /// Drop a single streamed track out of the library
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from library'**
+  String get onlineLibraryRemove;
+
+  /// Confirmation after saving a streamed track to the library
+  ///
+  /// In en, this message translates to:
+  /// **'Added {title} to your library'**
+  String onlineLibraryAdded(String title);
+
+  /// Confirmation after removing a streamed track from the library
+  ///
+  /// In en, this message translates to:
+  /// **'Removed {title} from your library'**
+  String onlineLibraryRemoved(String title);
+
+  /// Shown when a streamed track could not be written to the library
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save {title} to your library'**
+  String onlineLibraryAddFailed(String title);
+
+  /// Hint under the save/remove streamed track row in the song menu
+  ///
+  /// In en, this message translates to:
+  /// **'Keep this streamed track in your library'**
+  String get songMenuLibrarySaveHint;
+
   /// Search screen empty state before typing
   ///
   /// In en, this message translates to:

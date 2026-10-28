@@ -123,9 +123,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   String _filter = '';
 
   /// Collection shown in the wide tracks table: null is All, otherwise
-  /// [_favoritesKey] or a playlist id.
+  /// [_favoritesKey], [_onlineKey] or a playlist id.
   String? _collection;
   static const String _favoritesKey = '__favorites__';
+  static const String _onlineKey = '__online__';
 
   @override
   void dispose() {
@@ -378,11 +379,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         .whereType<Song>()
         .toList();
 
+    // Streamed tracks in the library (saved individually or hearted), resolved
+    // through the same filename map the rest of the library uses.
+    List<Song> savedOnlineSongs() => userData.remoteLibraryFilenames
+        .map((filename) => songsByFilename[filename])
+        .whereType<Song>()
+        .toList();
+    final onlineSongs = savedOnlineSongs();
+
     final List<Song> tableSource = !inlineCollections || _collection == null
         ? immediateSongs
         : _collection == _favoritesKey
             ? favoritesSongs()
-            : songsOfPlaylist(_collection!);
+            : _collection == _onlineKey
+                ? onlineSongs
+                : songsOfPlaylist(_collection!);
     final tableSongs = query.isEmpty
         ? tableSource
         : tableSource
@@ -392,6 +403,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     void selectCollection(String? key) => setState(() => _collection = key);
     final showFavorites =
         isRoot && (query.isEmpty || 'favorites'.contains(query));
+    // Kept while it is the open collection even if the last track was just
+    // removed, so the folder does not vanish from under the selection.
+    final showOnline = isRoot &&
+        (onlineSongs.isNotEmpty || _collection == _onlineKey) &&
+        (query.isEmpty || 'youtube'.contains(query));
     final showMerged =
         isRoot && (query.isEmpty || 'merged songs'.contains(query));
 
@@ -434,7 +450,41 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         cursor -= 1;
       }
 
-      // 2. Merged Songs Folder (at root only)
+      // 2. Streamed tracks saved to the library (at root only)
+      if (showOnline) {
+        if (cursor == 0) {
+          return _desktopRow(
+            child: AppListRow(
+              leading: AppRowIcon(
+                icon: AppIcons.collectionsBookmark,
+                color: AppTokens.accentOf(context, ref),
+              ),
+              title: context.l10n.onlineTab,
+              subtitleWidget: CollectionDurationDisplay(
+                songs: onlineSongs,
+                showSongCount: true,
+                compact: true,
+              ),
+              isActive: inlineCollections && _collection == _onlineKey,
+              onTap: () {
+                if (inlineCollections) {
+                  selectCollection(_onlineKey);
+                  return;
+                }
+                context.pushApp(
+                  SongListScreen(
+                    title: context.l10n.onlineTab,
+                    songs: onlineSongs,
+                  ),
+                );
+              },
+            ),
+          );
+        }
+        cursor -= 1;
+      }
+
+      // 3. Merged Songs Folder (at root only)
       if (showMerged) {
         if (cursor == 0) {
           final mergedCount = userData.mergedGroups.length;
@@ -610,6 +660,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
     final itemCount = (isRoot
             ? ((showFavorites ? 1 : 0) +
+                (showOnline ? 1 : 0) +
                 (showMerged ? 1 : 0) +
                 visiblePlaylists.length)
             : 0) +
@@ -619,6 +670,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     if (isRoot) {
       if (wideFolders) {
         final collectionCount = (showFavorites ? 1 : 0) +
+            (showOnline ? 1 : 0) +
             (showMerged ? 1 : 0) +
             visiblePlaylists.length +
             visibleSubFolders.length;

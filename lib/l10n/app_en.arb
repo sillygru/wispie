@@ -6310,6 +6310,45 @@
   "@onlineAddToPlaylist": {
     "description": "Add an online track to a local playlist"
   },
+  "onlineLibraryAdd": "Add to library",
+  "@onlineLibraryAdd": {
+    "description": "Save a single streamed track to the library"
+  },
+  "onlineLibraryRemove": "Remove from library",
+  "@onlineLibraryRemove": {
+    "description": "Drop a single streamed track out of the library"
+  },
+  "onlineLibraryAdded": "Added {title} to your library",
+  "@onlineLibraryAdded": {
+    "description": "Confirmation after saving a streamed track to the library",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "onlineLibraryRemoved": "Removed {title} from your library",
+  "@onlineLibraryRemoved": {
+    "description": "Confirmation after removing a streamed track from the library",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "onlineLibraryAddFailed": "Could not save {title} to your library",
+  "@onlineLibraryAddFailed": {
+    "description": "Shown when a streamed track could not be written to the library",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "songMenuLibrarySaveHint": "Keep this streamed track in your library",
+  "@songMenuLibrarySaveHint": {
+    "description": "Hint under the save/remove streamed track row in the song menu"
+  },
   "searchEmptyTitle": "Search your music collection",
   "@searchEmptyTitle": {
     "description": "Search screen empty state before typing"

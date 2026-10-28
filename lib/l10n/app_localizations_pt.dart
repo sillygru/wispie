@@ -4942,6 +4942,31 @@ class AppLocalizationsPt extends AppLocalizations {
   String get onlineAddToPlaylist => 'Adicionar à playlist';
 
   @override
+  String get onlineLibraryAdd => 'Add to library';
+
+  @override
+  String get onlineLibraryRemove => 'Remove from library';
+
+  @override
+  String onlineLibraryAdded(String title) {
+    return 'Added $title to your library';
+  }
+
+  @override
+  String onlineLibraryRemoved(String title) {
+    return 'Removed $title from your library';
+  }
+
+  @override
+  String onlineLibraryAddFailed(String title) {
+    return 'Could not save $title to your library';
+  }
+
+  @override
+  String get songMenuLibrarySaveHint =>
+      'Keep this streamed track in your library';
+
+  @override
   String get searchEmptyTitle => 'Busque na sua coleção de músicas';
 
   @override

@@ -84,6 +84,7 @@ class DatabaseService {
           if (oldV < 8) await upgradeUserDataFrom7To8(db);
           if (oldV < 9) await upgradeUserDataFrom8To9(db);
           if (oldV < 10) await upgradeUserDataFrom9To10(db);
+          if (oldV < 11) await upgradeUserDataFrom10To11(db);
         },
       );
     } catch (e) {
@@ -932,6 +933,16 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return;
+    // Membership is user data, so a metadata refresh must not overwrite it.
+    final existing = await db.query(
+      'remote_song',
+      columns: ['in_library'],
+      where: 'filename = ?',
+      whereArgs: [song.filename],
+      limit: 1,
+    );
+    final inLibrary =
+        existing.isEmpty ? 0 : (existing.first['in_library'] as int? ?? 0);
     await db.insert(
       'remote_song',
       {
@@ -942,10 +953,41 @@ class DatabaseService {
         'cover_url': song.coverUrl,
         'duration_ms': song.duration?.inMilliseconds,
         'is_available': song.isAvailable ? 1 : 0,
+        'in_library': inLibrary,
         'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  /// Streamed tracks the listener saved to the library, by filename.
+  Future<Set<String>> getLibraryRemoteFilenames() async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return <String>{};
+    final rows = await db.query(
+      'remote_song',
+      columns: ['filename'],
+      where: 'in_library = 1',
+    );
+    return {for (final row in rows) row['filename'] as String};
+  }
+
+  /// Marks a streamed track as part of the library, or drops it out again.
+  ///
+  /// The row itself is the metadata, so a track without one cannot be saved:
+  /// callers cache it first. Returns false when no row matched.
+  Future<bool> setRemoteSongInLibrary(String filename, bool inLibrary) async {
+    await _ensureInitialized();
+    final db = _userDataDatabase;
+    if (db == null) return false;
+    final updated = await db.update(
+      'remote_song',
+      {'in_library': inLibrary ? 1 : 0},
+      where: 'filename = ?',
+      whereArgs: [filename],
+    );
+    return updated > 0;
   }
 
   Future<List<Song>> getRemoteSongs() async {

@@ -20,6 +20,7 @@ import '../../providers/providers.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
 import '../components/app_surface.dart';
+import '../components/song_actions.dart';
 
 /// The YouTube tab: a search field, a recommendations feed and the account's
 /// playlists.
@@ -140,6 +141,10 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     showPlaylistSelector(context, ref, song.filename);
   }
 
+  /// Saves this one track to the library, or drops it out again.
+  Future<void> _toggleLibrary(OnlineTrack track) =>
+      songActionToggleRemoteLibrary(context, ref, track.toSong());
+
   void _showPlaybackError(Object error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -171,6 +176,10 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     final song = track.toSong();
     final isFavorite = ref.watch(
       userDataProvider.select((state) => state.isFavorite(song.filename)),
+    );
+    final inLibrary = ref.watch(
+      userDataProvider
+          .select((state) => state.isInRemoteLibrary(song.filename)),
     );
     return AppListRow(
       key: ValueKey('youtube-track-${track.id}'),
@@ -233,6 +242,20 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
                       onTap: () {
                         Navigator.pop(sheetContext);
                         _addToPlaylist(track);
+                      },
+                    ),
+                    ListTile(
+                      leading: AppIcon(
+                        AppIcons.collectionsBookmark,
+                        color:
+                            inLibrary ? AppTokens.accentOf(context, ref) : null,
+                      ),
+                      title: Text(inLibrary
+                          ? context.l10n.onlineLibraryRemove
+                          : context.l10n.onlineLibraryAdd),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _toggleLibrary(track);
                       },
                     ),
                   ],
