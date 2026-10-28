@@ -12,13 +12,17 @@ import '../../services/audio_player_manager.dart';
 import '../../services/display_refresh_service.dart';
 import '../../services/power_state_service.dart';
 import '../../services/screen_wake_lock_service.dart';
+import '../../services/sleep_timer_service.dart';
 import '../../l10n/l10n.dart';
 import '../../theme/app_theme.dart';
+import '../components/app_icon.dart';
 import '../components/player_segmented_pill.dart';
 import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/full_bleed_player_screen.dart';
 import '../player_panel/player_panel.dart';
+import '../routes/app_page_route.dart';
+import '../tokens/app_icons.dart';
 import '../tokens/player_tokens.dart';
 import '../utils/wide_layout.dart';
 import '../components/track_progress_bar.dart';
@@ -34,6 +38,7 @@ import '../widgets/song_options_menu.dart';
 import 'player/lyrics_pane.dart';
 import 'player/now_playing_pane.dart';
 import 'player/queue_pane.dart';
+import 'sleep_timer_screen.dart';
 
 enum PlayerPane { lyrics, player, queue }
 
@@ -633,7 +638,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   Widget _buildWideContent(BuildContext context, Song song, Color accent) {
     return Column(
       children: [
-        _buildWideHeader(context, song),
+        _buildWideHeader(context, song, accent),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -729,7 +734,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   /// Desktop top bar: no touch drag handle or dismiss-drag, and no title (the
   /// cover column already carries it).
-  Widget _buildWideHeader(BuildContext context, Song song) {
+  Widget _buildWideHeader(BuildContext context, Song song, Color accent) {
     return PlayerRouteEntrance(
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -745,6 +750,21 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
               tooltip: context.l10n.playerCloseEsc,
             ),
             const Spacer(),
+            // The nav rail is behind this panel, so the timer needs its own way
+            // in here — and this is where listening is actually happening.
+            ListenableBuilder(
+              listenable: SleepTimerService.instance,
+              builder: (context, _) => IconButton(
+                icon: AppIcon(
+                  AppIcons.bedtime,
+                  color: SleepTimerService.instance.isActive
+                      ? accent
+                      : Colors.white,
+                ),
+                tooltip: context.l10n.sleepTimerTitle,
+                onPressed: () => context.pushApp(const SleepTimerScreen()),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.more_vert_rounded),
               color: Colors.white,

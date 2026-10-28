@@ -44,54 +44,59 @@ class _SleepTimerScreenState extends ConsumerState<SleepTimerScreen> {
 
     return Scaffold(
       appBar: AppTopBar(title: context.l10n.sleepTimerTitle),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          AppTokens.s4,
-          0,
-          AppTokens.s4,
-          AppTokens.scrollBottomInset,
-        ),
-        children: [
-          AppSectionHeader(
-            label: context.l10n.sleepTimerModeLabel,
-            padding: const EdgeInsets.fromLTRB(
-              AppTokens.s3,
-              AppTokens.s3,
-              AppTokens.s3,
-              AppTokens.s2,
-            ),
+      // The timer can also end on its own, so the active state comes from the
+      // service rather than from this screen's local setState calls.
+      body: ListenableBuilder(
+        listenable: SleepTimerService.instance,
+        builder: (context, _) => ListView(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s4,
+            0,
+            AppTokens.s4,
+            AppTokens.scrollBottomInset,
           ),
-          _buildModeSelector(accent),
-          if (_mode == SleepTimerMode.playForTime ||
-              _mode == SleepTimerMode.loopCurrent) ...[
-            _buildStepperSection(
-              label: context.l10n.sleepTimerDurationLabel,
-              valueLabel: context.l10n.settingsDurationMinutes(_minutes),
-              accent: accent,
-              options: _minuteOptions,
-              selected: _minutes,
-              suffix: context.l10n.sleepTimerMinSuffix,
-              width: 62,
-              onSelected: (value) => setState(() => _minutes = value),
+          children: [
+            AppSectionHeader(
+              label: context.l10n.sleepTimerModeLabel,
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s3,
+                AppTokens.s3,
+                AppTokens.s3,
+                AppTokens.s2,
+              ),
             ),
-            const SizedBox(height: AppTokens.s4),
-            _buildFinishToggle(),
+            _buildModeSelector(accent),
+            if (_mode == SleepTimerMode.playForTime ||
+                _mode == SleepTimerMode.loopCurrent) ...[
+              _buildStepperSection(
+                label: context.l10n.sleepTimerDurationLabel,
+                valueLabel: context.l10n.settingsDurationMinutes(_minutes),
+                accent: accent,
+                options: _minuteOptions,
+                selected: _minutes,
+                suffix: context.l10n.sleepTimerMinSuffix,
+                width: 62,
+                onSelected: (value) => setState(() => _minutes = value),
+              ),
+              const SizedBox(height: AppTokens.s4),
+              _buildFinishToggle(),
+            ],
+            if (_mode == SleepTimerMode.stopAfterTracks)
+              _buildStepperSection(
+                label: context.l10n.sleepTimerTracksLabel,
+                valueLabel: context.l10n.libraryTrackCount(_tracks),
+                accent: accent,
+                options: _trackOptions,
+                selected: _tracks,
+                width: 54,
+                onSelected: (value) => setState(() => _tracks = value),
+              ),
+            if (_mode == SleepTimerMode.stopAfterCurrent)
+              _buildCurrentSongInfo(currentSong),
+            const SizedBox(height: AppTokens.s6),
+            _buildActionButtons(),
           ],
-          if (_mode == SleepTimerMode.stopAfterTracks)
-            _buildStepperSection(
-              label: context.l10n.sleepTimerTracksLabel,
-              valueLabel: context.l10n.libraryTrackCount(_tracks),
-              accent: accent,
-              options: _trackOptions,
-              selected: _tracks,
-              width: 54,
-              onSelected: (value) => setState(() => _tracks = value),
-            ),
-          if (_mode == SleepTimerMode.stopAfterCurrent)
-            _buildCurrentSongInfo(currentSong),
-          const SizedBox(height: AppTokens.s6),
-          _buildActionButtons(),
-        ],
+        ),
       ),
     );
   }

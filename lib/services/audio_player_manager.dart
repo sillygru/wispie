@@ -251,6 +251,18 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   // Feature coordination state
   bool _wasPausedByMute = false;
 
+  // Sleep-timer parking: armed until the track boundary, then held while the
+  // next track is muted, paused and rewound.
+  bool _parkPending = false;
+  bool _parking = false;
+  // Whether anything has played since the park was armed, so a paused player
+  // arms the park without immediately resolving it.
+  bool _parkSawPlayback = false;
+  Completer<void>? _parkCompleter;
+  StreamSubscription<int?>? _parkIndexSub;
+  StreamSubscription<PlayerState>? _parkStateSub;
+  LoopMode? _parkSavedLoopMode;
+
   // New stats counters
   double _foregroundDuration = 0.0;
   double _backgroundDuration = 0.0;
@@ -321,6 +333,120 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   /// When the current track's listen began, or null before one has started.
   DateTime? get currentListenStartedAt => _currentListenStartedAt;
+
+  /// Plays the current track out, then leaves the queue parked on the next one:
+  /// loaded, rewound to zero and paused, so no part of it is heard.
+  ///
+  /// Resolves once the queue is parked, once it runs out of tracks first, or on
+  /// [cancelParkAfterCurrentTrack]. This is how the sleep timer ends a session:
+  /// cutting the last track off early loses the ending, and stopping exactly at
+  /// the boundary lets the next track's first frames through.
+  Future<void> parkAfterCurrentTrack() async {
+    final pending = _parkCompleter;
+    if (pending != null) return pending.future;
+
+    final completer = Completer<void>();
+    _parkCompleter = completer;
+    _parkPending = true;
+    _parkSawPlayback = false;
+
+    // A gap pauses a second before the end and then skips ahead; let the track
+    // play out so the park lands on a real boundary instead.
+    if (_isInGap) {
+      _cancelGap();
+      unawaited(_player.play());
+    }
+
+    // Repeat-one would replay the track instead of ending it, so the park
+    // would wait forever. Loop once more, then stop on the next track.
+    if (_player.loopMode == LoopMode.one) {
+      _parkSavedLoopMode = LoopMode.one;
+      try {
+        await _player.setLoopMode(LoopMode.off);
+      } catch (e) {
+        debugPrint('AudioPlayerManager: failed to clear loop for park: $e');
+      }
+    }
+
+    final startIndex = _player.currentIndex;
+    if (startIndex == null) {
+      _releasePark();
+      return completer.future;
+    }
+
+    _parkIndexSub = _player.currentIndexStream.listen((index) {
+      if (!_parkPending || index == null || index == startIndex) return;
+      unawaited(_park());
+    });
+
+    _parkStateSub = _player.playerStateStream.listen((state) {
+      if (!_parkPending) return;
+      if (state.playing) {
+        _parkSawPlayback = true;
+        return;
+      }
+      // Nothing left to play out: the queue ended, or the listener paused it.
+      // A park armed while paused waits instead, so "stop after this song"
+      // survives a break the listener takes before the song ends.
+      if (_parkSawPlayback ||
+          state.processingState == ProcessingState.completed) {
+        _releasePark();
+      }
+    });
+
+    return completer.future;
+  }
+
+  /// Disarms a park that has not happened yet and puts the volume back.
+  void cancelParkAfterCurrentTrack() {
+    if (!_parkPending) return;
+    _releasePark();
+    _setVolumeWithSafety(userVolumeNotifier.value);
+  }
+
+  Future<void> _park() async {
+    if (_parking) return;
+    _parking = true;
+    final volume = userVolumeNotifier.value;
+    try {
+      // Mute first: the platform can already hold frames of the next track, and
+      // pausing alone would let those through.
+      await _player.setVolume(0);
+      await _player.pause();
+      await _player.seek(Duration.zero);
+    } catch (e) {
+      debugPrint('AudioPlayerManager: failed to park the queue: $e');
+    }
+    _holdMutedUntilNextTrack = false;
+    _isFadingOut = false;
+    _parking = false;
+    _releasePark();
+    _setVolumeWithSafety(volume);
+    await savePlaybackState();
+  }
+
+  void _releasePark() {
+    _parkPending = false;
+    _parkSawPlayback = false;
+    _parkIndexSub?.cancel();
+    _parkIndexSub = null;
+    _parkStateSub?.cancel();
+    _parkStateSub = null;
+
+    final loopMode = _parkSavedLoopMode;
+    _parkSavedLoopMode = null;
+    if (loopMode != null) {
+      try {
+        _player.setLoopMode(loopMode);
+      } catch (e) {
+        debugPrint('AudioPlayerManager: failed to restore loop mode: $e');
+      }
+    }
+
+    final completer = _parkCompleter;
+    _parkCompleter = null;
+    if (completer != null && !completer.isCompleted) completer.complete();
+  }
 
   PlaybackMediaMode get preferredMediaMode => preferredMediaModeNotifier.value;
   PlaybackMediaMode get effectiveMediaMode => effectiveMediaModeNotifier.value;
@@ -816,8 +942,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
     _skipStalledTail(position, remaining);
 
-    // Handle gap mode - pause before end, resume after delay
+    // Handle gap mode - pause before end, resume after delay. A park owns the
+    // end of the track, so no gap may cut it short.
     if (settings.delayDuration > 0 &&
+        !_parkPending &&
         !_isInGap &&
         _player.playing &&
         _gapTimer == null) {
@@ -867,12 +995,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           _isFadingOut = false;
           _holdMutedUntilNextTrack = false;
 
-          // Always reset volume on song change
-          _setVolumeWithSafety(userVolumeNotifier.value);
-
-          // Handle fade in for new song
-          if (settings.fadeInDuration > 0) {
-            _startFadeIn(settings.fadeInDuration);
+          // A parked track stays silent: its volume comes back only when a park
+          // settles, and a fade-in belongs to playback, which has not started.
+          if (!_parkPending) {
+            _setVolumeWithSafety(userVolumeNotifier.value);
+            if (settings.fadeInDuration > 0 && _player.playing) {
+              _startFadeIn(settings.fadeInDuration);
+            }
           }
         }
       }
@@ -881,7 +1010,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     // Handle completion - apply pending queue if exists, reset volume
     _track(_player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
-        if (!_holdMutedUntilNextTrack) {
+        if (!_holdMutedUntilNextTrack && !_parkPending) {
           _setVolumeWithSafety(userVolumeNotifier.value);
         }
         _isFadingOut = false;
@@ -1254,6 +1383,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   void _handleManualIntervention() {
+    // A park pauses on purpose; its volume is restored when it settles, and
+    // cancelling the transition here would unmute the parked track.
+    if (_parkPending) return;
     // User manually paused - cancel any ongoing transitions
     _cancelTransitions();
   }
@@ -3742,6 +3874,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _trackedSubscriptions.clear();
     _fadeTimer?.cancel();
     _gapTimer?.cancel();
+    _releasePark();
     queuePlayedRevision.dispose();
     _clearGapState();
     // Flush before the player goes away: the state is read from it, and a

@@ -12,16 +12,19 @@ enum SleepTimerMode {
   stopAfterTracks,
 }
 
-/// Service that manages sleep timer functionality
-class SleepTimerService {
+/// Decides when listening should end; [AudioPlayerManager] performs the ending.
+///
+/// The manager owns the playhead and the track boundary, so it can play the
+/// current song out and leave the queue parked on the next track. Doing that
+/// here, from a position stream, is what used to cut the last song off a second
+/// early.
+class SleepTimerService extends ChangeNotifier {
   static final SleepTimerService instance = SleepTimerService._internal();
   SleepTimerService._internal();
 
   Timer? _timer;
-  StreamSubscription? _playerStateSub;
-  StreamSubscription? _sequenceStateSub;
-  StreamSubscription? _positionSub;
-  StreamSubscription? _playbackEventSub;
+  StreamSubscription<int?>? _indexSub;
+  StreamSubscription<PlayerState>? _stateSub;
   Stopwatch? _elapsedTimeStopwatch;
 
   bool _isActive = false;
@@ -30,19 +33,15 @@ class SleepTimerService {
   VoidCallback? _onComplete;
   AudioPlayerManager? _audioManager;
 
-  // State for stopAfterTracks
-  int _remainingTracks = 0;
-  int? _lastIndex;
-  int? _stopAtEndIndex;
+  /// Bumped on every start and cancel, so a session that is waiting for its
+  /// last song cannot stop the playback of a newer one.
+  int _generation = 0;
 
-  // Store original loop mode to restore on cancel
+  /// Track boundaries heard since a stopAfterTracks timer started.
+  int _tracksHeard = 0;
+
   LoopMode? _originalLoopMode;
 
-  // Test helper
-  @visibleForTesting
-  Future<void> Function()? mockExit;
-
-  // Metadata for UI or queries
   DateTime? _startTime;
   int? _durationMinutes;
 
@@ -77,133 +76,36 @@ class SleepTimerService {
     _audioManager = audioManager;
     _durationMinutes = minutes;
     _startTime = DateTime.now();
-    _lastIndex = audioManager.player.currentIndex;
-
-    // Store original loop mode to restore on cancel
+    _tracksHeard = 0;
     _originalLoopMode = audioManager.player.loopMode;
 
     switch (mode) {
       case SleepTimerMode.loopCurrent:
-        _startLoopCurrent(minutes, audioManager);
+        audioManager.player.setLoopMode(LoopMode.one);
+        _startCountdown(minutes, audioManager, finishCurrent: false);
         break;
       case SleepTimerMode.playForTime:
-        _startPlayForTime(minutes, letCurrentFinish, audioManager);
+        _startCountdown(minutes, audioManager, finishCurrent: letCurrentFinish);
         break;
       case SleepTimerMode.stopAfterCurrent:
-        _startStopAfterCurrent(audioManager);
+        unawaited(_end(audioManager, finishCurrent: true));
         break;
       case SleepTimerMode.stopAfterTracks:
-        // Tracks input represents "N more tracks" (e.g. 1 means Current + 1)
-        _startStopAfterTracks(tracks + 1, audioManager);
+        // A repeated track never reaches a boundary, so the count would stall.
+        if (audioManager.player.loopMode == LoopMode.one) {
+          audioManager.player.setLoopMode(LoopMode.off);
+        }
+        _startTrackCountdown(tracks, audioManager);
         break;
     }
+
+    notifyListeners();
   }
 
-  void _startLoopCurrent(int minutes, AudioPlayerManager audioManager) {
-    audioManager.player.setLoopMode(LoopMode.one);
-    _startStopwatchTimer(minutes, audioManager);
-  }
-
-  void _startPlayForTime(
-    int minutes,
-    bool letCurrentFinish,
-    AudioPlayerManager audioManager,
-  ) {
-    _startStopwatchTimer(
-      minutes,
-      audioManager,
-      letCurrentFinish: letCurrentFinish,
-    );
-  }
-
-  void _startStopAfterCurrent(AudioPlayerManager audioManager) {
-    final currentIndex = audioManager.player.currentIndex;
-    final duration = audioManager.player.duration;
-    final position = audioManager.player.position;
-
-    if (currentIndex == null) {
-      _performShutdown(audioManager);
-      return;
-    }
-
-    // Check if song is near end (within last 5% or 5 seconds, whichever is larger)
-    if (duration != null && position > Duration.zero) {
-      final nearEndThreshold = Duration(
-        milliseconds: max(
-          duration.inMilliseconds ~/ 20, // 5%
-          5000, // 5 seconds
-        ),
-      );
-      final timeRemaining = duration - position;
-
-      if (timeRemaining <= nearEndThreshold) {
-        // Song is almost over, treat as if it's already complete
-        _performShutdown(audioManager);
-        return;
-      }
-    }
-
-    _stopAtEndIndex = currentIndex;
-    _enableStopAtEndOfSong(audioManager);
-  }
-
-  void _startStopAfterTracks(
-    int totalTracksToPlay,
-    AudioPlayerManager audioManager,
-  ) {
-    if (totalTracksToPlay <= 1) {
-      _startStopAfterCurrent(audioManager);
-      return;
-    }
-
-    final currentIndex = audioManager.player.currentIndex;
-    if (currentIndex == null) {
-      _performShutdown(audioManager);
-      return;
-    }
-
-    _remainingTracks = totalTracksToPlay - 1; // Subtract 1 for current track
-    _lastIndex = currentIndex;
-    _stopAtEndIndex = null;
-
-    // Use playbackEventStream for more reliable index change detection
-    _playbackEventSub = audioManager.player.playbackEventStream.listen((event) {
-      final currentIndex = audioManager.player.currentIndex;
-      if (currentIndex == null) return;
-
-      // Check if index changed
-      if (_lastIndex != null && currentIndex != _lastIndex) {
-        // Calculate how many tracks we jumped
-        final trackDelta = (currentIndex - _lastIndex!).abs();
-        _remainingTracks -= trackDelta;
-        _lastIndex = currentIndex;
-
-        if (_remainingTracks <= 0) {
-          // We should stop on this track
-          _playbackEventSub?.cancel();
-          _playbackEventSub = null;
-          _enableStopAtEndOfSong(audioManager);
-        }
-      } else {
-        _lastIndex ??= currentIndex;
-      }
-    });
-
-    // Also watch for song completion as fallback
-    _playerStateSub = audioManager.player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        _remainingTracks--;
-        if (_remainingTracks <= 0) {
-          _performShutdown(audioManager);
-        }
-      }
-    });
-  }
-
-  void _startStopwatchTimer(
+  void _startCountdown(
     int minutes,
     AudioPlayerManager audioManager, {
-    bool letCurrentFinish = false,
+    required bool finishCurrent,
   }) {
     _elapsedTimeStopwatch = Stopwatch()..start();
     final targetDuration = Duration(minutes: minutes);
@@ -219,7 +121,7 @@ class SleepTimerService {
     // The stopwatch stays as the source of truth. A timer can fire late (the
     // process was suspended, the device dozed), never early, but re-arming on
     // the remainder if it somehow does is a cheap guarantee that the timer
-    // never shuts playback down ahead of time.
+    // never ends listening ahead of time.
     void arm(Duration delay) {
       _timer = Timer(delay, () {
         _timer = null;
@@ -232,176 +134,135 @@ class SleepTimerService {
           return;
         }
 
-        if (letCurrentFinish) {
-          _enableStopAtEndOfSong(audioManager);
-        } else {
-          _performShutdown(audioManager);
-        }
+        unawaited(_end(audioManager, finishCurrent: finishCurrent));
       });
     }
 
     arm(targetDuration);
   }
 
-  /// Enables the "stop at end of song" logic
-  /// Pauses at Duration - 1 second to prevent auto-advance
-  void _enableStopAtEndOfSong(AudioPlayerManager audioManager) {
-    _positionSub?.cancel();
-    _playerStateSub?.cancel();
-    _sequenceStateSub?.cancel();
+  /// Counts track boundaries, then ends after the last track the listener asked
+  /// for. Only one counter may watch this: the old pair of a playback-event
+  /// listener and a completion fallback both decremented, so the timer could
+  /// stop a track early.
+  void _startTrackCountdown(int tracks, AudioPlayerManager audioManager) {
+    final target = max(1, tracks);
 
-    final currentIndex = audioManager.player.currentIndex;
-    _stopAtEndIndex = currentIndex;
-
-    if (currentIndex == null) {
-      _performShutdown(audioManager);
-      return;
-    }
-
-    // Listen for sequence state changes (index changes)
-    _sequenceStateSub = audioManager.settledSequenceStateStream.listen((state) {
+    _indexSub = audioManager.settledCurrentIndexStream.listen((_) {
       if (_isShuttingDown) return;
-
-      final currentIndex = state.currentIndex;
-      if (_stopAtEndIndex != null &&
-          currentIndex != null &&
-          currentIndex != _stopAtEndIndex) {
-        // Index changed - song ended and moved to next
-        // Stop immediately before next song plays
-        _performShutdown(audioManager);
-      }
+      _tracksHeard++;
+      if (_tracksHeard < target) return;
+      _indexSub?.cancel();
+      _indexSub = null;
+      unawaited(_end(audioManager, finishCurrent: true));
     });
 
-    // Listen for completed state as fallback
-    _playerStateSub = audioManager.player.playerStateStream.listen((state) {
+    // A queue shorter than the request still has to end the timer.
+    _stateSub = audioManager.player.playerStateStream.listen((state) {
       if (_isShuttingDown) return;
-
       if (state.processingState == ProcessingState.completed) {
-        _performShutdown(audioManager);
-      }
-    });
-
-    // Listen to position to stop before song ends (prevents auto-advance)
-    _positionSub = audioManager.player.positionStream.listen((pos) {
-      if (_isShuttingDown) return;
-
-      // Check if index changed during playback
-      final currentIdx = audioManager.player.currentIndex;
-      if (_stopAtEndIndex != null &&
-          currentIdx != null &&
-          currentIdx != _stopAtEndIndex) {
-        _performShutdown(audioManager);
-        return;
-      }
-
-      final duration = audioManager.player.duration;
-      if (duration != null && duration > const Duration(milliseconds: 500)) {
-        // Stop 1 second before end to prevent auto-advance
-        final threshold = duration > const Duration(seconds: 2)
-            ? duration - const Duration(seconds: 1)
-            : duration - const Duration(milliseconds: 500);
-
-        if (pos >= threshold) {
-          _performShutdown(audioManager);
-        }
+        unawaited(_end(audioManager, finishCurrent: false));
       }
     });
   }
 
-  Future<void> _performShutdown(AudioPlayerManager audioManager) async {
-    // Prevent multiple concurrent shutdowns
+  Future<void> _end(
+    AudioPlayerManager audioManager, {
+    required bool finishCurrent,
+  }) async {
     if (!_isActive || _isShuttingDown) return;
     _isShuttingDown = true;
-
-    // Cancel all subscriptions immediately to prevent race conditions
-    _cleanupSubscriptions();
+    final generation = _generation;
+    _cancelPending();
 
     try {
-      // Reset loop mode immediately
-      try {
-        await audioManager.player.setLoopMode(LoopMode.off);
-      } catch (e) {
-        debugPrint("Error resetting loop mode: $e");
+      if (finishCurrent) {
+        // The current song plays to its end. The next one is loaded, rewound
+        // and left paused, so not a frame of it is heard. Armed while paused
+        // too: the song still has to end before the session does.
+        await audioManager.parkAfterCurrentTrack();
       }
-
-      // Pause immediately
-      await audioManager.player.pause();
-
-      // Flush stats without side-effecting lifecycle state or image caches
+      // Whatever resolved the wait — a track boundary, the end of the queue, a
+      // pending replacement starting, a skip — nothing may still be audible.
+      if (audioManager.player.playing) {
+        await audioManager.player.pause();
+      }
+      if (!_isActive || generation != _generation) return;
       await audioManager.forceFlushCurrentStats();
-
-      // Callback
-      _onComplete?.call();
-
-      // Wait 3 seconds
-      await Future.delayed(const Duration(seconds: 3));
-
-      // Check if we were cancelled during the wait
-      if (!_isActive) return;
-
-      // Mark timer as inactive
-      // This ensures UI doesn't show active timer
-      _isActive = false;
-      _currentMode = null;
-
-      // Stop player to dismiss notification and clear queue
-      // Queue is auto-saved by AudioPlayerManager, stats already flushed above
-      await audioManager.player.stop();
-
-      // Short delay for UX (callback/snackbar to show)
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // App stays alive but in background - Android will kill it naturally when needed
-      // Notification is dismissed, user can reopen app normally
     } catch (e) {
-      debugPrint("Error during sleep timer shutdown: $e");
+      debugPrint('Sleep timer: failed to end playback: $e');
     }
+    if (!_isActive || generation != _generation) return;
+
+    // Playback is already silent at this point; the rest is housekeeping, so
+    // the UI reports the timer as finished as soon as it is.
+    _isActive = false;
+    _currentMode = null;
+    _startTime = null;
+    _durationMinutes = null;
+    _isShuttingDown = false;
+    notifyListeners();
+    _onComplete?.call();
+
+    // Give the message time to be read, then dismiss the notification and hand
+    // the listener's own loop mode back.
+    await Future<void>.delayed(const Duration(seconds: 3));
+    if (generation != _generation) return;
+    try {
+      await audioManager.player.setLoopMode(_originalLoopMode ?? LoopMode.off);
+      // Only the notification is left to dismiss. If the listener picked
+      // playback back up in the meantime, leave it running.
+      if (!audioManager.player.playing) {
+        await audioManager.player.stop();
+      }
+    } catch (e) {
+      debugPrint('Sleep timer: failed to stop the player: $e');
+    }
+    _audioManager = null;
+    _onComplete = null;
+    _originalLoopMode = null;
   }
 
-  void _cleanupSubscriptions() {
+  void _cancelPending() {
     _timer?.cancel();
     _timer = null;
-    _playerStateSub?.cancel();
-    _playerStateSub = null;
-    _sequenceStateSub?.cancel();
-    _sequenceStateSub = null;
-    _positionSub?.cancel();
-    _positionSub = null;
-    _playbackEventSub?.cancel();
-    _playbackEventSub = null;
+    _indexSub?.cancel();
+    _indexSub = null;
+    _stateSub?.cancel();
+    _stateSub = null;
     _elapsedTimeStopwatch?.stop();
     _elapsedTimeStopwatch = null;
   }
 
-  void _cleanupState({bool keepActiveForShutdown = false}) {
-    _cleanupSubscriptions();
-    _stopAtEndIndex = null;
-    _lastIndex = null;
-    _remainingTracks = 0;
-
-    if (!keepActiveForShutdown) {
-      _isActive = false;
-      _isShuttingDown = false;
-      _currentMode = null;
-      _audioManager = null;
-      _onComplete = null;
-      _startTime = null;
-      _durationMinutes = null;
-      _originalLoopMode = null;
-    }
+  void _cleanupState() {
+    _cancelPending();
+    _tracksHeard = 0;
+    _isActive = false;
+    _isShuttingDown = false;
+    _currentMode = null;
+    _audioManager = null;
+    _onComplete = null;
+    _startTime = null;
+    _durationMinutes = null;
+    _originalLoopMode = null;
   }
 
   void cancel() {
-    // If we cancel, we should also reset loop mode if it was loopCurrent
-    if (_audioManager != null) {
-      try {
-        // Restore original loop mode or default to off
-        final loopMode = _originalLoopMode ?? LoopMode.off;
-        _audioManager!.player.setLoopMode(loopMode);
-      } catch (e) {
-        // Ignore
+    final manager = _audioManager;
+    if (manager != null) {
+      // The queue must not be parked after the listener decided to stay up.
+      manager.cancelParkAfterCurrentTrack();
+      final loopMode = _originalLoopMode;
+      if (loopMode != null) {
+        try {
+          manager.player.setLoopMode(loopMode);
+        } catch (e) {
+          debugPrint('Sleep timer: failed to restore loop mode: $e');
+        }
       }
     }
+    _generation++;
     _cleanupState();
+    notifyListeners();
   }
 }

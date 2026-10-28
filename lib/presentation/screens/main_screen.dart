@@ -9,6 +9,7 @@ import 'online_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+import 'sleep_timer_screen.dart';
 import '../routes/app_page_route.dart';
 import '../widgets/now_playing_bar.dart';
 import '../widgets/app_drawer.dart';
@@ -17,6 +18,7 @@ import '../../providers/providers.dart';
 import '../../providers/open_files_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/sleep_timer_service.dart';
 import '../../services/telemetry_service.dart';
 import '../widgets/bulk_selection_bar.dart';
 import '../widgets/external_open_banner.dart';
@@ -636,6 +638,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (isWide && !isSelectionMode) {
       void openSearch() => context.pushApp(const SearchScreen());
       void openSettings() => context.pushApp(const SettingsScreen());
+      void openSleepTimer() => context.pushApp(const SleepTimerScreen());
       return Scaffold(
         body: CallbackShortcuts(
           bindings: {
@@ -663,6 +666,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                       accent: accent,
                       onSearch: openSearch,
                       onSettings: openSettings,
+                      onSleepTimer: openSleepTimer,
                     ),
                     Expanded(
                       child: Stack(
@@ -724,6 +728,7 @@ class _WideNavRail extends StatelessWidget {
   final Color accent;
   final VoidCallback? onSearch;
   final VoidCallback? onSettings;
+  final VoidCallback? onSleepTimer;
 
   const _WideNavRail({
     required this.selectedIndex,
@@ -732,6 +737,7 @@ class _WideNavRail extends StatelessWidget {
     required this.accent,
     this.onSearch,
     this.onSettings,
+    this.onSleepTimer,
   });
 
   @override
@@ -756,6 +762,20 @@ class _WideNavRail extends StatelessWidget {
                 onTap: () => onSelected(i),
               ),
             const Spacer(),
+            if (onSleepTimer != null)
+              // The drawer is the only sleep timer entry on a phone, so a wide
+              // window needs one here. It lights up while a timer is armed.
+              ListenableBuilder(
+                listenable: SleepTimerService.instance,
+                builder: (context, _) => _WideNavAction(
+                  icon: AppIcons.bedtime,
+                  label: context.l10n.sleepTimerTitle,
+                  tooltip: context.l10n.sleepTimerTitle,
+                  accent: accent,
+                  active: SleepTimerService.instance.isActive,
+                  onTap: onSleepTimer!,
+                ),
+              ),
             if (onSearch != null)
               _WideNavAction(
                 icon: AppIcons.search,
@@ -787,17 +807,21 @@ class _WideNavAction extends StatelessWidget {
   final Color accent;
   final VoidCallback onTap;
 
+  /// A live state worth showing, e.g. an armed sleep timer.
+  final bool active;
+
   const _WideNavAction({
     required this.icon,
     required this.label,
     required this.accent,
     required this.onTap,
     this.tooltip,
+    this.active = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = AppTokens.fg(AppTokens.aTertiary);
+    final iconColor = active ? accent : AppTokens.fg(AppTokens.aTertiary);
     final content = Padding(
       padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
       child: GestureDetector(
@@ -812,7 +836,9 @@ class _WideNavAction extends StatelessWidget {
               width: 52,
               height: 32,
               decoration: BoxDecoration(
-                color: Colors.transparent,
+                color: active
+                    ? accent.withValues(alpha: AppTokens.accentWashAlpha)
+                    : Colors.transparent,
                 borderRadius: AppTokens.brPill,
               ),
               alignment: Alignment.center,
