@@ -512,7 +512,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
               offset: Offset(_drawerGeometry.contentOffset, 0),
               child: Stack(
                 children: [
-                  child!,
+                  // The content rides aside under a translate, so its own
+                  // animation is spending frames nobody can read: frozen while
+                  // the drawer moves, the slide becomes one cached raster.
+                  FreezeWhileMoving(
+                    animation: _drawerController,
+                    dragging: _isDraggingDrawer,
+                    child: child!,
+                  ),
                   // Dim the content while the drawer is open, and close on a
                   // tap there, which is where the finger expects to land.
                   if (showScrim)

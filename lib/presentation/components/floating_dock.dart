@@ -150,9 +150,14 @@ class FloatingDockState extends State<FloatingDock>
     // an opaque surface for the whole time the player is open.
     return ValueListenableBuilder<bool>(
       valueListenable: PlayerPanel.openState,
-      builder: (context, playerOpen, child) => TickerMode(
-        enabled: !playerOpen,
-        child: child!,
+      // The bar morphs between its expanded and ball shapes on a spring; its
+      // own visualisers would repaint through every frame of that morph.
+      builder: (context, playerOpen, child) => FreezeWhileMoving(
+        animation: _c,
+        child: TickerMode(
+          enabled: !playerOpen,
+          child: child!,
+        ),
       ),
       child: AnimatedBuilder(
         animation: _c,

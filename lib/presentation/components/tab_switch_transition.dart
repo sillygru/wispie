@@ -96,19 +96,24 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
             : ((t - 0.4) / 0.6).clamp(0.0, 1.0);
         return Offstage(
           offstage: hidden,
-          child: TickerMode(
-            enabled: !hidden,
-            child: IgnorePointer(
-              ignoring: !widget.active,
-              child: Opacity(
-                opacity: opacity,
-                // Fixed travel rather than a fraction of the width, so wide
-                // windows do not throw the page a long way.
-                child: Transform.translate(
-                  offset: Offset((1 - v) * side * AppTokens.s6, 0),
-                  child: Transform.scale(
-                    scale: 0.98 + 0.02 * t,
-                    child: child,
+          // A whole tab is being slid and faded; its lyrics cascade, waveform
+          // and feed would otherwise re-raster on every frame of that slide.
+          child: FreezeWhileMoving(
+            animation: _c,
+            child: TickerMode(
+              enabled: !hidden,
+              child: IgnorePointer(
+                ignoring: !widget.active,
+                child: Opacity(
+                  opacity: opacity,
+                  // Fixed travel rather than a fraction of the width, so wide
+                  // windows do not throw the page a long way.
+                  child: Transform.translate(
+                    offset: Offset((1 - v) * side * AppTokens.s6, 0),
+                    child: Transform.scale(
+                      scale: 0.98 + 0.02 * t,
+                      child: child,
+                    ),
                   ),
                 ),
               ),

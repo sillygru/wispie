@@ -4,6 +4,7 @@
 library;
 
 export 'carousel_motion.dart';
+export 'freeze_while_moving.dart';
 export 'motion_builders.dart';
 export 'motion_clock.dart';
 export 'motion_drag.dart';
