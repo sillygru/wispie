@@ -20,6 +20,12 @@ const double _playlistBoost = 1.1;
 const double _favoriteArtistMass = 0.5;
 const double _coPlayArtistBoost = 0.5;
 
+/// Lift for a freshly added song at maximum discovery, and at maximum
+/// familiarity. Familiar means "play what I know", so a new arrival barely
+/// tilts the odds; discovery is where a new arrival should actually be noticed.
+const double _freshnessBoostAtDiscovery = 0.30;
+const double _freshnessBoostAtFamiliar = 0.06;
+
 /// A song, or a merge group of songs, that smart shuffle may choose.
 ///
 /// [filenames] holds every member. Their taste is summed, so a merge group
@@ -155,6 +161,8 @@ Map<T, double> computeSmartWeights<T>({
   }
 
   final prior = _lerp(0.35, 0.08, f);
+  final freshnessBoost =
+      _lerp(_freshnessBoostAtFamiliar, _freshnessBoostAtDiscovery, 1 - f);
   final antiRepeat = context != ShuffleContext.sort && historyLimit > 0;
 
   final out = <T, double>{};
@@ -182,6 +190,7 @@ Map<T, double> computeSmartWeights<T>({
       var s = (maxTrend > 0 ? 0.6 * sig.trend / maxTrend : 0.0) +
           (maxLong > 0 ? 0.4 * sig.long / maxLong : 0.0) +
           prior;
+      s *= 1 + freshnessBoost * sig.freshness;
       s *= (1 - sig.skipRate * 0.3).clamp(0.2, 1.0).toDouble();
       s /= 1 + sig.saturation;
 
@@ -214,6 +223,9 @@ class _Signals {
   double long = 0.0;
   double saturation = 0.0;
   double skipRate = 0.0;
+
+  /// How new the freshest member is, 0..1.
+  double freshness = 0.0;
 }
 
 /// Sums member taste into one candidate. Skip rate is weighted by play count
@@ -230,6 +242,12 @@ _Signals _signalsOf<T>(SmartCandidate<T> c, TasteSnapshot taste) {
     out.saturation += song.saturation;
     plays += song.playCount;
     skipWeighted += song.skipRate * song.playCount;
+  }
+  // Looked up outside the loop: an unplayed arrival has no `SongTaste` entry,
+  // and that is exactly the row whose newness matters.
+  for (final f in c.filenames) {
+    final fresh = taste.newness[f] ?? 0.0;
+    if (fresh > out.freshness) out.freshness = fresh;
   }
   if (plays > 0) out.skipRate = skipWeighted / plays;
   return out;

@@ -3098,6 +3098,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           for (final filename in known)
             if (_isSuggestLess(filename)) filename,
         },
+        addedAt: {
+          for (final song in [..._allSongs, ...streamed])
+            if ((song.createdEpochSec ?? 0) > 0)
+              song.filename: song.createdEpochSec!,
+        },
         now: DateTime.now(),
       );
       final snapshot = await Isolate.run(() => buildTasteSnapshot(inputs));

@@ -53,12 +53,19 @@ class TasteInputs {
   final Set<String> suggestLess;
   final DateTime now;
 
+  /// filename -> epoch seconds the app added the row, for the whole library.
+  ///
+  /// Used only to tell a genuinely fresh arrival from the bulk of the library;
+  /// see [kFreshnessMinLibraryAgeDays].
+  final Map<String, double> addedAt;
+
   const TasteInputs({
     required this.events,
     required this.meta,
     required this.now,
     this.favorites = const {},
     this.suggestLess = const {},
+    this.addedAt = const {},
   });
 }
 
@@ -107,11 +114,18 @@ class TasteSnapshot {
   /// top 10 targets only. Trend window only.
   final Map<String, Map<String, double>> artistCoPlay;
 
+  /// filename -> 0..1 how much newer than the rest of the library this row is.
+  ///
+  /// Empty for a library that arrived in one go: with nothing older to be new
+  /// against, "newly added" is not a preference, it is the whole library.
+  final Map<String, double> newness;
+
   const TasteSnapshot({
     required this.songs,
     required this.artists,
     required this.coPlay,
     required this.artistCoPlay,
+    this.newness = const {},
   });
 }
 
@@ -255,7 +269,56 @@ TasteSnapshot buildTasteSnapshot(TasteInputs inputs) {
     artists: artists,
     coPlay: _topNormalized(coRaw, _coPlayTop),
     artistCoPlay: _topNormalized(artistCoRaw, _artistCoPlayTop),
+    newness: _freshnessOf(inputs.addedAt, inputs.now),
   );
+}
+
+/// Below this median library age, an addition is not "new" in any useful
+/// sense: the whole collection turned up together, so favouring its newest rows
+/// would just reorder one import against itself.
+const double kFreshnessMinLibraryAgeDays = 30.0;
+
+/// How long an addition keeps counting as new. Anything at or beyond this age
+/// is simply part of the library.
+const double kFreshnessWindowDays = 90.0;
+
+/// 0..1 newness per filename, relative to the library's own age distribution.
+///
+/// The reference is the library's median age, capped at
+/// [kFreshnessWindowDays]: a song added today in a collection whose median row
+/// is a year old scores 1, one added two months ago scores about a third, and
+/// anything older scores 0. A library whose median row is younger than
+/// [kFreshnessMinLibraryAgeDays] yields nothing at all, which is what keeps a
+/// 400-track import from being favoured over the five tracks that were already
+/// there, and keeps a brand-new install from favouring its own last import.
+Map<String, double> _freshnessOf(
+  Map<String, double> addedAt,
+  DateTime now,
+) {
+  if (addedAt.length < 2) return const {};
+  final nowSec = now.millisecondsSinceEpoch / 1000.0;
+
+  final ages = <double>[];
+  for (final added in addedAt.values) {
+    if (!added.isFinite || added <= 0) continue;
+    ages.add(((nowSec - added) / 86400.0).clamp(0.0, 36500.0));
+  }
+  if (ages.length < 2) return const {};
+  ages.sort();
+
+  final median = ages[ages.length ~/ 2];
+  if (median < kFreshnessMinLibraryAgeDays) return const {};
+
+  final window = median < kFreshnessWindowDays ? median : kFreshnessWindowDays;
+  final out = <String, double>{};
+  for (final entry in addedAt.entries) {
+    final added = entry.value;
+    if (!added.isFinite || added <= 0) continue;
+    final age = (nowSec - added) / 86400.0;
+    final fresh = (1 - age / window).clamp(0.0, 1.0);
+    if (fresh > 0) out[entry.key] = fresh;
+  }
+  return out;
 }
 
 Map<String, Map<String, double>> _topNormalized(
