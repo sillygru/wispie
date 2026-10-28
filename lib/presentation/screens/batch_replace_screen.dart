@@ -314,6 +314,26 @@ class _BatchReplaceScreenState extends ConsumerState<BatchReplaceScreen> {
       if (confirmed != true || !mounted) return;
     }
 
+    // A destination that already holds a file is the one refusal the user can
+    // overrule. Asked once for the run: a batch that stops at every collision
+    // is a batch of one-at-a-time decisions.
+    final occupied = await _occupiedDestinations(requests);
+    if (!mounted) return;
+
+    var overwriteExisting = false;
+    if (occupied > 0) {
+      final replace = await showAppConfirm(
+        context,
+        title: l10n.batchReplaceCollisionTitle,
+        message: l10n.batchReplaceCollisionMessage(occupied),
+        confirmLabel: l10n.batchReplaceCollisionReplace,
+        cancelLabel: l10n.batchReplaceCollisionSkip,
+      );
+      // Dismissing the question is a decision not to run at all.
+      if (replace == null || !mounted) return;
+      overwriteExisting = replace;
+    }
+
     setState(() {
       _running = true;
       _cancelRequested = false;
@@ -325,6 +345,7 @@ class _BatchReplaceScreenState extends ConsumerState<BatchReplaceScreen> {
           requests,
           transport: options.transport,
           disposition: options.disposition,
+          overwriteExistingFiles: overwriteExisting,
           isCancelled: () => _cancelRequested,
           onProgress: (done, total) {
             if (mounted) {
@@ -345,6 +366,24 @@ class _BatchReplaceScreenState extends ConsumerState<BatchReplaceScreen> {
       _selected = const {};
     });
     await _showOutcome(outcome);
+  }
+
+  /// How many of [requests] would be written over a file that is already there.
+  ///
+  /// Filenames the library already holds are left out: overwriting cannot
+  /// resolve two songs claiming one name, and the rules refuse those either
+  /// way.
+  Future<int> _occupiedDestinations(List<ReplacementRequest> requests) async {
+    final libraryNames = {
+      for (final song in _readLibrary()) song.filename.toLowerCase(),
+    };
+    final fileManager = ref.read(fileManagerServiceProvider);
+    final occupied = await Future.wait([
+      for (final request in requests)
+        if (!libraryNames.contains(request.newFilename.toLowerCase()))
+          fileManager.fileExistsAt(request.destinationPath),
+    ]);
+    return occupied.where((exists) => exists).length;
   }
 
   /// A failure is either a rule that said no, or an operation that threw, and

@@ -7468,6 +7468,27 @@
   "@batchReplaceNothingSelected": {
     "description": "Warning when Replace is pressed with no proposal selected"
   },
+  "batchReplaceCollisionTitle": "Files already exist",
+  "@batchReplaceCollisionTitle": {
+    "description": "Title of the question asked before a batch replace writes over existing files"
+  },
+  "batchReplaceCollisionMessage": "{count, plural, =1{One replacement file already exists where it would be copied. Replace it or skip it?} other{{count} replacement files already exist where they would be copied. Replace them or skip them?}}",
+  "@batchReplaceCollisionMessage": {
+    "description": "Body of the question asked before a batch replace writes over existing files",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceCollisionReplace": "Replace",
+  "@batchReplaceCollisionReplace": {
+    "description": "Answers the collision question by overwriting the existing files"
+  },
+  "batchReplaceCollisionSkip": "Skip",
+  "@batchReplaceCollisionSkip": {
+    "description": "Answers the collision question by leaving the existing files alone"
+  },
   "batchReplaceOptionsTitle": "Replace songs",
   "@batchReplaceOptionsTitle": {
     "description": "Title of the sheet choosing how the batch replacement runs"

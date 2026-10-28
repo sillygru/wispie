@@ -336,6 +336,49 @@ Future<void> main() async {
       taken is ReplacementRejected &&
           (taken).reason == ReplacementRejectReason.destinationExists);
 
+  final overwritten = SongReplacementRules.check(
+    original: song,
+    sourcePath: onlyYou.candidate.path,
+    isSupportedMediaFile: true,
+    trackedFolders: [libraryDir.path],
+    libraryFilenames: const [],
+    destinationExists: true,
+    overwriteDestination: true,
+  );
+  check(
+      'an occupied destination is accepted once overwriting is allowed',
+      overwritten is ReplacementAccepted && overwritten.overwritesDestination,
+      '$overwritten');
+
+  final freeCopy = SongReplacementRules.check(
+    original: song,
+    sourcePath: onlyYou.candidate.path,
+    isSupportedMediaFile: true,
+    trackedFolders: [libraryDir.path],
+    libraryFilenames: const [],
+    destinationExists: false,
+    overwriteDestination: true,
+  );
+  check(
+      'allowing overwrite does not claim a free destination was occupied',
+      freeCopy is ReplacementAccepted && !freeCopy.overwritesDestination,
+      '$freeCopy');
+
+  final nameClash = SongReplacementRules.check(
+    original: song,
+    sourcePath: onlyYou.candidate.path,
+    isSupportedMediaFile: true,
+    trackedFolders: [libraryDir.path],
+    libraryFilenames: ['04 - Only You.flac', 'Another Song.mp3'],
+    destinationExists: true,
+    overwriteDestination: true,
+  );
+  check(
+      'overwriting never resolves a name the library already holds',
+      nameClash is ReplacementRejected &&
+          nameClash.reason == ReplacementRejectReason.libraryHasName,
+      '$nameClash');
+
   root.deleteSync(recursive: true);
 
   print(

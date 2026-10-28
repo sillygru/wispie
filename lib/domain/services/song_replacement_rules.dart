@@ -89,10 +89,15 @@ class ReplacementAccepted extends ReplacementCheck {
   final String newFilename;
   final String destinationPath;
 
+  /// Whether a file already occupies [destinationPath] and was accepted only
+  /// because the caller said it may be overwritten.
+  final bool overwritesDestination;
+
   const ReplacementAccepted({
     required this.sourcePath,
     required this.newFilename,
     required this.destinationPath,
+    this.overwritesDestination = false,
   });
 }
 
@@ -167,7 +172,9 @@ class SongReplacementRules {
   ///
   /// [trackedFolders] are the roots the scanner walks, [libraryFilenames] every
   /// filename currently in the library, and [destinationExists] whether a file
-  /// already sits at the destination.
+  /// already sits at the destination. [overwriteDestination] accepts that file
+  /// being replaced rather than refusing the candidate; only a caller that has
+  /// asked the user may pass it.
   static ReplacementCheck check({
     required Song original,
     required String sourcePath,
@@ -175,6 +182,7 @@ class SongReplacementRules {
     required Iterable<String> trackedFolders,
     required Iterable<String> libraryFilenames,
     required bool destinationExists,
+    bool overwriteDestination = false,
   }) {
     final trimmedSource = sourcePath.trim();
     if (trimmedSource.isEmpty) {
@@ -198,15 +206,9 @@ class SongReplacementRules {
       return const ReplacementRejected(ReplacementRejectReason.insideLibrary);
     }
 
-    final destination = destinationFor(original, trimmedSource);
-
-    if (destinationExists) {
-      return ReplacementRejected(
-        ReplacementRejectReason.destinationExists,
-        filename: newFilename,
-      );
-    }
-
+    // Checked before the file on disk because two library rows sharing a
+    // filename is a conflict no overwrite can resolve: the file at the
+    // destination is not the one this name already belongs to.
     if (libraryFilenames.any((f) => _sameFile(f, newFilename))) {
       return ReplacementRejected(
         ReplacementRejectReason.libraryHasName,
@@ -214,10 +216,18 @@ class SongReplacementRules {
       );
     }
 
+    if (destinationExists && !overwriteDestination) {
+      return ReplacementRejected(
+        ReplacementRejectReason.destinationExists,
+        filename: newFilename,
+      );
+    }
+
     return ReplacementAccepted(
       sourcePath: trimmedSource,
       newFilename: newFilename,
-      destinationPath: destination,
+      destinationPath: destinationFor(original, trimmedSource),
+      overwritesDestination: destinationExists,
     );
   }
 }

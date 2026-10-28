@@ -9597,6 +9597,30 @@ abstract class AppLocalizations {
   /// **'Nothing is selected'**
   String get batchReplaceNothingSelected;
 
+  /// Title of the question asked before a batch replace writes over existing files
+  ///
+  /// In en, this message translates to:
+  /// **'Files already exist'**
+  String get batchReplaceCollisionTitle;
+
+  /// Body of the question asked before a batch replace writes over existing files
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{One replacement file already exists where it would be copied. Replace it or skip it?} other{{count} replacement files already exist where they would be copied. Replace them or skip them?}}'**
+  String batchReplaceCollisionMessage(int count);
+
+  /// Answers the collision question by overwriting the existing files
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get batchReplaceCollisionReplace;
+
+  /// Answers the collision question by leaving the existing files alone
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get batchReplaceCollisionSkip;
+
   /// Title of the sheet choosing how the batch replacement runs
   ///
   /// In en, this message translates to:

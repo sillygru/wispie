@@ -5785,6 +5785,28 @@ class AppLocalizationsPt extends AppLocalizations {
   String get batchReplaceNothingSelected => 'Nothing is selected';
 
   @override
+  String get batchReplaceCollisionTitle => 'Files already exist';
+
+  @override
+  String batchReplaceCollisionMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          '$count replacement files already exist where they would be copied. Replace them or skip them?',
+      one:
+          'One replacement file already exists where it would be copied. Replace it or skip it?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get batchReplaceCollisionReplace => 'Replace';
+
+  @override
+  String get batchReplaceCollisionSkip => 'Skip';
+
+  @override
   String get batchReplaceOptionsTitle => 'Replace songs';
 
   @override

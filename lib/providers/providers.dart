@@ -1477,6 +1477,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     List<ReplacementRequest> requests, {
     required ReplacementTransport transport,
     required OriginalFileDisposition disposition,
+    bool overwriteExistingFiles = false,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
   }) async {
@@ -1528,6 +1529,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
               await ref.read(fileManagerServiceProvider).fileExistsAt(
                     destination,
                   ),
+          overwriteDestination: overwriteExistingFiles,
         );
 
         if (check is ReplacementRejected) {
@@ -1594,6 +1596,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       await fileManager.copySongFile(
         accepted.sourcePath,
         accepted.destinationPath,
+        overwrite: accepted.overwritesDestination,
       );
       copyWritten = true;
 
@@ -1623,6 +1626,14 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
       // Play history, favourites, playlists, merged groups, saved queues,
       // translations and cover lookups all move here, across both databases.
+      //
+      // The file that was overwritten may have been a hidden song's copy, and
+      // that row would otherwise hide the song that just took its place; the
+      // file it described no longer exists.
+      if (accepted.overwritesDestination &&
+          ref.read(userDataProvider).isHidden(accepted.newFilename)) {
+        await DatabaseService.instance.removeHidden(accepted.newFilename);
+      }
       await DatabaseService.instance
           .renameFile(song.filename, accepted.newFilename);
       libraryMovedToCopy = true;

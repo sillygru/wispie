@@ -997,12 +997,21 @@ class FileManagerService {
   /// Filesystem only — no database, no library state. The caller has to be able
   /// to read the replacement's metadata off disk before deciding what it means,
   /// so nothing here may run ahead of that.
-  Future<void> copySongFile(String sourcePath, String destinationPath) async {
+  ///
+  /// [overwrite] lets the copy take the place of a file already at
+  /// [destinationPath]. The write goes to a temporary neighbour that is then
+  /// renamed over the target, so a failed copy leaves the file that was there
+  /// untouched.
+  Future<void> copySongFile(
+    String sourcePath,
+    String destinationPath, {
+    bool overwrite = false,
+  }) async {
     final source = File(sourcePath);
     if (!await source.exists()) {
       throw FileSystemException('The replacement file is missing', sourcePath);
     }
-    if (await File(destinationPath).exists()) {
+    if (!overwrite && await File(destinationPath).exists()) {
       throw FileSystemException(
           'A file already exists at the destination', destinationPath);
     }
@@ -1016,6 +1025,8 @@ class FileManagerService {
             !p.equals(rootPath, p.dirname(destinationPath))) {
           throw Exception('Destination is outside the music folder.');
         }
+        // The platform side writes through a temp document and replaces the
+        // existing one itself.
         await AndroidStorageService.writeFileFromPath(
           treeUri: treeUri,
           sourceRelativePath: p.relative(destinationPath, from: rootPath),
@@ -1025,7 +1036,19 @@ class FileManagerService {
       }
     }
 
-    await source.copy(destinationPath);
+    if (!overwrite) {
+      await source.copy(destinationPath);
+      return;
+    }
+
+    final temp = File('$destinationPath.wispie_tmp');
+    try {
+      await source.copy(temp.path);
+      await temp.rename(destinationPath);
+    } on Object {
+      if (await temp.exists()) await temp.delete();
+      rethrow;
+    }
   }
 
   /// Deletes a song file from the filesystem.
