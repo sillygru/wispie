@@ -14,6 +14,7 @@ import '../tokens/app_tokens.dart';
 import '../../domain/services/settings_search_service.dart';
 import 'settings_registry.dart';
 import '../routes/app_page_route.dart';
+import 'batch_replace_screen.dart';
 import 'bulk_rename_screen.dart';
 import 'folder_management_screen.dart';
 import '../../providers/providers.dart';
@@ -622,6 +623,13 @@ class LibrarySettingsScreen extends ConsumerWidget {
               title: l10n.settingsSearchBulkRenameTitle,
               subtitle: l10n.settingsSearchBulkRenameSubtitle,
               onTap: () => context.pushApp(const BulkRenameScreen()),
+            ),
+            AppSettingsTile(
+              searchId: 'data.batch_replace',
+              icon: AppIcons.swapHoriz,
+              title: l10n.settingsSearchBatchReplaceTitle,
+              subtitle: l10n.settingsSearchBatchReplaceSubtitle,
+              onTap: () => context.pushApp(const BatchReplaceScreen()),
             ),
           ],
         ),

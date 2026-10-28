@@ -9,6 +9,7 @@ import '../../l10n/l10n.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../components/ambient_scaffold.dart';
+import '../components/batch_progress_overlay.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
@@ -478,12 +479,16 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
                 ],
               ),
               if (_isRunning)
-                _ProgressOverlay(
+                BatchProgressOverlay(
                   phase: _phase,
                   done: _done,
                   total: _total,
                   cancelRequested: _cancelRequested,
                   onCancel: () => setState(() => _cancelRequested = true),
+                  stoppingLabel: context.l10n.bulkRenameStopping,
+                  waitingLabel: context.l10n.bulkRenamePleaseWait,
+                  cancelLabel: context.l10n.bulkRenameStop,
+                  counterLabel: context.l10n.bulkRenameProgressCount,
                 ),
             ],
           ),
@@ -1133,92 +1138,6 @@ class _PreviewRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProgressOverlay extends StatelessWidget {
-  const _ProgressOverlay({
-    required this.phase,
-    required this.done,
-    required this.total,
-    required this.cancelRequested,
-    required this.onCancel,
-  });
-
-  final String phase;
-  final int done;
-  final int total;
-  final bool cancelRequested;
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final progress = total == 0 ? 0.0 : done / total;
-
-    return Positioned.fill(
-      child: ColoredBox(
-        color:
-            Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.92),
-        child: Center(
-          child: AppSurface(
-            level: 2,
-            depth: AppDepth.floating,
-            borderRadius: BorderRadius.circular(AppTokens.rMd),
-            padding: const EdgeInsets.all(AppTokens.s5),
-            child: SizedBox(
-              width: 260,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    cancelRequested ? l10n.bulkRenameStopping : phase,
-                    style: AppTokens.rowTitle(context),
-                  ),
-                  const SizedBox(height: AppTokens.s3),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTokens.rPill),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 6,
-                      backgroundColor: AppTokens.wellFill,
-                    ),
-                  ),
-                  const SizedBox(height: AppTokens.s2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          // The last phases are single steps, so a counter would
-                          // only ever read "1 of 1".
-                          total <= 1
-                              ? l10n.bulkRenamePleaseWait
-                              : l10n.bulkRenameProgressCount(done, total),
-                          style: AppTokens.rowSubtitle(context),
-                        ),
-                      ),
-                      if (!cancelRequested)
-                        TextButton(
-                          onPressed: onCancel,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTokens.fgSecondary,
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 32),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(context.l10n.bulkRenameStop),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

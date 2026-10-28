@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
+
+import '../domain/services/media_formats.dart';
 
 /// Outcome of probing one music folder before a full scan.
 class FolderProbe {
@@ -53,27 +54,10 @@ class StorageProbeService {
   static const int _listCap = 40;
   static const int _readSampleSize = 5;
 
-  static const Set<String> _supportedExtensions = {
-    '.mp3',
-    '.m4a',
-    '.wav',
-    '.flac',
-    '.ogg',
-    '.wma',
-    '.aac',
-    '.m4b',
-    '.mp4',
-    '.opus',
-    '.m4v',
-    '.mov',
-    '.mkv',
-    '.webm',
-    '.avi',
-    '.3gp',
-  };
-
+  /// Same list the scanner indexes by, so a folder cannot probe clean and then
+  /// scan empty (or the reverse).
   static bool isSupportedMediaPath(String path) =>
-      _supportedExtensions.contains(p.extension(path).toLowerCase());
+      MediaFormats.isSupportedPath(path);
 
   Future<FolderProbe> probeFolder(String path) async {
     final dir = Directory(path);

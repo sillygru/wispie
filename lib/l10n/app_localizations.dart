@@ -4299,6 +4299,12 @@ abstract class AppLocalizations {
   /// **'rename,filenames,batch,bulk,format,naming'**
   String get settingsKwBulkRename;
 
+  /// Comma-separated search keywords for the Batch Replace Songs setting
+  ///
+  /// In en, this message translates to:
+  /// **'replace,swap,upgrade,flac,lossless,batch,compare,folder,duplicate'**
+  String get settingsKwBatchReplace;
+
   /// Comma-separated search keywords for the Manage Storage setting
   ///
   /// In en, this message translates to:
@@ -9410,6 +9416,324 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'YouTube'**
   String get playlistYoutubeBadge;
+
+  /// App bar title for the Batch Replace screen
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Replace'**
+  String get batchReplaceTitle;
+
+  /// Explanation at the top of the Batch Replace screen
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a folder to compare against your library. Songs whose files match will be proposed for replacement.'**
+  String get batchReplaceIntro;
+
+  /// Label above the chosen comparison folder path
+  ///
+  /// In en, this message translates to:
+  /// **'Folder to compare'**
+  String get batchReplaceFolderLabel;
+
+  /// Shown where the comparison folder path goes before one is picked
+  ///
+  /// In en, this message translates to:
+  /// **'No folder selected'**
+  String get batchReplaceNoFolder;
+
+  /// Button that opens the folder picker
+  ///
+  /// In en, this message translates to:
+  /// **'Choose folder'**
+  String get batchReplaceChooseFolder;
+
+  /// Button that replaces the already chosen comparison folder
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get batchReplaceChangeFolder;
+
+  /// Toggle for reading nested folders during the comparison
+  ///
+  /// In en, this message translates to:
+  /// **'Include subfolders'**
+  String get batchReplaceSubfolders;
+
+  /// Warning when the chosen comparison folder is one the library already scans
+  ///
+  /// In en, this message translates to:
+  /// **'That folder is already part of your library. Pick a folder outside it.'**
+  String get batchReplaceInsideLibrary;
+
+  /// Progress phase while the comparison folder is being listed
+  ///
+  /// In en, this message translates to:
+  /// **'Listing files'**
+  String get batchReplacePhaseListing;
+
+  /// Progress phase while tags are read from the comparison folder
+  ///
+  /// In en, this message translates to:
+  /// **'Reading tags'**
+  String get batchReplacePhaseReading;
+
+  /// Progress phase while the confirmed replacements are applied
+  ///
+  /// In en, this message translates to:
+  /// **'Replacing songs'**
+  String get batchReplacePhaseReplacing;
+
+  /// Shown once the user has asked to stop a running batch replace
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping'**
+  String get batchReplaceStopping;
+
+  /// Error shown when the comparison folder cannot be read
+  ///
+  /// In en, this message translates to:
+  /// **'Could not compare that folder: {error}'**
+  String batchReplaceCompareError(Object error);
+
+  /// Summary of how many songs the comparison proposed to replace
+  ///
+  /// In en, this message translates to:
+  /// **'{count} songs matched'**
+  String batchReplaceMatched(int count);
+
+  /// Summary of how much was compared
+  ///
+  /// In en, this message translates to:
+  /// **'Compared {files} files against {songs} library songs'**
+  String batchReplaceCompared(int files, int songs);
+
+  /// Selects every proposed replacement
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get batchReplaceSelectAll;
+
+  /// Clears the selection of proposed replacements
+  ///
+  /// In en, this message translates to:
+  /// **'Select none'**
+  String get batchReplaceSelectNone;
+
+  /// How confident the match is, as a percentage
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}%'**
+  String batchReplaceConfidence(int percent);
+
+  /// Match signal: both files carry the same title tag
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get batchReplaceSignalTitle;
+
+  /// Match signal: the two file names read the same
+  ///
+  /// In en, this message translates to:
+  /// **'File name'**
+  String get batchReplaceSignalFilename;
+
+  /// Match signal: both files carry the same artist
+  ///
+  /// In en, this message translates to:
+  /// **'Artist'**
+  String get batchReplaceSignalArtist;
+
+  /// Match signal: both files carry the same album
+  ///
+  /// In en, this message translates to:
+  /// **'Album'**
+  String get batchReplaceSignalAlbum;
+
+  /// Match signal: both files report the same duration
+  ///
+  /// In en, this message translates to:
+  /// **'Length'**
+  String get batchReplaceSignalDuration;
+
+  /// Warning on a proposal whose two files report different lengths
+  ///
+  /// In en, this message translates to:
+  /// **'length differs'**
+  String get batchReplaceLengthDiffers;
+
+  /// Heading for the files in the folder that no library song claimed
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files matched nothing'**
+  String batchReplaceUnmatched(int count);
+
+  /// Overflow indicator for unmatched files not listed
+  ///
+  /// In en, this message translates to:
+  /// **'and {count} more'**
+  String batchReplaceAndMore(int count);
+
+  /// Re-runs the comparison after the library changed
+  ///
+  /// In en, this message translates to:
+  /// **'Compare again'**
+  String get batchReplaceCompareAgain;
+
+  /// Title shown when the comparison proposed nothing
+  ///
+  /// In en, this message translates to:
+  /// **'No matches'**
+  String get batchReplaceNoMatchesTitle;
+
+  /// Body shown when the comparison proposed nothing
+  ///
+  /// In en, this message translates to:
+  /// **'None of the {files} files in that folder looked like songs already in your library.'**
+  String batchReplaceNoMatchesMessage(int files);
+
+  /// Warning when Replace is pressed with no proposal selected
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing is selected'**
+  String get batchReplaceNothingSelected;
+
+  /// Title of the sheet choosing how the batch replacement runs
+  ///
+  /// In en, this message translates to:
+  /// **'Replace songs'**
+  String get batchReplaceOptionsTitle;
+
+  /// Section label for how the replacement files arrive
+  ///
+  /// In en, this message translates to:
+  /// **'New files'**
+  String get batchReplaceTransportSection;
+
+  /// Option that copies the replacement file into the library
+  ///
+  /// In en, this message translates to:
+  /// **'Copy into the library'**
+  String get batchReplaceTransportCopy;
+
+  /// Description under the copy-into-library option
+  ///
+  /// In en, this message translates to:
+  /// **'The folder you compared keeps its copies'**
+  String get batchReplaceTransportCopyHint;
+
+  /// Option that moves the replacement file into the library
+  ///
+  /// In en, this message translates to:
+  /// **'Move into the library'**
+  String get batchReplaceTransportMove;
+
+  /// Description under the move-into-library option
+  ///
+  /// In en, this message translates to:
+  /// **'The folder you compared loses the files that were used'**
+  String get batchReplaceTransportMoveHint;
+
+  /// Section label for what happens to the replaced files
+  ///
+  /// In en, this message translates to:
+  /// **'Old files'**
+  String get batchReplaceOriginalSection;
+
+  /// Option that leaves the replaced files on disk but out of the library
+  ///
+  /// In en, this message translates to:
+  /// **'Keep them, hidden'**
+  String get batchReplaceOriginalHide;
+
+  /// Description under the keep-hidden option
+  ///
+  /// In en, this message translates to:
+  /// **'The files stay on disk, out of the library'**
+  String get batchReplaceOriginalHideHint;
+
+  /// Option that deletes the replaced files from disk
+  ///
+  /// In en, this message translates to:
+  /// **'Delete them'**
+  String get batchReplaceOriginalDelete;
+
+  /// Description under the delete option
+  ///
+  /// In en, this message translates to:
+  /// **'The files are deleted from disk for good'**
+  String get batchReplaceOriginalDeleteHint;
+
+  /// Button that starts the replacement for the selected count
+  ///
+  /// In en, this message translates to:
+  /// **'Replace {count} songs'**
+  String batchReplaceRun(int count);
+
+  /// Title of the confirmation before deleting replaced files
+  ///
+  /// In en, this message translates to:
+  /// **'Delete the old files?'**
+  String get batchReplaceDeleteTitle;
+
+  /// Body of the confirmation before deleting replaced files
+  ///
+  /// In en, this message translates to:
+  /// **'{count} original files will be deleted from disk. This cannot be undone.'**
+  String batchReplaceDeleteMessage(int count);
+
+  /// Confirms deleting the replaced files
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get batchReplaceDeleteConfirm;
+
+  /// Title of the dialog reporting what the batch replacement did
+  ///
+  /// In en, this message translates to:
+  /// **'Batch replace'**
+  String get batchReplaceOutcomeTitle;
+
+  /// Result message when every replacement succeeded
+  ///
+  /// In en, this message translates to:
+  /// **'Replaced {count} songs.'**
+  String batchReplaceOutcomeDone(int count);
+
+  /// Result message when some replacements failed
+  ///
+  /// In en, this message translates to:
+  /// **'Replaced {count} songs, {failed} could not be replaced.'**
+  String batchReplaceOutcomeDoneFailed(int count, int failed);
+
+  /// Result message when the batch was stopped early
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped after replacing {count} songs.'**
+  String batchReplaceOutcomeStopped(int count);
+
+  /// Result message when the batch was stopped early with failures
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped after replacing {count} songs, {failed} could not be replaced.'**
+  String batchReplaceOutcomeStoppedFailed(int count, int failed);
+
+  /// Shown for a replacement that failed for a reason the file system reported
+  ///
+  /// In en, this message translates to:
+  /// **'{error}'**
+  String batchReplaceFailureError(Object error);
+
+  /// Title of the Batch Replace Songs row in Library settings
+  ///
+  /// In en, this message translates to:
+  /// **'Batch Replace Songs'**
+  String get settingsSearchBatchReplaceTitle;
+
+  /// Subtitle of the Batch Replace Songs row in Library settings
+  ///
+  /// In en, this message translates to:
+  /// **'Swap songs for better files from another folder'**
+  String get settingsSearchBatchReplaceSubtitle;
 }
 
 class _AppLocalizationsDelegate

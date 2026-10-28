@@ -12,6 +12,7 @@ import '../models/song.dart';
 import 'database_service.dart';
 import '../domain/services/cover_optimizer.dart';
 import '../domain/services/embedded_cover_bytes.dart';
+import '../domain/services/media_formats.dart';
 import '../domain/services/search_service.dart';
 import 'storage_service.dart';
 import 'ffmpeg_service.dart';
@@ -103,28 +104,12 @@ class _EnrichResult {
 }
 
 class ScannerService {
-  static final List<String> _supportedExtensions = [
-    '.mp3',
-    '.m4a',
-    '.wav',
-    '.flac',
-    '.ogg',
-    '.wma',
-    '.aac',
-    '.m4b',
-    '.mp4',
-    '.opus',
-    '.m4v',
-    '.mov',
-    '.mkv',
-    '.webm',
-    '.avi',
-    '.3gp',
-  ];
-
   /// Whether [path] is a media file the library would index.
+  ///
+  /// Delegated so the scanner, the storage probe and the folder comparison
+  /// cannot disagree about what a song is.
   static bool isSupportedMediaPath(String path) =>
-      _supportedExtensions.contains(p.extension(path).toLowerCase());
+      MediaFormats.isSupportedPath(path);
 
   static bool _isVideoFile(String path) {
     final ext = p.extension(path).toLowerCase();
@@ -1321,8 +1306,7 @@ class ScannerService {
               final path = entity.path;
 
               // Check if file has supported extension
-              if (!_supportedExtensions
-                  .contains(p.extension(path).toLowerCase())) {
+              if (!MediaFormats.isSupportedPath(path)) {
                 continue;
               }
 

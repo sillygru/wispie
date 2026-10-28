@@ -11,6 +11,71 @@ enum OriginalFileDisposition {
   hide,
 }
 
+/// How the new file reaches the library.
+///
+/// Separate from [OriginalFileDisposition] on purpose: one decides what happens
+/// to the file coming in, the other what happens to the file going out, and a
+/// replacement is any combination of the two.
+enum ReplacementTransport {
+  /// The new file is copied in and the source folder keeps its copy.
+  copy,
+
+  /// The new file is moved in, leaving nothing behind in the source folder.
+  move,
+}
+
+/// One song to replace with one file.
+class ReplacementRequest {
+  /// The library song, under the identity it still has.
+  final Song song;
+  final String sourcePath;
+
+  const ReplacementRequest({required this.song, required this.sourcePath});
+
+  /// The filename the replacement will carry, which is the identity every
+  /// filename-keyed record gets re-pointed at.
+  String get newFilename => p.basename(sourcePath.trim());
+
+  /// Where the replacement is written: the song's own directory.
+  String get destinationPath =>
+      SongReplacementRules.destinationFor(song, sourcePath);
+}
+
+/// Why one file of a run did not make it, in the two shapes a run can fail in:
+/// a rule said no before anything was touched, or a filesystem operation threw.
+class ReplacementFailure {
+  final ReplacementRequest request;
+  final ReplacementRejectReason? rejection;
+  final Object? error;
+
+  const ReplacementFailure({
+    required this.request,
+    this.rejection,
+    this.error,
+  });
+
+  /// The library song's filename as it was when the run started.
+  String get filename => request.song.filename;
+}
+
+/// What a run did.
+///
+/// [stoppedEarly] means the user cancelled; the lists are still whole, covering
+/// exactly what happened before that.
+class ReplacementOutcome {
+  final List<Song> replaced;
+  final List<ReplacementFailure> failures;
+  final bool stoppedEarly;
+
+  const ReplacementOutcome({
+    required this.replaced,
+    required this.failures,
+    this.stoppedEarly = false,
+  });
+
+  bool get allSucceeded => failures.isEmpty && !stoppedEarly;
+}
+
 /// Result of validating a candidate replacement file.
 sealed class ReplacementCheck {
   const ReplacementCheck();

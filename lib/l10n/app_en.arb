@@ -3122,6 +3122,10 @@
   "@settingsKwBulkRename": {
     "description": "Comma-separated search keywords for the Bulk Rename Files setting"
   },
+  "settingsKwBatchReplace": "replace,swap,upgrade,flac,lossless,batch,compare,folder,duplicate",
+  "@settingsKwBatchReplace": {
+    "description": "Comma-separated search keywords for the Batch Replace Songs setting"
+  },
   "settingsKwManageStorage": "disk,space,cache,cleanup",
   "@settingsKwManageStorage": {
     "description": "Comma-separated search keywords for the Manage Storage setting"
@@ -7307,5 +7311,292 @@
   "playlistYoutubeBadge": "YouTube",
   "@playlistYoutubeBadge": {
     "description": "Badge on a playlist that mirrors a YouTube account playlist"
+  },
+  "batchReplaceTitle": "Batch Replace",
+  "@batchReplaceTitle": {
+    "description": "App bar title for the Batch Replace screen"
+  },
+  "batchReplaceIntro": "Pick a folder to compare against your library. Songs whose files match will be proposed for replacement.",
+  "@batchReplaceIntro": {
+    "description": "Explanation at the top of the Batch Replace screen"
+  },
+  "batchReplaceFolderLabel": "Folder to compare",
+  "@batchReplaceFolderLabel": {
+    "description": "Label above the chosen comparison folder path"
+  },
+  "batchReplaceNoFolder": "No folder selected",
+  "@batchReplaceNoFolder": {
+    "description": "Shown where the comparison folder path goes before one is picked"
+  },
+  "batchReplaceChooseFolder": "Choose folder",
+  "@batchReplaceChooseFolder": {
+    "description": "Button that opens the folder picker"
+  },
+  "batchReplaceChangeFolder": "Change",
+  "@batchReplaceChangeFolder": {
+    "description": "Button that replaces the already chosen comparison folder"
+  },
+  "batchReplaceSubfolders": "Include subfolders",
+  "@batchReplaceSubfolders": {
+    "description": "Toggle for reading nested folders during the comparison"
+  },
+  "batchReplaceInsideLibrary": "That folder is already part of your library. Pick a folder outside it.",
+  "@batchReplaceInsideLibrary": {
+    "description": "Warning when the chosen comparison folder is one the library already scans"
+  },
+  "batchReplacePhaseListing": "Listing files",
+  "@batchReplacePhaseListing": {
+    "description": "Progress phase while the comparison folder is being listed"
+  },
+  "batchReplacePhaseReading": "Reading tags",
+  "@batchReplacePhaseReading": {
+    "description": "Progress phase while tags are read from the comparison folder"
+  },
+  "batchReplacePhaseReplacing": "Replacing songs",
+  "@batchReplacePhaseReplacing": {
+    "description": "Progress phase while the confirmed replacements are applied"
+  },
+  "batchReplaceStopping": "Stopping",
+  "@batchReplaceStopping": {
+    "description": "Shown once the user has asked to stop a running batch replace"
+  },
+  "batchReplaceCompareError": "Could not compare that folder: {error}",
+  "@batchReplaceCompareError": {
+    "description": "Error shown when the comparison folder cannot be read",
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "batchReplaceMatched": "{count} songs matched",
+  "@batchReplaceMatched": {
+    "description": "Summary of how many songs the comparison proposed to replace",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceCompared": "Compared {files} files against {songs} library songs",
+  "@batchReplaceCompared": {
+    "description": "Summary of how much was compared",
+    "placeholders": {
+      "files": {
+        "type": "int"
+      },
+      "songs": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceSelectAll": "Select all",
+  "@batchReplaceSelectAll": {
+    "description": "Selects every proposed replacement"
+  },
+  "batchReplaceSelectNone": "Select none",
+  "@batchReplaceSelectNone": {
+    "description": "Clears the selection of proposed replacements"
+  },
+  "batchReplaceConfidence": "{percent}%",
+  "@batchReplaceConfidence": {
+    "description": "How confident the match is, as a percentage",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceSignalTitle": "Title",
+  "@batchReplaceSignalTitle": {
+    "description": "Match signal: both files carry the same title tag"
+  },
+  "batchReplaceSignalFilename": "File name",
+  "@batchReplaceSignalFilename": {
+    "description": "Match signal: the two file names read the same"
+  },
+  "batchReplaceSignalArtist": "Artist",
+  "@batchReplaceSignalArtist": {
+    "description": "Match signal: both files carry the same artist"
+  },
+  "batchReplaceSignalAlbum": "Album",
+  "@batchReplaceSignalAlbum": {
+    "description": "Match signal: both files carry the same album"
+  },
+  "batchReplaceSignalDuration": "Length",
+  "@batchReplaceSignalDuration": {
+    "description": "Match signal: both files report the same duration"
+  },
+  "batchReplaceLengthDiffers": "length differs",
+  "@batchReplaceLengthDiffers": {
+    "description": "Warning on a proposal whose two files report different lengths"
+  },
+  "batchReplaceUnmatched": "{count} files matched nothing",
+  "@batchReplaceUnmatched": {
+    "description": "Heading for the files in the folder that no library song claimed",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceAndMore": "and {count} more",
+  "@batchReplaceAndMore": {
+    "description": "Overflow indicator for unmatched files not listed",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceCompareAgain": "Compare again",
+  "@batchReplaceCompareAgain": {
+    "description": "Re-runs the comparison after the library changed"
+  },
+  "batchReplaceNoMatchesTitle": "No matches",
+  "@batchReplaceNoMatchesTitle": {
+    "description": "Title shown when the comparison proposed nothing"
+  },
+  "batchReplaceNoMatchesMessage": "None of the {files} files in that folder looked like songs already in your library.",
+  "@batchReplaceNoMatchesMessage": {
+    "description": "Body shown when the comparison proposed nothing",
+    "placeholders": {
+      "files": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceNothingSelected": "Nothing is selected",
+  "@batchReplaceNothingSelected": {
+    "description": "Warning when Replace is pressed with no proposal selected"
+  },
+  "batchReplaceOptionsTitle": "Replace songs",
+  "@batchReplaceOptionsTitle": {
+    "description": "Title of the sheet choosing how the batch replacement runs"
+  },
+  "batchReplaceTransportSection": "New files",
+  "@batchReplaceTransportSection": {
+    "description": "Section label for how the replacement files arrive"
+  },
+  "batchReplaceTransportCopy": "Copy into the library",
+  "@batchReplaceTransportCopy": {
+    "description": "Option that copies the replacement file into the library"
+  },
+  "batchReplaceTransportCopyHint": "The folder you compared keeps its copies",
+  "@batchReplaceTransportCopyHint": {
+    "description": "Description under the copy-into-library option"
+  },
+  "batchReplaceTransportMove": "Move into the library",
+  "@batchReplaceTransportMove": {
+    "description": "Option that moves the replacement file into the library"
+  },
+  "batchReplaceTransportMoveHint": "The folder you compared loses the files that were used",
+  "@batchReplaceTransportMoveHint": {
+    "description": "Description under the move-into-library option"
+  },
+  "batchReplaceOriginalSection": "Old files",
+  "@batchReplaceOriginalSection": {
+    "description": "Section label for what happens to the replaced files"
+  },
+  "batchReplaceOriginalHide": "Keep them, hidden",
+  "@batchReplaceOriginalHide": {
+    "description": "Option that leaves the replaced files on disk but out of the library"
+  },
+  "batchReplaceOriginalHideHint": "The files stay on disk, out of the library",
+  "@batchReplaceOriginalHideHint": {
+    "description": "Description under the keep-hidden option"
+  },
+  "batchReplaceOriginalDelete": "Delete them",
+  "@batchReplaceOriginalDelete": {
+    "description": "Option that deletes the replaced files from disk"
+  },
+  "batchReplaceOriginalDeleteHint": "The files are deleted from disk for good",
+  "@batchReplaceOriginalDeleteHint": {
+    "description": "Description under the delete option"
+  },
+  "batchReplaceRun": "Replace {count} songs",
+  "@batchReplaceRun": {
+    "description": "Button that starts the replacement for the selected count",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceDeleteTitle": "Delete the old files?",
+  "@batchReplaceDeleteTitle": {
+    "description": "Title of the confirmation before deleting replaced files"
+  },
+  "batchReplaceDeleteMessage": "{count} original files will be deleted from disk. This cannot be undone.",
+  "@batchReplaceDeleteMessage": {
+    "description": "Body of the confirmation before deleting replaced files",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceDeleteConfirm": "Delete",
+  "@batchReplaceDeleteConfirm": {
+    "description": "Confirms deleting the replaced files"
+  },
+  "batchReplaceOutcomeTitle": "Batch replace",
+  "@batchReplaceOutcomeTitle": {
+    "description": "Title of the dialog reporting what the batch replacement did"
+  },
+  "batchReplaceOutcomeDone": "Replaced {count} songs.",
+  "@batchReplaceOutcomeDone": {
+    "description": "Result message when every replacement succeeded",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceOutcomeDoneFailed": "Replaced {count} songs, {failed} could not be replaced.",
+  "@batchReplaceOutcomeDoneFailed": {
+    "description": "Result message when some replacements failed",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceOutcomeStopped": "Stopped after replacing {count} songs.",
+  "@batchReplaceOutcomeStopped": {
+    "description": "Result message when the batch was stopped early",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceOutcomeStoppedFailed": "Stopped after replacing {count} songs, {failed} could not be replaced.",
+  "@batchReplaceOutcomeStoppedFailed": {
+    "description": "Result message when the batch was stopped early with failures",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "failed": {
+        "type": "int"
+      }
+    }
+  },
+  "batchReplaceFailureError": "{error}",
+  "@batchReplaceFailureError": {
+    "description": "Shown for a replacement that failed for a reason the file system reported",
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "settingsSearchBatchReplaceTitle": "Batch Replace Songs",
+  "@settingsSearchBatchReplaceTitle": {
+    "description": "Title of the Batch Replace Songs row in Library settings"
+  },
+  "settingsSearchBatchReplaceSubtitle": "Swap songs for better files from another folder",
+  "@settingsSearchBatchReplaceSubtitle": {
+    "description": "Subtitle of the Batch Replace Songs row in Library settings"
   }
 }

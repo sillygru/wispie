@@ -1463,6 +1463,111 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     return replaced;
   }
 
+  /// Runs [requests] as one replacement after another, reporting each result.
+  ///
+  /// Sequential, not concurrent: every replacement rewrites rows across both
+  /// databases and moves a file, so overlapping two of them buys nothing on an
+  /// I/O-bound job while making a partial failure much harder to describe.
+  ///
+  /// One file failing never stops the run — the point of a batch is to get
+  /// through the folder — and the rules are re-checked per file, because each
+  /// replacement re-keys the library that the next one is validated against.
+  /// Cancelling is not a failure, so it is reported separately.
+  Future<ReplacementOutcome> replaceSongsInBatch(
+    List<ReplacementRequest> requests, {
+    required ReplacementTransport transport,
+    required OriginalFileDisposition disposition,
+    void Function(int done, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final trackedFolders =
+        (await ref.read(storageServiceProvider).getMusicFolders())
+            .map((folder) => folder['path'] ?? '')
+            .toList();
+
+    final replaced = <Song>[];
+    final failures = <ReplacementFailure>[];
+
+    for (var index = 0; index < requests.length; index++) {
+      if (isCancelled?.call() ?? false) {
+        return ReplacementOutcome(
+          replaced: replaced,
+          failures: failures,
+          stoppedEarly: true,
+        );
+      }
+
+      final request = requests[index];
+      final library = state.value ?? const <Song>[];
+
+      Song? song;
+      for (final candidate in library) {
+        if (candidate.filename == request.song.filename) {
+          song = candidate;
+          break;
+        }
+      }
+
+      try {
+        if (song == null) {
+          throw StateError('song is no longer in the library');
+        }
+
+        final destination = request.destinationPath;
+        final check = SongReplacementRules.check(
+          original: song,
+          sourcePath: request.sourcePath,
+          isSupportedMediaFile:
+              ScannerService.isSupportedMediaPath(request.sourcePath),
+          trackedFolders: trackedFolders,
+          libraryFilenames: library.map((entry) => entry.filename),
+          // Through the file manager, not `File.existsSync`: on Android the
+          // destination can sit inside a document tree, where a raw existence
+          // check reports free for a name that is very much taken.
+          destinationExists:
+              await ref.read(fileManagerServiceProvider).fileExistsAt(
+                    destination,
+                  ),
+        );
+
+        if (check is ReplacementRejected) {
+          failures.add(ReplacementFailure(
+            request: request,
+            rejection: check.reason,
+          ));
+          continue;
+        }
+
+        final result = await replaceSongFile(
+          song,
+          check as ReplacementAccepted,
+          disposition: disposition,
+        );
+        replaced.add(result);
+
+        if (transport == ReplacementTransport.move) {
+          await _removeReplacedSource(request);
+        }
+      } catch (e) {
+        failures.add(ReplacementFailure(request: request, error: e));
+      } finally {
+        onProgress?.call(index + 1, requests.length);
+      }
+    }
+
+    return ReplacementOutcome(replaced: replaced, failures: failures);
+  }
+
+  /// Deletes the file a moved replacement came from.
+  ///
+  /// A source that has already gone counts as moved: the outcome the user asked
+  /// for is one file where there were two, and there is one.
+  Future<void> _removeReplacedSource(ReplacementRequest request) async {
+    final source = File(request.sourcePath);
+    if (!await source.exists()) return;
+    await source.delete();
+  }
+
   /// Copies the replacement in, reads what it says about itself, and moves
   /// every filename-keyed record onto it.
   ///

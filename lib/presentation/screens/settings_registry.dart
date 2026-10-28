@@ -591,6 +591,17 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
       ),
     ),
     SettingsDestination(
+      anchorId: 'data.batch_replace',
+      icon: AppIcons.swapHoriz,
+      title: l.settingsSearchBatchReplaceTitle,
+      subtitle: l.settingsSearchBatchReplaceSubtitle,
+      breadcrumb: l.settingsCrumbLibraryMaintenance,
+      keywords: _kw(l.settingsKwBatchReplace),
+      open: () => const LibrarySettingsScreen(
+        highlightId: 'data.batch_replace',
+      ),
+    ),
+    SettingsDestination(
       anchorId: 'data.storage',
       icon: AppIcons.storage,
       title: l.storageManageTitle,

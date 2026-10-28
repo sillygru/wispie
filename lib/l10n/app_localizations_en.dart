@@ -2468,6 +2468,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'rename,filenames,batch,bulk,format,naming';
 
   @override
+  String get settingsKwBatchReplace =>
+      'replace,swap,upgrade,flac,lossless,batch,compare,folder,duplicate';
+
+  @override
   String get settingsKwManageStorage => 'disk,space,cache,cleanup';
 
   @override
@@ -5590,4 +5594,198 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get playlistYoutubeBadge => 'YouTube';
+
+  @override
+  String get batchReplaceTitle => 'Batch Replace';
+
+  @override
+  String get batchReplaceIntro =>
+      'Pick a folder to compare against your library. Songs whose files match will be proposed for replacement.';
+
+  @override
+  String get batchReplaceFolderLabel => 'Folder to compare';
+
+  @override
+  String get batchReplaceNoFolder => 'No folder selected';
+
+  @override
+  String get batchReplaceChooseFolder => 'Choose folder';
+
+  @override
+  String get batchReplaceChangeFolder => 'Change';
+
+  @override
+  String get batchReplaceSubfolders => 'Include subfolders';
+
+  @override
+  String get batchReplaceInsideLibrary =>
+      'That folder is already part of your library. Pick a folder outside it.';
+
+  @override
+  String get batchReplacePhaseListing => 'Listing files';
+
+  @override
+  String get batchReplacePhaseReading => 'Reading tags';
+
+  @override
+  String get batchReplacePhaseReplacing => 'Replacing songs';
+
+  @override
+  String get batchReplaceStopping => 'Stopping';
+
+  @override
+  String batchReplaceCompareError(Object error) {
+    return 'Could not compare that folder: $error';
+  }
+
+  @override
+  String batchReplaceMatched(int count) {
+    return '$count songs matched';
+  }
+
+  @override
+  String batchReplaceCompared(int files, int songs) {
+    return 'Compared $files files against $songs library songs';
+  }
+
+  @override
+  String get batchReplaceSelectAll => 'Select all';
+
+  @override
+  String get batchReplaceSelectNone => 'Select none';
+
+  @override
+  String batchReplaceConfidence(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get batchReplaceSignalTitle => 'Title';
+
+  @override
+  String get batchReplaceSignalFilename => 'File name';
+
+  @override
+  String get batchReplaceSignalArtist => 'Artist';
+
+  @override
+  String get batchReplaceSignalAlbum => 'Album';
+
+  @override
+  String get batchReplaceSignalDuration => 'Length';
+
+  @override
+  String get batchReplaceLengthDiffers => 'length differs';
+
+  @override
+  String batchReplaceUnmatched(int count) {
+    return '$count files matched nothing';
+  }
+
+  @override
+  String batchReplaceAndMore(int count) {
+    return 'and $count more';
+  }
+
+  @override
+  String get batchReplaceCompareAgain => 'Compare again';
+
+  @override
+  String get batchReplaceNoMatchesTitle => 'No matches';
+
+  @override
+  String batchReplaceNoMatchesMessage(int files) {
+    return 'None of the $files files in that folder looked like songs already in your library.';
+  }
+
+  @override
+  String get batchReplaceNothingSelected => 'Nothing is selected';
+
+  @override
+  String get batchReplaceOptionsTitle => 'Replace songs';
+
+  @override
+  String get batchReplaceTransportSection => 'New files';
+
+  @override
+  String get batchReplaceTransportCopy => 'Copy into the library';
+
+  @override
+  String get batchReplaceTransportCopyHint =>
+      'The folder you compared keeps its copies';
+
+  @override
+  String get batchReplaceTransportMove => 'Move into the library';
+
+  @override
+  String get batchReplaceTransportMoveHint =>
+      'The folder you compared loses the files that were used';
+
+  @override
+  String get batchReplaceOriginalSection => 'Old files';
+
+  @override
+  String get batchReplaceOriginalHide => 'Keep them, hidden';
+
+  @override
+  String get batchReplaceOriginalHideHint =>
+      'The files stay on disk, out of the library';
+
+  @override
+  String get batchReplaceOriginalDelete => 'Delete them';
+
+  @override
+  String get batchReplaceOriginalDeleteHint =>
+      'The files are deleted from disk for good';
+
+  @override
+  String batchReplaceRun(int count) {
+    return 'Replace $count songs';
+  }
+
+  @override
+  String get batchReplaceDeleteTitle => 'Delete the old files?';
+
+  @override
+  String batchReplaceDeleteMessage(int count) {
+    return '$count original files will be deleted from disk. This cannot be undone.';
+  }
+
+  @override
+  String get batchReplaceDeleteConfirm => 'Delete';
+
+  @override
+  String get batchReplaceOutcomeTitle => 'Batch replace';
+
+  @override
+  String batchReplaceOutcomeDone(int count) {
+    return 'Replaced $count songs.';
+  }
+
+  @override
+  String batchReplaceOutcomeDoneFailed(int count, int failed) {
+    return 'Replaced $count songs, $failed could not be replaced.';
+  }
+
+  @override
+  String batchReplaceOutcomeStopped(int count) {
+    return 'Stopped after replacing $count songs.';
+  }
+
+  @override
+  String batchReplaceOutcomeStoppedFailed(int count, int failed) {
+    return 'Stopped after replacing $count songs, $failed could not be replaced.';
+  }
+
+  @override
+  String batchReplaceFailureError(Object error) {
+    return '$error';
+  }
+
+  @override
+  String get settingsSearchBatchReplaceTitle => 'Batch Replace Songs';
+
+  @override
+  String get settingsSearchBatchReplaceSubtitle =>
+      'Swap songs for better files from another folder';
 }
