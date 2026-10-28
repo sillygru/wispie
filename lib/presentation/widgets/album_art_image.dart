@@ -66,12 +66,18 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
   String? _resolvedUrl;
   int _imageRevision = 0;
 
+  /// Set when the sharp rendition of a remote thumbnail failed to load, so the
+  /// URL the server is known to have is tried instead. A clip with no
+  /// `maxresdefault` still has to show its art.
+  bool _fellBackToSmaller = false;
+
   @override
   void didUpdateWidget(covariant AlbumArtImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url || oldWidget.filename != widget.filename) {
       _refreshFuture = null;
       _resolvedUrl = null;
+      _fellBackToSmaller = false;
       _imageRevision++;
     } else if (oldWidget.cacheVersion != widget.cacheVersion) {
       // Cover extraction deliberately reuses the song-scoped path. Evict the
@@ -188,10 +194,14 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
         );
       }
     } else {
+      final sharper =
+          CoverPath.sharperUrl(imageUrl, wanted: _wantedPixels(context));
+      final targetUrl =
+          sharper == null || _fellBackToSmaller ? imageUrl : sharper;
       content = Image.network(
         // The resolved URL, not widget.url — otherwise a cover the lazy
         // refresh just found is thrown away on this branch.
-        imageUrl,
+        targetUrl,
         width: widget.width,
         height: widget.height,
         fit: widget.fit,
@@ -212,6 +222,13 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
           return widget.placeholder ?? _buildPlaceholder();
         },
         errorBuilder: (context, error, stackTrace) {
+          if (targetUrl != imageUrl) {
+            _fellBackToSmaller = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() {});
+            });
+            return widget.placeholder ?? _buildPlaceholder();
+          }
           return widget.errorWidget ?? _buildError();
         },
       );
@@ -225,6 +242,19 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
     }
 
     return content;
+  }
+
+  /// Device pixels the largest side of this cover has to fill, so a list row
+  /// does not pull the same still as the full-size player cover.
+  int _wantedPixels(BuildContext context) {
+    final width = widget.width;
+    final height = widget.height;
+    var side = width != null && height != null
+        ? (width > height ? width : height)
+        : width ?? height ?? 320;
+    if (!side.isFinite) side = 320;
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    return (side * ratio).round().clamp(96, 720);
   }
 
   Future<void> _refreshAfterEviction(AlbumArtImage image) async {

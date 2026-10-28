@@ -33,6 +33,52 @@ class CoverPath {
     }
   }
 
+  /// A rendition of a remote thumbnail suited to [wanted] device pixels on a
+  /// side, or null when the URL names no size or is already big enough.
+  ///
+  /// YouTube stills come in fixed names: `mqdefault`, `hqdefault`, `sddefault`
+  /// and `maxresdefault` are one frame at 320, 480, 640 and 1280 wide, so the
+  /// nearest name at or above [wanted] is the sharpest one worth downloading. A
+  /// 52px list row has no use for a 1280px still, and a full-size player cover
+  /// has nothing to gain from a 320px one. Google's CDNs (`yt3`, `lh3`) take the
+  /// size as a `=wN-hN` / `=sN` suffix instead, which the catalogue's own
+  /// thumbnails use.
+  static String? sharperUrl(String url, {int wanted = 720}) {
+    final still = RegExp(
+      r'^https?://i\.ytimg\.com/vi/([A-Za-z0-9_-]+)/(mq|hq|sd|maxres)default(\.\w+)(\?.*)?$',
+    ).firstMatch(url);
+    if (still != null) {
+      const ladder = ['mq', 'hq', 'sd', 'maxres'];
+      final current = ladder.indexOf(still.group(2) ?? 'mq');
+      final target = wanted <= 320
+          ? 0
+          : wanted <= 480
+              ? 1
+              : wanted <= 640
+                  ? 2
+                  : 3;
+      if (target <= current) return null;
+      return 'https://i.ytimg.com/vi/${still.group(1)}/'
+          '${ladder[target]}default${still.group(3)}${still.group(4) ?? ''}';
+    }
+
+    final target = wanted.clamp(120, 720);
+    final boxed = RegExp(r'=w(\d+)-h(\d+)').firstMatch(url);
+    if (boxed != null) {
+      final width = int.tryParse(boxed.group(1) ?? '') ?? 0;
+      if (width >= target) return null;
+      return url.replaceRange(boxed.start, boxed.end, '=w$target-h$target');
+    }
+
+    final square = RegExp(r'=s(\d+)(?=-|$)').firstMatch(url);
+    if (square != null) {
+      final size = int.tryParse(square.group(1) ?? '') ?? 0;
+      if (size >= target) return null;
+      return url.replaceRange(square.start, square.end, '=s$target');
+    }
+    return null;
+  }
+
   /// [isLocal] narrowed to paths that can be opened as a `File`, with any
   /// `file://` scheme stripped. Null for remote URLs and for `content://`
   /// URIs, which have no filesystem path.

@@ -526,6 +526,7 @@ YouTubePlaylistItem normalizeMusicTrack(YouTubePlaylistItem item) {
     duration: item.duration,
     thumbnailUrl: item.thumbnailUrl,
     position: item.position,
+    viewCountText: item.viewCountText,
   );
 }
 

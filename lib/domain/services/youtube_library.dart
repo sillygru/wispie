@@ -85,10 +85,31 @@ class YouTubeAccountPlaylist {
   bool get isLikedVideos => id == kLikedVideosPlaylistId;
 }
 
-/// Thumbnail URL for a video. `mqdefault` is the smallest size that still
-/// looks sharp behind the player and in a list row.
+/// Thumbnail URL for a video.
+///
+/// `hqdefault` (480x360) is the smallest still that is not already upscaled and
+/// exists for every video. Display surfaces ask for `maxresdefault` on top of it
+/// and fall back to this URL when a clip has no maxres rendition; `mqdefault` is
+/// 320x180 and looks soft behind a full-size player cover.
 String youtubeThumbnailUrl(String videoId) =>
-    'https://i.ytimg.com/vi/$videoId/mqdefault.jpg';
+    'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+
+/// A YouTube-hosted thumbnail requested at a larger size.
+///
+/// Catalogue rows carry their size in the URL itself (`...=w120-h120-l90-rj`,
+/// `...=s120`), so the id-only still of [youtubeThumbnailUrl] cannot be used
+/// here: the suffix has to be rewritten in place. YouTube serves 720 across the
+/// board, so this asks for that instead of guessing from the widget size.
+String upscaleThumbnailUrl(String url, {int size = 720}) {
+  if (url.isEmpty) return url;
+  final boxed = RegExp(r'=w\d+-h\d+');
+  if (boxed.hasMatch(url)) return url.replaceFirst(boxed, '=w$size-h$size');
+  final square = RegExp(r'=s(\d+)(?=-|$)').firstMatch(url);
+  if (square == null) return url;
+  final current = int.tryParse(square.group(1) ?? '');
+  if (current != null && current >= size) return url;
+  return url.replaceRange(square.start, square.end, '=s$size');
+}
 
 class YouTubePlaylistItem {
   final String videoId;
@@ -98,6 +119,10 @@ class YouTubePlaylistItem {
   final String? thumbnailUrl;
   final int position;
 
+  /// `36M plays`, exactly as the catalogue prints it, or null when the row
+  /// carried no count.
+  final String? viewCountText;
+
   const YouTubePlaylistItem({
     required this.videoId,
     required this.title,
@@ -105,6 +130,7 @@ class YouTubePlaylistItem {
     this.duration,
     this.thumbnailUrl,
     this.position = 0,
+    this.viewCountText,
   });
 }
 
@@ -337,6 +363,7 @@ class YouTubeLibraryApi {
             duration: item.duration,
             thumbnailUrl: item.thumbnailUrl,
             position: items.length,
+            viewCountText: item.viewCountText,
           ),
         );
       }
@@ -408,6 +435,7 @@ class YouTubeLibraryApi {
             duration: item.duration,
             thumbnailUrl: item.thumbnailUrl,
             position: items.length,
+            viewCountText: item.viewCountText,
           ),
         );
       }
@@ -883,6 +911,7 @@ List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
         duration: item.duration,
         thumbnailUrl: item.thumbnailUrl,
         position: item.position,
+        viewCountText: item.viewCountText,
       );
     }
     if (!seen.add(item.videoId)) continue;
@@ -894,6 +923,7 @@ List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
         duration: item.duration,
         thumbnailUrl: item.thumbnailUrl,
         position: result.length,
+        viewCountText: item.viewCountText,
       ),
     );
   }
@@ -905,16 +935,59 @@ YouTubePlaylistItem? _itemFromMusicResponsive(Map renderer) {
       mapOf(mapOf(renderer['playlistItemData']))['videoId']?.toString() ??
       '';
   if (id.isEmpty) return null;
+  // A search page mixes albums, playlists, artists, profiles, podcasts and
+  // episodes into the same row renderer, and all of them carry a play button.
+  // Only the type label tells a track from a container.
+  if (!_isTrackRow(renderer)) return null;
   final title = textOf(_flexColumn(renderer, 0));
   if (!isPlayableTitle(title)) return null;
-  final byline = _musicByline(_flexColumn(renderer, 1));
+  // The metadata columns shift with the shelf: a search hit reads
+  // `Song • 4:11` then `36M plays`, a playlist row reads `Artist • Album` then
+  // `4:11`, so each column is read for whatever it happens to hold.
+  var artist = '';
+  Duration? duration;
+  String? viewCountText;
+  for (var column = 1; column <= 4; column++) {
+    final byline = _musicByline(_flexColumn(renderer, column));
+    if (artist.isEmpty) artist = byline.artist;
+    duration ??= byline.duration;
+    viewCountText ??= byline.viewCountText;
+  }
+  // On a search hit the artist is nowhere in the columns: the only copy is in
+  // the play button's accessibility label. Without it the row shows Unknown
+  // artist, which is what half of the catalogue's search results used to do.
+  if (artist.isEmpty) artist = _artistFromPlayLabel(renderer['overlay']);
+  duration ??= clockInNode(renderer['overlay']);
   return YouTubePlaylistItem(
     videoId: id,
     title: title!,
-    artist: byline.artist,
-    duration: byline.duration,
-    thumbnailUrl: bestImageUrl(renderer['thumbnail']),
+    artist: artist,
+    duration: duration,
+    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
+    viewCountText: viewCountText,
   );
+}
+
+String? _largeThumbnail(Object? node) {
+  final url = bestImageUrl(node);
+  return url == null ? null : upscaleThumbnailUrl(url);
+}
+
+final RegExp _viewCountPattern =
+    RegExp(r'^[\d.,]+\s*[KMB]?\s*(?:plays?|views?)$', caseSensitive: false);
+
+/// The `Play <title> - <artist>` label YouTube Music puts on a row's play
+/// button. The artist is the last ` - ` segment, because titles may contain one.
+String _artistFromPlayLabel(Object? overlay) {
+  for (final node in walkJsonMaps(overlay)) {
+    final label = textOf(mapOf(node['accessibilityData'])['label']);
+    if (label == null || !label.startsWith('Play ')) continue;
+    final parts = label.substring(5).split(' - ');
+    if (parts.length < 2) continue;
+    final artist = stripTopicSuffix(parts.last.trim());
+    if (artist.isNotEmpty) return artist;
+  }
+  return '';
 }
 
 YouTubePlaylistItem? _itemFromMusicTwoRow(Map renderer) {
@@ -928,7 +1001,8 @@ YouTubePlaylistItem? _itemFromMusicTwoRow(Map renderer) {
     title: title!,
     artist: byline.artist,
     duration: byline.duration,
-    thumbnailUrl: bestImageUrl(renderer),
+    thumbnailUrl: _largeThumbnail(renderer),
+    viewCountText: byline.viewCountText,
   );
 }
 
@@ -963,13 +1037,17 @@ Object? _flexColumn(Map renderer, int index) {
   return flex['text'];
 }
 
-/// Artist and duration from a music byline (`Artist • Album • 3:52`).
-({String artist, Duration? duration}) _musicByline(Object? node) {
+/// Artist, duration and view count from a music byline
+/// (`Artist • Album • 3:52`, or `Song • 4:11`), any of which may be absent.
+({String artist, Duration? duration, String? viewCountText}) _musicByline(
+  Object? node,
+) {
   final text = textOf(node);
-  if (text == null) return (artist: '', duration: null);
+  if (text == null) return (artist: '', duration: null, viewCountText: null);
 
   Duration? duration;
   String artist = '';
+  String? viewCountText;
   for (final raw in text.split('•')) {
     final part = raw.trim();
     if (part.isEmpty) continue;
@@ -978,26 +1056,48 @@ Object? _flexColumn(Map renderer, int index) {
       continue;
     }
     if (_musicTypeLabels.contains(part.toLowerCase())) continue;
-    if (RegExp(r'^[\d.,]+[KMB]?\s*(views?|plays?|likes?)$',
-            caseSensitive: false)
-        .hasMatch(part)) {
+    if (_viewCountPattern.hasMatch(part)) {
+      viewCountText ??= part;
       continue;
     }
+    if (_relativeTimePattern.hasMatch(part)) continue;
+    if (RegExp(r'^\d{4}$').hasMatch(part)) continue;
     if (artist.isEmpty) artist = stripTopicSuffix(part);
   }
-  return (artist: artist, duration: duration);
+  return (artist: artist, duration: duration, viewCountText: viewCountText);
 }
+
+final RegExp _relativeTimePattern =
+    RegExp(r'\b(?:ago|premiere[sd]?|watching)\b', caseSensitive: false);
 
 /// Words the music catalogue puts in the second row where an artist would be.
 const Set<String> _musicTypeLabels = {
   'song',
   'video',
+  'music video',
   'single',
   'album',
   'ep',
   'playlist',
   'artist',
+  'profile',
+  'podcast',
+  'episode',
 };
+
+/// Type labels that name something the player can actually play as itself.
+/// Anything else on a row is a container worth at least two levels of tapping.
+const Set<String> _trackTypeLabels = {'song', 'video', 'music video'};
+
+/// True unless the row labels itself as a container. Rows that label nothing
+/// are kept: an untyped row predates the label and has always been playable.
+bool _isTrackRow(Map renderer) {
+  final byline = textOf(_flexColumn(renderer, 1));
+  if (byline == null) return true;
+  final label = byline.split('•').first.trim().toLowerCase();
+  if (!_musicTypeLabels.contains(label)) return true;
+  return _trackTypeLabels.contains(label);
+}
 
 YouTubePlaylistItem? _itemFromPlaylistVideo(Map renderer) {
   if (renderer['isPlayable'] == false) return null;
@@ -1009,7 +1109,7 @@ YouTubePlaylistItem? _itemFromPlaylistVideo(Map renderer) {
     title: title!,
     artist: artistOf(renderer['shortBylineText'] ?? renderer['longBylineText']),
     duration: parseClock(textOf(renderer['lengthText'])),
-    thumbnailUrl: bestImageUrl(renderer['thumbnail']),
+    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
   );
 }
 
@@ -1029,7 +1129,7 @@ YouTubePlaylistItem? _itemFromVideoRenderer(Map renderer) {
       textOf(renderer['lengthText'] ??
           renderer['thumbnailOverlayTimeStatusRenderer']),
     ),
-    thumbnailUrl: bestImageUrl(renderer['thumbnail']),
+    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
   );
 }
 
@@ -1046,7 +1146,7 @@ YouTubePlaylistItem? _itemFromLockup(Map lockup) {
     title: title!,
     artist: artistFromMetadata(metadata['metadata']),
     duration: clockInNode(lockup),
-    thumbnailUrl: bestImageUrl(lockup['contentImage']),
+    thumbnailUrl: _largeThumbnail(lockup['contentImage']),
   );
 }
 

@@ -28,6 +28,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:wispie/domain/models/lrclib_result.dart';
+import 'package:wispie/domain/services/cover_path.dart';
 import 'package:wispie/domain/services/lrclib_match.dart';
 import 'package:wispie/domain/services/lrclib_query.dart';
 import 'package:wispie/domain/services/youtube_library.dart';
@@ -65,6 +66,7 @@ Future<void> main() async {
 
   _cookieParsing();
   _signature();
+  _musicRows();
   await _protocol();
   await _live();
 
@@ -86,6 +88,158 @@ Future<void> main() async {
   );
   stdout.writeln('artifact: ${artifact.path}');
   if (_failed > 0) exitCode = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue rows
+// ---------------------------------------------------------------------------
+
+/// One `musicResponsiveListItemRenderer` in the shape the music catalogue
+/// actually sends for a search hit: the artist is not in the byline (that column
+/// reads `Song • 4:11`), the count is in the third column, and the only artist
+/// text is the play button's accessibility label.
+Map<String, Object?> _musicSearchRow() => {
+      'musicResponsiveListItemRenderer': {
+        'overlay': {
+          'musicItemThumbnailOverlayRenderer': {
+            'content': {
+              'musicPlayButtonRenderer': {
+                'playNavigationEndpoint': {
+                  'watchEndpoint': {'videoId': 'rAMX3yk5voI'},
+                },
+                'accessibilityPlayData': {
+                  'accessibilityData': {
+                    'label': 'Play Exist For Love - AURORA'
+                  },
+                },
+              },
+            },
+          },
+        },
+        'flexColumns': [
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {
+                    'text': 'Exist For Love',
+                    'navigationEndpoint': {
+                      'watchEndpoint': {'videoId': 'rAMX3yk5voI'},
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': 'Song'},
+                  {'text': ' • '},
+                  {'text': '4:11'},
+                ],
+              },
+            },
+          },
+          {
+            'musicResponsiveListItemFlexColumnRenderer': {
+              'text': {
+                'runs': [
+                  {'text': '36M plays'},
+                ],
+              },
+            },
+          },
+        ],
+        'thumbnail': {
+          'musicThumbnailRenderer': {
+            'thumbnail': {
+              'thumbnails': [
+                {
+                  'url': 'https://yt3.ggpht.com/abc=w120-h120-l90-rj',
+                  'width': 120,
+                  'height': 120,
+                },
+                {
+                  'url': 'https://yt3.ggpht.com/abc=w544-h544-l90-rj',
+                  'width': 544,
+                  'height': 544,
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+
+void _musicRows() {
+  stdout.writeln('\nCatalogue search rows');
+
+  final tracks = parseMusicTracks({
+    'contents': [_musicSearchRow()]
+  });
+  check('row: one track parsed', tracks.length == 1, detail: tracks.length);
+  if (tracks.isEmpty) return;
+  final track = tracks.first;
+  check('row: title', track.title == 'Exist For Love', detail: track.title);
+  check('row: artist from play label', track.artist == 'AURORA',
+      detail: track.artist);
+  check('row: duration',
+      track.duration == const Duration(minutes: 4, seconds: 11),
+      detail: track.duration);
+  check('row: view count', track.viewCountText == '36M plays',
+      detail: track.viewCountText);
+  check(
+    'row: thumbnail is raised from the row size',
+    track.thumbnailUrl == 'https://yt3.ggpht.com/abc=w720-h720-l90-rj',
+    detail: track.thumbnailUrl,
+  );
+
+  final upscaled =
+      upscaleThumbnailUrl('https://yt3.ggpht.com/x=w120-h120-l90-rj');
+  check('thumbnail: 120 is raised to 720',
+      upscaled == 'https://yt3.ggpht.com/x=w720-h720-l90-rj',
+      detail: upscaled);
+  check(
+    'thumbnail: square suffix is raised',
+    upscaleThumbnailUrl('https://yt3.ggpht.com/x=s120-c-k') ==
+        'https://yt3.ggpht.com/x=s720-c-k',
+  );
+
+  final still = youtubeThumbnailUrl('abc');
+  check('still: default is hqdefault', still.endsWith('/hqdefault.jpg'),
+      detail: still);
+  check(
+    'still: display asks for maxres',
+    CoverPath.sharperUrl(still) ==
+        'https://i.ytimg.com/vi/abc/maxresdefault.jpg',
+    detail: CoverPath.sharperUrl(still),
+  );
+  check(
+      'still: maxres is not sharpened again',
+      CoverPath.sharperUrl('https://i.ytimg.com/vi/abc/maxresdefault.jpg') ==
+          null);
+  check(
+    'still: a small row keeps the small still',
+    CoverPath.sharperUrl('https://i.ytimg.com/vi/abc/mqdefault.jpg',
+            wanted: 130) ==
+        null,
+  );
+  check(
+    'still: a player cover climbs to maxres',
+    CoverPath.sharperUrl('https://i.ytimg.com/vi/abc/mqdefault.jpg',
+            wanted: 700) ==
+        'https://i.ytimg.com/vi/abc/maxresdefault.jpg',
+  );
+  check(
+    'still: the ladder step matches the size between',
+    CoverPath.sharperUrl('https://i.ytimg.com/vi/abc/mqdefault.jpg',
+            wanted: 500) ==
+        'https://i.ytimg.com/vi/abc/sddefault.jpg',
+  );
+  check('still: already large parameter left alone',
+      CoverPath.sharperUrl('https://yt3.ggpht.com/x=w720-h720-l90-rj') == null);
 }
 
 // ---------------------------------------------------------------------------
@@ -1208,6 +1362,47 @@ Future<void> _live() async {
       'live: most of the music home survives the music filter',
       playable >= tracks.length * 0.6,
       detail: '$playable of ${tracks.length}',
+    );
+
+    // A search row is the one shape that hides the artist in its play button and
+    // keeps the count in a third column, so it is worth checking against the
+    // live catalogue rather than a fixture.
+    final hits = await api.musicSearch('AURORA', maxPages: 1);
+    check(
+      'live: search returns hits',
+      hits.length >= 5,
+      detail: '${hits.length} hits',
+    );
+    final named = hits.where((t) => t.artist.isNotEmpty).length;
+    check(
+      'live: search rows name their artist',
+      hits.isNotEmpty && named == hits.length,
+      detail: '$named of ${hits.length}',
+    );
+    // Some shelves print no length at all (the player resolves it on play), so
+    // this only proves the column is read, not that every row has one.
+    final timed = hits.where((t) => t.duration != null).length;
+    check(
+      'live: search rows carry a length',
+      timed > 0,
+      detail: '$timed of ${hits.length}',
+    );
+    final counted = hits.where((t) => t.viewCountText != null).length;
+    check(
+      'live: search rows carry a view count',
+      hits.isNotEmpty && counted >= hits.length * 0.8,
+      detail: '$counted of ${hits.length}',
+    );
+    check(
+      'live: search drops containers, not tracks',
+      hits.every((t) => t.artist.isNotEmpty),
+      detail: hits.take(3).map((t) => '${t.title} / ${t.artist}').toList(),
+    );
+    check(
+      'live: search rows ask for a large thumbnail',
+      hits.every((t) =>
+          t.thumbnailUrl == null || !t.thumbnailUrl!.contains('=w120-h120')),
+      detail: hits.take(3).map((t) => t.thumbnailUrl).toList(),
     );
   } on YouTubeLibraryException catch (error) {
     if (error.kind == YouTubeLibraryErrorKind.network ||

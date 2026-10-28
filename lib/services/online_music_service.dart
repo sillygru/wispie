@@ -13,12 +13,16 @@ class OnlineTrack {
   final String? coverUrl;
   final Duration? duration;
 
+  /// `36M plays` as the catalogue prints it, or null when the row has none.
+  final String? viewCountText;
+
   const OnlineTrack({
     required this.id,
     required this.title,
     required this.artist,
     this.coverUrl,
     this.duration,
+    this.viewCountText,
   });
 
   Song toSong() => Song.youtube(
@@ -66,6 +70,7 @@ class OnlineMusicService {
                 artist: item.artist,
                 coverUrl: item.thumbnailUrl,
                 duration: item.duration,
+                viewCountText: item.viewCountText,
               ),
             ),
       );

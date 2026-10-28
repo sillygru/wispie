@@ -82,6 +82,7 @@ class YouTubeFeedCache {
             coverUrl: row['cover']?.toString(),
             duration:
                 durationMs == null ? null : Duration(milliseconds: durationMs),
+            viewCountText: row['views']?.toString(),
           ),
         );
       }
@@ -115,6 +116,7 @@ class YouTubeFeedCache {
                 if (track.coverUrl != null) 'cover': track.coverUrl,
                 if (track.duration != null)
                   'duration': track.duration!.inMilliseconds,
+                if (track.viewCountText != null) 'views': track.viewCountText,
               },
           ],
         }),

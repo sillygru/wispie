@@ -14,6 +14,7 @@ import '../../presentation/screens/youtube_playlist_preview_screen.dart';
 import '../../presentation/tokens/app_icons.dart';
 import '../../presentation/tokens/app_tokens.dart';
 import '../../presentation/widgets/album_art_image.dart';
+import '../../presentation/widgets/duration_display.dart';
 import '../../presentation/widgets/playlist_selector_dialog.dart';
 import '../../presentation/utils/youtube_error_message.dart';
 import '../../providers/providers.dart';
@@ -169,6 +170,13 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         ),
       );
 
+  /// `Artist · 36M plays · 4:11`, dropping whichever parts the row lacks.
+  String _trackSubtitle(BuildContext context, OnlineTrack track) => [
+        track.artist.isEmpty ? context.l10n.metaUnknownArtist : track.artist,
+        if (track.viewCountText != null) track.viewCountText!,
+        if (track.duration != null) DurationFormatter.format(track.duration),
+      ].join(' · ');
+
   Widget _trackRow(OnlineTrack track, List<OnlineTrack> queue) {
     final song = track.toSong();
     final isFavorite = ref.watch(
@@ -183,8 +191,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       tall: true,
       title: track.title,
       titleMaxLines: 1,
-      subtitle:
-          track.artist.isEmpty ? context.l10n.metaUnknownArtist : track.artist,
+      subtitle: _trackSubtitle(context, track),
       subtitleMaxLines: 1,
       onTap: () => _play(track, queue),
       leading: AlbumArtImage(

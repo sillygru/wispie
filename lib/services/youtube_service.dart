@@ -23,7 +23,9 @@ class YouTubeVideo {
     this.duration,
   });
 
-  String get thumbnailUrl => 'https://i.ytimg.com/vi/$id/mqdefault.jpg';
+  /// 480 wide on purpose: display surfaces ask for `maxresdefault` on top of it
+  /// and need a URL to fall back to that every video has.
+  String get thumbnailUrl => 'https://i.ytimg.com/vi/$id/hqdefault.jpg';
 }
 
 /// A resolved audio rendition. [expiresAt] is derived from the signed URL's own

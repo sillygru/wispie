@@ -489,6 +489,7 @@ class YouTubeFeedNotifier extends AsyncNotifier<List<OnlineTrack>> {
           artist: item.artist,
           coverUrl: item.thumbnailUrl ?? youtubeThumbnailUrl(item.videoId),
           duration: item.duration,
+          viewCountText: item.viewCountText,
         ),
     ]);
 
