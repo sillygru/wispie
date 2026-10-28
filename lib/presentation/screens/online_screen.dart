@@ -19,6 +19,7 @@ import '../../presentation/utils/youtube_error_message.dart';
 import '../../providers/providers.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
+import '../components/app_feedback.dart';
 import '../components/app_surface.dart';
 import '../components/song_actions.dart';
 
@@ -112,9 +113,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
       await ref.read(audioPlayerManagerProvider).playNext(song);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.songAddedToNextUp(track.title))),
-      );
+      appSnack(context, context.l10n.songAddedToNextUp(track.title));
     } on Object catch (error) {
       _showPlaybackError(error);
     }
@@ -126,9 +125,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
       await ref.read(audioPlayerManagerProvider).addToQueue(song);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.onlineSongQueued(track.title))),
-      );
+      appSnack(context, context.l10n.onlineSongQueued(track.title));
     } on Object catch (error) {
       _showPlaybackError(error);
     }
@@ -147,10 +144,10 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
   void _showPlaybackError(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(YouTubeErrorMessage.forError(error, context.l10n)),
-      ),
+    appSnack(
+      context,
+      YouTubeErrorMessage.forError(error, context.l10n),
+      tone: AppTone.danger,
     );
   }
 

@@ -21,10 +21,7 @@ import '../../providers/settings_provider.dart';
 import '../../services/sleep_timer_service.dart';
 import '../../services/telemetry_service.dart';
 import '../widgets/bulk_selection_bar.dart';
-import '../widgets/external_open_banner.dart';
 import '../widgets/ambient_background.dart';
-import '../widgets/auto_backup_indicator.dart';
-import '../components/app_feedback.dart';
 import '../widgets/blurred_background.dart';
 import '../components/app_icon.dart';
 import '../components/pressable.dart';
@@ -48,53 +45,6 @@ import '../../providers/theme_provider.dart';
 import '../../providers/browse_palette_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../l10n/l10n.dart';
-
-class SyncIndicator extends ConsumerWidget {
-  const SyncIndicator({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final metadataState = ref.watch(metadataSaveProvider);
-
-    if (metadataState.status == MetadataSaveStatus.idle) {
-      return const SizedBox.shrink();
-    }
-
-    final (String text, AppTone tone, AppIconData icon, bool busy) =
-        switch (metadataState.status) {
-      MetadataSaveStatus.saving => (
-          metadataState.message,
-          AppTone.warning,
-          AppIcons.edit,
-          true,
-        ),
-      MetadataSaveStatus.success => (
-          metadataState.message,
-          AppTone.success,
-          AppIcons.checkCircle,
-          false,
-        ),
-      _ => (
-          metadataState.message,
-          AppTone.danger,
-          AppIcons.error,
-          false,
-        ),
-    };
-
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(top: AppTokens.s2),
-        child: AppStatusBanner(
-          message: text,
-          tone: tone,
-          icon: icon,
-          busy: busy,
-        ),
-      ),
-    );
-  }
-}
 
 /// One shell destination: its screen, nav entry and scroll controller.
 class _ShellTab {
@@ -420,7 +370,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final mediaQuery = MediaQuery.of(context);
     final settings = ref.watch(settingsProvider);
     final sidePanelOpen = ref.watch(_sidePanelOpenProvider);
-    final topPadding = mediaQuery.padding.top;
 
     final tabs = _visibleTabs = _tabs(context, settings.youtubeEnabled);
     // The online tab can disappear; whatever was last in the list is always a
@@ -522,24 +471,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                 }).toList(),
               ),
             ),
-          ),
-          Positioned(
-            top: topPadding,
-            left: 0,
-            right: 0,
-            child: const SyncIndicator(),
-          ),
-          Positioned(
-            top: topPadding + 40,
-            left: 0,
-            right: 0,
-            child: const AutoBackupIndicator(),
-          ),
-          Positioned(
-            top: topPadding + 80,
-            left: 0,
-            right: 0,
-            child: const ExternalOpenBanner(),
           ),
           Positioned(
             left: 0,

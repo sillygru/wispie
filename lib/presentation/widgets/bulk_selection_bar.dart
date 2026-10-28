@@ -217,19 +217,12 @@ class BulkSelectionBar extends ConsumerWidget {
           ref.read(selectionProvider.notifier).exitSelectionMode();
           if (!context.mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                AppLocalizations.of(context)
-                    .bulkAddedToPlaylist(songs.length, latest.name),
-              ),
-              action: SnackBarAction(
-                label: AppLocalizations.of(context).actionChange,
-                onPressed: () {
-                  showBulkPlaylistSelector(context, ref, filenames);
-                },
-              ),
-            ),
+          appSnack(
+            context,
+            AppLocalizations.of(context)
+                .bulkAddedToPlaylist(songs.length, latest.name),
+            actionLabel: AppLocalizations.of(context).actionChange,
+            onAction: () => showBulkPlaylistSelector(context, ref, filenames),
           );
         }
       },

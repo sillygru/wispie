@@ -16,6 +16,7 @@ import '../../../providers/settings_provider.dart';
 import '../../../services/audio_player_manager.dart';
 import '../../../services/display_refresh_service.dart';
 import '../../components/animated_removal.dart';
+import '../../components/app_feedback.dart';
 import '../../components/player_glass_surface.dart';
 import '../../components/player_section_header.dart';
 import '../../components/player_segmented_pill.dart';
@@ -1263,10 +1264,9 @@ class _HistoryListState extends ConsumerState<_HistoryList> {
           clearCurrentSong: true,
         );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(
-              AppLocalizations.of(context).historyRestoredCount(songs.length))),
+    appSnack(
+      context,
+      AppLocalizations.of(context).historyRestoredCount(songs.length),
     );
   }
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../components/ambient_scaffold.dart';
+import '../components/app_feedback.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/indexer_provider.dart';
@@ -580,12 +581,11 @@ class _IndexerScreenState extends ConsumerState<IndexerScreen> {
     } else {
       message = l10n.indexerFinished(result.processed, result.failed);
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor:
-            result.success || result.cancelled ? null : AppTokens.danger,
-      ),
+    appSnack(
+      context,
+      message,
+      tone:
+          result.success || result.cancelled ? AppTone.neutral : AppTone.danger,
     );
   }
 

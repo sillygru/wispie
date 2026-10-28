@@ -1,28 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import 'app_icon.dart';
-import '../tokens/app_icons.dart';
+import 'app_toast.dart';
 
-/// Severity of a transient message or banner. Replaces the
-/// `Colors.blue.shade700` / `orange.shade800` / `green.shade700` /
-/// `red.shade700` literals that the status indicators were using.
-enum AppTone { neutral, info, success, warning, danger }
+// The feedback vocabulary lives in [app_toast.dart] so the banner, the transient
+// toast and the status indicators share one shape and one tone table; callers
+// keep importing this file.
+export 'app_toast.dart';
 
-extension AppToneColor on AppTone {
-  Color color(BuildContext context) => switch (this) {
-        AppTone.neutral => Theme.of(context).colorScheme.primary,
-        AppTone.info => AppTokens.info,
-        AppTone.success => AppTokens.success,
-        AppTone.warning => AppTokens.warning,
-        AppTone.danger => AppTokens.danger,
-      };
-}
-
-/// Shows a snack bar in the app's one style.
+/// Shows a message in the app's single feedback surface, at the top of the
+/// window.
 ///
-/// The app had 118 raw `showSnackBar` calls, each free to style itself; this is
-/// the single entry point so tone and shape live in one place.
+/// The app had 118 raw `showSnackBar` calls, each free to style itself, plus a
+/// separate top banner for statuses; this is the only entry point now, so tone,
+/// shape, placement and motion live in one place.
 void appSnack(
   BuildContext context,
   String message, {
@@ -31,136 +24,17 @@ void appSnack(
   VoidCallback? onAction,
   Duration duration = const Duration(seconds: 3),
 }) {
-  final messenger = ScaffoldMessenger.maybeOf(context);
-  if (messenger == null) return;
-
-  final accent = tone.color(context);
-
-  messenger
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        duration: duration,
-        content: Row(
-          children: [
-            if (tone != AppTone.neutral) ...[
-              AppIcon(_iconFor(tone), size: 18, color: accent),
-              const SizedBox(width: AppTokens.s3),
-            ],
-            Expanded(child: Text(message)),
-          ],
-        ),
-        action: actionLabel == null
-            ? null
-            : SnackBarAction(
-                label: actionLabel,
-                textColor: accent,
-                onPressed: onAction ?? () {},
-              ),
-      ),
-    );
-}
-
-AppIconData _iconFor(AppTone tone) => switch (tone) {
-      AppTone.success => AppIcons.checkCircle,
-      AppTone.warning => AppIcons.warning,
-      AppTone.danger => AppIcons.error,
-      _ => AppIcons.info,
-    };
-
-/// The floating status pill used for scanning, metadata saves and auto-backup
-/// progress — one shape for all three, where each previously picked its own
-/// Material colour.
-class AppStatusBanner extends StatelessWidget {
-  final String message;
-  final AppTone tone;
-
-  /// Shows a spinner in place of the icon, for in-flight work.
-  final bool busy;
-
-  final AppIconData? icon;
-
-  /// Determinate progress, 0..1. Drawn as a hairline under the pill.
-  final double? progress;
-
-  const AppStatusBanner({
-    super.key,
-    required this.message,
-    this.tone = AppTone.neutral,
-    this.busy = false,
-    this.icon,
-    this.progress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = tone.color(context);
-
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s4,
-          vertical: AppTokens.s2,
-        ),
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            accent.withValues(alpha: 0.16),
-            Colors.black.withValues(alpha: 0.72),
-          ),
-          borderRadius: AppTokens.brPill,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  SizedBox(
-                    width: 13,
-                    height: 13,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: accent,
-                    ),
-                  )
-                else
-                  AppIcon(icon ?? _iconFor(tone), size: 15, color: accent),
-                const SizedBox(width: AppTokens.s2),
-                Flexible(
-                  child: Text(
-                    message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTokens.meta(context).copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (progress != null) ...[
-              const SizedBox(height: AppTokens.s1 + 2),
-              ClipRRect(
-                borderRadius: AppTokens.brPill,
-                child: SizedBox(
-                  width: 140,
-                  child: LinearProgressIndicator(
-                    value: progress!.clamp(0.0, 1.0),
-                    minHeight: 2,
-                    backgroundColor: Colors.white.withValues(alpha: 0.12),
-                    valueColor: AlwaysStoppedAnimation<Color>(accent),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  // A message from a screen that is already gone has nothing to show for.
+  if (!context.mounted) return;
+  AppToasts.instance.show(
+    AppToast(
+      message: message,
+      tone: tone,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: duration,
+    ),
+  );
 }
 
 /// Empty, error and "nothing here yet" states.

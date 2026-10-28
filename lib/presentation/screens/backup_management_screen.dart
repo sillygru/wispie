@@ -241,25 +241,15 @@ class _BackupManagementScreenState
     }
 
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     if (failure != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.backupRestoreFailed('$failure')),
-          backgroundColor: AppTokens.danger,
-        ),
-      );
+      appSnack(context, context.l10n.backupRestoreFailed('$failure'),
+          tone: AppTone.danger);
       return;
     }
 
     await _loadBackups();
     if (!mounted) return;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(context.l10n.backupRestoreSuccess),
-        backgroundColor: AppTokens.success,
-      ),
-    );
+    appSnack(context, context.l10n.backupRestoreSuccess, tone: AppTone.success);
     // Show restart dialog after a brief delay
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _showRestartDialog();

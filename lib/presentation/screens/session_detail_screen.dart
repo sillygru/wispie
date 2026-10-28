@@ -440,14 +440,11 @@ class SessionDetailScreen extends ConsumerWidget {
     if (whenSongEnds) {
       audioManager.setPendingQueueReplacement(songs, playlistId: session.id);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.sessionAfterCurrentSnack(songs.length)),
-          action: SnackBarAction(
-            label: context.l10n.actionCancel,
-            onPressed: audioManager.cancelPendingQueueReplacement,
-          ),
-        ),
+      appSnack(
+        context,
+        context.l10n.sessionAfterCurrentSnack(songs.length),
+        actionLabel: context.l10n.actionCancel,
+        onAction: audioManager.cancelPendingQueueReplacement,
       );
       Navigator.pop(context);
       return;
@@ -458,14 +455,11 @@ class SessionDetailScreen extends ConsumerWidget {
 
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(context.l10n.sessionPlayingSnack(songs.length)),
-        action: SnackBarAction(
-          label: context.l10n.homeOpenPlayer,
-          onPressed: () => PlayerPanel.open(from: context),
-        ),
-      ),
+    appSnack(
+      context,
+      context.l10n.sessionPlayingSnack(songs.length),
+      actionLabel: context.l10n.homeOpenPlayer,
+      onAction: () => PlayerPanel.open(from: context),
     );
 
     Navigator.pop(context);

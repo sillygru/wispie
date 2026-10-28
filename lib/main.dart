@@ -15,6 +15,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart'
 import 'dart:async';
 import 'dart:io';
 import 'presentation/components/popup_scroll_dismiss.dart';
+import 'presentation/widgets/app_feedback_host.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 import 'presentation/motion/motion.dart';
@@ -479,11 +480,18 @@ class _WispieAppState extends ConsumerState<WispieApp>
       // when they need a different physical metaphor, not per platform.
       scrollBehavior: const MotionScrollBehavior(),
       builder: (context, child) {
+        // Above the navigator: feedback posted by a screen that is closing still
+        // lands, and every message uses one column from the top of the window.
         final content = MotionScope(
           policy: MotionPolicy(
             reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
           ),
-          child: PopupScrollDismiss(child: child ?? const SizedBox.shrink()),
+          child: Stack(
+            children: [
+              PopupScrollDismiss(child: child ?? const SizedBox.shrink()),
+              const AppFeedbackHost(),
+            ],
+          ),
         );
         if (!_isDesktop) return content;
         return CallbackShortcuts(

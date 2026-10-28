@@ -70,10 +70,6 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         await ref
             .read(songsProvider.notifier)
             .updateSongCover(currentSong, pickedPath);
-
-        if (mounted) {
-          appSnack(context, l10n.metadataCoverUpdated);
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -108,9 +104,6 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         await ref
             .read(songsProvider.notifier)
             .updateSongCover(currentSong, null);
-        if (mounted) {
-          appSnack(context, l10n.metadataCoverRemoved);
-        }
       } catch (e) {
         if (mounted) {
           appSnack(context, l10n.metadataRemoveCoverError(e));
@@ -286,10 +279,6 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
         try {
           await tempDir.delete(recursive: true);
         } catch (_) {}
-
-        if (mounted) {
-          appSnack(context, l10n.metadataFixSuccess);
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -531,8 +520,9 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       }
 
       if (mounted) {
+        // The save reports itself through the metadata indicator, so a second
+        // bubble here would just say the same thing twice.
         Navigator.pop(context);
-        appSnack(context, l10n.metadataSaved);
       }
     } catch (e) {
       if (mounted) {

@@ -5,6 +5,7 @@ import '../../providers/providers.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
 import 'playlist_selector_dialog.dart';
+import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
@@ -161,17 +162,13 @@ void _handleAddToPlaylist(
       ref
           .read(userDataProvider.notifier)
           .addSongToPlaylist(latest.id, songFilename, remoteSong: song);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.songAddedToPlaylist(latest.name)),
-          action: SnackBarAction(
-            label: context.l10n.actionChange,
-            onPressed: () {
-              // Note: We don't remove from latest here because "Change" should allow managing all
-              showPlaylistSelector(context, ref, songFilename);
-            },
-          ),
-        ),
+      appSnack(
+        context,
+        context.l10n.songAddedToPlaylist(latest.name),
+        actionLabel: context.l10n.actionChange,
+        // "Change" offers the full picker rather than moving it again: the song
+        // may belong in several playlists.
+        onAction: () => showPlaylistSelector(context, ref, songFilename),
       );
     }
   }
@@ -182,19 +179,11 @@ void _handleRemoveFromPlaylist(BuildContext context, WidgetRef ref,
   ref
       .read(userDataProvider.notifier)
       .removeSongFromPlaylist(playlist.id, songFilename);
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(context.l10n.heartMenuRemovedFromPlaylist(playlist.name)),
-      action: SnackBarAction(
-        label: context.l10n.actionChange,
-        onPressed: () {
-          // Add it back? Or just show picker.
-          // The user said: "with the dialog asking us if we want to change"
-          // Let's just show the picker.
-          showPlaylistSelector(context, ref, songFilename);
-        },
-      ),
-    ),
+  appSnack(
+    context,
+    context.l10n.heartMenuRemovedFromPlaylist(playlist.name),
+    actionLabel: context.l10n.actionChange,
+    onAction: () => showPlaylistSelector(context, ref, songFilename),
   );
 }
 
@@ -220,9 +209,7 @@ void _showNewPlaylistDialog(
                 .read(userDataProvider.notifier)
                 .createPlaylist(value.trim(), songFilename, song);
             Navigator.pop(dialogContext);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(l10n.playlistCreated(value))),
-            );
+            appSnack(context, l10n.playlistCreated(value));
           }
         },
       ),
@@ -239,9 +226,7 @@ void _showNewPlaylistDialog(
                   .read(userDataProvider.notifier)
                   .createPlaylist(name, songFilename, song);
               Navigator.pop(dialogContext);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(l10n.playlistCreated(name))),
-              );
+              appSnack(context, l10n.playlistCreated(name));
             }
           },
           child: Text(l10n.actionCreate),

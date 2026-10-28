@@ -144,7 +144,6 @@ class _StorageManagementScreenState
     // Second confirmation with text input
     final word = textInputHint ?? l10n.storageDeleteKeyword;
     final controller = TextEditingController();
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
     final confirm2 = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -178,13 +177,8 @@ class _StorageManagementScreenState
               if (controller.text == word) {
                 Navigator.pop(dialogContext, true);
               } else {
-                // Use the captured scaffoldMessenger to avoid async gap issues
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(
-                    content: Text(l10n.storageTypeExactly),
-                    backgroundColor: AppTokens.danger,
-                  ),
-                );
+                appSnack(context, l10n.storageTypeExactly,
+                    tone: AppTone.danger);
               }
             },
             style: FilledButton.styleFrom(

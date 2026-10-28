@@ -70,16 +70,15 @@ class _BackupSettingsScreenState extends ConsumerState<BackupSettingsScreen> {
               title: l10n.backupExportAppData,
               subtitle: l10n.backupExportAppDataSubtitle,
               onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
                 try {
                   final options = await _showExportOptionsDialog();
                   if (options == null) return;
 
                   await BackupService.instance.exportUserData(options: options);
                 } catch (e) {
-                  messenger.showSnackBar(
-                    SnackBar(content: Text(l10n.backupExportFailed('$e'))),
-                  );
+                  if (!context.mounted) return;
+                  appSnack(context, l10n.backupExportFailed('$e'),
+                      tone: AppTone.danger);
                 }
               },
             ),

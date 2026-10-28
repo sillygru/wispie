@@ -45,15 +45,12 @@ void songActionToggleFavorite(
       .read(userDataProvider.notifier)
       .toggleFavorite(filename, remoteSong: song);
   if (!showFeedback || !host.mounted) return;
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(
-        wasFavorite
-            ? l10n.songFavoriteRemoved(title)
-            : l10n.songFavoriteAdded(title),
-      ),
-      duration: const Duration(seconds: 1),
-    ),
+  appSnack(
+    host,
+    wasFavorite
+        ? l10n.songFavoriteRemoved(title)
+        : l10n.songFavoriteAdded(title),
+    duration: const Duration(seconds: 2),
   );
 }
 
@@ -100,15 +97,12 @@ void songActionToggleSuggestLess(
   final wasSuggestLess = ref.read(userDataProvider).isSuggestLess(filename);
   ref.read(userDataProvider.notifier).toggleSuggestLess(filename);
   if (!host.mounted) return;
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(
-        wasSuggestLess
-            ? l10n.songWillSuggestMore(title)
-            : l10n.songWillSuggestLess(title),
-      ),
-      duration: const Duration(seconds: 1),
-    ),
+  appSnack(
+    host,
+    wasSuggestLess
+        ? l10n.songWillSuggestMore(title)
+        : l10n.songWillSuggestLess(title),
+    duration: const Duration(seconds: 2),
   );
 }
 
@@ -129,12 +123,8 @@ Future<void> songActionPlayNext(
     return;
   }
   if (!host.mounted) return;
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(l10n.songAddedToNextUp(song.title)),
-      duration: const Duration(seconds: 1),
-    ),
-  );
+  appSnack(host, l10n.songAddedToNextUp(song.title),
+      duration: const Duration(seconds: 2));
 }
 
 void songActionShare(BuildContext host, Song song) {
@@ -152,12 +142,10 @@ void songActionShare(BuildContext host, Song song) {
 /// ambiguous (no playlists, or the song is already in the latest one).
 void _showOnlinePlaybackError(BuildContext host, Object error) {
   if (!host.mounted) return;
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(
-        YouTubeErrorMessage.forError(error, AppLocalizations.of(host)),
-      ),
-    ),
+  appSnack(
+    host,
+    YouTubeErrorMessage.forError(error, AppLocalizations.of(host)),
+    tone: AppTone.danger,
   );
 }
 
@@ -189,14 +177,11 @@ void songActionAddToPlaylist(BuildContext host, WidgetRef ref, String filename,
       .addSongToPlaylist(latest.id, filename, remoteSong: song);
   if (!host.mounted) return;
   final l10n = AppLocalizations.of(host);
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(l10n.songAddedToPlaylist(latest.name)),
-      action: SnackBarAction(
-        label: l10n.actionChange,
-        onPressed: () => showPlaylistSelector(host, ref, filename),
-      ),
-    ),
+  appSnack(
+    host,
+    l10n.songAddedToPlaylist(latest.name),
+    actionLabel: l10n.actionChange,
+    onAction: () => showPlaylistSelector(host, ref, filename),
   );
 }
 
@@ -215,9 +200,7 @@ void songActionAddToNewPlaylist(
     ref.read(userDataProvider.notifier).createPlaylist(name, filename, song);
     Navigator.pop(dialogContext);
     if (!host.mounted) return;
-    ScaffoldMessenger.of(
-      host,
-    ).showSnackBar(SnackBar(content: Text(l10n.playlistCreated(name))));
+    appSnack(host, l10n.playlistCreated(name));
   }
 
   showDialog<void>(
@@ -264,14 +247,11 @@ void songActionRemoveFromPlaylist(
       .read(userDataProvider.notifier)
       .removeSongFromPlaylist(playlistId, filename);
   if (!host.mounted) return;
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(l10n.songRemovedFromPlaylist(title)),
-      action: SnackBarAction(
-        label: l10n.actionChange,
-        onPressed: () => showPlaylistSelector(host, ref, filename),
-      ),
-    ),
+  appSnack(
+    host,
+    l10n.songRemovedFromPlaylist(title),
+    actionLabel: l10n.actionChange,
+    onAction: () => showPlaylistSelector(host, ref, filename),
   );
 }
 
@@ -299,14 +279,10 @@ Future<void> songActionMoveToFolder(
   try {
     await ref.read(songsProvider.notifier).moveSong(song, targetPath);
     if (!host.mounted) return;
-    ScaffoldMessenger.of(host).showSnackBar(
-      SnackBar(content: Text(l10n.songMovedTo(song.title, targetPath))),
-    );
+    appSnack(host, l10n.songMovedTo(song.title, targetPath));
   } catch (e) {
     if (!host.mounted) return;
-    ScaffoldMessenger.of(
-      host,
-    ).showSnackBar(SnackBar(content: Text(l10n.songMoveError('$e'))));
+    appSnack(host, l10n.songMoveError('$e'), tone: AppTone.danger);
   }
 }
 
@@ -315,10 +291,7 @@ Future<void> songActionHide(BuildContext host, WidgetRef ref, Song song) async {
   final l10n = AppLocalizations.of(host);
   await ref.read(songsProvider.notifier).hideSong(song);
   if (!host.mounted) return;
-  ScaffoldMessenger.of(
-    host,
-  ).showSnackBar(
-      SnackBar(content: Text(l10n.songRemovedFromLibrary(song.title))));
+  appSnack(host, l10n.songRemovedFromLibrary(song.title));
 }
 
 Future<void> songActionDelete(
@@ -355,14 +328,10 @@ Future<void> songActionDelete(
   try {
     await ref.read(songsProvider.notifier).deleteSongFile(song);
     if (!host.mounted) return;
-    ScaffoldMessenger.of(
-      host,
-    ).showSnackBar(SnackBar(content: Text(l10n.songDeleted(song.title))));
+    appSnack(host, l10n.songDeleted(song.title));
   } catch (e) {
     if (!host.mounted) return;
-    ScaffoldMessenger.of(
-      host,
-    ).showSnackBar(SnackBar(content: Text(l10n.songDeleteError('$e'))));
+    appSnack(host, l10n.songDeleteError('$e'), tone: AppTone.danger);
   }
 }
 
@@ -446,12 +415,7 @@ Future<void> songActionFetchMissingCover(
   Song song,
 ) async {
   final l10n = AppLocalizations.of(host);
-  ScaffoldMessenger.of(host).showSnackBar(
-    SnackBar(
-      content: Text(l10n.coverSearching),
-      duration: Duration(seconds: 2),
-    ),
-  );
+  appSnack(host, l10n.coverSearching, duration: const Duration(seconds: 2));
 
   try {
     final onlineService = OnlineMetadataService.instance;
@@ -484,9 +448,7 @@ Future<void> songActionFetchMissingCover(
 
     if (coverUrl == null || coverUrl.isEmpty) {
       if (!host.mounted) return;
-      ScaffoldMessenger.of(host).showSnackBar(
-        SnackBar(content: Text(l10n.coverNoneFound)),
-      );
+      appSnack(host, l10n.coverNoneFound, tone: AppTone.warning);
       return;
     }
 
@@ -498,21 +460,17 @@ Future<void> songActionFetchMissingCover(
     if (localPath != null && host.mounted) {
       await ref.read(songsProvider.notifier).updateSongCover(song, localPath);
       if (!host.mounted) return;
-      ScaffoldMessenger.of(host).showSnackBar(
-        SnackBar(
-          content: Text(l10n.coverUpdated(song.title, '$source')),
-        ),
+      appSnack(
+        host,
+        l10n.coverUpdated(song.title, '$source'),
+        tone: AppTone.success,
       );
     } else if (host.mounted) {
-      ScaffoldMessenger.of(host).showSnackBar(
-        SnackBar(content: Text(l10n.coverDownloadFailed)),
-      );
+      appSnack(host, l10n.coverDownloadFailed, tone: AppTone.danger);
     }
   } catch (e) {
     if (!host.mounted) return;
-    ScaffoldMessenger.of(
-      host,
-    ).showSnackBar(SnackBar(content: Text(l10n.coverFetchError('$e'))));
+    appSnack(host, l10n.coverFetchError('$e'), tone: AppTone.danger);
   }
 }
 
