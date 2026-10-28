@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../domain/services/youtube_library.dart';
 import '../domain/services/youtube_session.dart';
 import 'shared_http_client.dart';
+import 'youtube_feed_cache.dart';
 import 'youtube_response_cache.dart';
 import 'sync/account_service.dart'
     show SecretStore, SecretStoreException, SecureSecretStore;
@@ -118,6 +119,7 @@ class YouTubeAccountService {
       }
       // A different account must not inherit the previous feed from the cache.
       await YouTubeResponseCache.instance.clear();
+      await YouTubeFeedCache.instance.clear();
       await _storeSession(session);
       await _storeProfile(profile);
       _profile = profile;
@@ -154,6 +156,7 @@ class YouTubeAccountService {
   Future<void> signOut() async {
     await forgetSession(expired: false);
     await YouTubeResponseCache.instance.clear();
+    await YouTubeFeedCache.instance.clear();
     _profile = null;
     try {
       await _secrets.delete(_profileKey);

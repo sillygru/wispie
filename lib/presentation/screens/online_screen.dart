@@ -296,9 +296,19 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
           horizontal: AppTokens.s4,
           vertical: AppTokens.s2,
         ),
-        child: Text(
-          YouTubeErrorMessage.forError(error, context.l10n),
-          style: AppTokens.rowSubtitle(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              YouTubeErrorMessage.forError(error, context.l10n),
+              style: AppTokens.rowSubtitle(context),
+            ),
+            TextButton(
+              onPressed: () =>
+                  ref.read(youtubeForYouTracksProvider.notifier).refresh(),
+              child: Text(context.l10n.actionRetry),
+            ),
+          ],
         ),
       ),
       data: (tracks) {
@@ -542,18 +552,24 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
   Widget _buildHome(bool signedIn) {
     final feed = ref.watch(youtubeForYouTracksProvider);
 
-    return ListView(
-      controller: widget.scrollController,
-      padding: const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-      children: [
-        if (!signedIn) _signInPrompt(),
-        _feedSection(
-          feed,
-          (l10n) =>
-              signedIn ? l10n.youtubeFeedForYou : l10n.youtubeFeedFromLibrary,
-        ),
-        if (signedIn) _playlistsRail(),
-      ],
+    // Pulling refreshes the feed in place; the cached list stays on screen while
+    // the new pools are fetched, so the indicator is the only thing that moves.
+    return RefreshIndicator(
+      onRefresh: () => ref.read(youtubeForYouTracksProvider.notifier).refresh(),
+      child: ListView(
+        controller: widget.scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+        children: [
+          if (!signedIn) _signInPrompt(),
+          _feedSection(
+            feed,
+            (l10n) =>
+                signedIn ? l10n.youtubeFeedForYou : l10n.youtubeFeedFromLibrary,
+          ),
+          if (signedIn) _playlistsRail(),
+        ],
+      ),
     );
   }
 

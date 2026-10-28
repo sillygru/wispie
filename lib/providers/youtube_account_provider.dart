@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,8 +13,10 @@ import '../domain/services/youtube_music_feed.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../services/database_service.dart';
+import '../domain/services/taste_model.dart';
 import '../services/online_music_service.dart';
 import '../services/youtube_account_service.dart';
+import '../services/youtube_feed_cache.dart';
 import 'providers.dart';
 import 'settings_provider.dart';
 
@@ -353,87 +356,252 @@ final youtubePlaylistLinksProvider =
 /// Everything goes through [rankYouTubeMusicFeed], where the local taste profile
 /// outweighs the account's shelves, so the account can widen the feed but never
 /// steer it.
+///
+/// The ranked result is cached on disk and painted first, so opening the tab is
+/// instant on every launch after the first. The refresh then runs behind the
+/// list; nothing on screen is cleared while it does, and a play — which bumps a
+/// play count and a remote-song row — no longer rebuilds the feed at all.
 final youtubeForYouTracksProvider =
-    FutureProvider<List<OnlineTrack>>((ref) async {
-  if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
-    return const [];
+    AsyncNotifierProvider<YouTubeFeedNotifier, List<OnlineTrack>>(
+  YouTubeFeedNotifier.new,
+);
+
+/// Builds, caches and refreshes the feed on the YouTube tab.
+class YouTubeFeedNotifier extends AsyncNotifier<List<OnlineTrack>> {
+  /// A snapshot older than this is refreshed behind the list already shown.
+  static const Duration refreshAfter = Duration(minutes: 30);
+
+  /// Searches per feed. Each is a round trip, issued alongside the home page.
+  static const int _seedArtists = 4;
+
+  /// YouTube answers a burst less kindly than a trickle, so the pools share a
+  /// small budget instead of firing all at once.
+  static const int _maxConcurrentPools = 3;
+
+  Future<void>? _inFlight;
+  bool _disposed = false;
+
+  @override
+  Future<List<OnlineTrack>> build() async {
+    ref.onDispose(() => _disposed = true);
+    if (!ref.watch(settingsProvider.select((s) => s.youtubeEnabled))) {
+      return const [];
+    }
+    await ref.watch(youtubeAccountProvider.future);
+    // Dependency only, not an await: a cached feed can paint before the library
+    // has finished loading, and this is what still rebuilds it after a rescan.
+    ref.watch(songsProvider);
+
+    // The snapshot is read before the taste model is consulted on purpose: the
+    // model needs play events and an isolate, and the tab should not wait for
+    // any of that to show the feed it showed last time.
+    final cached = await YouTubeFeedCache.instance.read();
+    if (cached != null) {
+      unawaited(_refreshIfStale(cached));
+      return cached.tracks;
+    }
+    final songs = await ref.read(songsProvider.future);
+    return _fetch(await _readInputs(songs));
   }
-  final songs = ref.watch(songsProvider).asData?.value ?? const <Song>[];
-  final userData = ref.watch(userDataProvider);
-  await ref.watch(youtubeAccountProvider.future);
 
-  final taste = buildYouTubeTasteProfile([
-    for (final song in songs)
-      YouTubeTasteSignal(
-        artist: song.artist,
-        title: song.title,
-        playCount: song.playCount,
-        favorite: userData.isFavorite(song.filename),
-        videoId: _videoIdOf(song.filename),
-      ),
-    // Saved remote tracks are listening history too, and their ids keep the
-    // feed from suggesting a song the listener already keeps.
-    for (final song in userData.remoteSongs.values)
-      YouTubeTasteSignal(
-        artist: song.artist,
-        title: song.title,
-        playCount: song.playCount,
-        videoId: _videoIdOf(song.filename),
-      ),
-  ]);
+  /// Rebuilds the feed from the network. Never clears what is on screen: a
+  /// failed refresh leaves the previous feed in place.
+  Future<void> refresh() async {
+    final inputs = await _readInputs(await ref.read(songsProvider.future));
+    await _refresh(inputs);
+  }
 
-  final api = YouTubeAccountService.instance.libraryApi();
-  final candidates = <YouTubeFeedCandidate>[];
-  Object? firstError;
+  Future<void> _refreshIfStale(YouTubeFeedSnapshot cached) async {
+    try {
+      final inputs = await _readInputs(await ref.read(songsProvider.future));
+      if (cached.signature != inputs.signature || cached.age > refreshAfter) {
+        await _refresh(inputs);
+      }
+    } on Object catch (error) {
+      debugPrint('YouTube feed refresh check: $error');
+    }
+  }
 
-  // The music home answers with or without an account; signed in it follows
-  // the account's own music history, signed out it is charts and popular picks.
-  try {
-    for (final item in await api.musicHomeFeed(maxPages: 2)) {
-      candidates.add(
+  Future<void> _refresh(_FeedInputs inputs) {
+    return _inFlight ??= () async {
+      try {
+        final tracks = await _fetch(inputs);
+        if (!_disposed) state = AsyncData(tracks);
+      } on Object catch (error) {
+        debugPrint('YouTube feed refresh: $error');
+      } finally {
+        _inFlight = null;
+      }
+    }();
+  }
+
+  Future<List<OnlineTrack>> _fetch(_FeedInputs inputs) async {
+    final taste = inputs.taste;
+    final api = YouTubeAccountService.instance.libraryApi();
+    Object? firstError;
+
+    Future<List<YouTubePlaylistItem>> pool(
+      Future<List<YouTubePlaylistItem>> Function() run,
+    ) async {
+      try {
+        return await run();
+      } on Object catch (error) {
+        firstError ??= error;
+        _logFeedError(error);
+        return const [];
+      }
+    }
+
+    // The music home answers with or without an account; signed in it follows
+    // the account's own music history, signed out it is charts and popular
+    // picks. Each seeded artist returns only songs and music videos, so the
+    // pool cannot produce a trailer.
+    final pools = <Future<List<YouTubePlaylistItem>> Function()>[
+      () => pool(() => api.musicHomeFeed(maxPages: 2)),
+      for (final artist in taste.topArtists.take(_seedArtists))
+        () => pool(() => api.musicSearch(artist, artistHint: artist)),
+    ];
+    final results = await _runPools(pools);
+
+    final candidates = <YouTubeFeedCandidate>[
+      for (final item in results.first)
         YouTubeFeedCandidate(
           item: normalizeMusicTrack(item),
           source: YouTubeFeedSource.accountFeed,
         ),
-      );
-    }
-  } on Object catch (error) {
-    firstError = error;
-    _logFeedError(error);
-  }
-
-  // A few searches are enough to cover the top artists; each one returns only
-  // songs and music videos, so this pool cannot produce noise.
-  for (final artist in taste.topArtists.take(4)) {
-    try {
-      for (final item in await api.musicSearch(artist, artistHint: artist)) {
-        candidates.add(
+      for (final items in results.skip(1))
+        for (final item in items)
           YouTubeFeedCandidate(
             item: normalizeMusicTrack(item),
             source: YouTubeFeedSource.libraryArtist,
           ),
-        );
-      }
-    } on Object catch (error) {
-      firstError ??= error;
-      _logFeedError(error);
-    }
+    ];
+
+    final failure = firstError;
+    if (candidates.isEmpty && failure != null) throw failure;
+
+    final ranked = rankYouTubeMusicFeed(taste: taste, candidates: candidates);
+    final tracks = List<OnlineTrack>.unmodifiable([
+      for (final item in ranked)
+        OnlineTrack(
+          id: item.videoId,
+          title: item.title,
+          artist: item.artist,
+          coverUrl: item.thumbnailUrl ?? youtubeThumbnailUrl(item.videoId),
+          duration: item.duration,
+        ),
+    ]);
+
+    await YouTubeFeedCache.instance.write(
+      YouTubeFeedSnapshot(
+        tracks: tracks,
+        signature: inputs.signature,
+        fetchedAt: DateTime.now(),
+      ),
+    );
+    return tracks;
   }
 
-  if (candidates.isEmpty && firstError != null) throw firstError;
+  /// Runs [tasks] with at most [_maxConcurrentPools] in flight, keeping their
+  /// order so the ranker's tie-breaks stay stable between refreshes.
+  Future<List<List<YouTubePlaylistItem>>> _runPools(
+    List<Future<List<YouTubePlaylistItem>> Function()> tasks,
+  ) async {
+    final results = List<List<YouTubePlaylistItem>?>.filled(tasks.length, null);
+    var next = 0;
 
-  final ranked = rankYouTubeMusicFeed(taste: taste, candidates: candidates);
-  return List<OnlineTrack>.unmodifiable([
-    for (final item in ranked)
-      OnlineTrack(
-        id: item.videoId,
-        title: item.title,
-        artist: item.artist,
-        coverUrl: item.thumbnailUrl ?? youtubeThumbnailUrl(item.videoId),
-        duration: item.duration,
-      ),
-  ]);
-});
+    Future<void> worker() async {
+      while (next < tasks.length) {
+        final index = next++;
+        results[index] = await tasks[index]();
+      }
+    }
+
+    final workers = math.min(_maxConcurrentPools, tasks.length);
+    await Future.wait([for (var i = 0; i < workers; i++) worker()]);
+    return [for (final result in results) result ?? const []];
+  }
+
+  /// Everything the feed is built from, plus a coarse signature of it.
+  Future<_FeedInputs> _readInputs(List<Song> songs) async {
+    final userData = ref.read(userDataProvider);
+    final lastPlayed = await ref.read(lastPlayedTimestampsProvider.future);
+    // A taste model that is not ready yet is not a feed failure: the library
+    // channel below still describes the listener.
+    TasteSnapshot? smart;
+    try {
+      smart = await ref.read(tasteSnapshotProvider.future);
+    } on Object catch (error) {
+      debugPrint('YouTube feed: no taste snapshot yet: $error');
+    }
+    final nowSec = DateTime.now().millisecondsSinceEpoch / 1000.0;
+
+    double? ageDaysOf(String filename) {
+      final at = lastPlayed[filename];
+      if (at == null || at <= 0) return null;
+      return ((nowSec - at) / 86400.0).clamp(0.0, 3650.0);
+    }
+
+    final signals = <YouTubeTasteSignal>[
+      for (final song in songs)
+        YouTubeTasteSignal(
+          artist: song.artist,
+          title: song.title,
+          playCount: song.playCount,
+          favorite: userData.isFavorite(song.filename),
+          videoId: _videoIdOf(song.filename),
+          ageDays: ageDaysOf(song.filename),
+        ),
+      // Saved remote tracks are listening history too, and their ids keep the
+      // feed from suggesting a song the listener already keeps.
+      for (final song in userData.remoteSongs.values)
+        YouTubeTasteSignal(
+          artist: song.artist,
+          title: song.title,
+          playCount: song.playCount,
+          videoId: _videoIdOf(song.filename),
+          ageDays: ageDaysOf(song.filename),
+        ),
+    ];
+
+    // The smart-shuffle model already weighs the last month above the long run,
+    // so an artist abandoned months ago arrives here weak instead of carrying a
+    // lifetime play count into the four seed slots.
+    final artistTaste = <String, double>{};
+    if (smart != null) {
+      for (final entry in smart.artists.entries) {
+        final key = artistKey(entry.key);
+        if (key.isEmpty) continue;
+        final mass = entry.value.trendMass +
+            entry.value.longMass * kYouTubeLongTasteShare;
+        if (mass <= 0) continue;
+        artistTaste.update(key, (value) => value + mass, ifAbsent: () => mass);
+      }
+    }
+
+    final taste = buildYouTubeTasteProfile(signals, artistTaste: artistTaste);
+    final signedIn =
+        ref.read(youtubeAccountProvider).asData?.value.signedIn ?? false;
+
+    // Deliberately coarse: a play bumps a play count and can add a streamed row
+    // on the very next tap, and neither may invalidate the feed the listener is
+    // reading. Only a different library, account or set of seed artists does.
+    final signature = [
+      signedIn ? 'in' : 'out',
+      songs.length,
+      ...taste.topArtists,
+    ].join('|');
+
+    return _FeedInputs(taste: taste, signature: signature);
+  }
+}
+
+class _FeedInputs {
+  final YouTubeTasteProfile taste;
+  final String signature;
+
+  const _FeedInputs({required this.taste, required this.signature});
+}
 
 /// A failed pool is logged, never escalated: the music client works without a
 /// session, so a rejected request says nothing about the stored cookies, and

@@ -83,6 +83,19 @@ class YouTubeResponseCache implements YouTubeResponseStore {
     }
   }
 
+  /// Drops one response. A client version YouTube rejected must not come back
+  /// from memory on the retry, or the retry repeats the same 400.
+  @override
+  Future<void> remove(String key) async {
+    _memory.remove(key);
+    try {
+      final file = await _fileFor(key);
+      if (await file.exists()) await file.delete();
+    } on Object catch (error) {
+      debugPrint('YouTube cache: could not remove $key: $error');
+    }
+  }
+
   /// Drops every response, in memory and on disk. Used on sign-out and when the
   /// account changes, so the next session never reads another account's feed.
   Future<void> clear() async {

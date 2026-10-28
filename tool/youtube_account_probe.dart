@@ -916,6 +916,65 @@ Future<void> _protocol() async {
       ).accepted,
     );
 
+    stdout.writeln('\nFeed taste');
+    // A fresh install: nothing has been played, so the rows in the library are
+    // the only taste signal there is. The favourite decides the order.
+    final fresh = buildYouTubeTasteProfile(const [
+      YouTubeTasteSignal(artist: 'Aurora', title: 'Runaway'),
+      YouTubeTasteSignal(artist: 'Nova', title: 'Other', favorite: true),
+    ]);
+    check(
+      'taste: an unplayed library still seeds its own artists',
+      fresh.topArtists.length == 2 && fresh.topArtists.first == 'Nova',
+      detail: fresh.topArtists,
+    );
+
+    final faded = buildYouTubeTasteProfile(
+      const [
+        YouTubeTasteSignal(artist: 'Nova', title: 'Played once', playCount: 1),
+        YouTubeTasteSignal(
+          artist: 'Aurora',
+          title: 'Played for years',
+          playCount: 400,
+          ageDays: 240,
+        ),
+      ],
+      artistTaste: const {'Nova': 0.9},
+    );
+    check(
+      'taste: an artist abandoned months ago loses the seed slot',
+      faded.topArtists.first == 'Nova' &&
+          (faded.artistWeights['aurora'] ?? 0) < 0.5,
+      detail: faded.artistWeights,
+    );
+
+    final tasteOnly = buildYouTubeTasteProfile(
+      const [YouTubeTasteSignal(artist: 'Nova', title: 'Other')],
+      artistTaste: const {'Nova': 0.5, 'Kite': 1.0},
+    );
+    check(
+      'taste: the strongest played artist is seeded even with no rows left',
+      tasteOnly.topArtists.first == 'Kite',
+      detail: tasteOnly.topArtists,
+    );
+
+    final tasteRanked = rankYouTubeMusicFeed(
+      taste: faded,
+      maxPerArtist: 5,
+      candidates: [
+        candidate(
+          track('acctOnly', 'Shelf row', 'Stranger'),
+          source: YouTubeFeedSource.accountFeed,
+        ),
+        candidate(track('seedRow', 'Followed row', 'Nova')),
+      ],
+    );
+    check(
+      'taste: the seeded artist outranks a shelf row by an artist it forgot',
+      tasteRanked.first.videoId == 'seedRow',
+      detail: tasteRanked.map((i) => i.videoId).toList(),
+    );
+
     final ranked = rankYouTubeMusicFeed(
       taste: taste,
       limit: 10,
@@ -1850,5 +1909,10 @@ class _ProbeStore implements YouTubeResponseStore {
   Future<void> write(String key, Map<String, dynamic> body) async {
     writes++;
     bodies[key] = body;
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    bodies.remove(key);
   }
 }

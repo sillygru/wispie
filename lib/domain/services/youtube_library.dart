@@ -143,6 +143,9 @@ abstract class YouTubeResponseStore {
   });
 
   Future<void> write(String key, Map<String, dynamic> body);
+
+  /// Drops a stored body. Stores that keep nothing worth deleting can ignore it.
+  Future<void> remove(String key) async {}
 }
 
 /// Which YouTube web client a request speaks as.
@@ -511,6 +514,8 @@ class YouTubeLibraryApi {
       // accepts. Re-resolve once rather than making the user restart.
       if (status == HttpStatus.badRequest && attempt == 0 && !_pinnedVersion) {
         _versions.remove(client);
+        final store = _store;
+        if (store != null) await store.remove(_versionKey(client));
         attempt++;
         continue;
       }
@@ -610,10 +615,52 @@ class YouTubeLibraryApi {
   Future<String> _clientVersion(_ApiClient client) async {
     final cached = _versions[client];
     if (cached != null) return cached;
+
+    // Reading the version means downloading a whole YouTube page. Doing that
+    // on every launch is what made the first feed of a session slow, so the
+    // answer is kept for a day; a version YouTube has retired surfaces as a 400
+    // and is re-resolved by the retry in [_post].
+    final stored = await _storedClientVersion(client);
+    if (stored != null) {
+      _versions[client] = stored;
+      return stored;
+    }
+
     final resolved =
         await _resolveClientVersion(client) ?? client.versionFallback;
     _versions[client] = resolved;
+    await _storeClientVersion(client, resolved);
     return resolved;
+  }
+
+  static const Duration _clientVersionMaxAge = Duration(hours: 24);
+
+  String _versionKey(_ApiClient client) => 'client-version:${client.host}';
+
+  Future<String?> _storedClientVersion(_ApiClient client) async {
+    if (_pinnedVersion) return null;
+    final store = _store;
+    if (store == null) return null;
+    try {
+      final body = await store.read(_versionKey(client), _clientVersionMaxAge);
+      final version = body?['version'];
+      return version is String && version.isNotEmpty ? version : null;
+    } on Object catch (error) {
+      stderr
+          .writeln('YouTube: could not read the stored client version: $error');
+      return null;
+    }
+  }
+
+  Future<void> _storeClientVersion(_ApiClient client, String version) async {
+    if (_pinnedVersion) return;
+    final store = _store;
+    if (store == null) return;
+    try {
+      await store.write(_versionKey(client), {'version': version});
+    } on Object catch (error) {
+      stderr.writeln('YouTube: could not store the client version: $error');
+    }
   }
 
   Future<String?> _resolveClientVersion(_ApiClient client) async {

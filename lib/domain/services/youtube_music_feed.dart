@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import 'dart:math' as math;
 
+import 'song_affinity.dart';
 import 'youtube_library.dart';
 
 /// One row of the listener's own library, reduced to what the feed needs.
@@ -14,12 +15,18 @@ class YouTubeTasteSignal {
   /// back to the listener.
   final String? videoId;
 
+  /// Days since the last real listen, or null when the row was never played.
+  /// An artist the listener stopped queueing months ago must fall out of the
+  /// feed, which a lifetime play count cannot express.
+  final double? ageDays;
+
   const YouTubeTasteSignal({
     required this.artist,
     required this.title,
     this.playCount = 0,
     this.favorite = false,
     this.videoId,
+    this.ageDays,
   });
 }
 
@@ -69,15 +76,34 @@ class YouTubeFeedCandidate {
   const YouTubeFeedCandidate({required this.item, required this.source});
 }
 
+/// Half-life of the per-title recency discount, in days.
+const double kYouTubeRecencyHalfLifeDays = 45.0;
+
+/// How much an artist's long-run (90-day) taste mass counts next to the
+/// 30-day trend. Low on purpose: the complaint this answers is "artists I have
+/// not listened to in months", so a heavy history alone must not carry an
+/// artist back into the feed.
+const double kYouTubeLongTasteShare = 0.15;
+
+/// Share of the final artist weight that comes from the library itself.
+///
+/// Taste leads; ownership still seeds the feed, which is the whole answer for a
+/// listener who has imported a library but barely played it yet.
+const double kYouTubeLibraryShare = 0.25;
+
 /// Builds the taste snapshot from library rows.
 ///
-/// Weights are play counts plus a favorite bonus, normalized so the strongest
-/// artist is 1. A library with no plays yet gives every artist the same weight,
-/// which is the honest answer: the feed then leans on the artists present
-/// instead of pretending to know an order.
+/// Two channels are blended. The library channel counts play history plus a
+/// favorite bonus, discounted by how long ago each title was last played, and
+/// normalized so the strongest artist is 1. The [artistTaste] channel is the
+/// smart-shuffle model's own recency-weighted mass per artist, keyed like
+/// [artistKey]. When it is empty — a fresh install, or a library nobody has
+/// played — the library channel decides alone, so a new listener still gets a
+/// feed built from what they actually own.
 YouTubeTasteProfile buildYouTubeTasteProfile(
   Iterable<YouTubeTasteSignal> signals, {
   int maxArtists = 4,
+  Map<String, double> artistTaste = const {},
 }) {
   final raw = <String, double>{};
   final display = <String, String>{};
@@ -89,7 +115,9 @@ YouTubeTasteProfile buildYouTubeTasteProfile(
     // A placeholder byline is not a taste signal, and searching it would return
     // whatever YouTube has for those words.
     if (isPlausibleArtist(signal.artist)) {
-      final weight = 1 + signal.playCount + (signal.favorite ? 6 : 0);
+      // Ownership and a favorite are intent, so they do not age; repeats do.
+      final weight =
+          1 + signal.playCount * _recencyOf(signal) + (signal.favorite ? 6 : 0);
       raw[key] = (raw[key] ?? 0) + weight;
       display.putIfAbsent(key, () => displayArtist(signal.artist));
     }
@@ -100,17 +128,40 @@ YouTubeTasteProfile buildYouTubeTasteProfile(
     }
   }
 
-  if (raw.isEmpty) {
+  final library = _normalized(raw);
+  final taste = _normalized({
+    for (final entry in artistTaste.entries)
+      if (entry.value > 0) artistKey(entry.key): entry.value,
+  });
+  // A taste artist whose local rows are gone still needs a searchable name, or
+  // the strongest thing this device ever played could never be seeded.
+  for (final entry in artistTaste.entries) {
+    final key = artistKey(entry.key);
+    final name = entry.key.trim();
+    if (key.isNotEmpty && name.isNotEmpty) {
+      display.putIfAbsent(key, () => name);
+    }
+  }
+
+  if (library.isEmpty && taste.isEmpty) {
     return YouTubeTasteProfile(
       knownVideoIds: knownVideoIds,
       knownTrackKeys: knownTrackKeys,
     );
   }
 
-  final strongest = raw.values.reduce(math.max);
-  final weights = {
-    for (final entry in raw.entries) entry.key: entry.value / strongest,
-  };
+  final blended = <String, double>{};
+  for (final key in {...library.keys, ...taste.keys}) {
+    final weight = taste.isEmpty
+        ? library[key] ?? 0
+        : (1 - kYouTubeLibraryShare) * (taste[key] ?? 0) +
+            kYouTubeLibraryShare * (library[key] ?? 0);
+    // An artist the listener has not touched in months sinks here rather than
+    // borrowing a slot the top four artists should own.
+    if (weight >= 0.05) blended[key] = weight;
+  }
+
+  final weights = _normalized(blended);
   final topArtists = (weights.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value)))
       .take(maxArtists)
@@ -124,6 +175,32 @@ YouTubeTasteProfile buildYouTubeTasteProfile(
     knownVideoIds: knownVideoIds,
     knownTrackKeys: knownTrackKeys,
   );
+}
+
+/// Multiplier for one row's repeat plays, decaying on
+/// [kYouTubeRecencyHalfLifeDays].
+///
+/// A row with no known last listen keeps full weight: without a timestamp the
+/// play count is all there is. The floor keeps a genuinely abandoned favourite
+/// from vanishing from the ranking entirely.
+double _recencyOf(YouTubeTasteSignal signal) {
+  final ageDays = signal.ageDays;
+  if (ageDays == null || signal.playCount <= 0) return 1.0;
+  return 0.1 + 0.9 * decayFactor(ageDays, kYouTubeRecencyHalfLifeDays);
+}
+
+/// Scales [values] so the strongest entry is 1, dropping empty ones.
+Map<String, double> _normalized(Map<String, double> values) {
+  final usable = {
+    for (final entry in values.entries)
+      if (entry.key.isNotEmpty && entry.value > 0) entry.key: entry.value,
+  };
+  if (usable.isEmpty) return const {};
+  final strongest = usable.values.reduce(math.max);
+  if (strongest <= 0) return const {};
+  return {
+    for (final entry in usable.entries) entry.key: entry.value / strongest,
+  };
 }
 
 /// A normalized artist name: lowercase, without YouTube's channel decoration.
@@ -324,7 +401,9 @@ double scoreMusicCandidate(
   final evidence = musicEvidence(candidate.item);
   final sourcePrior =
       candidate.source == YouTubeFeedSource.libraryArtist ? 1.0 : 0.35;
-  return 0.60 * affinity + 0.20 * evidence + 0.20 * sourcePrior;
+  // Affinity dominates: a shelf YouTube suggests has to beat what this device
+  // actually plays, not merely attach to it.
+  return 0.68 * affinity + 0.18 * evidence + 0.14 * sourcePrior;
 }
 
 /// Ranks and filters a candidate pool into the feed.
