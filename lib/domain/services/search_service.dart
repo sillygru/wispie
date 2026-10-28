@@ -2,6 +2,8 @@ import '../../models/song.dart';
 import '../models/search_filter.dart';
 import '../models/search_result.dart';
 import '../../data/repositories/search_index_repository.dart';
+import 'search_ranking.dart';
+import 'search_taste.dart';
 
 /// Service for performing searches across the music library
 ///
@@ -10,6 +12,10 @@ import '../../data/repositories/search_index_repository.dart';
 class SearchService {
   final SearchIndexRepository _indexRepository;
   Future<void>? _initFuture;
+
+  /// Streamed filenames the index was last reconciled against, so a search does
+  /// not re-read every remote row's lyrics on every keystroke.
+  Set<String>? _syncedRemote;
 
   SearchService({SearchIndexRepository? indexRepository})
       : _indexRepository = indexRepository ?? SearchIndexRepository();
@@ -27,6 +33,7 @@ class SearchService {
     required String query,
     required SearchFilterState filterState,
     required List<Song> allSongs,
+    SearchTaste taste = SearchTaste.empty,
   }) async {
     await init();
 
@@ -38,6 +45,10 @@ class SearchService {
     if (lowerQuery.isEmpty) {
       return [];
     }
+    final tokens = lowerQuery
+        .split(RegExp(r'\s+'))
+        .where((token) => token.isNotEmpty)
+        .toList();
 
     // Determine which fields to search based on filter state
     final searchTitles = filterState.all || filterState.songs;
@@ -59,7 +70,7 @@ class SearchService {
     final songMap = {for (var song in allSongs) song.filename: song};
 
     // Build search results
-    final results = <SearchResult>[];
+    var results = <SearchResult>[];
     for (final match in matches) {
       final song = songMap[match.filename];
       if (song == null) continue;
@@ -98,24 +109,11 @@ class SearchService {
       ));
     }
 
-    // Sort results: title matches first, then artist, then album, then lyrics.
-    // Within the same field, exact word matches (e.g. "hot") rank above
-    // substring matches (e.g. "shot", "hotlines").
-    results.sort((a, b) {
-      final priorityA = _getMatchPriority(a);
-      final priorityB = _getMatchPriority(b);
-      if (priorityA != priorityB) return priorityA.compareTo(priorityB);
-
-      final wordScoreA = _getWordMatchScore(a, lowerQuery);
-      final wordScoreB = _getWordMatchScore(b, lowerQuery);
-      if (wordScoreA != wordScoreB) return wordScoreA.compareTo(wordScoreB);
-
-      final posA = _getMatchPosition(a, lowerQuery);
-      final posB = _getMatchPosition(b, lowerQuery);
-      if (posA != posB) return posA.compareTo(posB);
-
-      return a.song.title.toLowerCase().compareTo(b.song.title.toLowerCase());
-    });
+    results = rankSearchResults(
+      results: results,
+      query: lowerQuery,
+      taste: taste,
+    );
 
     // Typo tolerance only tops up thin results, so a clean query never gets
     // noise mixed in and the common case pays nothing for it.
@@ -124,9 +122,10 @@ class SearchService {
         (searchTitles || searchArtists || searchAlbums)) {
       final seen = {for (final r in results) r.song.filename};
       results.addAll(_fuzzyMatches(
-        lowerQuery,
+        tokens,
         allSongs,
         seen,
+        taste: taste,
         titles: searchTitles,
         artists: searchArtists,
         albums: searchAlbums,
@@ -139,14 +138,14 @@ class SearchService {
   static const int _fuzzyTopUpBelow = 12;
 
   List<SearchResult> _fuzzyMatches(
-    String query,
+    List<String> tokens,
     List<Song> songs,
     Set<String> exclude, {
+    required SearchTaste taste,
     required bool titles,
     required bool artists,
     required bool albums,
   }) {
-    final tokens = query.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
     final scored = <(int, SearchResult)>[];
 
     for (final song in songs) {
@@ -168,9 +167,13 @@ class SearchService {
       }
     }
 
-    scored.sort((a, b) => a.$1 != b.$1
-        ? a.$1.compareTo(b.$1)
-        : a.$2.song.title.compareTo(b.$2.song.title));
+    scored.sort((a, b) {
+      if (a.$1 != b.$1) return a.$1.compareTo(b.$1);
+      final tasteA = taste.scoreOf(a.$2.song);
+      final tasteB = taste.scoreOf(b.$2.song);
+      if (tasteA != tasteB) return tasteB.compareTo(tasteA);
+      return a.$2.song.title.compareTo(b.$2.song.title);
+    });
     return [for (final e in scored.take(30)) e.$2];
   }
 
@@ -232,53 +235,6 @@ class SearchService {
     return prev[b.length];
   }
 
-  /// Gets priority for sorting (lower = higher priority)
-  int _getMatchPriority(SearchResult result) {
-    if (result.matchedTitle) return 0;
-    if (result.matchedArtist) return 1;
-    if (result.matchedAlbum) return 2;
-    if (result.hasLyricsMatch) return 3;
-    return 4;
-  }
-
-  /// Returns 0 if query appears as whole word, 1 if only as substring
-  int _getWordMatchScore(SearchResult result, String lowerQuery) {
-    String text;
-    if (result.hasLyricsMatch && result.lyricsMatch != null) {
-      text = result.lyricsMatch!.fullLine.toLowerCase();
-    } else if (result.matchedTitle) {
-      text = result.song.title.toLowerCase();
-    } else if (result.matchedArtist) {
-      text = result.song.artist.toLowerCase();
-    } else if (result.matchedAlbum) {
-      text = result.song.album.toLowerCase();
-    } else {
-      return 1;
-    }
-    if (text.isEmpty || !text.contains(lowerQuery)) return 1;
-    final escaped = RegExp.escape(lowerQuery);
-    final wordPattern = RegExp('\\b$escaped\\b');
-    return wordPattern.hasMatch(text) ? 0 : 1;
-  }
-
-  /// Earliest index of query in matched text, or large value if not found
-  int _getMatchPosition(SearchResult result, String lowerQuery) {
-    String text;
-    if (result.hasLyricsMatch && result.lyricsMatch != null) {
-      text = result.lyricsMatch!.fullLine.toLowerCase();
-    } else if (result.matchedTitle) {
-      text = result.song.title.toLowerCase();
-    } else if (result.matchedArtist) {
-      text = result.song.artist.toLowerCase();
-    } else if (result.matchedAlbum) {
-      text = result.song.album.toLowerCase();
-    } else {
-      return 999999;
-    }
-    final idx = text.indexOf(lowerQuery);
-    return idx == -1 ? 999999 : idx;
-  }
-
   /// Groups search results by artist
   Map<String, List<SearchResult>> groupByArtist(List<SearchResult> results) {
     final groups = <String, List<SearchResult>>{};
@@ -317,6 +273,48 @@ class SearchService {
     return _indexRepository.indexedFilenames();
   }
 
+  /// Keeps the index in line with the streamed tracks saved to the library.
+  ///
+  /// Only `youtube:` rows are touched. The local library is rebuilt by the
+  /// scanner, and re-indexing it here would re-extract lyrics from disk on every
+  /// search. The set is compared first, so a search after a play costs one set
+  /// check rather than a database round trip, and lyrics a track gained since are
+  /// picked up by [updateSong] at the moment they are saved.
+  Future<void> syncRemoteLibrary(Iterable<Song> songs) async {
+    final wanted = {
+      for (final song in songs)
+        if (!song.isLocal && song.filename.startsWith(Song.youtubePrefix))
+          song.filename,
+    };
+    final previous = _syncedRemote;
+    if (previous != null &&
+        previous.length == wanted.length &&
+        previous.containsAll(wanted)) {
+      return;
+    }
+    _syncedRemote = wanted;
+    await init();
+
+    final indexed = await _indexRepository.indexedFilenames();
+    final stale = [
+      for (final filename in indexed)
+        if (!wanted.contains(filename) &&
+            filename.startsWith(Song.youtubePrefix))
+          filename,
+    ];
+    for (final filename in stale) {
+      await _indexRepository.removeSong(filename);
+    }
+    // Only rows that were not indexed before: adding one track to the library
+    // must not re-read the cached lyrics of every other one.
+    await _indexRepository.upsertRemoteSongs([
+      for (final song in songs)
+        if (wanted.contains(song.filename) &&
+            (previous == null || !previous.contains(song.filename)))
+          song,
+    ]);
+  }
+
   /// Updates a single song in the index
   Future<void> updateSong(Song song) async {
     await init();
@@ -339,9 +337,14 @@ class SearchService {
     await _indexRepository.renameFiles(renames);
   }
 
-  /// Clears the search index
+  /// Clears the search index.
+  ///
+  /// The streamed-set memo is dropped with it, so the next search re-indexes the
+  /// tracks saved to the library instead of trusting a set that no longer has
+  /// any rows behind it.
   Future<void> clearIndex() async {
     await init();
+    _syncedRemote = null;
     await _indexRepository.clear();
   }
 

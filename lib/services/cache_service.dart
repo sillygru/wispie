@@ -389,6 +389,19 @@ class CacheService {
   static String _cacheKey(String value) =>
       sha1.convert(utf8.encode(value)).toString();
 
+  /// Chosen lyrics for a streamed track, keyed on its filename.
+  ///
+  /// Shared with the search indexer: a lyric search has to read the very file
+  /// the player wrote, and two spellings of this path disagree silently.
+  Future<File> getRemoteLyricsFile(String filename) async {
+    final base = await getV3File('lyrics_cache');
+    return File(p.join(
+      base.parent.path,
+      'lyrics_cache',
+      'remote_${_cacheKey(filename)}.lrc',
+    ));
+  }
+
   /// Moves every filename-keyed cache entry from [before]'s identity to
   /// [after]'s, and returns the cover path [after] should carry when the cover
   /// file itself had to move.

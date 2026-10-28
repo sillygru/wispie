@@ -12,6 +12,7 @@ import '../../../domain/services/lyrics_session.dart';
 import '../../../domain/services/lyrics_timing_offset.dart';
 import '../../../models/song.dart';
 import '../../../providers/providers.dart';
+import '../../../providers/search_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../services/database_service.dart';
 import '../../../services/display_refresh_service.dart';
@@ -886,8 +887,21 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       }
       // Kept on disk so the next play does not re-query, even offline.
       await _lrclibService.saveForSong(song, lyrics);
+      _indexSavedRemoteLyrics(song);
       return lyrics;
     });
+  }
+
+  /// Makes lyrics a streamed track just gained searchable immediately.
+  ///
+  /// The index only ever holds streamed rows that are in the library, and its
+  /// remote set does not change when a track gains lyrics, so nothing else would
+  /// notice. Without this, a YouTube track could only be found by its lyrics
+  /// after the next full library rebuild.
+  void _indexSavedRemoteLyrics(Song song) {
+    if (!song.isRemote) return;
+    if (!ref.read(userDataProvider).isInRemoteLibrary(song.filename)) return;
+    unawaited(ref.read(searchServiceProvider).updateSong(song));
   }
 
   Future<void> _loadRichSync(String filename, List<LyricLine> local) async {
@@ -964,6 +978,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       if (widget.song.isRemote) {
         await _lrclibService.saveForSong(widget.song, chosen);
         _onlineLyrics.remove(widget.song.filename);
+        _indexSavedRemoteLyrics(widget.song);
       } else {
         await ref
             .read(songsProvider.notifier)

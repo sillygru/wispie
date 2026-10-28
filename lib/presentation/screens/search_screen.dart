@@ -304,6 +304,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: CustomScrollView(
         physics: const MotionScrollPhysics(),
         slivers: [
+          // Songs first: a query is usually a song, and artists/albums are the
+          // ways into more of the library rather than the answer.
+          if (songs.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: AppSectionHeader(
+                  label: context.l10n.searchSongsSection(songs.length)),
+            ),
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppTokens.s3),
+                child: WideTrackTableHeader(showAlbum: true),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (!context.mounted) return const SizedBox.shrink();
+                    return _buildWideSongItem(songs[index], audioManager);
+                  },
+                  childCount: songs.length,
+                ),
+              ),
+            ),
+          ],
           if (artists.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: AppSectionHeader(
@@ -367,30 +393,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     );
                   },
                   childCount: albums.length,
-                ),
-              ),
-            ),
-          ],
-          if (songs.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: AppSectionHeader(
-                  label: context.l10n.searchSongsSection(songs.length)),
-            ),
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: AppTokens.s3),
-                child: WideTrackTableHeader(showAlbum: true),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    if (!context.mounted) return const SizedBox.shrink();
-                    return _buildWideSongItem(songs[index], audioManager);
-                  },
-                  childCount: songs.length,
                 ),
               ),
             ),
@@ -473,7 +475,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if ((filterState.all || filterState.songs) && (showArtists || showAlbums)) {
       final organized = <dynamic>[];
 
-      // Add artists section first
+      // Songs lead: a query is usually a song, and an artist or album row is a
+      // way into more of the library rather than the answer itself.
+      if (showSongs) {
+        final songResults = results
+            .where((r) =>
+                r.matchedTitle ||
+                r.hasLyricsMatch ||
+                (filterState.songs && (r.matchedTitle || r.hasLyricsMatch)))
+            .toList();
+        if (songResults.isNotEmpty) {
+          organized.add(_SectionHeader(context.l10n.gradientDetailSongs));
+          organized.addAll(songResults);
+        }
+      }
+
+      // Add artists section
       if (showArtists) {
         final artistGroups = <String, List<SearchResult>>{};
         for (final result in results) {
@@ -513,20 +530,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   e.value,
                 )),
           );
-        }
-      }
-
-      // Add songs section last
-      if (showSongs) {
-        final songResults = results
-            .where((r) =>
-                r.matchedTitle ||
-                r.hasLyricsMatch ||
-                (filterState.songs && (r.matchedTitle || r.hasLyricsMatch)))
-            .toList();
-        if (songResults.isNotEmpty) {
-          organized.add(_SectionHeader(context.l10n.gradientDetailSongs));
-          organized.addAll(songResults);
         }
       }
 

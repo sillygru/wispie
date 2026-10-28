@@ -282,11 +282,8 @@ class LrclibService {
     await file.writeAsString(lyrics);
   }
 
-  Future<File> _cacheFileFor(Song song) async {
-    final digest = sha1.convert(utf8.encode(song.filename)).toString();
-    final base = await CacheService.instance.getV3File('lyrics_cache');
-    return File(p.join(base.parent.path, 'lyrics_cache', 'remote_$digest.lrc'));
-  }
+  Future<File> _cacheFileFor(Song song) =>
+      CacheService.instance.getRemoteLyricsFile(song.filename);
 
   /// Best online lyrics for a track.
   ///
