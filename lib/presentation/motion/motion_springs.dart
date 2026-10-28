@@ -53,6 +53,15 @@ abstract final class MotionSprings {
     damping: 19,
   );
 
+  /// The drawer arriving at its resting width. Softer than [elastic] so the
+  /// crest into the overshoot room is a visible swell rather than a few
+  /// pixels, and it still settles without a wobble.
+  static const SpringDescription drawerOpen = SpringDescription(
+    mass: 1,
+    stiffness: 250,
+    damping: 16,
+  );
+
   /// Critically damped: fastest approach that never overshoots.
   static final SpringDescription critical = SpringDescription.withDampingRatio(
     mass: 1,

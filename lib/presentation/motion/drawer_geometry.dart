@@ -30,6 +30,11 @@ class DrawerGeometry extends ProgressGeometry {
   /// How far the panel's trailing edge has travelled from the window edge.
   double panelWidth = 0;
 
+  /// How far the content has been pushed aside. Capped at the resting width:
+  /// the swell past open belongs to the panel's trailing edge only, and
+  /// dragging the content along with it turned the crest into a jolt.
+  double contentOffset = 0;
+
   /// The scrim's opacity input: the raw value, so the dim rides the drawer in
   /// and out under the finger the whole way, past open included.
   double scrimProgress = 0;
@@ -53,6 +58,7 @@ class DrawerGeometry extends ProgressGeometry {
     // zero and the drawer is closed until the first real width arrives.
     if (width <= 0) {
       panelWidth = 0;
+      contentOffset = 0;
       contentDrift = 0;
       scrimProgress = raw;
       return;
@@ -66,7 +72,9 @@ class DrawerGeometry extends ProgressGeometry {
         ? WideLayout.drawerStretchAtRest(width, raw - 1) *
             WideLayout.drawerContentDrift
         : 0.0;
-    panelWidth = width * raw.clamp(0.0, 1.0) + swell;
+    final double reveal = width * raw.clamp(0.0, 1.0);
+    panelWidth = reveal + swell;
+    contentOffset = reveal;
     contentDrift = drift;
     scrimProgress = raw;
   }

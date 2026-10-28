@@ -84,6 +84,7 @@ class MotionDragArea extends StatefulWidget {
     this.dragStartBehavior = DragStartBehavior.start,
     this.behavior = HitTestBehavior.translucent,
     this.axisLock = true,
+    this.edgePriorityWidth = 0,
   });
 
   final Widget child;
@@ -106,6 +107,15 @@ class MotionDragArea extends StatefulWidget {
 
   /// Reject when the cross-axis outruns the primary axis past touch slop.
   final bool axisLock;
+
+  /// Width of the left-edge strip, in logical pixels, where a horizontal drag
+  /// is claimed a few pixels in instead of after full touch slop.
+  ///
+  /// A horizontal scroller in the content is deeper in the hit-test path, so it
+  /// sees the movement first and takes the gesture the moment it crosses its
+  /// own slop. Claiming early inside the edge strip is what makes an edge swipe
+  /// open the drawer over a carousel rather than scrolling the carousel.
+  final double edgePriorityWidth;
 
   @override
   State<MotionDragArea> createState() => _MotionDragAreaState();
@@ -170,6 +180,21 @@ class _MotionDragAreaState extends State<MotionDragArea> {
     _tracker.reset();
   }
 
+  @override
+  void didUpdateWidget(MotionDragArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A recognizer dropped mid-gesture (axis or enabled changed) never reports
+    // its end, which would leave the caller stuck in a dragging state forever.
+    // Deferred: the callback usually rebuilds, and this runs mid-build.
+    if (_dragging && (!widget.enabled || oldWidget.axis != widget.axis)) {
+      _dragging = false;
+      final cancel = widget.onCancel;
+      if (cancel != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => cancel());
+      }
+    }
+  }
+
   Map<Type, GestureRecognizerFactory> _buildRecognizers() {
     if (!widget.enabled) return const <Type, GestureRecognizerFactory>{};
 
@@ -201,9 +226,11 @@ class _MotionDragAreaState extends State<MotionDragArea> {
         () => _AxisLockedHorizontalDragGestureRecognizer(
           axisLock: widget.axisLock,
           debugOwner: this,
+          edgePriorityWidth: widget.edgePriorityWidth,
         ),
         (instance) {
           instance
+            ..edgePriorityWidth = widget.edgePriorityWidth
             ..dragStartBehavior = widget.dragStartBehavior
             ..onStart = _start
             ..onUpdate = _update
@@ -235,34 +262,49 @@ class _AxisLockedHorizontalDragGestureRecognizer
     extends HorizontalDragGestureRecognizer {
   _AxisLockedHorizontalDragGestureRecognizer({
     required this.axisLock,
+    required this.edgePriorityWidth,
     super.debugOwner,
   });
 
   final bool axisLock;
+  double edgePriorityWidth;
+
+  /// Enough to tell a swipe from a tap, early enough to beat a scroller's own
+  /// slop.
+  static const double _edgeSlop = 5;
+
   Offset _origin = Offset.zero;
   bool _decided = false;
+  bool _startedInEdgeStrip = false;
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
     _origin = event.position;
     _decided = false;
+    _startedInEdgeStrip =
+        edgePriorityWidth > 0 && event.position.dx <= edgePriorityWidth;
     super.addAllowedPointer(event);
   }
 
   @override
   void handleEvent(PointerEvent event) {
-    if (axisLock && !_decided && event is PointerMoveEvent) {
+    if (!_decided && event is PointerMoveEvent) {
       final Offset delta = event.position - _origin;
       final double dx = delta.dx.abs();
       final double dy = delta.dy.abs();
       final double slop = computeHitSlop(event.kind, gestureSettings);
-      if (dy > dx && dy > slop) {
+      if (axisLock && dy > dx && dy > slop) {
         _decided = true;
         resolve(GestureDisposition.rejected);
         stopTrackingPointer(event.pointer);
         return;
       }
-      if (dx > dy && dx > slop) {
+      if (_startedInEdgeStrip && dx > dy && dx >= _edgeSlop) {
+        // Claim it before the scroller under the content crosses its own slop
+        // and takes the gesture, which left the drawer unopenable there.
+        _decided = true;
+        resolve(GestureDisposition.accepted);
+      } else if (axisLock && dx > dy && dx > slop) {
         _decided = true;
       }
     }

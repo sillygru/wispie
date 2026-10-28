@@ -328,17 +328,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
       });
       return;
     }
-    // Panel spring lands soft without a big bounce; pull-past-open is only a
-    // snappy return. Velocity is halved so a flick cannot wind the spring up.
-    // Opening rides [elastic]: the sheet has room to swell past its seat, so
-    // it crests and relaxes back instead of arriving at the boundary dead.
+    // Opening rides [drawerOpen]: the sheet has room to swell past its seat,
+    // so it crests into it and relaxes back instead of arriving at the
+    // boundary dead. Pull-past-open is only a snappy return into place, and a
+    // close is a settle. Release speed survives a flick, lightly damped so a
+    // thrown drawer cannot wind the spring into a wobble.
     final spring = !open
         ? MotionSprings.settle
-        : (bounceOpen ? MotionSprings.snappy : MotionSprings.elastic);
+        : (bounceOpen ? MotionSprings.snappy : MotionSprings.drawerOpen);
     _drawerSnap.springTo(
       open ? 1 : 0,
       spring: spring,
-      velocity: width > 0 ? (velocity / width) * 0.45 : 0,
+      velocity: width > 0 ? (velocity / width).clamp(-6.0, 6.0) * 0.6 : 0,
       onSettled: () {
         if (!mounted) return;
         // Pin exactly so a leftover 1e-4 cannot keep the scrim GestureDetector
@@ -575,7 +576,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
             child: Transform.translate(
               // The content rides out with the drawer, so the sidebar pushes it
               // aside instead of growing over a background that holds still.
-              offset: Offset(_drawerGeometry.panelWidth, 0),
+              // It stops at the resting width: the swell past open is the panel
+              // growing, not the content being shoved.
+              offset: Offset(_drawerGeometry.contentOffset, 0),
               child: Stack(
                 children: [
                   child!,
@@ -600,38 +603,42 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     Widget buildShellBody() {
-      return Stack(
-        children: [
-          // Content first, drawer above it: the content slides aside by exactly
-          // the panel's width, so the drawer is uncovered either way.
-          MotionDragArea(
-            axis: Axis.horizontal,
-            // Desktop has the nav rail; a trackpad's sideways scroll would
-            // otherwise drag the whole shell, bottom bar included.
-            enabled: !isWide,
-            onStart: _onHorizontalDragStart,
-            onUpdate: _onHorizontalDragUpdate,
-            onEnd: _onHorizontalDragEnd,
-            onCancel: _onHorizontalDragCancel,
-            child: buildDrawerSlider(child: buildContentStack()),
-          ),
-          // The drawer rides above the sliding content, so closing by dragging
-          // it back is handled by the content's own drag surface underneath.
-          AnimatedBuilder(
-            animation: _drawerGeometry,
-            child: Positioned.fill(
-              child: AppDrawer(
-                onClose: _closeDrawer,
-                drawerPosition: _drawerController,
-                geometry: _drawerGeometry,
+      return MotionDragArea(
+        axis: Axis.horizontal,
+        // Desktop has the nav rail; a trackpad's sideways scroll would
+        // otherwise drag the whole shell, bottom bar included.
+        enabled: !isWide,
+        // Only matters while the drawer is shut; once it is open the strip
+        // would pull taps on its own buttons into a swipe.
+        edgePriorityWidth: _isDrawerOpen ? 0 : WideLayout.drawerEdgeWidth,
+        onStart: _onHorizontalDragStart,
+        onUpdate: _onHorizontalDragUpdate,
+        onEnd: _onHorizontalDragEnd,
+        onCancel: _onHorizontalDragCancel,
+        // The surface wraps the drawer as well as the content: the panel is a
+        // sibling above it, so a drag started on the sheet never reached the
+        // content's own surface and the drawer could only be pushed open.
+        child: Stack(
+          children: [
+            // Content first, drawer above it: the content slides aside by the
+            // panel's resting width, so the drawer is uncovered either way.
+            buildDrawerSlider(child: buildContentStack()),
+            AnimatedBuilder(
+              animation: _drawerGeometry,
+              child: Positioned.fill(
+                child: AppDrawer(
+                  onClose: _closeDrawer,
+                  drawerPosition: _drawerController,
+                  geometry: _drawerGeometry,
+                ),
               ),
+              builder: (context, child) {
+                if (!_drawerChromeVisible) return const SizedBox.shrink();
+                return child!;
+              },
             ),
-            builder: (context, child) {
-              if (!_drawerChromeVisible) return const SizedBox.shrink();
-              return child!;
-            },
-          ),
-        ],
+          ],
+        ),
       );
     }
 

@@ -48,6 +48,10 @@ class WideLayout {
   /// settle is allowed to crest into this room before relaxing back.
   static const double drawerOvershoot = 0.2;
 
+  /// Left-edge strip whose swipe belongs to the drawer, not to whatever
+  /// horizontal scroller happens to sit under the finger.
+  static const double drawerEdgeWidth = 28;
+
   /// How far the sheet swells to the **right** past its resting open width, for a
   /// progress past 1.
   ///
