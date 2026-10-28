@@ -406,15 +406,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       AppSettingsGroup(
         label: l10n.settingsGroupData,
         children: [
-          tile(5, () => const SyncSettingsScreen()),
-          tile(6, () => const BackupSettingsScreen()),
-          tile(7, () => const StorageSettingsScreen()),
+          tile(5, () => const OnlineSettingsScreen()),
+          tile(6, () => const SyncSettingsScreen()),
+          tile(7, () => const BackupSettingsScreen()),
+          tile(8, () => const StorageSettingsScreen()),
         ],
       ),
       AppSettingsGroup(
         label: l10n.settingsGroupApp,
         children: [
-          tile(8, () => const AboutSettingsScreen()),
+          tile(9, () => const AboutSettingsScreen()),
         ],
       ),
     ]);

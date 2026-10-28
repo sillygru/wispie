@@ -17,8 +17,9 @@ class UpdateReleaseInfo {
 class UpdateService {
   static const String _latestReleaseApi =
       'https://api.github.com/repos/sillygru/wispie/releases/latest';
-  static const String latestReleaseUrl =
-      'https://github.com/sillygru/wispie/releases/latest';
+  static const String repositoryUrl = 'https://github.com/sillygru/wispie';
+  static const String latestReleaseUrl = '$repositoryUrl/releases/latest';
+  static const String issuesUrl = '$repositoryUrl/issues';
   static const String _dismissedVersionKey = 'update_dismissed_version';
 
   static Future<bool> isVersionDismissed(String tagName) async {

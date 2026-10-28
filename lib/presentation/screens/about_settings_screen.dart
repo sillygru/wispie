@@ -1,5 +1,6 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +9,7 @@ import '../../providers/providers.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/debug_sandbox.dart';
 import '../../services/update_service.dart';
+import '../components/app_feedback.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../components/app_surface.dart';
@@ -15,11 +17,29 @@ import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 
+/// Where "contact me" goes. Bugs and feature requests belong in the issue
+/// tracker; this is for the things that do not fit a template.
+const String _contactUrl = 'https://gru0.dev/contact/';
+
 class AboutSettingsScreen extends ConsumerWidget {
   /// When true, renders content only for the wide master-detail pane.
   final bool embedded;
 
   const AboutSettingsScreen({super.key, this.embedded = false});
+
+  Future<void> _openLink(BuildContext context, String url) async {
+    try {
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened || !context.mounted) return;
+    } on Object catch (error) {
+      debugPrint('About: could not open $url: $error');
+      if (!context.mounted) return;
+    }
+    appSnack(context, context.l10n.aboutLinkFailed, tone: AppTone.danger);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -139,6 +159,29 @@ class AboutSettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: AppTokens.s3),
+        AppSettingsGroup(
+          label: l10n.aboutSupportGroup,
+          icon: AppIcons.info,
+          children: [
+            AppSettingsTile(
+              icon: AppIcons.openInNew,
+              title: l10n.aboutContactTitle,
+              subtitle: l10n.aboutContactSubtitle,
+              trailing: const AppIcon(AppIcons.openInNew,
+                  size: AppTokens.iconSm, color: AppTokens.fgTertiary),
+              onTap: () => _openLink(context, _contactUrl),
+            ),
+            AppSettingsTile(
+              icon: AppIcons.dataObject,
+              title: l10n.aboutIssuesTitle,
+              subtitle: l10n.aboutIssuesSubtitle,
+              trailing: const AppIcon(AppIcons.openInNew,
+                  size: AppTokens.iconSm, color: AppTokens.fgTertiary),
+              onTap: () => _openLink(context, UpdateService.issuesUrl),
+            ),
+          ],
         ),
         if (kDebugMode)
           AppSettingsGroup(

@@ -6492,6 +6492,30 @@
   "@aboutViewRelease": {
     "description": "Button label to view the release page"
   },
+  "aboutSupportGroup": "Support",
+  "@aboutSupportGroup": {
+    "description": "Group heading for the feedback and issue links"
+  },
+  "aboutContactTitle": "Contact me",
+  "@aboutContactTitle": {
+    "description": "Row that opens the developer contact page"
+  },
+  "aboutContactSubtitle": "Bugs, ideas, or anything else",
+  "@aboutContactSubtitle": {
+    "description": "Subtitle under the contact row"
+  },
+  "aboutIssuesTitle": "Report an issue",
+  "@aboutIssuesTitle": {
+    "description": "Row that opens the GitHub issue tracker"
+  },
+  "aboutIssuesSubtitle": "Opens the wispie repository on GitHub",
+  "@aboutIssuesSubtitle": {
+    "description": "Subtitle under the issue tracker row"
+  },
+  "aboutLinkFailed": "Could not open the link",
+  "@aboutLinkFailed": {
+    "description": "Shown when a link in the About screen cannot be opened"
+  },
   "aboutDebugGroup": "Debug",
   "@aboutDebugGroup": {
     "description": "Group header for debug options"

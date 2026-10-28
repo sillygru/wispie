@@ -4988,6 +4988,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutViewRelease => 'View release';
 
   @override
+  String get aboutSupportGroup => 'Support';
+
+  @override
+  String get aboutContactTitle => 'Contact me';
+
+  @override
+  String get aboutContactSubtitle => 'Bugs, ideas, or anything else';
+
+  @override
+  String get aboutIssuesTitle => 'Report an issue';
+
+  @override
+  String get aboutIssuesSubtitle => 'Opens the wispie repository on GitHub';
+
+  @override
+  String get aboutLinkFailed => 'Could not open the link';
+
+  @override
   String get aboutDebugGroup => 'Debug';
 
   @override

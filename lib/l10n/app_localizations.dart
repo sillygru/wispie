@@ -8385,6 +8385,42 @@ abstract class AppLocalizations {
   /// **'View release'**
   String get aboutViewRelease;
 
+  /// Group heading for the feedback and issue links
+  ///
+  /// In en, this message translates to:
+  /// **'Support'**
+  String get aboutSupportGroup;
+
+  /// Row that opens the developer contact page
+  ///
+  /// In en, this message translates to:
+  /// **'Contact me'**
+  String get aboutContactTitle;
+
+  /// Subtitle under the contact row
+  ///
+  /// In en, this message translates to:
+  /// **'Bugs, ideas, or anything else'**
+  String get aboutContactSubtitle;
+
+  /// Row that opens the GitHub issue tracker
+  ///
+  /// In en, this message translates to:
+  /// **'Report an issue'**
+  String get aboutIssuesTitle;
+
+  /// Subtitle under the issue tracker row
+  ///
+  /// In en, this message translates to:
+  /// **'Opens the wispie repository on GitHub'**
+  String get aboutIssuesSubtitle;
+
+  /// Shown when a link in the About screen cannot be opened
+  ///
+  /// In en, this message translates to:
+  /// **'Could not open the link'**
+  String get aboutLinkFailed;
+
   /// Group header for debug options
   ///
   /// In en, this message translates to:
