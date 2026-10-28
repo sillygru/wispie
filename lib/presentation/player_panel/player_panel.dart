@@ -3,9 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/panel_release.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/display_refresh_service.dart';
 import '../../theme/app_theme.dart';
 import '../motion/motion.dart';
 import '../routes/player_sheet_origin.dart';
@@ -96,8 +98,9 @@ class PlayerPanelController {
   PlayerPanelController({required TickerProvider vsync}) {
     progress = AnimationController(
       vsync: vsync,
-      lowerBound: -PlayerTokens.panelDip,
-      upperBound: 1 + PlayerTokens.panelOvershoot,
+      lowerBound: -(PlayerTokens.panelDip + PlayerTokens.panelRubberRoom),
+      upperBound:
+          1 + PlayerTokens.panelOvershoot + PlayerTokens.panelRubberRoom,
     );
     snap = SnapEngine(progress);
   }
@@ -125,46 +128,77 @@ class PlayerPanelController {
 
   double get value => progress.value;
 
+  /// True while a finger owns the surface.
+  bool get isDragging => _dragging;
+
+  /// True while the surface is following a finger or settling from one.
+  ///
+  /// The host pauses the player's own animation for exactly this long. A frame
+  /// of the flight is then a cached raster under a transform, instead of a new
+  /// full-screen raster of the particle field, the waveform and the spinning
+  /// backdrop on every one of those frames — all of it paid on top of moving
+  /// the surface itself.
+  bool get isMoving => _dragging || progress.isAnimating;
+
   bool _dragging = false;
-  double _startValue = 0;
+
+  /// Travel distance in logical pixels, measured once per grab.
   double _travel = 1;
 
-  /// Wall-clock until which a fresh grab must not reopen a just-closed panel.
-  DateTime? _reopenBlockedUntil;
+  /// Where the finger picked the surface up, kept only to tell a deliberate
+  /// drag from a hold that went nowhere.
+  double _dragAnchor = 0;
 
-  bool get _reopenBlocked =>
-      _reopenBlockedUntil != null &&
-      DateTime.now().isBefore(_reopenBlockedUntil!);
+  /// The accessibility policy lives above this controller, so the host hands it
+  /// down rather than the controller reaching up for it.
+  bool Function()? prefersInstant;
 
-  void open() {
-    _reopenBlockedUntil = null;
+  void open({double velocity = 0}) {
     PlayerPanel.openState.value = true;
-    // A fixed duration on purpose: the reference app never shortens a snap
-    // because the surface is already part way there. Scaling it made a lane
-    // change feel like a cut instead of a move.
-    snap.snapTo(
-      1,
-      duration: PlayerTokens.dPanelOpen,
-      curve: PlayerTokens.cPanelOpen,
-      onSettled: () => onSettled?.call(),
-    );
+    DisplayRefreshService.instance.boost120();
+    _settleTo(1, velocity: velocity, closing: false);
   }
 
-  void close() {
+  void close({double velocity = 0}) {
     if (!isOpen && !progress.isAnimating && value <= 0) return;
     PlayerPanel.openState.value = false;
-    _reopenBlockedUntil = DateTime.now().add(PlayerTokens.dPanelReopenGrace);
     onClosing?.call();
-    snap.snapTo(
-      0,
-      duration: PlayerTokens.dPanelClose,
-      curve: PlayerTokens.cPanelClose,
-      onSettled: () => onSettled?.call(),
+    DisplayRefreshService.instance.boost120();
+    _settleTo(0, velocity: velocity, closing: true);
+  }
+
+  /// The one way the panel comes to rest. The simulation starts from the frame
+  /// that is drawn and the speed the finger left behind, so a throw overshoots
+  /// and a nudge does not, and the spring that catches a grab mid-flight is the
+  /// same object rather than a new animation.
+  void _settleTo(
+    double target, {
+    required double velocity,
+    required bool closing,
+  }) {
+    if (prefersInstant?.call() ?? false) {
+      snap.jumpTo(target);
+      onSettled?.call();
+      return;
+    }
+    snap.springTo(
+      target,
+      spring: closing
+          ? PlayerTokens.panelCloseSpring
+          : PlayerTokens.panelOpenSpring,
+      velocity: velocity,
+      onSettled: () {
+        // A spring stops once it is close enough, which can leave something
+        // like 0.0009 on the value. The chrome outside the panel reads that as
+        // "still visible", so the closed player would stay mounted and ticking
+        // behind the screen. Pin the rest state exactly.
+        if (progress.value != target) progress.value = target;
+        onSettled?.call();
+      },
     );
   }
 
   void jumpOpen() {
-    _reopenBlockedUntil = null;
     PlayerPanel.openState.value = true;
     snap.jumpTo(1);
   }
@@ -176,25 +210,28 @@ class PlayerPanelController {
 
   void dragStart() {
     if (_dragging) return;
-    // A bounce of the finger right after a flick-close must not catch the
-    // settling sheet and open it again.
-    if (_reopenBlocked) return;
     _dragging = true;
     onGrabbed?.call();
     // A grab always takes over from what is drawn, never from the target, so a
-    // panel caught mid-flight continues under the finger instead of jumping.
+    // panel caught mid-flight continues under the finger instead of jumping —
+    // including a panel already on its way down, which is how a fast upward
+    // swipe catches a closing player and brings it back.
+    _dragAnchor = value;
     snap.cancel();
-    _startValue = value;
     _travel = math.max(travelOf?.call() ?? 0, 1);
     PlayerPanel.openState.value = true;
+    DisplayRefreshService.instance.boost120();
   }
 
   /// [dy] is this event's vertical delta in logical pixels, positive downward.
   void dragUpdate(double dy) {
     if (!_dragging) return;
-    final double next = value - dy / _travel;
-    progress.value =
-        next.clamp(-PlayerTokens.panelDip, 1 + PlayerTokens.panelOvershoot);
+    progress.value = PanelRelease.resist(
+      value - dy / _travel,
+      low: -PlayerTokens.panelDip,
+      high: 1 + PlayerTokens.panelOvershoot,
+      room: PlayerTokens.panelRubberRoom,
+    );
   }
 
   /// [velocity] is px/s, positive downward.
@@ -206,23 +243,26 @@ class PlayerPanelController {
       flingRatio: 0.62,
       commitRatio: 0.5,
     );
-    final double travelled = (_startValue - value) * _travel;
-    final bool towardBar =
-        velocity > tuning.flingVelocity || travelled > tuning.actuation;
-    final bool towardPlayer =
-        -velocity > tuning.flingVelocity || travelled < -tuning.actuation;
-    // Started from the bar's half: only a deliberate move up opens. Started
-    // from the player: only a deliberate move down closes, otherwise the panel
-    // returns home instead of dropping out from under a slight drag.
-    final bool close = _startValue >= 0.5 ? towardBar : !towardPlayer;
-    final double distance = travelled.abs();
-    if (distance > tuning.actuation || velocity.abs() > tuning.flingVelocity) {
+    final bool close = PanelRelease.closes(
+      anchor: _dragAnchor,
+      current: value,
+      travel: _travel,
+      velocity: velocity,
+      flingVelocity: tuning.flingVelocity,
+      actuation: tuning.actuation,
+    );
+    if (((value - _dragAnchor) * _travel).abs() > tuning.actuation ||
+        velocity.abs() > tuning.flingVelocity) {
       MotionHaptics.light();
     }
+    // The speed the finger left behind goes into the spring, so a throw and a
+    // nudge land differently instead of both replaying one keyframed curve.
+    final double momentum =
+        PanelRelease.momentum(velocity: velocity, travel: _travel);
     if (close) {
-      this.close();
+      this.close(velocity: momentum);
     } else {
-      open();
+      open(velocity: momentum);
     }
   }
 
@@ -304,8 +344,19 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
       ..travelOf = _measureTravel
       ..onClosing = _startFlight
       ..onGrabbed = _startFlight
-      ..onSettled = _endFlight;
+      ..onSettled = _endFlight
+      ..prefersInstant = () => MotionPolicy.read(context).reduceMotion;
     _panel.progress.addListener(_onTick);
+    _panel.progress.addStatusListener(_onAnimationStatus);
+  }
+
+  /// A settle keeps the player's own tickers off, and the tick that lands still
+  /// reports an animating controller. This is the build that lets them go.
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      if (mounted) setState(() {});
+    }
   }
 
   void _endFlight() {
@@ -328,6 +379,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   @override
   void dispose() {
     _panel.progress.removeListener(_onTick);
+    _panel.progress.removeStatusListener(_onAnimationStatus);
     _flying.dispose();
     PlayerPanel._detach(this);
     _panel.dispose();
@@ -580,7 +632,12 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           return Offstage(
             offstage: !active,
             child: TickerMode(
-              enabled: active,
+              // Chrome animates while the panel rests, and stops while it
+              // moves. Everything it draws is already in place at both ends,
+              // so a frozen subtree composites from one cached raster instead
+              // of re-rasterising the whole screen for each frame of the
+              // flight. It resumes the moment the surface settles.
+              enabled: active && !_panel.isMoving,
               child: Stack(
                 children: [
                   if (active)

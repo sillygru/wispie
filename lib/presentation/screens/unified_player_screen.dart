@@ -612,7 +612,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                               motion: _motion,
                               coverKey: _coverKey,
                               paneVisible: _nowPlayingVisible,
-                              transitionAnimation: widget.transitionAnimation,
                             ),
                           ),
                           QueuePane(
@@ -660,7 +659,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                             motion: _motion,
                             coverKey: _coverKey,
                             paneVisible: _nowPlayingVisible,
-                            transitionAnimation: widget.transitionAnimation,
                           ),
                         ),
                         _TransportDock(song: song, accent: accent),

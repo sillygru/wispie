@@ -47,7 +47,6 @@ class NowPlayingPane extends ConsumerStatefulWidget {
   /// Whether this pane is the one on screen. The pane is kept alive across
   /// swipes, so without this a video would go on decoding behind the Queue.
   final ValueListenable<bool> paneVisible;
-  final Animation<double>? transitionAnimation;
 
   const NowPlayingPane({
     super.key,
@@ -56,7 +55,6 @@ class NowPlayingPane extends ConsumerStatefulWidget {
     required this.motion,
     required this.coverKey,
     required this.paneVisible,
-    this.transitionAnimation,
   });
 
   @override
@@ -107,7 +105,6 @@ class _NowPlayingPaneState extends ConsumerState<NowPlayingPane>
                       motion: widget.motion,
                       coverKey: widget.coverKey,
                       paneVisible: widget.paneVisible,
-                      transitionAnimation: widget.transitionAnimation,
                     );
                   },
                 ),
@@ -215,7 +212,6 @@ class _CoverStage extends ConsumerWidget {
   final PlayerMotionController motion;
   final GlobalKey coverKey;
   final ValueListenable<bool> paneVisible;
-  final Animation<double>? transitionAnimation;
 
   const _CoverStage({
     required this.song,
@@ -228,7 +224,6 @@ class _CoverStage extends ConsumerWidget {
     required this.motion,
     required this.coverKey,
     required this.paneVisible,
-    this.transitionAnimation,
   });
 
   @override
@@ -288,7 +283,6 @@ class _CoverStage extends ConsumerWidget {
                           beatReactive,
                           forSong: s,
                           current: current,
-                          transitionAnimation: transitionAnimation,
                         ),
                       ),
                     ),
@@ -304,7 +298,6 @@ class _CoverStage extends ConsumerWidget {
     bool beatReactive, {
     required Song forSong,
     required bool current,
-    Animation<double>? transitionAnimation,
   }) {
     final Song song = forSong;
     // The pulse wraps the artwork itself, and the panel's own shuttle is the
@@ -330,13 +323,13 @@ class _CoverStage extends ConsumerWidget {
         ),
         child: ClipRRect(
           borderRadius: PlayerTokens.brLg,
-          child: AnimatedBuilder(
-            animation: transitionAnimation ?? kAlwaysCompleteAnimation,
-            builder: (context, _) {
-              // The panel carries the artwork while the shuttle owns it, and
-              // fades this one back in on the landed rect. Quality follows the
-              // opacity: sharp the moment the cover is the thing being looked
-              // at, compressed while it is still fading.
+          // The panel carries the artwork while the shuttle owns it, and fades
+          // this one back in on the landed rect. Rebuilding on the panel's
+          // progress instead would rasterise this cover on every frame of the
+          // flight, next to the shuttle already drawing the same image; the
+          // opacity is the only thing that changes, and it notifies on its own.
+          child: Builder(
+            builder: (context) {
               final double coverOpacity =
                   PlayerCoverOpacity.coverOpacityOf(context);
               return Opacity(

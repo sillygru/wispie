@@ -43,6 +43,16 @@ abstract final class MotionSprings {
     damping: 32,
   );
 
+  /// The same surface on its way down into a dock that has room to absorb it.
+  /// Underdamped on purpose: the dip past its seat is what puts weight behind
+  /// the drop, and it gives a thrown panel somewhere to spend its momentum
+  /// instead of slamming against the edge.
+  static const SpringDescription panelClose = SpringDescription(
+    mass: 1,
+    stiffness: 340,
+    damping: 26,
+  );
+
   /// A panel arriving where it still has room past its seat — the slide-in
   /// drawer, which is allowed to swell beyond its resting width. Lightly damped
   /// on purpose: it crests past the seat and relaxes back, so the open reads as

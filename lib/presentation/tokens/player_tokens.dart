@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
+import '../motion/motion_springs.dart';
 import '../motion/motion_tokens.dart';
 import '../widgets/collection_accent_scope.dart';
 
@@ -128,21 +129,22 @@ class PlayerTokens {
   static const Curve cEmphasizedDecel = MotionTokens.emphasizedDecel;
   static const Curve cEmphasizedAccel = MotionTokens.emphasizedAccel;
 
-  /// Player panel open/close. One controller carries the whole transition, so
-  /// the surface, the flying cover and a grabbing finger all read one value.
-  /// Short enough to feel immediate; the close overshoot is what gives it
-  /// weight, not a longer duration.
-  static const Duration dPanelOpen = MotionTokens.standard;
-  static const Duration dPanelClose = Duration(milliseconds: 380);
+  /// The player panel is a spring, not a timed curve: one controller carries
+  /// the whole transition, the release velocity of a flick is poured into the
+  /// simulation, and a grab mid-flight retargets the same motion. A duration
+  /// here would be exactly the preset animation the panel must not be.
+  static const SpringDescription panelOpenSpring = MotionSprings.panel;
+  static const SpringDescription panelCloseSpring = MotionSprings.panelClose;
 
-  /// After a close commits, ignore grab-to-reopen so a quick upward flick does
-  /// not yank the panel back open. Twice the close duration on purpose.
-  static const Duration dPanelReopenGrace = Duration(milliseconds: 760);
-
-  /// Headroom past the bar and past full screen, so the curves can overshoot
+  /// Headroom past the bar and past full screen, so the springs can overshoot
   /// and the dock can dip instead of the surface stopping dead.
   static const double panelDip = 0.14;
   static const double panelOvershoot = 0.02;
+
+  /// How far past either end the surface keeps travelling under a finger, on
+  /// top of [panelDip] / [panelOvershoot]. Travel there is damped, never free:
+  /// the surface eases into its limit instead of hitting a wall.
+  static const double panelRubberRoom = 0.05;
 
   /// How far the dock sinks per unit of close overshoot.
   static const double dockDip = 46;
@@ -158,11 +160,6 @@ class PlayerTokens {
   static const Duration dPaneSwitch = MotionTokens.medium;
   static const double sheetGestureDeadSpace = 12;
 
-  /// Quick launch, soft landing on the way up.
-  static const Curve cPanelOpen = MotionTokens.enterCurve;
-
-  /// Ends past its target so the panel and the dock spring back a little.
-  static const Curve cPanelClose = MotionTokens.overshootCurve;
   static const Curve cTrackSwitch = MotionTokens.exitCurve;
   static const Curve cPaneSwitch = MotionTokens.enterCurve;
 
