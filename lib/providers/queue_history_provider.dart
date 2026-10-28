@@ -50,19 +50,33 @@ final queueSnapshotSongsProvider =
   ];
 });
 
-/// Tracks already played in [queueId], earliest first.
+/// One listen inside a queue: the track, and when it was heard.
+class QueueListen {
+  final Song song;
+  final DateTime playedAt;
+
+  const QueueListen({required this.song, required this.playedAt});
+}
+
+/// Listens recorded in [queueId], earliest first, one entry per listen.
 ///
 /// Read from the play events that carry that queue id, not from an index into
 /// the live queue: a restored or reordered queue would otherwise label songs
-/// the user skipped past as played, and miss the ones that were.
-final queuePlayedSongsProvider =
-    FutureProvider.family<List<Song>, String>((ref, queueId) async {
-  final filenames =
-      await DatabaseService.instance.getPlayedFilenamesForQueue(queueId);
-  if (filenames.isEmpty) return const [];
+/// the user skipped past as played, and miss the ones that were. A track heard
+/// twice is two entries, so the time is what tells them apart.
+final queueListensProvider =
+    FutureProvider.family<List<QueueListen>, String>((ref, queueId) async {
+  final listens = await DatabaseService.instance.getQueueListens(queueId);
+  if (listens.isEmpty) return const [];
   final byFilename = ref.watch(songsByFilenameProvider);
   return [
-    for (final filename in filenames)
-      if (byFilename[filename] case final song?) song,
+    for (final listen in listens)
+      if (byFilename[listen.filename] case final song?)
+        QueueListen(
+          song: song,
+          playedAt: DateTime.fromMillisecondsSinceEpoch(
+            (listen.timestamp * 1000).round(),
+          ),
+        ),
   ];
 });

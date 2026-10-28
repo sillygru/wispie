@@ -169,6 +169,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   // Stats tracking state
   String? _currentSongFilename;
+  // When the track now playing started. The queue's played list uses it to
+  // tell the listen still in progress from listens that are over.
+  DateTime? _currentListenStartedAt;
   String? _currentPlaylistId;
   DateTime? _playStartTime;
   bool _isCompleting = false;
@@ -315,6 +318,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   /// Bumped whenever the played set of the current queue can have changed, so
   /// the queue pane re-reads it instead of deriving it from the queue order.
   final ValueNotifier<int> queuePlayedRevision = ValueNotifier<int>(0);
+
+  /// When the current track's listen began, or null before one has started.
+  DateTime? get currentListenStartedAt => _currentListenStartedAt;
 
   PlaybackMediaMode get preferredMediaMode => preferredMediaModeNotifier.value;
   PlaybackMediaMode get effectiveMediaMode => effectiveMediaModeNotifier.value;
@@ -685,6 +691,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
           _isCompleting = false;
           _currentSongFilename = newFilename;
+          _currentListenStartedAt = DateTime.now();
           _currentSongQueueSnapshotId = null;
           final currentIdx = _player.currentIndex;
           _currentQueueId = currentIdx != null &&

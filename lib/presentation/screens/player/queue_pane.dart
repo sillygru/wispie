@@ -95,7 +95,7 @@ class _QueuePaneState extends ConsumerState<QueuePane>
     if (!mounted) return;
     final queueId = _playedSource?.currentQueueId;
     if (queueId == null) return;
-    ref.invalidate(queuePlayedSongsProvider(queueId));
+    ref.invalidate(queueListensProvider(queueId));
   }
 
   @override
@@ -602,18 +602,32 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
             final currentIndex = snapshot.data ?? -1;
             _autoScrollToCurrent(currentIndex);
 
-            // Played songs come from the play events recorded against this
+            // Played listens come from the play events recorded against this
             // queue's id, so they are what was actually heard. Slicing the
             // queue by the current index also counted entries a restored or
             // reordered queue had merely moved behind the playhead.
             final queueId = audioManager.currentQueueId;
-            final played = queueId == null
-                ? const <Song>[]
-                : ref.watch(queuePlayedSongsProvider(queueId)).value ??
-                    const <Song>[];
+            final listens = queueId == null
+                ? const <QueueListen>[]
+                : ref.watch(queueListensProvider(queueId)).value ??
+                    const <QueueListen>[];
             final current = currentIndex >= 0 && currentIndex < queue.length
                 ? queue[currentIndex]
                 : null;
+            // A listen is history once it is over. The track still on screen
+            // has one in flight, written by the last pause or flush, and Now
+            // Playing already lists it. Listens of that same track recorded
+            // before this one started are finished and stay.
+            final listenStartedAt = audioManager.currentListenStartedAt;
+            final played = current == null
+                ? listens
+                : [
+                    for (final listen in listens)
+                      if (listen.song.filename != current.song.filename ||
+                          listenStartedAt == null ||
+                          listen.playedAt.isBefore(listenStartedAt))
+                        listen,
+                  ];
             final upcoming =
                 (currentIndex >= 0 ? queue.skip(currentIndex + 1) : queue)
                     .where((item) => !_dismissed.contains(item.queueId))
@@ -642,20 +656,30 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                               ),
                               SliverList.builder(
                                 itemCount: played.length,
-                                itemBuilder: (context, index) => Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: PlayerTokens.s3,
-                                  ),
-                                  child: PlayerTrackRow(
-                                    song: played[index],
-                                    accent: widget.accent,
-                                    isPlayed: true,
-                                    onTap: () => _jumpToPlayed(
-                                        audioManager, played[index]),
-                                    onLongPress: () =>
-                                        _showSongOptions(played[index]),
-                                  ),
-                                ),
+                                itemBuilder: (context, index) {
+                                  final listen = played[index];
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: PlayerTokens.s3,
+                                    ),
+                                    child: PlayerTrackRow(
+                                      song: listen.song,
+                                      accent: widget.accent,
+                                      isPlayed: true,
+                                      // One row per listen, so the time is what
+                                      // separates a repeated track from a
+                                      // duplicate row.
+                                      trailing: Text(
+                                        _listenTime(context, listen.playedAt),
+                                        style: PlayerTokens.meta(context),
+                                      ),
+                                      onTap: () => _jumpToPlayed(
+                                          audioManager, listen.song),
+                                      onLongPress: () =>
+                                          _showSongOptions(listen.song),
+                                    ),
+                                  );
+                                },
                               ),
                               SliverToBoxAdapter(
                                 child: PlayerSectionHeader(
@@ -883,6 +907,13 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   void _jumpTo(AudioPlayerManager audioManager, QueueItem item) {
     MotionHaptics.selection();
     unawaited(audioManager.jumpToQueueItem(item.queueId));
+  }
+
+  String _listenTime(BuildContext context, DateTime at) {
+    return MaterialLocalizations.of(context).formatTimeOfDay(
+      TimeOfDay.fromDateTime(at),
+      alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+    );
   }
 
   /// Jumps to the queue entry holding a song that has already played.

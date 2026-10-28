@@ -2278,25 +2278,33 @@ class DatabaseService {
     }
   }
 
-  /// Filenames already played in [queueId], earliest first, once per track.
+  /// Every listen recorded in [queueId], earliest first, one entry per listen.
   ///
   /// Play events carry the queue id, so this is the only record of what a queue
   /// actually played. An index into the live queue cannot answer it: a restored
   /// or reordered queue would count tracks the user skipped past as played.
-  Future<List<String>> getPlayedFilenamesForQueue(String queueId) async {
+  ///
+  /// One entry per event rather than per track: a song heard at scattered
+  /// points in the queue was heard that many times, and collapsing the rows
+  /// made the queue's played list disagree with what the listener did.
+  Future<List<({String filename, double timestamp})>> getQueueListens(
+      String queueId) async {
     await _ensureInitialized();
     final stats = _statsDatabase;
     if (stats == null || queueId.isEmpty) return const [];
     try {
       final rows = await stats.rawQuery(
-        'SELECT song_filename, MIN(timestamp) AS first_played '
-        'FROM playevent WHERE queue_id = ?'
-        ' GROUP BY song_filename ORDER BY first_played ASC',
+        'SELECT song_filename, timestamp FROM playevent '
+        'WHERE queue_id = ? ORDER BY timestamp ASC, id ASC',
         [queueId],
       );
       return [
         for (final row in rows)
-          if (row['song_filename'] is String) row['song_filename'] as String,
+          if (row['song_filename'] is String && row['timestamp'] is num)
+            (
+              filename: row['song_filename'] as String,
+              timestamp: (row['timestamp'] as num).toDouble(),
+            ),
       ];
     } catch (e) {
       debugPrint('Error reading played songs for a queue: $e');
@@ -2473,6 +2481,30 @@ class DatabaseService {
     return playRatio < _skipRatioThreshold ? 'skip' : 'listen';
   }
 
+  /// The row a live flush extends, or an empty list when this flush starts a
+  /// new listen. Synced rows use their own key lookup instead: they come from a
+  /// device whose flush order is unknown, and merging by key there is what
+  /// stops one listen counted twice.
+  Future<List<Map<String, Object?>>> _continuingEvent(
+    Transaction txn, {
+    required String sessionId,
+    required String songFilename,
+    required String? queueId,
+  }) async {
+    final rows = await txn.query(
+      'playevent',
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+      orderBy: 'timestamp DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return const [];
+    final last = rows.first;
+    if (last['song_filename'] != songFilename) return const [];
+    if (last['queue_id'] != queueId) return const [];
+    return rows;
+  }
+
   Future<void> _insertPlayEventTxn(Transaction txn, Map<String, dynamic> event,
       {bool isSync = false}) async {
     final sessionId = event['session_id'] as String?;
@@ -2517,15 +2549,28 @@ class DatabaseService {
 
     final incomingQueueId = event['queue_id'] as String?;
 
-    // Coalesce logic (Fix for fragmented stats). Never across queues: the same
-    // song replayed from another queue is a separate listen in queue history.
-    final lastEvents = await txn.query(
-      'playevent',
-      where: 'session_id = ? AND song_filename = ? AND queue_id IS ?',
-      whereArgs: [sessionId, songFilename, incomingQueueId],
-      orderBy: 'timestamp DESC',
-      limit: 1,
-    );
+    // Coalesce logic (Fix for fragmented stats): a pause, a backgrounding or a
+    // resume flush continues the listen that is already on record, so those
+    // fragments add back together instead of becoming separate rows.
+    //
+    // Only the session's latest event can be that continuation. Anything else
+    // played since means this is a new listen, so it earns its own row — which
+    // is what lets the queue's played list show a song heard twice. Same rule
+    // across queues: a replay from another queue was already separate.
+    final lastEvents = isSync
+        ? await txn.query(
+            'playevent',
+            where: 'session_id = ? AND song_filename = ? AND queue_id IS ?',
+            whereArgs: [sessionId, songFilename, incomingQueueId],
+            orderBy: 'timestamp DESC',
+            limit: 1,
+          )
+        : await _continuingEvent(
+            txn,
+            sessionId: sessionId,
+            songFilename: songFilename,
+            queueId: incomingQueueId,
+          );
 
     final totalLength = (event['total_length'] as num?)?.toDouble() ?? 0.0;
     final duration = (event['duration_played'] as num?)?.toDouble() ?? 0.0;
