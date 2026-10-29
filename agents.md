@@ -1,6 +1,6 @@
 # Agent Documentation - wispie Music Player
 
-Local-first Flutter music player. Riverpod 3, `just_audio`, two SQLite files, MVVM/Repository.
+Local-first Flutter music player (plus a YouTube Music front end). Riverpod 3, `just_audio`, two SQLite files, MVVM/Repository.
 
 ## Critical Rules
 
@@ -23,24 +23,28 @@ NEVER write unit tests after you write code.
 
 There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
 
+The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
+
 ## Verification
 
-CI (`.github/workflows/flutter_tests.yml`) gates on, in this order:
+CI (`.github/workflows/flutter_tests.yml`; `.github/workflows/server_tests.yml` runs the Go server's checks) gates on, in this order:
 
 ```bash
-dart format --set-exit-if-changed .   # runs on third_party/ too (397 files incl. build/)
+dart format --set-exit-if-changed .   # runs on third_party/ too (~400 files incl. build/)
 flutter analyze                       # analysis_options.yaml excludes third_party + platform dirs
 ```
 
 Note the local Flutter is 3.47.2 while the analyze workflow pins 3.44.2 and the build workflow pins 3.47.2.
 
-`dart format .` walks `build/` (gitignored) and can warn about package resolution there; harmless. There is no codegen: `build_runner` is a dev dependency but no `.g.dart` files exist and nothing invokes it. Don't run it.
+`dart format .` walks `build/` (gitignored) and can warn about package resolution there; harmless. `build_runner` is a dev dependency but no `.g.dart` files exist and nothing invokes it. Don't run it.
+
+Editing an ARB file is only half the change: run `flutter gen-l10n` afterwards. The generated `lib/l10n/app_localizations*.dart` are committed, so the ARB plus its regenerated files belong in the same commit, and `flutter analyze` fails on a key that was added but never generated.
 
 ## Architecture
 
 ### Two generations of layout (mid-migration)
 
-Legacy: `lib/models/`, `lib/services/`, `lib/providers/`, `lib/theme/`. Newer: `lib/data/`, `lib/domain/`, `lib/presentation/`. Prefer the newer layers for new code, but don't bulk-relocate existing files as a side effect of unrelated work. `lib/domain/services/` holds the pure, Flutter-free logic that tests hit directly.
+Legacy: `lib/models/`, `lib/services/`, `lib/providers/`, `lib/theme/`. Newer: `lib/data/`, `lib/domain/`, `lib/presentation/`. Prefer the newer layers for new code, but don't bulk-relocate existing files as a side effect of unrelated work. `lib/domain/services/` holds the pure, Flutter-free logic the `tool/` probes can exercise without a UI.
 
 ### `filename` is the primary key for user data
 
@@ -54,27 +58,31 @@ Schema is canonical in `lib/data/migrations.dart` only: `_userDataTableStmts` / 
 
 ### Playback
 
-`AudioPlayerManager` (~3200 lines) wraps `just_audio` + `just_audio_background`, owns queue/shuffle/crossfade/volume/stats. Hot-path state is exposed via `ValueNotifier`s rather than Riverpod, deliberately, to keep rebuilds narrow — don't convert those to providers. Queue mutations serialize through `_queueMutationChain`; keep new queue mutations on that chain.
+`AudioPlayerManager` (~3900 lines) wraps `just_audio` + `just_audio_background`, owns queue/shuffle/crossfade/volume/stats. Hot-path state is exposed via `ValueNotifier`s rather than Riverpod, deliberately, to keep rebuilds narrow — don't convert those to providers. Queue mutations serialize through `_queueMutationChain`; keep new queue mutations on that chain.
 
 Linux/Windows swap in `just_audio_media_kit` + `sqflite_common_ffi` (see the `isMediaKitDesktop` branch in `main.dart`); they have no `audio_session`/`audio_service` implementation.
 
 ### Shuffle
 
-`lib/domain/services/shuffle_selector.dart` — pure `scoreCandidate(...)`; personalities (`consistent`, `explorer`, `custom`, …) resolve to `ShuffleWeights` and apply as multiplicative penalties/boosts.
+`lib/domain/services/shuffle_selector.dart` — pure `scoreCandidate(...)`; `smart_weights.dart` turns the smart model into `ShuffleWeights` that apply as multiplicative penalties/boosts. Smart is the only mode: the personality picker and its legacy options are gone, and `ShuffleConfig.fromJson` simply ignores their saved keys. The Familiar to Discover slider (`ShuffleConfig.discoveryLevel`) is the only user-facing knob.
 
 ### State management
 
-Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2000 lines) is the hub. Derived data belongs in a `Provider` over `songsProvider` + `userDataProvider`, not a duplicated cache.
+Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2200 lines) is the hub. Derived data belongs in a `Provider` over `songsProvider` + `userDataProvider`, not a duplicated cache.
 
 ### Library scanning
 
-`ScannerService` runs in isolates (`Isolate.spawn` / `Isolate.run`), lazy: a fast scan writes minimal rows, then metadata enrichment and cover extraction in throttled batches. Video thumbnails go through `FFmpegService`, which is platform-channel and main-thread only. `MediaDecodePriority` (`lib/services/media_decode_gate.dart`) serializes full-file decodes — waveform and beat analysis must not run concurrently on one file.
+`ScannerService` runs in isolates (`Isolate.spawn` / `Isolate.run`), lazy: a fast scan writes minimal rows, then metadata enrichment and cover extraction in throttled batches. `lib/domain/services/media_formats.dart` is the one list of playable extensions — the scanner, the storage probe and the folder reader all ask it. Video thumbnails go through `FFmpegService`, which is platform-channel and main-thread only. `MediaDecodePriority` (`lib/services/media_decode_gate.dart`) serializes full-file decodes — waveform and beat analysis must not run concurrently on one file.
 
 ### Networking
 
 `SharedHttpClient.instance` is the one pooled `HttpClient` for outbound requests. Don't construct per-request clients; that's the regression its comment describes. Secrets arrive via `--dart-define`: `TELEMETRY_SECRET` (plus `WISPIE_MUSIC_UTILS_BASE_URL` for the music API).
 
 The YouTube account has no OAuth client and no API quota: it signs InnerTube requests with the user's own web-session cookies (`SAPISIDHASH` over `SAPISID`, `lib/domain/services/youtube_session.dart`). Sign-in is a WebView on Google's own page (`flutter_inappwebview`), which reads the HttpOnly cookies from the platform store that no JavaScript could see. Google blocks its login form in embedded browsers on some platforms — on macOS it answers "this browser or app may not be secure" almost every time — and Linux has no WebView plugin, so importing a `Cookie` header, `cookies.txt` or cookie JSON is the path that always works; the screen detects the block page and offers the import directly. The WebView UA must match its engine (Safari UA on Apple platforms, Chrome-family on Chromium), because a Chrome UA over WebKit is itself a block signal. `flutter_inappwebview` is CocoaPods-only on macOS, so that platform runs Flutter's mixed mode: `macos/Podfile` stays committed next to the Swift Packages, and `.github/workflows/build.yml` installs the pods before building. Cookies live in secure storage, never in settings, and are dropped on sign-out along with the WebView jar. Response shape is parsed by walking the JSON, not by hardcoding containers, because YouTube reshuffles them; `tool/youtube_account_probe.dart` exercises all of it.
+
+The same client also reads the **catalogue**, not just the account: `musicSearchAll` keeps the album, playlist and artist rows a search page returns (browse ids starting `MPRE`, `VL`, `UC`), `album()` and `artist()` browse one of them, and an artist page's own sort chips (`parseMusicSortOptions`, which matches any `*sortFilterButton*` node and keeps its label) are sent back as `params`, so most-popular and release-date ordering come from YouTube instead of being guessed out of bylines. `OnlineMusicService` maps all of it to `OnlineTrack` / `OnlineCollection`, which is what the online tab, `youtube_collection_screen.dart` and `youtube_artist_screen.dart` draw. `tool/youtube_music_probe.dart` covers the container, artist and album parsing.
+
+Data policy that is easy to regress: catalogue rows ask for a 320-wide still (`upscaleThumbnailUrl(url, size: 320)`), and `CoverPath.renditionUrl` then picks the rendition the drawing box actually needs in *both* directions — a 52dp tile never downloads a 480px or 1280px still, a full-size cover still upgrades. Don't reintroduce a 720 default in a parser. `PassiveArtFetcherService` caps a passive art sweep at 80 keys per launch (an explicit fetch stays uncapped), so a first open over a large library is not hundreds of image downloads. Streamed audio fills `OnlineAudioCache` once, so replaying a track costs no network.
 
 ## Settings invariants
 
@@ -84,9 +92,10 @@ Adding a settings key means editing `StorageService._settingsKeys` **and** claim
 
 - Vibrant color blocking; high-contrast solid fills in large blocks.
 - No borders or outlines for separation. Use color blocking, whitespace, layout geometry.
-- No gradients for chrome, fills, or text. Gradients are allowed only for cover-art-derived backdrops, legibility scrims, and edge fades (`lib/presentation/cover_gradient/`, `app_screen_header`'s scroll scrim, `progressive_edge_fade.dart`).
+- No gradients for chrome, fills, or text. Gradients are allowed only for cover-art-derived backdrops, legibility scrims, and edge fades (`lib/presentation/cover_gradient/`, `app_screen_header`'s scroll scrim, `components/progressive_edge_fade.dart`).
 - Design tokens first: never hardcode hex or pixel sizes. `lib/presentation/tokens/player_tokens.dart` is the source of truth for spacing/radii/motion; `app_tokens.dart` aliases it and adds foreground/status colors; `app_icons.dart` holds icons. Reach for the shared components in `lib/presentation/components/` (`app_surface`, `app_list_row`, `app_chip`, `app_dialog`, `app_sheet`, `app_feedback`) instead of hand-rolling a row or dialog.
-- Motion: deliberate, token-driven durations and curves (`AppTokens.cStandard`, `dFast`, …).
+- Motion: deliberate, token-driven durations and curves (`AppTokens.cStandard`, `dFast`, …). `MotionPolicy.of(context)` is the one read for reduced motion; duration tokens live in `PlayerTokens`/`MotionTokens`.
+- Feedback and scroll chrome are shared, not per screen: `appSnack(...)`/`AppToasts` is the only snackbar path, and `MotionScrollBehavior` (`lib/presentation/motion/motion_physics.dart`) wraps every scrollable in `AppScrollbar`. Don't hand-roll a `showSnackBar` or a `Scrollbar`.
 - Semantic widgets (`ListTile`, `IconButton`), proper labels, managed focus.
 - `UnifiedPlayerScreen` is a shell around three panes (`lib/presentation/screens/player/`: lyrics / now-playing / queue). Keep chrome out of the panes.
 
@@ -94,7 +103,7 @@ Before returning UI code: no borders used for separation, no gradients outside t
 
 ## Release
 
-`git tag v1.4.4-release && git push origin v1.4.4-release` triggers `release-draft.yml`, which reuses a successful `ci-builds.yml` run for the tagged commit when possible and otherwise builds all seven platform artifacts, then creates a **private draft** release for manual review. Artifact names and order in the workflows are load-bearing; the comments say so. macOS builds require `packaging/macos/patch_darwin_headers.sh` and `prepare_spm_artifacts.sh` to run first.
+`git tag v2.4.0-release && git push origin v2.4.0-release` (the version in `pubspec.yaml`) triggers `release-draft.yml`, which reuses a successful `ci-builds.yml` run for the tagged commit when possible and otherwise builds all eight release assets (Android arm64 + armv7, Linux x86_64 AppImage, unsigned iOS IPA, macOS arm64 + x64, Windows portable + setup), then creates a **private draft** release for manual review. Artifact names and order in the workflows are load-bearing; the comments say so. macOS builds require `packaging/macos/patch_darwin_headers.sh` and `prepare_spm_artifacts.sh` to run first.
 
 ## Quick Reference
 
@@ -110,6 +119,13 @@ Before returning UI code: no borders used for separation, no gradients outside t
 | Scanning | `lib/services/scanner_service.dart` |
 | Shuffle | `lib/domain/services/shuffle_selector.dart` |
 | Player UI shell | `lib/presentation/screens/unified_player_screen.dart` |
+| YouTube catalogue (search, album, artist) | `lib/domain/services/youtube_library.dart` |
+| YouTube playback resolution | `lib/services/youtube_service.dart` |
+| Online catalogue -> UI models | `lib/services/online_music_service.dart` |
+| Online tab | `lib/presentation/screens/online_screen.dart` |
+| Album / playlist / artist screens | `lib/presentation/screens/youtube_collection_screen.dart`, `youtube_artist_screen.dart` |
+| Settings registry | `lib/presentation/screens/settings_registry.dart` |
+| Repeatable probes | `tool/*_probe.dart` |
 | Shared components | `lib/presentation/components/` |
 | Design tokens | `lib/presentation/tokens/` |
 
@@ -124,5 +140,7 @@ lib/
 ├── domain/          # pure logic + value objects (filename)
 ├── data/            # schema/migrations + repository implementations
 └── presentation/    # screens/ (player/ subdir), widgets/, components/, tokens/, routes/
+server/              # self-hostable Go sync server (stores opaque encrypted blobs)
+tool/                # repeatable probes + icon generator
 third_party/         # vendored deps, wired via dependency_overrides
 ```
