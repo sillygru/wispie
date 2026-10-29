@@ -133,36 +133,27 @@ QueuePlan? planMoveUpcomingToTop(
 /// Plans "play this next": the entry lands after existing top-order entries,
 /// or immediately after the current item when there are none.
 ///
-/// An entry already in the upcoming queue is *moved* rather than duplicated.
-/// Pass [allowDuplicate] to force a second copy anyway.
+/// An entry still upcoming is *moved* there, so it exists once. One that has
+/// already played, or is not queued at all, is inserted as a fresh copy.
 ///
-/// Merged siblings are **not** treated as a move. If [mergedSiblings] contains
-/// a filename already in the upcoming queue, this returns an insertion plan for
-/// [candidate] — the caller (AudioPlayerManager) is expected to remove the
-/// sibling first so the requested file lands in "Play Next", rather than
-/// silently moving the sibling.
+/// Only the exact filename triggers a move. A merged sibling is left for the
+/// caller (AudioPlayerManager) to swap for the requested file, so "Play Next"
+/// never silently moves the wrong file.
 QueuePlan planPlayNext(
   List<QueueItem> queue,
   int currentIndex,
   QueueItem candidate, {
   List<String> sessionTopOrder = const [],
-  List<String> mergedSiblings = const [],
-  bool allowDuplicate = false,
 }) {
-  int existingIdx = -1;
-  if (!allowDuplicate) {
-    // Only the exact filename triggers a move. A sibling match (same merged
-    // group) is reported as not-found so the caller can replace the sibling
-    // with the requested file instead of moving the wrong file.
-    existingIdx = queue
-        .indexWhere((item) => item.song.filename == candidate.song.filename);
-  }
+  // Only entries still ahead of the current track are candidates to move.
+  final upcomingIdx = queue.indexWhere(
+    (item) => item.song.filename == candidate.song.filename,
+    (currentIndex + 1).clamp(0, queue.length),
+  );
 
   var lastTopIndex = currentIndex;
   for (final topId in sessionTopOrder) {
-    if (existingIdx > currentIndex && queue[existingIdx].queueId == topId) {
-      continue;
-    }
+    if (upcomingIdx != -1 && queue[upcomingIdx].queueId == topId) continue;
     final idx = queue.indexWhere((item) => item.queueId == topId);
     if (idx > currentIndex && idx > lastTopIndex) {
       lastTopIndex = idx;
@@ -170,11 +161,11 @@ QueuePlan planPlayNext(
   }
   final targetIndex = (lastTopIndex + 1).clamp(0, queue.length);
 
-  if (existingIdx > currentIndex) {
+  if (upcomingIdx != -1) {
     return QueuePlan(
-      from: existingIdx,
-      to: existingIdx >= targetIndex ? targetIndex : targetIndex - 1,
-      item: queue[existingIdx],
+      from: upcomingIdx,
+      to: upcomingIdx >= targetIndex ? targetIndex : targetIndex - 1,
+      item: queue[upcomingIdx],
     );
   }
 

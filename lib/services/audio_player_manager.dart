@@ -3555,16 +3555,14 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     });
   }
 
-  Future<void> playNext(Song song, {bool allowDuplicate = false}) async {
+  Future<void> playNext(Song song) async {
     await _runSerializedQueueMutation(() async {
       var currentIndex = _player.currentIndex ?? -1;
       final preventMerged =
           _ref?.read(settingsProvider).preventMergedDuplicates ?? true;
-      final checkMergedSiblings = !allowDuplicate && preventMerged;
 
-      final mergedSiblings = checkMergedSiblings
-          ? _getMergedSiblings(song.filename)
-          : const <String>[];
+      final mergedSiblings =
+          preventMerged ? _getMergedSiblings(song.filename) : const <String>[];
 
       final candidate = QueueItem(song: song);
       _tagSource(candidate.queueId, PlaySource.queued);
@@ -3605,20 +3603,22 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         currentIndex,
         candidate,
         sessionTopOrder: _sessionTopOrder,
-        mergedSiblings: const [],
-        allowDuplicate: allowDuplicate,
       );
 
       if (plan.isMove) {
         final from = plan.from!;
-        final item = _effectiveQueue.removeAt(from);
-        _effectiveQueue.insert(plan.to, item);
-        try {
-          await _player.moveAudioSource(from, plan.to);
-        } catch (e) {
-          _effectiveQueue.removeAt(plan.to);
-          _effectiveQueue.insert(from, item);
-          rethrow;
+        // Already next up: the entry is where it should be, but it still joins
+        // the top order so a later Play Next queues behind it.
+        if (from != plan.to) {
+          final item = _effectiveQueue.removeAt(from);
+          _effectiveQueue.insert(plan.to, item);
+          try {
+            await _player.moveAudioSource(from, plan.to);
+          } catch (e) {
+            _effectiveQueue.removeAt(plan.to);
+            _effectiveQueue.insert(from, item);
+            rethrow;
+          }
         }
       } else {
         _effectiveQueue.insert(plan.to, plan.item);

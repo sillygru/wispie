@@ -609,18 +609,6 @@ abstract class AppLocalizations {
   /// **'Add song to play immediately after current track'**
   String get songMenuPlayNextHint;
 
-  /// Action label to play next allowing duplicate
-  ///
-  /// In en, this message translates to:
-  /// **'Play Next (Allow Duplicate)'**
-  String get songMenuPlayNextDuplicate;
-
-  /// Hint for allow duplicate play next
-  ///
-  /// In en, this message translates to:
-  /// **'Add again even if already in queue'**
-  String get songMenuPlayNextDuplicateHint;
-
   /// Add to Playlist label shared by the song menu, heart menu, quick action bar, and quick actions settings
   ///
   /// In en, this message translates to:
@@ -8175,29 +8163,11 @@ abstract class AppLocalizations {
   /// **'YouTube returned an unexpected response.'**
   String get onlineYoutubeErrorResponse;
 
-  /// Tooltip for appending an online track to the queue
-  ///
-  /// In en, this message translates to:
-  /// **'Add to queue'**
-  String get onlineAddToQueue;
-
-  /// Confirmation after adding an online track to the queue
-  ///
-  /// In en, this message translates to:
-  /// **'Added {title} to the queue'**
-  String onlineSongQueued(String title);
-
   /// A cached online track is no longer available to stream
   ///
   /// In en, this message translates to:
   /// **'Unavailable online'**
   String get onlineUnavailable;
-
-  /// Add an online track to a local playlist
-  ///
-  /// In en, this message translates to:
-  /// **'Add to playlist'**
-  String get onlineAddToPlaylist;
 
   /// Save a single streamed track to the library
   ///

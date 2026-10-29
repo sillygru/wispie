@@ -201,7 +201,12 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
 
   void _handleManagePlaylists() {
     _closePopup();
-    songActionManagePlaylists(widget.parentContext, ref, widget.songFilename);
+    songActionManagePlaylists(
+      widget.parentContext,
+      ref,
+      widget.songFilename,
+      song: widget.song,
+    );
   }
 
   Future<void> _handleHideFromLibrary() async {
@@ -282,13 +287,15 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
     required bool isSuggestLess,
   }) {
     final hasSongActions = widget.song != null;
+    // A remote song outside a playlist has nothing in the danger submenu.
+    final hasDangerActions =
+        widget.song?.isLocal == true || widget.playlistId != null;
 
     return Column(
       key: const ValueKey(_SongMenuView.root),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (hasSongActions &&
-            (widget.song?.isLocal == true || widget.playlistId != null))
+        if (hasSongActions)
           _sectionCard(
             icon: AppIcons.play,
             title: l10n.settingsPagePlaybackTitle,
@@ -313,8 +320,8 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
           // the cover accent like the rest.
           accent: isFavorite ? AppTokens.danger : null,
         ),
-        if (hasSongActions) const SizedBox(height: AppTokens.s2),
-        if (hasSongActions)
+        if (hasDangerActions) const SizedBox(height: AppTokens.s2),
+        if (hasDangerActions)
           _sectionCard(
             icon: AppIcons.delete,
             title: l10n.songMenuDanger,
@@ -337,21 +344,6 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
           onTap: _handlePlayNext,
         ),
         _submenuEntry(
-          icon: AppIcons.queue,
-          label: l10n.songMenuPlayNextDuplicate,
-          subtitle: l10n.songMenuPlayNextDuplicateHint,
-          onTap: () async {
-            _closePopup();
-            if (widget.song == null) return;
-            await songActionPlayNext(
-              widget.parentContext,
-              ref,
-              widget.song!,
-              allowDuplicate: true,
-            );
-          },
-        ),
-        _submenuEntry(
           icon: AppIcons.playlistAdd,
           label: l10n.songMenuAddToPlaylist,
           subtitle: l10n.songMenuAddToPlaylistHint,
@@ -363,12 +355,13 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
           subtitle: l10n.songMenuAddToNewPlaylistHint,
           onTap: _handleAddToNewPlaylist,
         ),
-        _submenuEntry(
-          icon: AppIcons.share,
-          label: l10n.songMenuShare,
-          subtitle: l10n.songMenuShareHint,
-          onTap: _handleShare,
-        ),
+        if (widget.song?.isLocal == true)
+          _submenuEntry(
+            icon: AppIcons.share,
+            label: l10n.songMenuShare,
+            subtitle: l10n.songMenuShareHint,
+            onTap: _handleShare,
+          ),
       ],
     );
   }

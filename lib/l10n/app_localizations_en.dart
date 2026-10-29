@@ -316,13 +316,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Add song to play immediately after current track';
 
   @override
-  String get songMenuPlayNextDuplicate => 'Play Next (Allow Duplicate)';
-
-  @override
-  String get songMenuPlayNextDuplicateHint =>
-      'Add again even if already in queue';
-
-  @override
   String get songMenuAddToPlaylist => 'Add to Playlist';
 
   @override
@@ -4850,18 +4843,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'YouTube returned an unexpected response.';
 
   @override
-  String get onlineAddToQueue => 'Add to queue';
-
-  @override
-  String onlineSongQueued(String title) {
-    return 'Added $title to the queue';
-  }
-
-  @override
   String get onlineUnavailable => 'Unavailable online';
-
-  @override
-  String get onlineAddToPlaylist => 'Add to playlist';
 
   @override
   String get onlineLibraryAdd => 'Add to library';

@@ -367,14 +367,6 @@
   "@songMenuPlayNextHint": {
     "description": "Hint for play next action"
   },
-  "songMenuPlayNextDuplicate": "Play Next (Allow Duplicate)",
-  "@songMenuPlayNextDuplicate": {
-    "description": "Action label to play next allowing duplicate"
-  },
-  "songMenuPlayNextDuplicateHint": "Add again even if already in queue",
-  "@songMenuPlayNextDuplicateHint": {
-    "description": "Hint for allow duplicate play next"
-  },
   "songMenuAddToPlaylist": "Add to Playlist",
   "@songMenuAddToPlaylist": {
     "description": "Add to Playlist label shared by the song menu, heart menu, quick action bar, and quick actions settings"
@@ -6289,26 +6281,9 @@
   "@onlineYoutubeErrorResponse": {
     "description": "YouTube returned something that is not the expected JSON"
   },
-  "onlineAddToQueue": "Add to queue",
-  "@onlineAddToQueue": {
-    "description": "Tooltip for appending an online track to the queue"
-  },
-  "onlineSongQueued": "Added {title} to the queue",
-  "@onlineSongQueued": {
-    "description": "Confirmation after adding an online track to the queue",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
   "onlineUnavailable": "Unavailable online",
   "@onlineUnavailable": {
     "description": "A cached online track is no longer available to stream"
-  },
-  "onlineAddToPlaylist": "Add to playlist",
-  "@onlineAddToPlaylist": {
-    "description": "Add an online track to a local playlist"
   },
   "onlineLibraryAdd": "Add to library",
   "@onlineLibraryAdd": {

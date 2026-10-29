@@ -15,14 +15,13 @@ import '../../presentation/tokens/app_icons.dart';
 import '../../presentation/tokens/app_tokens.dart';
 import '../../presentation/widgets/album_art_image.dart';
 import '../../presentation/widgets/duration_display.dart';
-import '../../presentation/widgets/playlist_selector_dialog.dart';
 import '../../presentation/utils/youtube_error_message.dart';
 import '../../providers/providers.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_surface.dart';
-import '../components/song_actions.dart';
+import '../widgets/song_options_menu.dart';
 
 /// The YouTube tab: a search field, a recommendations feed and the account's
 /// playlists.
@@ -108,41 +107,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     }
   }
 
-  Future<void> _playNext(OnlineTrack track) async {
-    final song = track.toSong();
-    try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
-      await ref.read(audioPlayerManagerProvider).playNext(song);
-      if (!mounted) return;
-      appSnack(context, context.l10n.songAddedToNextUp(track.title));
-    } on Object catch (error) {
-      _showPlaybackError(error);
-    }
-  }
-
-  Future<void> _addToQueue(OnlineTrack track) async {
-    final song = track.toSong();
-    try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
-      await ref.read(audioPlayerManagerProvider).addToQueue(song);
-      if (!mounted) return;
-      appSnack(context, context.l10n.onlineSongQueued(track.title));
-    } on Object catch (error) {
-      _showPlaybackError(error);
-    }
-  }
-
-  Future<void> _addToPlaylist(OnlineTrack track) async {
-    final song = track.toSong();
-    await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
-    if (!mounted) return;
-    showPlaylistSelector(context, ref, song.filename);
-  }
-
-  /// Saves this one track to the library, or drops it out again.
-  Future<void> _toggleLibrary(OnlineTrack track) =>
-      songActionToggleRemoteLibrary(context, ref, track.toSong());
-
   void _showPlaybackError(Object error) {
     if (!mounted) return;
     appSnack(
@@ -182,10 +146,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     final isFavorite = ref.watch(
       userDataProvider.select((state) => state.isFavorite(song.filename)),
     );
-    final inLibrary = ref.watch(
-      userDataProvider
-          .select((state) => state.isInRemoteLibrary(song.filename)),
-    );
     return AppListRow(
       key: ValueKey('youtube-track-${track.id}'),
       tall: true,
@@ -218,53 +178,12 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
           ),
           IconButton(
             tooltip: context.l10n.songMenuTitle,
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              builder: (sheetContext) => SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ListTile(
-                      leading: const AppIcon(AppIcons.queuePlayNext),
-                      title: Text(context.l10n.songMenuPlayNext),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _playNext(track);
-                      },
-                    ),
-                    ListTile(
-                      leading: const AppIcon(AppIcons.playlistAdd),
-                      title: Text(context.l10n.onlineAddToQueue),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _addToQueue(track);
-                      },
-                    ),
-                    ListTile(
-                      leading: const AppIcon(AppIcons.playlistAdd),
-                      title: Text(context.l10n.onlineAddToPlaylist),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _addToPlaylist(track);
-                      },
-                    ),
-                    ListTile(
-                      leading: AppIcon(
-                        AppIcons.collectionsBookmark,
-                        color:
-                            inLibrary ? AppTokens.accentOf(context, ref) : null,
-                      ),
-                      title: Text(inLibrary
-                          ? context.l10n.onlineLibraryRemove
-                          : context.l10n.onlineLibraryAdd),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _toggleLibrary(track);
-                      },
-                    ),
-                  ],
-                ),
-              ),
+            onPressed: () => showSongOptionsMenu(
+              context,
+              ref,
+              song.filename,
+              song.title,
+              song: song,
             ),
             icon: const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
           ),

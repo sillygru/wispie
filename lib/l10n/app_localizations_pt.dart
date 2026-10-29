@@ -323,14 +323,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Adicionar a música para tocar logo após a faixa atual';
 
   @override
-  String get songMenuPlayNextDuplicate =>
-      'Tocar em seguida (permitir duplicatas)';
-
-  @override
-  String get songMenuPlayNextDuplicateHint =>
-      'Adicionar de novo mesmo que já esteja na fila';
-
-  @override
   String get songMenuAddToPlaylist => 'Adicionar à playlist';
 
   @override
@@ -4928,18 +4920,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'YouTube returned an unexpected response.';
 
   @override
-  String get onlineAddToQueue => 'Adicionar à fila';
-
-  @override
-  String onlineSongQueued(String title) {
-    return 'Adicionada à fila: $title';
-  }
-
-  @override
   String get onlineUnavailable => 'Indisponível no YouTube';
-
-  @override
-  String get onlineAddToPlaylist => 'Adicionar à playlist';
 
   @override
   String get onlineLibraryAdd => 'Add to library';
@@ -6235,14 +6216,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get songMenuPlayNextHint =>
       'Adicionar a música para tocar logo após a faixa atual';
-
-  @override
-  String get songMenuPlayNextDuplicate =>
-      'Tocar em seguida (permitir duplicados)';
-
-  @override
-  String get songMenuPlayNextDuplicateHint =>
-      'Adicionar de novo mesmo que já esteja na fila';
 
   @override
   String get songMenuAddToPlaylist => 'Adicionar à lista de reprodução';
@@ -10761,18 +10734,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get onlineNoResults => 'Não foram encontradas faixas';
 
   @override
-  String get onlineAddToQueue => 'Adicionar à fila';
-
-  @override
-  String onlineSongQueued(String title) {
-    return 'Adicionada à fila: $title';
-  }
-
-  @override
   String get onlineUnavailable => 'Indisponível no YouTube';
-
-  @override
-  String get onlineAddToPlaylist => 'Adicionar à playlist';
 
   @override
   String get searchEmptyTitle => 'Pesquisa na tua coleção de músicas';

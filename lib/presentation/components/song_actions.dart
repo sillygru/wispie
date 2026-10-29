@@ -109,14 +109,13 @@ void songActionToggleSuggestLess(
 Future<void> songActionPlayNext(
   BuildContext host,
   WidgetRef ref,
-  Song song, {
-  bool allowDuplicate = false,
-}) async {
+  Song song,
+) async {
   final l10n = AppLocalizations.of(host);
   try {
-    await ref
-        .read(audioPlayerManagerProvider)
-        .playNext(song, allowDuplicate: allowDuplicate);
+    // A streamed track has to be in the user-data db before it can be queued.
+    await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
+    await ref.read(audioPlayerManagerProvider).playNext(song);
   } on YouTubeApiException catch (error) {
     if (!host.mounted) return;
     _showOnlinePlaybackError(host, error);
@@ -227,11 +226,17 @@ void songActionAddToNewPlaylist(
   );
 }
 
-void songActionManagePlaylists(
+Future<void> songActionManagePlaylists(
   BuildContext host,
   WidgetRef ref,
-  String filename,
-) {
+  String filename, {
+  Song? song,
+}) async {
+  // A streamed track needs its metadata on file before a playlist can show it.
+  if (song?.isRemote == true) {
+    await ref.read(userDataProvider.notifier).cacheRemoteSong(song!);
+  }
+  if (!host.mounted) return;
   showPlaylistSelector(host, ref, filename);
 }
 
