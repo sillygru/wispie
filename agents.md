@@ -44,11 +44,11 @@ Legacy: `lib/models/`, `lib/services/`, `lib/providers/`, `lib/theme/`. Newer: `
 
 ### `filename` is the primary key for user data
 
-Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `merged_song`, `song_mood`, `recommendation_*`, `cover_miss`) keys on the song's **filename**, not a path or synthetic id. Renaming a file outside the app orphans its stats. Merged songs map several filenames to one group id (`AudioPlayerManager._getMergedSiblings`).
+Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `merged_song`, `recommendation_*`, `cover_miss`) keys on the song's **filename**, not a path or synthetic id. Renaming a file outside the app orphans its stats. Merged songs map several filenames to one group id (`AudioPlayerManager._getMergedSiblings`).
 
 ### Databases
 
-`DatabaseService` (`lib/services/database_service.dart`, `.instance`) owns `wispie_stats.db` (play sessions/events) and `wispie_data.db` (library, playlists, favorites, merged groups, mood tags, queue snapshots).
+`DatabaseService` (`lib/services/database_service.dart`, `.instance`) owns `wispie_stats.db` (play sessions/events) and `wispie_data.db` (library, playlists, favorites, merged groups, queue snapshots).
 
 Schema is canonical in `lib/data/migrations.dart` only: `_userDataTableStmts` / `_createUserDataIndexes` for fresh creates, plus explicit `upgradeUserDataFromNToM` steps wired into `DatabaseService._initAsync`'s `onUpgrade`. Versions are `kStatsDbVersion` / `kUserDataDbVersion`. Adding a table or column means touching both the create path and the upgrade path.
 

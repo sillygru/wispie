@@ -44,14 +44,13 @@ abstract final class MotionSprings {
   );
 
   /// The same surface on its way down into a dock that has room to absorb it.
-  /// Underdamped on purpose: the dip past its seat is what puts weight behind
-  /// the drop, and it gives a thrown panel somewhere to spend its momentum
-  /// instead of slamming against the edge.
-  static const SpringDescription panelClose = SpringDescription(
-    mass: 1,
-    stiffness: 340,
-    damping: 26,
-  );
+  ///
+  /// Softer and longer than the open: at this stiffness a stiff spring plus the
+  /// release speed emptied the whole travel inside ~150ms, which read as a cut
+  /// and left no window to catch the panel on its way back up. Lightly damped
+  /// on purpose, so a throw still dips past its seat instead of stopping dead.
+  static final SpringDescription panelClose =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 130, ratio: 0.86);
 
   /// A panel arriving where it still has room past its seat — the slide-in
   /// drawer, which is allowed to swell beyond its resting width. Lightly damped
@@ -65,12 +64,9 @@ abstract final class MotionSprings {
 
   /// The drawer arriving at its resting width. Softer than [elastic] so the
   /// crest into the overshoot room is a visible swell rather than a few
-  /// pixels, and it still settles without a wobble.
-  static const SpringDescription drawerOpen = SpringDescription(
-    mass: 1,
-    stiffness: 250,
-    damping: 16,
-  );
+  /// pixels, and the extra damping keeps it from wobbling on its way in.
+  static final SpringDescription drawerOpen =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.72);
 
   /// Critically damped: fastest approach that never overshoots.
   static final SpringDescription critical = SpringDescription.withDampingRatio(

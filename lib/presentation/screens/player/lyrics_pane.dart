@@ -635,7 +635,15 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     // Per-frame extrapolation only matters for word wipes and the gap dots;
     // plain line-synced lyrics are fine on the ~5Hz position samples.
     if (_gapSlot.value < 0 && !_activeLineHasWords()) return;
-    final dt = elapsed - _sampleElapsed;
+    final Duration dt = elapsed - _sampleElapsed;
+    // A ticker muted by a frozen surface resumes with the whole pause folded
+    // into its elapsed value. Extrapolating across that would throw the word
+    // wipe forward by the length of the freeze, so it re-anchors instead.
+    if (dt > const Duration(milliseconds: 250)) {
+      _sampleElapsed = elapsed;
+      _sampleAt = player.position;
+      return;
+    }
     final extrapolated = _sampleAt +
         Duration(microseconds: (dt.inMicroseconds * player.speed).round());
     _onPosition(extrapolated);

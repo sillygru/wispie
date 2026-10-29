@@ -285,10 +285,22 @@ class _ThrottledSpinState extends State<_ThrottledSpin>
   static const Duration _powerSaveInterval = Duration(microseconds: 100000);
   static const Duration _spinDuration = Duration(seconds: 90);
 
+  /// A gap this long between two ticks is a frozen surface, not a slow frame.
+  ///
+  /// `TickerMode` mutes a ticker without stopping it, so the tick that resumes
+  /// carries the whole pause in its elapsed value. This used to be read as a
+  /// clock, which meant every surface freeze (the player panel in flight, a tab
+  /// cross-fade, the drawer pushing the page aside) jumped the backdrop forward
+  /// by however long it lasted — visible as a pop of the artwork on landing.
+  static const Duration _freezeGap = Duration(milliseconds: 200);
+
   late final Ticker _ticker;
-  Duration? _lastPaint;
-  Duration _lastElapsed = Duration.zero;
-  Duration _elapsedBase = Duration.zero;
+
+  /// Spin time accumulated from tick deltas rather than read off the ticker, so
+  /// a stop/start or a mute resumes the angle instead of re-phasing it.
+  Duration _elapsedTotal = Duration.zero;
+  Duration? _lastRawElapsed;
+  Duration? _lastPaintTotal;
   double _value = 0;
   bool _appActive = true;
 
@@ -319,11 +331,13 @@ class _ThrottledSpinState extends State<_ThrottledSpin>
 
   void _syncTicker() {
     if (widget.enabled && _appActive) {
-      _lastPaint = null;
-      if (!_ticker.isActive) _ticker.start();
+      _lastPaintTotal = null;
+      if (!_ticker.isActive) {
+        _lastRawElapsed = null;
+        _ticker.start();
+      }
     } else if (_ticker.isActive) {
-      _elapsedBase += _lastElapsed;
-      _lastElapsed = Duration.zero;
+      _lastRawElapsed = null;
       _ticker.stop();
     }
   }
@@ -334,16 +348,20 @@ class _ThrottledSpinState extends State<_ThrottledSpin>
   }
 
   void _onTick(Duration elapsed) {
-    final last = _lastPaint;
+    final last = _lastRawElapsed;
+    _lastRawElapsed = elapsed;
+    if (last != null) {
+      final Duration delta = elapsed - last;
+      if (delta < _freezeGap) _elapsedTotal += delta;
+    }
+
     final interval = PowerStateService.instance.powerSave.value
         ? _powerSaveInterval
         : _paintInterval;
-    if (last != null && elapsed - last < interval) return;
-    _lastPaint = elapsed;
-    _lastElapsed = elapsed;
-    final totalElapsed = _elapsedBase + elapsed;
-    _value = totalElapsed.inMicroseconds / _spinDuration.inMicroseconds;
-    if (_value >= 1) _value %= 1;
+    final lastPaint = _lastPaintTotal;
+    if (lastPaint != null && _elapsedTotal - lastPaint < interval) return;
+    _lastPaintTotal = _elapsedTotal;
+    _value = (_elapsedTotal.inMicroseconds / _spinDuration.inMicroseconds) % 1;
     if (mounted) setState(() {});
   }
 

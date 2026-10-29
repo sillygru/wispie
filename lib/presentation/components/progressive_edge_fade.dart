@@ -134,11 +134,15 @@ class _ProgressiveEdgeFadeState extends State<ProgressiveEdgeFade>
       child: ListenableBuilder(
         listenable: Listenable.merge([_top, _bottom, _motion]),
         child: widget.child,
-        builder: (context, child) => ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (rect) => _mask(rect),
-          child: child,
-        ),
+        // A shader mask is a saveLayer over the whole pane, so it is only paid
+        // for while an edge actually has content hidden past it.
+        builder: (context, child) => _top.value == 0 && _bottom.value == 0
+            ? child!
+            : ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => _mask(rect),
+                child: child,
+              ),
       ),
     );
   }

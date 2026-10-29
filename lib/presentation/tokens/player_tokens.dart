@@ -134,7 +134,7 @@ class PlayerTokens {
   /// simulation, and a grab mid-flight retargets the same motion. A duration
   /// here would be exactly the preset animation the panel must not be.
   static const SpringDescription panelOpenSpring = MotionSprings.panel;
-  static const SpringDescription panelCloseSpring = MotionSprings.panelClose;
+  static final SpringDescription panelCloseSpring = MotionSprings.panelClose;
 
   /// Headroom past the bar and past full screen, so the springs can overshoot
   /// and the dock can dip instead of the surface stopping dead.
@@ -145,6 +145,12 @@ class PlayerTokens {
   /// top of [panelDip] / [panelOvershoot]. Travel there is damped, never free:
   /// the surface eases into its limit instead of hitting a wall.
   static const double panelRubberRoom = 0.05;
+
+  /// Ceiling on the release speed handed to the settle spring, in progress per
+  /// second. A hard flick leaves the finger at three or more, which emptied the
+  /// travel before the eye could follow it and left nothing to grab on the way
+  /// down; past this the throw is a firm shove rather than a teleport.
+  static const double panelMomentumLimit = 1.15;
 
   /// How far the dock sinks per unit of close overshoot.
   static const double dockDip = 46;

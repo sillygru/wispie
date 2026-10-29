@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -97,6 +98,15 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   final ValueNotifier<bool> _nowPlayingVisible = ValueNotifier(false);
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(false);
 
+  /// True while the pager is carrying a pane across the screen.
+  ///
+  /// Every pane is alive at once, so a swipe used to drag three live screens,
+  /// a full-screen mote field, a glow and a spinning backdrop at the same time —
+  /// all of it re-rasterised per frame under a transform nobody could read.
+  /// While the pager moves, the panes' tickers are paused and the decorative
+  /// layers stop being repainted, so the swipe is a move of cached rasters.
+  final ValueNotifier<bool> _paneMoving = ValueNotifier(false);
+
   /// Let the glow layer locate the artwork inside the pane, and convert it into
   /// the shell's coordinates. The glow is painted up here so it can spill past
   /// the pane, which clips.
@@ -191,6 +201,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _landscapePosition.dispose();
     _nowPlayingVisible.dispose();
     _lyricsVisible.dispose();
+    _paneMoving.dispose();
     _releaseWakeLock();
     super.dispose();
   }
@@ -225,6 +236,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     } else {
       _nowPlayingVisible.value = false;
       _lyricsVisible.value = false;
+      // A swipe cut short by the app going away never reports its end.
+      _setPaneMoving(false);
       DisplayRefreshService.instance.leavePlayer();
       _releaseWakeLock();
     }
@@ -314,6 +327,24 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   bool _isLyricsVisible(double page) =>
       (page - PlayerPane.lyrics.index).abs() <= 0.6;
+
+  void _setPaneMoving(bool moving) {
+    if (_paneMoving.value == moving) return;
+    _paneMoving.value = moving;
+    _motion.visualHold = moving;
+  }
+
+  /// Only the pager's own scroll counts: the lyrics list and the queue scroll
+  /// underneath it, and a finger scrolling those must not pause them.
+  bool _onPagerNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification) {
+      _setPaneMoving(true);
+    } else if (notification is ScrollEndNotification) {
+      _setPaneMoving(false);
+    }
+    return false;
+  }
 
   void _onPageScroll() {
     final page = _pageController.page;
@@ -587,38 +618,50 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                       ),
                     ),
                     Expanded(
-                      child: PageView(
-                        controller: _pageController,
-                        // Tracks mode hands horizontal swipes to the cover's
-                        // track switcher and navigates panes by the pill only.
-                        physics: swipePanes
-                            ? const ClampingScrollPhysics()
-                            : const NeverScrollableScrollPhysics(),
-                        children: [
-                          LyricsPane(
-                            song: song,
-                            accent: accent,
-                            paneVisible: _lyricsVisible,
-                          ),
-                          GestureDetector(
-                            behavior: HitTestBehavior.translucent,
-                            onVerticalDragStart: _onDismissDragStart,
-                            onVerticalDragUpdate: _onDismissDragUpdate,
-                            onVerticalDragEnd: _onDismissDragEnd,
-                            onVerticalDragCancel: _onDismissDragCancel,
-                            child: NowPlayingPane(
-                              song: song,
-                              accent: accent,
-                              motion: _motion,
-                              coverKey: _coverKey,
-                              paneVisible: _nowPlayingVisible,
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _onPagerNotification,
+                        child: PageView(
+                          controller: _pageController,
+                          // Tracks mode hands horizontal swipes to the cover's
+                          // track switcher and navigates panes by the pill only.
+                          physics: swipePanes
+                              ? const ClampingScrollPhysics()
+                              : const NeverScrollableScrollPhysics(),
+                          children: [
+                            _FrozenWhileMoving(
+                              paused: _paneMoving,
+                              child: LyricsPane(
+                                song: song,
+                                accent: accent,
+                                paneVisible: _lyricsVisible,
+                              ),
                             ),
-                          ),
-                          QueuePane(
-                            accent: accent,
-                            initialShowHistory: widget.queueShowsHistory,
-                          ),
-                        ],
+                            _FrozenWhileMoving(
+                              paused: _paneMoving,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onVerticalDragStart: _onDismissDragStart,
+                                onVerticalDragUpdate: _onDismissDragUpdate,
+                                onVerticalDragEnd: _onDismissDragEnd,
+                                onVerticalDragCancel: _onDismissDragCancel,
+                                child: NowPlayingPane(
+                                  song: song,
+                                  accent: accent,
+                                  motion: _motion,
+                                  coverKey: _coverKey,
+                                  paneVisible: _nowPlayingVisible,
+                                ),
+                              ),
+                            ),
+                            _FrozenWhileMoving(
+                              paused: _paneMoving,
+                              child: QueuePane(
+                                accent: accent,
+                                initialShowHistory: widget.queueShowsHistory,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     _TransportDock(song: song, accent: accent),
@@ -855,6 +898,27 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Pauses the tickers inside [child] while the pager carries it across screen.
+///
+/// Only the flag flip rebuilds this, so a swipe costs two rebuilds per pane and
+/// no per-frame work inside them.
+class _FrozenWhileMoving extends StatelessWidget {
+  const _FrozenWhileMoving({required this.paused, required this.child});
+
+  final ValueListenable<bool> paused;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: paused,
+      child: child,
+      builder: (context, paused, child) =>
+          TickerMode(enabled: !paused, child: child!),
     );
   }
 }

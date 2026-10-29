@@ -455,9 +455,13 @@ class _DrawerSheet extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 minWidth: geometry.restWidth,
                 maxWidth: geometry.restWidth,
+                // The transform sits above the boundary and the boundary above
+                // the panel: every frame of the slide then changes a clip and
+                // a translate over one cached raster, instead of re-rasterising
+                // the whole list on each tick of the settle.
                 child: Transform.translate(
                   offset: Offset(geometry.contentDrift, 0),
-                  child: child,
+                  child: RepaintBoundary(child: child),
                 ),
               ),
             ),

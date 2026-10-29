@@ -132,6 +132,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   bool _isDraggingDrawer = false;
 
+  /// When the app last went to the background, so a quick app switch does not
+  /// trigger the library rescan and the backup on the way back in.
+  DateTime? _backgroundedAt;
+
   /// The nav bar is 64 high plus whatever safe-area strip it paints itself, so
   /// this only needs a little slack above it — it used to carry the gap the
   /// floating dock left on either side of its inset.
@@ -354,15 +358,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Deferred so the resume transition frames are not competing with
-      // library diffing and backup work.
-      Future<void>.delayed(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        ref.read(songsProvider.notifier).refresh(isBackground: true);
-        ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
-      });
+    if (state != AppLifecycleState.resumed) {
+      _backgroundedAt = DateTime.now();
+      return;
     }
+    final DateTime? away = _backgroundedAt;
+    _backgroundedAt = null;
+    // A glance at another app is not a reason to rescan the library and run a
+    // backup: both land on the main isolate, and together they were the visible
+    // hitch a second after coming back.
+    if (away != null && DateTime.now().difference(away).inSeconds < 30) {
+      return;
+    }
+    // Deferred so the resume transition frames are not competing with library
+    // diffing and backup work, and staggered so the two never share a frame.
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      ref.read(songsProvider.notifier).refresh(isBackground: true);
+    });
+    Future<void>.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
+    });
   }
 
   @override
@@ -500,40 +517,45 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return AnimatedBuilder(
         animation: _drawerGeometry,
         builder: (context, child) {
+          // The dim rides the drawer in and out, and deepens through the elastic
+          // swell past open, so the push and the fade arrive as one move.
           final scrimAlpha =
-              0.45 * _drawerGeometry.scrimProgress.clamp(0.0, 1.0);
+              (0.45 * _drawerGeometry.scrimProgress.clamp(0.0, 1.0) +
+                      0.55 * _drawerGeometry.swellFraction)
+                  .clamp(0.0, 0.6);
           final showScrim = _drawerChromeVisible && scrimAlpha > 0.001;
-          return RepaintBoundary(
-            child: Transform.translate(
-              // The content rides out with the drawer, so the sidebar pushes it
-              // aside instead of growing over a background that holds still.
-              // It stops at the resting width: the swell past open is the panel
-              // growing, not the content being shoved.
-              offset: Offset(_drawerGeometry.contentOffset, 0),
-              child: Stack(
-                children: [
-                  // The content rides aside under a translate, so its own
-                  // animation is spending frames nobody can read: frozen while
-                  // the drawer moves, the slide becomes one cached raster.
-                  FreezeWhileMoving(
-                    animation: _drawerController,
-                    dragging: _isDraggingDrawer,
-                    child: child!,
-                  ),
-                  // Dim the content while the drawer is open, and close on a
-                  // tap there, which is where the finger expects to land.
-                  if (showScrim)
-                    Positioned.fill(
-                      child: GestureDetector(
-                        onTap: _closeDrawer,
-                        child: ColoredBox(
-                          color: Colors.black.withValues(alpha: scrimAlpha),
-                        ),
-                      ),
-                    ),
-                ],
+          return Stack(
+            children: [
+              Transform.translate(
+                // The content rides out with the drawer, so the sidebar pushes
+                // it aside instead of growing over a background that holds
+                // still. It keeps following the sheet through the elastic
+                // crest, damped, so the overshoot shoves the page a little.
+                offset: Offset(_drawerGeometry.contentOffset, 0),
+                // The freeze sits above the boundary and the boundary above the
+                // page: the slide is then one cached raster moved and clipped
+                // by the compositor, not a repaint of the whole screen per
+                // frame.
+                child: FreezeWhileMoving(
+                  animation: _drawerController,
+                  dragging: _isDraggingDrawer,
+                  child: RepaintBoundary(child: child!),
+                ),
               ),
-            ),
+              // Dim the content while the drawer is open, and close on a tap
+              // there, which is where the finger expects to land. Outside the
+              // translate on purpose: the dim covers the window, and one that
+              // moved with the page would leave an undimmed strip behind.
+              if (showScrim)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: _closeDrawer,
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: scrimAlpha),
+                    ),
+                  ),
+                ),
+            ],
           );
         },
         child: child,

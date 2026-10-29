@@ -39,9 +39,8 @@ class PlaySignal {
 class SongMeta {
   final String artist;
   final String album;
-  final List<String> moods;
 
-  const SongMeta({this.artist = '', this.album = '', this.moods = const []});
+  const SongMeta({this.artist = '', this.album = ''});
 }
 
 class TasteInputs {
