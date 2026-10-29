@@ -488,9 +488,16 @@ class _LyricWordWidget extends StatelessWidget {
 
     return Transform.translate(
       offset: Offset(0, lift),
-      child: Stack(children: [base, lit]),
+      // A finished wipe on a fully focused line covers the resting glyphs
+      // exactly, so the dim copy underneath stops earning its second text draw
+      // per word on every frame.
+      child:
+          _litCoversBase(focus, progress) ? lit : Stack(children: [base, lit]),
     );
   }
+
+  static bool _litCoversBase(double focus, double progress) =>
+      focus >= 0.999 && progress >= 1.0;
 
   /// Apple-style held word: letters light one after another, each swelling,
   /// rising and blooming as the note carries, then the whole word settles
@@ -565,6 +572,8 @@ class _LyricWordWidget extends StatelessWidget {
         children: children,
       );
     }
+
+    if (_litCoversBase(focus, progress)) return row(litInk, glow: true);
 
     final base = row(dim, glow: false);
     if (progress >= 1.0) {

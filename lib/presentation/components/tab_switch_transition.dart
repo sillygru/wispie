@@ -112,7 +112,9 @@ class _TabSwitchTransitionState extends State<TabSwitchTransition>
                     offset: Offset((1 - v) * side * AppTokens.s6, 0),
                     child: Transform.scale(
                       scale: 0.98 + 0.02 * t,
-                      child: child,
+                      // Cached while it moves: the slide and fade then
+                      // composite a picture instead of re-painting the page.
+                      child: RepaintBoundary(child: child),
                     ),
                   ),
                 ),

@@ -230,7 +230,10 @@ class _BlurredBackgroundState extends State<BlurredBackground> {
                 child: ClipRect(
                   child: _ThrottledSpin(
                     key: ValueKey(widget.filename),
-                    enabled: widget.slowSpin,
+                    // Until the blur file lands, the layer is a live full-screen
+                    // ImageFiltered blur; spinning it would re-run that blur
+                    // every paint, and rotating a sigma-24 blur is invisible.
+                    enabled: widget.slowSpin && _hasBlurredBackground,
                     child: _buildImageLayers(squareSize: squareSize),
                   ),
                 ),

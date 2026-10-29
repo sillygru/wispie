@@ -489,21 +489,26 @@ class _MainScreenState extends ConsumerState<MainScreen>
             left: 0,
             right: 0,
             bottom: 0,
-            child: isSelectionMode
-                ? const BulkSelectionBar()
-                : isWide
-                    ? const NowPlayingBar(
-                        padding: EdgeInsets.zero,
-                        docked: true,
-                        leadingInset: 76,
-                      )
-                    : FloatingDock(
-                        selectedIndex: _selectedIndex,
-                        onSelected: _onTabSelected,
-                        items: [for (final tab in tabs) tab.nav],
-                        key: _dockKey,
-                        autoCollapse: settings.autoHideBottomBarOnScroll,
-                      ),
+            // Its own layer: the dock's visualiser and morph repaint while a
+            // page scrolls underneath, and a shared layer would drag every
+            // list row into those frames.
+            child: RepaintBoundary(
+              child: isSelectionMode
+                  ? const BulkSelectionBar()
+                  : isWide
+                      ? const NowPlayingBar(
+                          padding: EdgeInsets.zero,
+                          docked: true,
+                          leadingInset: 76,
+                        )
+                      : FloatingDock(
+                          selectedIndex: _selectedIndex,
+                          onSelected: _onTabSelected,
+                          items: [for (final tab in tabs) tab.nav],
+                          key: _dockKey,
+                          autoCollapse: settings.autoHideBottomBarOnScroll,
+                        ),
+            ),
           ),
         ],
       );
@@ -550,41 +555,45 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     Widget buildShellBody() {
-      return MotionDragArea(
-        axis: Axis.horizontal,
-        // Desktop has the nav rail; a trackpad's sideways scroll would
-        // otherwise drag the whole shell, bottom bar included.
-        enabled: !isWide,
-        // Only matters while the drawer is shut; once it is open the strip
-        // would pull taps on its own buttons into a swipe.
-        edgePriorityWidth: _isDrawerOpen ? 0 : WideLayout.drawerEdgeWidth,
-        onStart: _onHorizontalDragStart,
-        onUpdate: _onHorizontalDragUpdate,
-        onEnd: _onHorizontalDragEnd,
-        onCancel: _onHorizontalDragCancel,
-        // The surface wraps the drawer as well as the content: the panel is a
-        // sibling above it, so a drag started on the sheet never reached the
-        // content's own surface and the drawer could only be pushed open.
-        child: Stack(
-          children: [
-            // Content first, drawer above it: the content slides aside by the
-            // panel's resting width, so the drawer is uncovered either way.
-            buildDrawerSlider(child: buildContentStack()),
-            AnimatedBuilder(
-              animation: _drawerGeometry,
-              child: Positioned.fill(
-                child: AppDrawer(
-                  onClose: _closeDrawer,
-                  drawerPosition: _drawerController,
-                  geometry: _drawerGeometry,
+      // The player panel is a sibling above this. Without a boundary here, every
+      // frame of its flight repainted the whole shell along with it.
+      return RepaintBoundary(
+        child: MotionDragArea(
+          axis: Axis.horizontal,
+          // Desktop has the nav rail; a trackpad's sideways scroll would
+          // otherwise drag the whole shell, bottom bar included.
+          enabled: !isWide,
+          // Only matters while the drawer is shut; once it is open the strip
+          // would pull taps on its own buttons into a swipe.
+          edgePriorityWidth: _isDrawerOpen ? 0 : WideLayout.drawerEdgeWidth,
+          onStart: _onHorizontalDragStart,
+          onUpdate: _onHorizontalDragUpdate,
+          onEnd: _onHorizontalDragEnd,
+          onCancel: _onHorizontalDragCancel,
+          // The surface wraps the drawer as well as the content: the panel is a
+          // sibling above it, so a drag started on the sheet never reached the
+          // content's own surface and the drawer could only be pushed open.
+          child: Stack(
+            children: [
+              // Content first, drawer above it: the content slides aside by the
+              // panel's resting width, so the drawer is uncovered either way.
+              buildDrawerSlider(child: buildContentStack()),
+              AnimatedBuilder(
+                animation: _drawerGeometry,
+                child: Positioned.fill(
+                  child: AppDrawer(
+                    onClose: _closeDrawer,
+                    drawerPosition: _drawerController,
+                    geometry: _drawerGeometry,
+                  ),
                 ),
+                builder: (context, child) {
+                  if (!_drawerChromeVisible) return const SizedBox.shrink();
+                  return child!;
+                },
               ),
-              builder: (context, child) {
-                if (!_drawerChromeVisible) return const SizedBox.shrink();
-                return child!;
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }

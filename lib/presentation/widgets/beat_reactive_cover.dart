@@ -43,9 +43,10 @@ class BeatReactiveCover extends StatelessWidget {
     return RepaintBoundary(
       child: ListenableBuilder(
         listenable: controller,
-        // The artwork subtree is passed through untouched, so a beat repaints the
-        // transform without rebuilding the image.
-        child: child,
+        // The boundary sits *inside* the transform: the artwork (image, clip,
+        // shadow blur) is then rasterised once and only the matrix changes per
+        // beat, instead of the blurred shadow being drawn again every frame.
+        child: RepaintBoundary(child: child),
         builder: (context, child) {
           final frame = controller.frame;
           final spec = controller.coverSpec;
