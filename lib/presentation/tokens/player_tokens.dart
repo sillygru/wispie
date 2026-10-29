@@ -170,6 +170,17 @@ class PlayerTokens {
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;
 
+  // Scrollbar: a thin pill that swells and fades in while a list moves.
+  static const double scrollbarThicknessIdle = 2.5;
+  static const double scrollbarThickness = 3.5;
+  static const double scrollbarInset = 3;
+  static const double scrollbarTrackInset = 4;
+  static const double scrollbarMinLength = 40;
+  static const double scrollbarMaxAlpha = 0.55;
+  static const Duration dScrollbarFadeIn = MotionTokens.fast;
+  static const Duration dScrollbarFadeOut = MotionTokens.medium;
+  static const Duration dScrollbarIdle = Duration(milliseconds: 900);
+
   /// Song row height when the row carries title, artist and a meta line.
   static const double rowHeightTall = 80;
 
