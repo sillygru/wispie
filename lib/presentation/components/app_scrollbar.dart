@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../tokens/app_tokens.dart';
@@ -106,7 +107,11 @@ class _AppScrollbarState extends State<AppScrollbar>
     _updateMetrics(notification.metrics);
     if (notification is ScrollEndNotification) {
       _settle();
-    } else {
+    } else if (notification is! UserScrollNotification ||
+        notification.direction != ScrollDirection.idle) {
+      // `ScrollPosition.beginActivity` reports an idle user direction right
+      // after the end notification; counting that as motion would cancel the
+      // idle timer and leave the bar pinned on screen.
       _show();
     }
     return false;

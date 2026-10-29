@@ -28,25 +28,30 @@ class AppFeedbackHost extends StatelessWidget {
 
     // Align sizes to the window but only its children are hit-testable, so the
     // rest of the screen keeps its taps.
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SafeArea(
-        bottom: false,
-        child: AnimatedSize(
-          duration: reduceMotion ? Duration.zero : MotionTokens.fast,
-          curve: MotionTokens.inOutCurve,
-          alignment: Alignment.topCenter,
-          // The toast slides in from above its own slot; clipping it here would
-          // turn that entrance into a reveal.
-          clipBehavior: Clip.none,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              slot(const MetadataSaveIndicator()),
-              slot(const AutoBackupIndicator()),
-              slot(const ExternalOpenBanner()),
-              slot(const AppToastSlot()),
-            ],
+    return Material(
+      type: MaterialType.transparency,
+      // This sits above the navigator, outside any Scaffold, so without a
+      // Material ancestor its text inherits MaterialApp's red/yellow error style.
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: SafeArea(
+          bottom: false,
+          child: AnimatedSize(
+            duration: reduceMotion ? Duration.zero : MotionTokens.fast,
+            curve: MotionTokens.inOutCurve,
+            alignment: Alignment.topCenter,
+            // The toast slides in from above its own slot; clipping it here
+            // would turn that entrance into a reveal.
+            clipBehavior: Clip.none,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                slot(const MetadataSaveIndicator()),
+                slot(const AutoBackupIndicator()),
+                slot(const ExternalOpenBanner()),
+                slot(const AppToastSlot()),
+              ],
+            ),
           ),
         ),
       ),
