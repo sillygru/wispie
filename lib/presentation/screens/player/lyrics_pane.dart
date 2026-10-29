@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../domain/models/rich_lyrics.dart';
 import '../../../l10n/l10n.dart';
+import '../../../domain/services/lyrics_activity.dart';
 import '../../../domain/services/lyrics_session.dart';
 import '../../../domain/services/lyrics_timing_offset.dart';
 import '../../../models/song.dart';
@@ -488,7 +489,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// had changed. What the list actually depends on is the *active line*, which
   /// changes every few seconds. Splitting the two means the ticks land on three
   /// small notifiers and the list rebuilds when the singing moves on.
-  final ValueNotifier<int> _activeLine = ValueNotifier(-1);
+  final ValueNotifier<LyricsActivity> _activity =
+      ValueNotifier(LyricsActivity.idle);
+  List<LyricLineTiming> _timings = const [];
   final ValueNotifier<Duration> _playbackPosition =
       ValueNotifier(Duration.zero);
 
@@ -588,7 +591,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     final needed = _positionSubscriptionActive &&
         _appResumed &&
         player.playing &&
-        (_gapSlot.value >= 0 || _activeLineHasWords());
+        (_gapSlot.value >= 0 || _activeHasWords());
     if (needed && !_frameTicker.isActive) {
       // A restarted ticker counts from zero, so rebase the sample to it.
       _lastFrameElapsed = Duration.zero;
@@ -618,14 +621,29 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
   Duration _lastFrameElapsed = Duration.zero;
 
-  bool _activeLineHasWords() {
-    final active = _activeLine.value;
-    if (active < 0 || active >= _wordLines.length) return false;
-    return LyricsPane.effectiveWordLine(
-          _wordLines[active],
-          ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled,
-        ) !=
-        null;
+  bool _activeHasWords() {
+    final simulate = ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled;
+    for (final index in _activity.value.active) {
+      if (index < 0 || index >= _wordLines.length) continue;
+      if (LyricsPane.effectiveWordLine(_wordLines[index], simulate) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _rebuildTimings() {
+    _timings = buildLyricTimings(_lyrics ?? const <LyricLine>[], _wordLines);
+  }
+
+  Duration _lineStart(int index, bool simulateEnabled) {
+    if (index < _timings.length) {
+      return _timings[index].startFor(simulateEnabled);
+    }
+    final lyrics = _lyrics;
+    return lyrics != null && index < lyrics.length
+        ? lyrics[index].time
+        : Duration.zero;
   }
 
   void _onFrame(Duration elapsed) {
@@ -634,7 +652,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     if (!player.playing) return;
     // Per-frame extrapolation only matters for word wipes and the gap dots;
     // plain line-synced lyrics are fine on the ~5Hz position samples.
-    if (_gapSlot.value < 0 && !_activeLineHasWords()) return;
+    if (_gapSlot.value < 0 && !_activeHasWords()) return;
     final Duration dt = elapsed - _sampleElapsed;
     // A muted ticker's elapsed includes the pause; re-anchor rather than jump.
     if (dt > const Duration(milliseconds: 250)) {
@@ -660,7 +678,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _cascade.dispose();
     _frameTicker.dispose();
     _timing.dispose();
-    _activeLine.dispose();
+    _activity.dispose();
     _playbackPosition.dispose();
     _gapSlot.dispose();
     _gapProgress.dispose();
@@ -676,18 +694,29 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _playbackPosition.value = adjustedPosition;
     final lyrics = _lyrics;
     if (lyrics == null || lyrics.isEmpty || !_hasSynced) return;
+    if (_timings.length != lyrics.length) _rebuildTimings();
 
-    final active = _activeIndexFor(lyrics, adjustedPosition);
-    if (active != _activeLine.value) {
-      _activeLine.value = active;
-      if (active >= 0) _maybeAutoScroll(active);
+    final simulateEnabled =
+        ref.read(settingsProvider).lyricsSimulatedRichSyncEnabled;
+    final activity = lyricsActivityAt(
+      _timings,
+      adjustedPosition,
+      simulateEnabled: simulateEnabled,
+    );
+    if (activity != _activity.value) {
+      final anchorMoved = activity.anchor != _activity.value.anchor;
+      _activity.value = activity;
+      if (anchorMoved && activity.anchor >= 0) {
+        _maybeAutoScroll(activity.anchor);
+      }
     }
 
     final gap = computeLyricsGapLoaderState(
-      lyrics: lyrics,
+      timings: _timings,
       position: adjustedPosition,
       delay: _gapLoaderDelay,
       minimumWindow: _minimumGapLoaderWindow,
+      simulateEnabled: simulateEnabled,
     );
 
     if (gap.shouldShow) {
@@ -724,9 +753,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   void _resumeAutoscroll() {
     _lastManualScroll = null;
     _autoscrollPaused.value = false;
-    final active = _activeLine.value;
-    if (active >= 0) {
-      _maybeAutoScroll(active);
+    final anchor = _activity.value.anchor;
+    if (anchor >= 0) {
+      _maybeAutoScroll(anchor);
     }
   }
 
@@ -738,12 +767,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _loading = true;
       _lyrics = null;
       _wordLines = const [];
+      _timings = const [];
       _richSyncAvailable = false;
       _hasSynced = false;
       _loadedFilename = filename;
       _lineKeys.clear();
     });
-    _activeLine.value = -1;
+    _activity.value = LyricsActivity.idle;
     _gapSlot.value = -1;
     _gapProgress.value = 0;
     _autoscrollPaused.value = false;
@@ -792,6 +822,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _hasSynced = parsed.any((l) => l.isSynced);
       _loading = false;
     });
+    _rebuildTimings();
 
     _lyricsSession.load(
       filename: filename,
@@ -947,6 +978,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         _hasSynced = true;
         _loading = false;
       });
+      _rebuildTimings();
       _onPosition(ref.read(audioPlayerManagerProvider).player.position);
       return;
     }
@@ -968,6 +1000,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _wordLines = merged;
       _richSyncAvailable = true;
     });
+    _rebuildTimings();
 
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
   }
@@ -1222,19 +1255,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     }
   }
 
-  int _activeIndexFor(List<LyricLine> lyrics, Duration position) {
-    var active = -1;
-    for (var i = 0; i < lyrics.length; i++) {
-      if (!lyrics[i].isSynced) continue;
-      if (lyrics[i].time <= position) {
-        active = i;
-      } else {
-        break;
-      }
-    }
-    return active;
-  }
-
   void _openTimingOffset() {
     setState(() => _timingControlVisible = !_timingControlVisible);
   }
@@ -1259,7 +1279,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
 
   void _openTimingSheet() {
     final lyrics = _lyrics;
-    final activeIndex = _activeLine.value;
+    final activeIndex = _activity.value.anchor;
     final hasActiveLine = _hasSynced &&
         activeIndex >= 0 &&
         lyrics != null &&
@@ -1456,6 +1476,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           }
           _wordLines = merged;
         });
+        _rebuildTimings();
       },
     );
 
@@ -1629,9 +1650,9 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     // the playhead.
     return RepaintBoundary(
         child: ListenableBuilder(
-      listenable: Listenable.merge([_activeLine, _gapSlot]),
+      listenable: Listenable.merge([_activity, _gapSlot]),
       builder: (context, _) {
-        final active = _activeLine.value;
+        final activity = _activity.value;
         final gapSlot = _gapSlot.value;
 
         return ListView.builder(
@@ -1668,27 +1689,29 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               index < _wordLines.length ? _wordLines[index] : null,
               simulateEnabled,
             );
+            final isActive = activity.isActive(index);
+            final lineTime = _lineStart(index, simulateEnabled);
             final lineContent = LyricsLine(
               text: line.text,
               translatedText: lineTranslation,
               translationMode: settings.lyricsTranslationMode,
-              isActive: index == active,
-              isPlayed: active >= 0 && index <= active,
+              isActive: isActive,
+              isPlayed: activity.isPlayed(index),
               hasTime: line.isSynced,
               activeColor: widget.accent,
-              glowIntensity: index == active ? 1.0 : 0.0,
-              distance: active < 0 ? 0 : index - active,
+              glowIntensity: isActive ? 1.0 : 0.0,
+              distance: activity.distanceFrom(index),
               playbackPosition: _playbackPosition.value,
               wordLine: wordLine,
-              onTap: () => _seekToLyric(line.time),
+              onTap: () => _seekToLyric(lineTime),
               compact: widget.compact,
             );
 
+            // Every sounding line follows the playhead, so a harmony written
+            // as its own line wipes alongside the lead instead of freezing.
             final lyricWidget = KeyedSubtree(
               key: key,
-              child: index == active &&
-                      wordLine != null &&
-                      wordLine.words.isNotEmpty
+              child: isActive && wordLine != null && wordLine.words.isNotEmpty
                   ? ValueListenableBuilder<Duration>(
                       valueListenable: _playbackPosition,
                       builder: (context, position, _) => LyricsLine(
@@ -1702,7 +1725,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
                         glowIntensity: 1.0,
                         playbackPosition: position,
                         wordLine: wordLine,
-                        onTap: () => _seekToLyric(line.time),
+                        onTap: () => _seekToLyric(lineTime),
                         compact: widget.compact,
                       ),
                     )

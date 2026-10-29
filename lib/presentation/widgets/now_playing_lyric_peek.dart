@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/services/lyrics_activity.dart';
 import '../../domain/services/lyrics_timing_offset.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
@@ -54,6 +55,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
   static const Duration _gapCollapseHold = PlayerTokens.dSlow;
 
   List<LyricLine> _lines = const [];
+  List<LyricLineTiming> _timings = const [];
   List<LyricLine?> _translatedLines = const [];
   bool _hasSynced = false;
   String? _loadedFilename;
@@ -133,7 +135,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
     );
 
     final gap = computeLyricsGapLoaderState(
-      lyrics: _lines,
+      timings: _timings,
       position: adjustedPosition,
       delay: _gapLoaderDelay,
       minimumWindow: _minimumGapLoaderWindow,
@@ -228,6 +230,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
     _loadedFilename = filename;
     _hasSynced = false;
     _lines = const [];
+    _timings = const [];
     _translatedLines = const [];
     _gapVisible.value = false;
     _gapProgress.value = 0;
@@ -250,6 +253,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
 
     setState(() {
       _lines = parsed;
+      _timings = buildLyricTimings(parsed, const []);
       _hasSynced = parsed.any((l) => l.isSynced);
     });
 

@@ -1,3 +1,4 @@
+import '../../domain/services/lyrics_activity.dart';
 import '../../models/song.dart';
 
 const _musicalGapSymbols = {
@@ -77,21 +78,21 @@ LyricsGapLoaderState _stateForWindow({
 }
 
 LyricsGapLoaderState computeLyricsGapLoaderState({
-  required List<LyricLine> lyrics,
+  required List<LyricLineTiming> timings,
   required Duration position,
   required Duration delay,
   required Duration minimumWindow,
+  bool simulateEnabled = true,
 }) {
-  // Walks the lines in place: this runs on every playhead frame, so building
-  // a per-call list of the whole song was pure GC churn.
+  // Walks the lines in place: this runs on every playhead frame.
   var activeIdx = -1;
   var nextIdx = -1;
   var firstIdx = -1;
-  for (var i = 0; i < lyrics.length; i++) {
-    final line = lyrics[i];
-    if (!line.isSynced) continue;
+  for (var i = 0; i < timings.length; i++) {
+    final timing = timings[i];
+    if (!timing.timed) continue;
     if (firstIdx < 0) firstIdx = i;
-    if (line.time <= position) {
+    if (timing.startFor(simulateEnabled) <= position) {
       activeIdx = i;
     } else {
       nextIdx = i;
@@ -106,7 +107,7 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
     return _stateForWindow(
       position: position,
       windowStart: delay,
-      windowEnd: lyrics[firstIdx].time,
+      windowEnd: timings[firstIdx].startFor(simulateEnabled),
       minimumWindow: minimumWindow,
       insertBeforeLyricIndex: firstIdx,
     );
@@ -114,10 +115,15 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
 
   if (nextIdx < 0) return LyricsGapLoaderState.hidden;
 
+  // Silence starts when the line stops sounding: its last word, or its start
+  // when it carries no word timing.
+  final active = timings[activeIdx];
+  final soundingEnd =
+      active.endFor(simulateEnabled) ?? active.startFor(simulateEnabled);
   return _stateForWindow(
     position: position,
-    windowStart: lyrics[activeIdx].time + delay,
-    windowEnd: lyrics[nextIdx].time,
+    windowStart: soundingEnd + delay,
+    windowEnd: timings[nextIdx].startFor(simulateEnabled),
     minimumWindow: minimumWindow,
     insertBeforeLyricIndex: nextIdx,
   );
