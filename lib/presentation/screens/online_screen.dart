@@ -10,18 +10,17 @@ import '../../presentation/components/ambient_scaffold.dart';
 import '../../presentation/components/app_icon.dart';
 import '../../presentation/components/app_list_row.dart';
 import '../../presentation/screens/youtube_account_screen.dart';
+import '../../presentation/screens/youtube_artist_screen.dart';
+import '../../presentation/screens/youtube_collection_screen.dart';
 import '../../presentation/screens/youtube_playlist_preview_screen.dart';
 import '../../presentation/tokens/app_icons.dart';
 import '../../presentation/tokens/app_tokens.dart';
 import '../../presentation/widgets/album_art_image.dart';
-import '../../presentation/widgets/duration_display.dart';
+import '../../presentation/widgets/online_track_row.dart';
 import '../../presentation/utils/youtube_error_message.dart';
-import '../../providers/providers.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
-import '../components/app_feedback.dart';
 import '../components/app_surface.dart';
-import '../widgets/song_options_menu.dart';
 
 /// The YouTube tab: a search field, a recommendations feed and the account's
 /// playlists.
@@ -41,7 +40,7 @@ class OnlineScreen extends ConsumerStatefulWidget {
 class _OnlineScreenState extends ConsumerState<OnlineScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
-  List<OnlineTrack> _tracks = const [];
+  OnlineSearchResults _results = OnlineSearchResults.empty;
   String _text = '';
   int _generation = 0;
   bool _loading = false;
@@ -61,7 +60,7 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     final generation = ++_generation;
     setState(() {
       _text = value;
-      _tracks = const [];
+      _results = OnlineSearchResults.empty;
       _error = null;
       _loading = query.isNotEmpty;
     });
@@ -74,10 +73,10 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
   Future<void> _search(String query, int generation) async {
     try {
-      final tracks = await OnlineMusicService.instance.search(query);
+      final results = await OnlineMusicService.instance.searchAll(query);
       if (!mounted || generation != _generation) return;
       setState(() {
-        _tracks = tracks;
+        _results = results;
         _loading = false;
       });
     } on Object catch (error) {
@@ -94,25 +93,32 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
     _onSearchChanged('');
   }
 
-  Future<void> _play(OnlineTrack track, List<OnlineTrack> queue) async {
-    final song = track.toSong();
-    try {
-      await ref.read(userDataProvider.notifier).cacheRemoteSong(song);
-      await ref.read(audioPlayerManagerProvider).playSong(
-            song,
-            contextQueue: queue.map((item) => item.toSong()).toList(),
-          );
-    } on Object catch (error) {
-      _showPlaybackError(error);
-    }
-  }
-
-  void _showPlaybackError(Object error) {
-    if (!mounted) return;
-    appSnack(
+  void _openCollection(OnlineCollection collection) {
+    Navigator.push(
       context,
-      YouTubeErrorMessage.forError(error, context.l10n),
-      tone: AppTone.danger,
+      MaterialPageRoute(
+        builder: (_) => switch (collection.kind) {
+          OnlineCollectionKind.album => YouTubeCollectionScreen(
+              kind: OnlineCollectionKind.album,
+              id: collection.id,
+              title: collection.title,
+              subtitle: collection.subtitle,
+              coverUrl: collection.coverUrl,
+            ),
+          OnlineCollectionKind.playlist => YouTubeCollectionScreen(
+              kind: OnlineCollectionKind.playlist,
+              id: collection.id,
+              title: collection.title,
+              subtitle: collection.subtitle,
+              coverUrl: collection.coverUrl,
+            ),
+          OnlineCollectionKind.artist => YouTubeArtistScreen(
+              id: collection.id,
+              name: collection.title,
+              coverUrl: collection.coverUrl,
+            ),
+        },
+      ),
     );
   }
 
@@ -134,60 +140,28 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         ),
       );
 
-  /// `Artist · 36M plays · 4:11`, dropping whichever parts the row lacks.
-  String _trackSubtitle(BuildContext context, OnlineTrack track) => [
-        track.artist.isEmpty ? context.l10n.metaUnknownArtist : track.artist,
-        if (track.viewCountText != null) track.viewCountText!,
-        if (track.duration != null) DurationFormatter.format(track.duration),
-      ].join(' · ');
+  Widget _trackRow(OnlineTrack track, List<OnlineTrack> queue) =>
+      OnlineTrackRow(
+        key: ValueKey('youtube-track-${track.id}'),
+        track: track,
+        queue: queue,
+      );
 
-  Widget _trackRow(OnlineTrack track, List<OnlineTrack> queue) {
-    final song = track.toSong();
-    final isFavorite = ref.watch(
-      userDataProvider.select((state) => state.isFavorite(song.filename)),
-    );
+  /// A place rather than a track: an album, a playlist or an artist.
+  Widget _collectionRow(OnlineCollection collection) {
     return AppListRow(
-      key: ValueKey('youtube-track-${track.id}'),
+      key: ValueKey('youtube-collection-${collection.id}'),
       tall: true,
-      title: track.title,
+      title: collection.title,
       titleMaxLines: 1,
-      subtitle: _trackSubtitle(context, track),
+      subtitle: collection.subtitle.isEmpty ? null : collection.subtitle,
       subtitleMaxLines: 1,
-      onTap: () => _play(track, queue),
+      onTap: () => _openCollection(collection),
       leading: AlbumArtImage(
-        url: track.coverUrl ?? '',
+        url: collection.coverUrl ?? '',
         width: 52,
         height: 52,
         borderRadius: AppTokens.rSm,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: isFavorite
-                ? context.l10n.songMenuRemoveFavorite
-                : context.l10n.songMenuAddFavorite,
-            onPressed: () => ref
-                .read(userDataProvider.notifier)
-                .toggleFavorite(song.filename, remoteSong: song),
-            icon: AppIcon(
-              AppIcons.favorite,
-              size: AppTokens.iconMd,
-              color: isFavorite ? AppTokens.danger : null,
-            ),
-          ),
-          IconButton(
-            tooltip: context.l10n.songMenuTitle,
-            onPressed: () => showSongOptionsMenu(
-              context,
-              ref,
-              song.filename,
-              song.title,
-              song: song,
-            ),
-            icon: const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
-          ),
-        ],
       ),
     );
   }
@@ -514,16 +488,34 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         YouTubeErrorMessage.forError(_error!, context.l10n),
       );
     }
-    if (_tracks.isEmpty) {
+    final results = _results;
+    if (results.isEmpty) {
       return _message(AppIcons.musicNote, context.l10n.onlineNoResults);
     }
 
-    return ListView.separated(
+    // Order follows how far a tap reaches: the songs first, then the album or
+    // playlist the query named, then the artist it named.
+    return ListView(
       controller: widget.scrollController,
       padding: const EdgeInsets.only(top: AppTokens.s2, bottom: AppTokens.s6),
-      itemCount: _tracks.length,
-      separatorBuilder: (_, __) => const SizedBox(height: AppTokens.s1),
-      itemBuilder: (context, index) => _trackRow(_tracks[index], _tracks),
+      children: [
+        if (results.tracks.isNotEmpty) ...[
+          _sectionHeader(context.l10n.youtubeSearchSongs),
+          for (final track in results.tracks) _trackRow(track, results.tracks),
+        ],
+        if (results.albums.isNotEmpty) ...[
+          _sectionHeader(context.l10n.youtubeSearchAlbums),
+          for (final album in results.albums) _collectionRow(album),
+        ],
+        if (results.playlists.isNotEmpty) ...[
+          _sectionHeader(context.l10n.youtubeSearchPlaylists),
+          for (final playlist in results.playlists) _collectionRow(playlist),
+        ],
+        if (results.artists.isNotEmpty) ...[
+          _sectionHeader(context.l10n.youtubeSearchArtists),
+          for (final artist in results.artists) _collectionRow(artist),
+        ],
+      ],
     );
   }
 

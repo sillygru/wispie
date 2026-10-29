@@ -194,10 +194,12 @@ class _AlbumArtImageState extends State<AlbumArtImage> {
         );
       }
     } else {
-      final sharper =
-          CoverPath.sharperUrl(imageUrl, wanted: _wantedPixels(context));
+      // A row's 52dp tile asks for the 320px still, not the 1280px one the URL
+      // happens to name: that difference is most of this app's image traffic.
+      final rendition =
+          CoverPath.renditionUrl(imageUrl, wanted: _wantedPixels(context));
       final targetUrl =
-          sharper == null || _fellBackToSmaller ? imageUrl : sharper;
+          rendition == null || _fellBackToSmaller ? imageUrl : rendition;
       content = Image.network(
         // The resolved URL, not widget.url — otherwise a cover the lazy
         // refresh just found is thrown away on this branch.

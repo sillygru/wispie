@@ -79,6 +79,33 @@ class CoverPath {
     return null;
   }
 
+  /// The YouTube still rendition that is just big enough for [wanted] device
+  /// pixels, rounded **down** as well as up.
+  ///
+  /// [sharperUrl] only ever upgrades, which is right when a list row was handed
+  /// a 480px still: it should not pay for 1280. This is the other half of that
+  /// bargain — a row handed a 480px still for a 156px box downloads the 320px
+  /// one instead. Anything that is not a sized still returns null.
+  static String? renditionUrl(String url, {int wanted = 320}) {
+    final still = RegExp(
+      r'^https?://i\.ytimg\.com/vi/([A-Za-z0-9_-]+)/(mq|hq|sd|maxres)default(\.\w+)(\?.*)?$',
+    ).firstMatch(url);
+    if (still == null) return sharperUrl(url, wanted: wanted);
+
+    const ladder = ['mq', 'hq', 'sd', 'maxres'];
+    final int target = wanted <= 320
+        ? 0
+        : wanted <= 480
+            ? 1
+            : wanted <= 640
+                ? 2
+                : 3;
+    final current = ladder.indexOf(still.group(2) ?? 'mq');
+    if (current == target) return null;
+    return 'https://i.ytimg.com/vi/${still.group(1)}/'
+        '${ladder[target]}default${still.group(3)}${still.group(4) ?? ''}';
+  }
+
   /// [isLocal] narrowed to paths that can be opened as a `File`, with any
   /// `file://` scheme stripped. Null for remote URLs and for `content://`
   /// URIs, which have no filesystem path.

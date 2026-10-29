@@ -134,6 +134,100 @@ class YouTubePlaylistItem {
   });
 }
 
+/// What a catalogue row opens instead of playing.
+enum YouTubeContainerKind { album, playlist, artist }
+
+/// A row that is a place rather than a track: an album, a playlist or an
+/// artist. [id] is the browse id the row's endpoint carries.
+class YouTubeContainer {
+  final String id;
+  final String title;
+
+  /// YouTube's own byline, e.g. `Album • 2021` or `Artist`.
+  final String subtitle;
+  final String? thumbnailUrl;
+  final YouTubeContainerKind kind;
+
+  const YouTubeContainer({
+    required this.id,
+    required this.title,
+    this.subtitle = '',
+    this.thumbnailUrl,
+    required this.kind,
+  });
+}
+
+/// One search page: playable tracks plus the albums, playlists and artists the
+/// same page offered.
+class YouTubeMusicSearch {
+  final List<YouTubePlaylistItem> tracks;
+  final List<YouTubeContainer> albums;
+  final List<YouTubeContainer> playlists;
+  final List<YouTubeContainer> artists;
+
+  const YouTubeMusicSearch({
+    this.tracks = const [],
+    this.albums = const [],
+    this.playlists = const [],
+    this.artists = const [],
+  });
+
+  static const YouTubeMusicSearch empty = YouTubeMusicSearch();
+
+  bool get isEmpty =>
+      tracks.isEmpty && albums.isEmpty && playlists.isEmpty && artists.isEmpty;
+}
+
+/// A sort chip YouTube itself offers on an artist page. The label is the
+/// catalogue's, already localised, and [params] is the token that asks for it.
+class YouTubeSortOption {
+  final String label;
+  final String params;
+  final bool selected;
+
+  const YouTubeSortOption({
+    required this.label,
+    this.params = '',
+    this.selected = false,
+  });
+}
+
+/// An artist page: their songs in the order YouTube ranks them, the albums and
+/// singles the page links, and its own sort chips.
+class YouTubeArtistPage {
+  final String id;
+  final String name;
+  final String? thumbnailUrl;
+  final List<YouTubePlaylistItem> songs;
+  final List<YouTubeContainer> albums;
+  final List<YouTubeSortOption> sorts;
+
+  const YouTubeArtistPage({
+    required this.id,
+    required this.name,
+    this.thumbnailUrl,
+    this.songs = const [],
+    this.albums = const [],
+    this.sorts = const [],
+  });
+}
+
+class YouTubeAlbumPage {
+  final String id;
+  final String title;
+  final String artist;
+  final String? thumbnailUrl;
+  final List<YouTubePlaylistItem> tracks;
+
+  const YouTubeAlbumPage({
+    required this.id,
+    required this.title,
+    this.artist = '',
+    this.thumbnailUrl,
+    this.tracks = const [],
+  });
+}
+
 /// The public key YouTube ships inside its own web pages. It is not a secret
 /// and not tied to a project: every browser sends it, and it is the reason this
 /// integration needs no setup from the user.
@@ -373,6 +467,205 @@ class YouTubeLibraryApi {
     }
     return items;
   }
+
+  /// Search, keeping the albums, playlists and artists the page offered.
+  ///
+  /// [musicSearch] throws those rows away because only tracks are playable;
+  /// this is the same request with the containers kept, so a query for an album
+  /// name answers with the album.
+  Future<YouTubeMusicSearch> musicSearchAll(
+    String query, {
+    int maxPages = 1,
+    String? artistHint,
+  }) async {
+    final normalized = query.trim();
+    if (normalized.isEmpty) return YouTubeMusicSearch.empty;
+
+    final tracks = <YouTubePlaylistItem>[];
+    final seenVideos = <String>{};
+    final containers = <YouTubeContainer>[];
+    final seenContainers = <String>{};
+    final usedContinuations = <String>{};
+    String? continuation;
+
+    for (var page = 0; page < maxPages; page++) {
+      final json = await _post(
+        'search',
+        continuation == null
+            ? {'query': normalized}
+            : {'continuation': continuation},
+        client: _ApiClient.music,
+        cacheFor: const Duration(minutes: 30),
+      );
+      for (final item in parseMusicTracks(json, artistHint: artistHint)) {
+        if (!seenVideos.add(item.videoId)) continue;
+        tracks.add(
+          YouTubePlaylistItem(
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnailUrl: item.thumbnailUrl,
+            position: tracks.length,
+            viewCountText: item.viewCountText,
+          ),
+        );
+      }
+      for (final container in parseMusicContainers(json)) {
+        if (!seenContainers.add(container.id)) continue;
+        containers.add(container);
+      }
+      final next = nextContinuation(json);
+      if (next == null || !usedContinuations.add(next)) break;
+      continuation = next;
+    }
+
+    return YouTubeMusicSearch(
+      tracks: List<YouTubePlaylistItem>.unmodifiable(tracks),
+      albums: _ofKind(containers, YouTubeContainerKind.album),
+      playlists: _ofKind(containers, YouTubeContainerKind.playlist),
+      artists: _ofKind(containers, YouTubeContainerKind.artist),
+    );
+  }
+
+  /// An artist page. [params] is one of the page's own sort tokens, which is
+  /// how "most popular" and "oldest" are ordered: YouTube ranks them itself
+  /// rather than the app guessing years out of a byline.
+  Future<YouTubeArtistPage> artist(
+    String browseId, {
+    String? params,
+    int maxPages = 2,
+  }) async {
+    final id = browseId.trim();
+    if (id.isEmpty) {
+      throw const YouTubeLibraryException(
+        YouTubeLibraryErrorKind.notFound,
+        'YouTube artist id is missing.',
+      );
+    }
+
+    final first = await _musicBrowse(
+      {
+        'browseId': id,
+        if (params != null && params.isNotEmpty) 'params': params
+      },
+      cacheFor: const Duration(minutes: 20),
+    );
+
+    final songs = <YouTubePlaylistItem>[];
+    final seen = <String>{};
+    void collect(Map<String, dynamic> json, String? hint) {
+      for (final item in parseMusicTracks(json, artistHint: hint)) {
+        if (!seen.add(item.videoId)) continue;
+        songs.add(
+          YouTubePlaylistItem(
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnailUrl: item.thumbnailUrl,
+            position: songs.length,
+            viewCountText: item.viewCountText,
+          ),
+        );
+      }
+    }
+
+    final header = parseArtistHeader(first);
+    collect(first, header.name.isEmpty ? null : header.name);
+
+    String? continuation = nextContinuation(first);
+    final used = <String>{};
+    for (var page = 1; page < maxPages && continuation != null; page++) {
+      final token = continuation;
+      if (!used.add(token)) break;
+      final next = await _musicBrowse(
+        {'continuation': token},
+        cacheFor: const Duration(minutes: 20),
+      );
+      collect(next, header.name.isEmpty ? null : header.name);
+      continuation = nextContinuation(next);
+    }
+
+    return YouTubeArtistPage(
+      id: id,
+      name: header.name,
+      thumbnailUrl: header.thumbnailUrl,
+      songs: List<YouTubePlaylistItem>.unmodifiable(songs),
+      albums: List<YouTubeContainer>.unmodifiable(
+        parseMusicContainers(first)
+            .where((c) => c.kind == YouTubeContainerKind.album),
+      ),
+      sorts: List<YouTubeSortOption>.unmodifiable(parseMusicSortOptions(first)),
+    );
+  }
+
+  /// An album's tracks, in the album's own order.
+  Future<YouTubeAlbumPage> album(String browseId, {int maxPages = 2}) async {
+    final id = browseId.trim();
+    if (id.isEmpty) {
+      throw const YouTubeLibraryException(
+        YouTubeLibraryErrorKind.notFound,
+        'YouTube album id is missing.',
+      );
+    }
+
+    final first = await _musicBrowse(
+      {'browseId': id},
+      cacheFor: const Duration(minutes: 20),
+    );
+    final header = parseCollectionHeader(first);
+
+    final tracks = <YouTubePlaylistItem>[];
+    final seen = <String>{};
+    void collect(Map<String, dynamic> json) {
+      for (final item in parseMusicTracks(
+        json,
+        artistHint: header.artist.isEmpty ? null : header.artist,
+      )) {
+        if (!seen.add(item.videoId)) continue;
+        tracks.add(
+          YouTubePlaylistItem(
+            videoId: item.videoId,
+            title: item.title,
+            artist: item.artist,
+            duration: item.duration,
+            thumbnailUrl: item.thumbnailUrl,
+            position: tracks.length,
+            viewCountText: item.viewCountText,
+          ),
+        );
+      }
+    }
+
+    collect(first);
+    String? continuation = nextContinuation(first);
+    final used = <String>{};
+    for (var page = 1; page < maxPages && continuation != null; page++) {
+      final token = continuation;
+      if (!used.add(token)) break;
+      final next = await _musicBrowse(
+        {'continuation': token},
+        cacheFor: const Duration(minutes: 20),
+      );
+      collect(next);
+      continuation = nextContinuation(next);
+    }
+
+    return YouTubeAlbumPage(
+      id: id,
+      title: header.title,
+      artist: header.artist,
+      thumbnailUrl: header.thumbnailUrl,
+      tracks: List<YouTubePlaylistItem>.unmodifiable(tracks),
+    );
+  }
+
+  Future<Map<String, dynamic>> _musicBrowse(
+    Map<String, Object?> body, {
+    required Duration cacheFor,
+  }) =>
+      _post('browse', body, client: _ApiClient.music, cacheFor: cacheFor);
 
   /// Every playable track in [playlistId], in playlist order.
   Future<List<YouTubePlaylistItem>> playlistItems(
@@ -930,6 +1223,228 @@ List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
   return result;
 }
 
+/// Container rows (albums, playlists, artists) from a music search or browse
+/// page, in page order.
+///
+/// The same two renderers carry tracks and places; a row with no watch endpoint
+/// but a browse id that names an album, playlist or channel is a place.
+List<YouTubeContainer> parseMusicContainers(Object? json) {
+  final result = <YouTubeContainer>[];
+  final seen = <String>{};
+
+  for (final node in walkJsonMaps(json)) {
+    final twoRow = node['musicTwoRowItemRenderer'];
+    final responsive = node['musicResponsiveListItemRenderer'];
+    final YouTubeContainer? container = twoRow is Map
+        ? _containerFromMusicTwoRow(twoRow)
+        : responsive is Map
+            ? _containerFromMusicResponsive(responsive)
+            : null;
+    if (container == null) continue;
+    if (!seen.add(container.id)) continue;
+    result.add(container);
+  }
+  return result;
+}
+
+/// The sort chips a music page offers (`Popularity`, `Release date`, ...).
+///
+/// The labels are the catalogue's own, so they need no translation, and each
+/// chip carries the token that asks YouTube for that order.
+List<YouTubeSortOption> parseMusicSortOptions(Object? json) {
+  final result = <YouTubeSortOption>[];
+  final seen = <String>{};
+
+  for (final node in walkJsonMaps(json)) {
+    for (final entry in node.entries) {
+      if (!entry.key.toString().toLowerCase().contains('sortfilterbutton')) {
+        continue;
+      }
+      final renderer = mapOf(entry.value);
+      final label = textOf(renderer['title']) ?? textOf(renderer['label']);
+      if (label == null || label.isEmpty) continue;
+      if (!seen.add(label)) continue;
+      final bool selected = renderer['isSelected'] == true ||
+          renderer['selected'] == true ||
+          mapOf(renderer['icon'])['iconType'] == 'CHECK';
+      result.add(
+        YouTubeSortOption(
+          label: label,
+          params: renderer['params']?.toString() ?? '',
+          selected: selected,
+        ),
+      );
+    }
+  }
+  // The chip YouTube marks as current leads, so the default label is the order
+  // the songs arrived in.
+  final selectedIndex = result.indexWhere((option) => option.selected);
+  if (selectedIndex > 0) {
+    final selected = result.removeAt(selectedIndex);
+    result.insert(0, selected);
+  }
+  return result;
+}
+
+/// Name and avatar from an artist page's header.
+({String name, String? thumbnailUrl}) parseArtistHeader(Object? json) {
+  const keys = [
+    'musicImmersiveHeaderRenderer',
+    'musicVisualHeaderRenderer',
+    'musicResponsiveHeaderRenderer',
+    'musicDetailHeaderRenderer',
+  ];
+  for (final node in walkJsonMaps(json)) {
+    for (final key in keys) {
+      final header = node[key];
+      if (header is! Map) continue;
+      final name = textOf(header['title']);
+      if (name == null || name.isEmpty) continue;
+      return (
+        name: stripTopicSuffix(name),
+        thumbnailUrl: bestImageUrl(header['thumbnail']) ??
+            bestImageUrl(header['foregroundThumbnail']),
+      );
+    }
+  }
+  return (name: '', thumbnailUrl: null);
+}
+
+/// Title, byline artist and artwork from an album or playlist header.
+({String title, String artist, String? thumbnailUrl}) parseCollectionHeader(
+  Object? json,
+) {
+  const keys = [
+    'musicResponsiveHeaderRenderer',
+    'musicDetailHeaderRenderer',
+    'musicEditablePlaylistDetailHeaderRenderer',
+  ];
+  for (final node in walkJsonMaps(json)) {
+    for (final key in keys) {
+      final header = node[key];
+      if (header is! Map) continue;
+      final title = textOf(header['title']);
+      if (title == null || title.isEmpty) continue;
+
+      var artist = '';
+      for (final field in const ['straplineTextOne', 'subtitle', 'subtitle2']) {
+        final byline = textOf(header[field]);
+        if (byline == null) continue;
+        for (final raw in byline.split('•')) {
+          final part = raw.trim();
+          if (part.isEmpty) continue;
+          if (_musicTypeLabels.contains(part.toLowerCase())) continue;
+          if (RegExp(r'^\d{4}$').hasMatch(part)) continue;
+          if (_viewCountPattern.hasMatch(part)) continue;
+          if (_relativeTimePattern.hasMatch(part)) continue;
+          artist = stripTopicSuffix(part);
+          break;
+        }
+        if (artist.isNotEmpty) break;
+      }
+
+      return (
+        title: title,
+        artist: artist,
+        thumbnailUrl: bestImageUrl(header['thumbnail']),
+      );
+    }
+  }
+  return (title: '', artist: '', thumbnailUrl: null);
+}
+
+List<YouTubeContainer> _ofKind(
+  List<YouTubeContainer> all,
+  YouTubeContainerKind kind,
+) =>
+    List<YouTubeContainer>.unmodifiable(all.where((c) => c.kind == kind));
+
+YouTubeContainer? _containerFromMusicTwoRow(Map renderer) {
+  final id = _browseIdOf(renderer);
+  if (id == null) return null;
+  final kind = _containerKindOf(id);
+  if (kind == null) return null;
+  final title = textOf(renderer['title']);
+  if (title == null || title.isEmpty) return null;
+  return YouTubeContainer(
+    id: id,
+    title: title,
+    subtitle: textOf(renderer['subtitle']) ?? '',
+    thumbnailUrl: _largeThumbnail(renderer),
+    kind: kind,
+  );
+}
+
+YouTubeContainer? _containerFromMusicResponsive(Map renderer) {
+  if (_isTrackRow(renderer)) return null;
+  final id = _browseIdOf(renderer);
+  if (id == null) return null;
+  final kind = _containerKindOf(id);
+  if (kind == null) return null;
+  final title = textOf(_flexColumn(renderer, 0));
+  if (title == null || title.isEmpty) return null;
+
+  // The section above the row already names the kind, so `Album` is dropped
+  // from the byline and the row reads `Aurora • 2016`.
+  final parts = <String>[];
+  for (var column = 1; column <= 2; column++) {
+    final text = textOf(_flexColumn(renderer, column));
+    if (text == null || text.isEmpty) continue;
+    for (final raw in text.split('•')) {
+      final part = raw.trim();
+      if (part.isEmpty) continue;
+      if (_musicTypeLabels.contains(part.toLowerCase())) continue;
+      parts.add(part);
+    }
+  }
+  return YouTubeContainer(
+    id: id,
+    title: title,
+    subtitle: parts.join(' • '),
+    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
+    kind: kind,
+  );
+}
+
+/// The page a row opens, if it opens one. A radio playlist (`RD...`) is a
+/// playback queue rather than a place, so only `VL` ids count.
+String? _browseIdOf(Map renderer) {
+  final navigation = mapOf(renderer['navigationEndpoint']);
+  final browse = mapOf(navigation['browseEndpoint'])['browseId']?.toString();
+  if (browse != null && browse.isNotEmpty) return browse;
+
+  final playlist = mapOf(navigation['watchEndpoint'])['playlistId']?.toString();
+  if (playlist != null && playlist.startsWith('VL')) return playlist;
+
+  final button = mapOf(
+    mapOf(
+        mapOf(mapOf(renderer['overlay'])['musicItemThumbnailOverlayRenderer'])[
+            'content'])['musicPlayButtonRenderer'],
+  );
+  final play = mapOf(button['playNavigationEndpoint']);
+  final playBrowse = mapOf(play['browseEndpoint'])['browseId']?.toString();
+  if (playBrowse != null && playBrowse.isNotEmpty) return playBrowse;
+  final playPlaylist = mapOf(play['watchEndpoint'])['playlistId']?.toString();
+  if (playPlaylist != null && playPlaylist.startsWith('VL')) {
+    return playPlaylist;
+  }
+
+  final command =
+      mapOf(mapOf(renderer['rendererContext'])['commandContext'])['onTap'];
+  final inner = mapOf(mapOf(command)['innertubeCommand']);
+  final innerBrowse = mapOf(inner['browseEndpoint'])['browseId']?.toString();
+  if (innerBrowse != null && innerBrowse.isNotEmpty) return innerBrowse;
+  return null;
+}
+
+/// Albums, playlists and channels each have their own browse id prefix.
+YouTubeContainerKind? _containerKindOf(String id) {
+  if (id.startsWith('MPRE')) return YouTubeContainerKind.album;
+  if (id.startsWith('VL')) return YouTubeContainerKind.playlist;
+  if (id.startsWith('UC')) return YouTubeContainerKind.artist;
+  return null;
+}
+
 YouTubePlaylistItem? _itemFromMusicResponsive(Map renderer) {
   final id = _watchVideoId(renderer) ??
       mapOf(mapOf(renderer['playlistItemData']))['videoId']?.toString() ??
@@ -968,9 +1483,15 @@ YouTubePlaylistItem? _itemFromMusicResponsive(Map renderer) {
   );
 }
 
+/// A row's artwork at a row's size.
+///
+/// Catalogue URLs are tiny (`=w60-h60`), so they are rewritten to the smallest
+/// rendition that still looks sharp in a 52dp row. Surfaces that draw the cover
+/// large (the player) ask for more through `CoverPath.sharperUrl` themselves, so
+/// asking for 720 here spent four times the bytes on every list row in the app.
 String? _largeThumbnail(Object? node) {
   final url = bestImageUrl(node);
-  return url == null ? null : upscaleThumbnailUrl(url);
+  return url == null ? null : upscaleThumbnailUrl(url, size: 320);
 }
 
 final RegExp _viewCountPattern =

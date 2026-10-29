@@ -665,7 +665,21 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       );
     }
     final artState = ref.read(artistAlbumArtProvider);
-    final missing = _collectMissingSorted(songs, artState);
+    final found = _collectMissingSorted(songs, artState);
+
+    // A passive sweep is not worth an unbounded download: a first launch over a
+    // big library would pull cover art for every artist and album on mobile
+    // data. The budget is per launch, so a library fills in over a few opens and
+    // an explicit fetch (driven) is never capped.
+    final int budget =
+        driven ? found.artists.length + found.albums.length : _autoBurstBudget;
+    final missing = (
+      artists: found.artists.take(budget).toList(),
+      albums: found.albums.take(budget < 0 ? 0 : budget).toList(),
+    );
+    if (!driven) {
+      _autoBurstUsed += missing.artists.length + missing.albums.length;
+    }
     onArtistProgress?.call(0, missing.artists.length);
     onAlbumProgress?.call(0, missing.albums.length);
     if (missing.artists.isEmpty && missing.albums.isEmpty) {
@@ -906,6 +920,17 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       if (_isForegrounded) waited += step;
     }
   }
+
+  /// Keys a passive sweep may fetch across one launch. Art is cosmetic, so a
+  /// fresh library fills in over several opens instead of in one burst.
+  static const int _autoBurstBudgetTotal = 80;
+
+  /// Keys the passive sweeps of this launch have already spent.
+  int _autoBurstUsed = 0;
+
+  int get _autoBurstBudget => _autoBurstBudgetTotal - _autoBurstUsed < 0
+      ? 0
+      : _autoBurstBudgetTotal - _autoBurstUsed;
 
   /// Burst sweep over everything missing. Runs on every app open (and picks
   /// up library changes on later loop iterations); keys already resolved,

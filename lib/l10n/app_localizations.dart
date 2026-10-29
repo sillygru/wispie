@@ -8991,6 +8991,48 @@ abstract class AppLocalizations {
   /// **'Open youtube.com'**
   String get youtubeAccountOpenYouTube;
 
+  /// Section heading for playable tracks in YouTube search results
+  ///
+  /// In en, this message translates to:
+  /// **'Songs'**
+  String get youtubeSearchSongs;
+
+  /// Section heading for album results in YouTube search
+  ///
+  /// In en, this message translates to:
+  /// **'Albums'**
+  String get youtubeSearchAlbums;
+
+  /// Section heading for playlist results in YouTube search
+  ///
+  /// In en, this message translates to:
+  /// **'Playlists'**
+  String get youtubeSearchPlaylists;
+
+  /// Section heading for artist results in YouTube search
+  ///
+  /// In en, this message translates to:
+  /// **'Artists'**
+  String get youtubeSearchArtists;
+
+  /// Heading above an artist's songs, in YouTube's own order
+  ///
+  /// In en, this message translates to:
+  /// **'Top songs'**
+  String get youtubeArtistSongsTitle;
+
+  /// Heading above an artist's albums and singles
+  ///
+  /// In en, this message translates to:
+  /// **'Albums & singles'**
+  String get youtubeArtistAlbumsTitle;
+
+  /// Shown when an album or playlist has no playable tracks
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing to play in here.'**
+  String get youtubeCollectionEmpty;
+
   /// Button that removes the stored YouTube session
   ///
   /// In en, this message translates to:

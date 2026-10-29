@@ -5347,6 +5347,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get youtubeAccountOpenYouTube => 'Open youtube.com';
 
   @override
+  String get youtubeSearchSongs => 'Songs';
+
+  @override
+  String get youtubeSearchAlbums => 'Albums';
+
+  @override
+  String get youtubeSearchPlaylists => 'Playlists';
+
+  @override
+  String get youtubeSearchArtists => 'Artists';
+
+  @override
+  String get youtubeArtistSongsTitle => 'Top songs';
+
+  @override
+  String get youtubeArtistAlbumsTitle => 'Albums & singles';
+
+  @override
+  String get youtubeCollectionEmpty => 'Nothing to play in here.';
+
+  @override
   String get youtubeAccountSignOut => 'Sign out';
 
   @override

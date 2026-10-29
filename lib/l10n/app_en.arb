@@ -7107,6 +7107,34 @@
   "@youtubeAccountOpenYouTube": {
     "description": "Button that opens youtube.com so the user can sign in"
   },
+  "youtubeSearchSongs": "Songs",
+  "@youtubeSearchSongs": {
+    "description": "Section heading for playable tracks in YouTube search results"
+  },
+  "youtubeSearchAlbums": "Albums",
+  "@youtubeSearchAlbums": {
+    "description": "Section heading for album results in YouTube search"
+  },
+  "youtubeSearchPlaylists": "Playlists",
+  "@youtubeSearchPlaylists": {
+    "description": "Section heading for playlist results in YouTube search"
+  },
+  "youtubeSearchArtists": "Artists",
+  "@youtubeSearchArtists": {
+    "description": "Section heading for artist results in YouTube search"
+  },
+  "youtubeArtistSongsTitle": "Top songs",
+  "@youtubeArtistSongsTitle": {
+    "description": "Heading above an artist's songs, in YouTube's own order"
+  },
+  "youtubeArtistAlbumsTitle": "Albums & singles",
+  "@youtubeArtistAlbumsTitle": {
+    "description": "Heading above an artist's albums and singles"
+  },
+  "youtubeCollectionEmpty": "Nothing to play in here.",
+  "@youtubeCollectionEmpty": {
+    "description": "Shown when an album or playlist has no playable tracks"
+  },
   "youtubeAccountSignOut": "Sign out",
   "youtubeAccountSignedInAs": "Signed in as {name}",
   "youtubeAccountSessionExpired": "Your YouTube session expired. Sign in again to keep syncing playlists.",
