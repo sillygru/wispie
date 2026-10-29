@@ -350,7 +350,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeProvider);
     final Color accent =
-        themeState.extractedColor ?? Theme.of(context).colorScheme.primary;
+        themeState.trackColor ?? Theme.of(context).colorScheme.primary;
 
     ref.listen(
       settingsProvider.select((s) => s.keepScreenAwakeOnLyrics),
@@ -372,7 +372,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
     );
 
     return Theme(
-      data: AppTheme.getPlayerTheme(themeState, accent),
+      data: AppTheme.getPlayerTheme(themeState),
       child: Builder(
         builder: (context) => CallbackShortcuts(
           bindings: {
@@ -434,7 +434,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       });
     }
     final bool isNeutral = ref.watch(
-      themeProvider.select((t) => t.isNeutralCover),
+      themeProvider.select((t) => t.isTrackNeutral),
     );
 
     return LayoutBuilder(

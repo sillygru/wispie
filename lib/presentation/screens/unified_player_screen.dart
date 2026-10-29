@@ -457,7 +457,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     // Lifted once here and passed down, so every pane shares one legible accent
     // rather than each deciding how to cope with a near-black cover palette.
     final accent =
-        themeState.extractedColor ?? Theme.of(context).colorScheme.primary;
+        themeState.trackColor ?? Theme.of(context).colorScheme.primary;
 
     ref.listen(
       settingsProvider.select((s) => s.keepScreenAwakeOnLyrics),
@@ -480,7 +480,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     );
 
     return Theme(
-      data: AppTheme.getPlayerTheme(themeState, accent),
+      data: AppTheme.getPlayerTheme(themeState),
       child: Builder(
         builder: (context) => CallbackShortcuts(
           bindings: {

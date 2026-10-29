@@ -1138,12 +1138,14 @@ class _WideSidePanelState extends ConsumerState<_WideSidePanel> {
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeProvider);
-    final accent = AppTokens.accentOf(context, ref);
+    // This column shows the playing track, so it follows that cover rather than
+    // a library page being browsed beside it.
+    final accent = themeState.trackColor ?? AppTokens.accentOf(context, ref);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final width = _WideSidePanel.widthFor(context);
 
     return Theme(
-      data: AppTheme.getPlayerTheme(themeState, accent),
+      data: AppTheme.getPlayerTheme(themeState),
       child: Container(
         width: width,
         color: Colors.black,

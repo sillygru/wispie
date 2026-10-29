@@ -31,24 +31,28 @@ class AppTheme {
   ///    rather than amplifying sensor noise into a fake hue
   ///  - otherwise              → seed from the (already legibility-corrected)
   ///    cover accent
-  static ThemeData getTheme(ThemeState state, {Color? coverColor}) {
-    final effectiveCoverColor = coverColor ?? state.extractedColor;
+  static ThemeData getTheme(ThemeState state) {
+    final effectiveCoverColor = state.extractedColor;
 
-    if (effectiveCoverColor == null) {
-      return _buildTheme(
-        seed: _defaultSeed,
-        background: _surfaceDark,
-        container: _containerDark,
-      );
-    }
+    if (effectiveCoverColor == null) return _identityTheme();
     if (state.isNeutralCover) return _oledTheme();
     return _coverTheme(effectiveCoverColor);
   }
 
-  /// The player rides the same cover-matching theme; kept as a named entry
-  /// point so the player call site reads clearly.
-  static ThemeData getPlayerTheme(ThemeState state, Color? coverColor) =>
-      getTheme(state, coverColor: coverColor);
+  /// The player rides the playing track's own cover, even while an artist or
+  /// album page is tinting the rest of the app.
+  static ThemeData getPlayerTheme(ThemeState state) {
+    final palette = state.trackPalette;
+    if (palette == null) return _identityTheme();
+    return palette.isNeutral ? _oledTheme() : _coverTheme(palette.color);
+  }
+
+  /// No cover colour yet: the signature accent the app starts on.
+  static ThemeData _identityTheme() => _buildTheme(
+        seed: _defaultSeed,
+        background: _surfaceDark,
+        container: _containerDark,
+      );
 
   /// Theme for a page that has its own artwork to match — an artist or album
   /// page, which follows *its* cover rather than the playing track's.

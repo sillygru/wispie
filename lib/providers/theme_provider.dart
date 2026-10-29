@@ -29,6 +29,14 @@ class ThemeState {
 
   Color? get extractedColor => effectivePalette?.color;
 
+  /// The playing track's palette alone. [extractedColor] also follows a page
+  /// being browsed; the player must follow the track it is playing.
+  ExtractedPalette? get trackPalette => extractedPalette;
+
+  Color? get trackColor => extractedPalette?.color;
+
+  bool get isTrackNeutral => extractedPalette?.isNeutral ?? false;
+
   /// The cover has no usable chroma, so the theme uses its OLED variant rather
   /// than inventing a hue.
   bool get isNeutralCover => effectivePalette?.isNeutral ?? false;

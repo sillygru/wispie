@@ -498,17 +498,18 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     return Consumer(
       builder: (context, ref, child) {
         final themeState = ref.watch(themeProvider);
-        final Color? accent = themeState.extractedColor;
-        if (accent == null) {
-          return Theme(data: AppTheme.getTheme(themeState), child: child!);
-        }
-        return Theme(
-          data: AppTheme.getPlayerTheme(themeState, accent),
-          child: CollectionAccentScope(
-            accent: accent,
-            isNeutral: themeState.isNeutralCover,
-            child: child!,
-          ),
+        final Color? accent = themeState.trackColor;
+        final Widget player = Theme(
+          data: AppTheme.getPlayerTheme(themeState),
+          child: child!,
+        );
+        // The playing cover wins here even while an album or artist page tints
+        // everything behind the player.
+        if (accent == null) return player;
+        return CollectionAccentScope(
+          accent: accent,
+          isNeutral: themeState.isTrackNeutral,
+          child: player,
         );
       },
       child: PlayerCoverOpacity(
