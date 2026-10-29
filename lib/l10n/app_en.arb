@@ -5732,6 +5732,18 @@
       }
     }
   },
+  "statsDayTotals": "{time} · {plays}",
+  "@statsDayTotals": {
+    "description": "Averages for one active day: time heard and plays inside it",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "plays": {
+        "type": "String"
+      }
+    }
+  },
   "statsLibraryExplored": "Library explored",
   "@statsLibraryExplored": {
     "description": "Label for the share of library tracks ever played"
@@ -5744,17 +5756,13 @@
   "@statsPlaysSkipped": {
     "description": "Label for the share of plays that were skipped"
   },
-  "statsAvgPlay": "AVERAGE PLAY",
+  "statsAvgPlay": "AVERAGE PLAY LENGTH",
   "@statsAvgPlay": {
-    "description": "Label for the average duration of a play"
+    "description": "Label for the average length of one play"
   },
   "statsOnActiveDay": "ON AN ACTIVE DAY",
   "@statsOnActiveDay": {
     "description": "Label for total listening time on an active day"
-  },
-  "statsPlaysPerActiveDay": "PLAYS PER ACTIVE DAY",
-  "@statsPlaysPerActiveDay": {
-    "description": "Label for average plays per active day"
   },
   "statsFirstListen": "FIRST LISTEN",
   "@statsFirstListen": {

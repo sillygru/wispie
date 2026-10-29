@@ -4502,6 +4502,11 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String statsDayTotals(String time, String plays) {
+    return '$time · $plays';
+  }
+
+  @override
   String get statsLibraryExplored => 'Biblioteca explorada';
 
   @override
@@ -4515,9 +4520,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get statsOnActiveDay => 'EM UM DIA ATIVO';
-
-  @override
-  String get statsPlaysPerActiveDay => 'REPRODUÇÕES POR DIA ATIVO';
 
   @override
   String get statsFirstListen => 'PRIMEIRA AUDIÇÃO';
@@ -10231,9 +10233,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get statsOnActiveDay => 'NUM DIA ATIVO';
-
-  @override
-  String get statsPlaysPerActiveDay => 'REPRODUÇÕES POR DIA ATIVO';
 
   @override
   String get statsFirstListen => 'PRIMEIRA AUDIÇÃO';

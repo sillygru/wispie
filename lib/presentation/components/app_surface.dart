@@ -88,13 +88,10 @@ class AppSurface extends StatelessWidget {
         color: fill,
         borderRadius: radius,
       ),
-      // Ink canvas for ListTile descendants: without an intervening Material
-      // their splashes paint on this DecoratedBox and trip the
-      // "ink splashes may be invisible" assertion in debug.
+      // Ink canvas for ListTile splashes. Unclipped on purpose: it sits inside
+      // the padding, so a radius here would cut the content's own corners.
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: radius,
-        clipBehavior: Clip.antiAlias,
         child: child,
       ),
     );

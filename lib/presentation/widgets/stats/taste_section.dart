@@ -80,17 +80,16 @@ class TasteSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppTokens.s3),
+              // The day's time and its plays belong on one line.
               _Fact(
                 label: context.l10n.statsOnActiveDay,
-                value: StatsFormat.duration(
-                  insights.averageDay,
-                  context.l10n,
+                value: context.l10n.statsDayTotals(
+                  StatsFormat.duration(
+                    insights.averageDay,
+                    context.l10n,
+                  ),
+                  context.l10n.statsPlaysCount(insights.averagePlaysPerDay),
                 ),
-              ),
-              const SizedBox(height: AppTokens.s3),
-              _Fact(
-                label: context.l10n.statsPlaysPerActiveDay,
-                value: '${insights.averagePlaysPerDay}',
               ),
               if (firstListen != null) ...[
                 const SizedBox(height: AppTokens.s3),

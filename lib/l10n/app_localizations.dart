@@ -7503,6 +7503,12 @@ abstract class AppLocalizations {
   /// **'{time} across {plays}'**
   String statsAcrossPlays(String time, String plays);
 
+  /// Averages for one active day: time heard and plays inside it
+  ///
+  /// In en, this message translates to:
+  /// **'{time} · {plays}'**
+  String statsDayTotals(String time, String plays);
+
   /// Label for the share of library tracks ever played
   ///
   /// In en, this message translates to:
@@ -7521,10 +7527,10 @@ abstract class AppLocalizations {
   /// **'Plays skipped'**
   String get statsPlaysSkipped;
 
-  /// Label for the average duration of a play
+  /// Label for the average length of one play
   ///
   /// In en, this message translates to:
-  /// **'AVERAGE PLAY'**
+  /// **'AVERAGE PLAY LENGTH'**
   String get statsAvgPlay;
 
   /// Label for total listening time on an active day
@@ -7532,12 +7538,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'ON AN ACTIVE DAY'**
   String get statsOnActiveDay;
-
-  /// Label for average plays per active day
-  ///
-  /// In en, this message translates to:
-  /// **'PLAYS PER ACTIVE DAY'**
-  String get statsPlaysPerActiveDay;
 
   /// Label for the date of the first recorded listen
   ///

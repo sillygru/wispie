@@ -4429,6 +4429,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String statsDayTotals(String time, String plays) {
+    return '$time · $plays';
+  }
+
+  @override
   String get statsLibraryExplored => 'Library explored';
 
   @override
@@ -4438,13 +4443,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statsPlaysSkipped => 'Plays skipped';
 
   @override
-  String get statsAvgPlay => 'AVERAGE PLAY';
+  String get statsAvgPlay => 'AVERAGE PLAY LENGTH';
 
   @override
   String get statsOnActiveDay => 'ON AN ACTIVE DAY';
-
-  @override
-  String get statsPlaysPerActiveDay => 'PLAYS PER ACTIVE DAY';
 
   @override
   String get statsFirstListen => 'FIRST LISTEN';
