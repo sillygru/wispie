@@ -30,20 +30,13 @@ class DrawerGeometry extends ProgressGeometry {
   /// How far the panel's trailing edge has travelled from the window edge.
   double panelWidth = 0;
 
-  /// How far the content has been pushed aside.
-  ///
-  /// It follows the sheet past its seat by [_contentFollow], so pulling the
-  /// drawer into its elastic crest shoves the page with it instead of the
-  /// drawer turning into an overlay over a background that holds still. Damped
-  /// on purpose: at full strength the crest read as the whole screen being
-  /// jolted.
+  /// How far the content is pushed. It follows the elastic swell, damped, so the
+  /// crest shoves the page instead of the drawer becoming an overlay.
   double contentOffset = 0;
 
   static const double _contentFollow = 0.6;
 
-  /// The swell past the resting width as a fraction of it: 0 while the sheet is
-  /// at or inside its seat, up to the elastic cap. Chrome (the scrim) deepens
-  /// with it, so the push and the dim arrive together.
+  /// Swell past the resting width, as a fraction of it. Chrome deepens with it.
   double swellFraction = 0;
 
   /// The scrim's opacity input: the raw value, so the dim rides the drawer in

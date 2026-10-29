@@ -336,12 +336,8 @@ class PlayerMotionController extends ChangeNotifier {
   bool _appActive = true;
   bool _powerSave = false;
 
-  /// Silences the visual notifies while a surface the player sits on is moving.
-  ///
-  /// The ticker keeps running, so nothing's clock jumps when it lets go — the
-  /// layers simply stop being told to repaint, which leaves their last raster
-  /// in the compositor for the length of the move. A page swipe was paying for
-  /// a full-screen mote field and glow behind the pane that was sliding.
+  /// Silences visual notifies while a surface around the player moves; the
+  /// ticker keeps running, so no clock jumps.
   bool _visualHold = false;
 
   /// Shared with every other beat-reactive surface, so the cover, the particle
@@ -502,9 +498,8 @@ class PlayerMotionController extends ChangeNotifier {
     if (_visualHold == value) return;
     _visualHold = value;
     if (value) return;
-    // Catch up, so a paused layer resumes on the live pose rather than on the
-    // one it froze at. Deferred when it lands mid-layout: this is driven by
-    // scroll notifications, and the listeners rebuild widgets.
+    // Catch up, so a paused layer resumes on the live pose. Deferred: this
+    // arrives from scroll notifications, and listeners rebuild widgets.
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
       SchedulerBinding.instance.addPostFrameCallback((_) {

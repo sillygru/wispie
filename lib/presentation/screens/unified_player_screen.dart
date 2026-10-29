@@ -98,13 +98,8 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   final ValueNotifier<bool> _nowPlayingVisible = ValueNotifier(false);
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(false);
 
-  /// True while the pager is carrying a pane across the screen.
-  ///
-  /// Every pane is alive at once, so a swipe used to drag three live screens,
-  /// a full-screen mote field, a glow and a spinning backdrop at the same time —
-  /// all of it re-rasterised per frame under a transform nobody could read.
-  /// While the pager moves, the panes' tickers are paused and the decorative
-  /// layers stop being repainted, so the swipe is a move of cached rasters.
+  /// True while the pager carries a pane across the screen: the panes and the
+  /// decorative layers are paused so the swipe moves cached rasters.
   final ValueNotifier<bool> _paneMoving = ValueNotifier(false);
 
   /// Let the glow layer locate the artwork inside the pane, and convert it into
@@ -334,8 +329,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _motion.visualHold = moving;
   }
 
-  /// Only the pager's own scroll counts: the lyrics list and the queue scroll
-  /// underneath it, and a finger scrolling those must not pause them.
+  /// Only the pager's own scroll: the panes scroll underneath it.
   bool _onPagerNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification) {
@@ -902,10 +896,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   }
 }
 
-/// Pauses the tickers inside [child] while the pager carries it across screen.
-///
-/// Only the flag flip rebuilds this, so a swipe costs two rebuilds per pane and
-/// no per-frame work inside them.
+/// Pauses the tickers inside [child] while the pager moves it.
 class _FrozenWhileMoving extends StatelessWidget {
   const _FrozenWhileMoving({required this.paused, required this.child});
 

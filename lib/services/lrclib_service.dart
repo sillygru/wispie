@@ -13,12 +13,19 @@ import '../domain/services/lrclib_query.dart';
 import '../models/song.dart';
 import 'cache_service.dart';
 import 'music_utils_api_client.dart';
+import 'shared_http_client.dart';
 
 /// Lyrics client with music-utils as the primary API and direct LRCLIB as a
 /// fallback.
 class LrclibService {
   static const String _host = 'lrclib.net';
   static const Duration _timeout = Duration(seconds: 8);
+
+  /// A response timeout never fires while a socket is still opening.
+  static const Duration _connectTimeout = Duration(seconds: 6);
+
+  /// Ceiling on the whole picker: partial results beat a spinner.
+  static const Duration _collectBudget = Duration(seconds: 10);
 
   static String? _userAgent;
   final MusicUtilsApiClient _musicUtils = MusicUtilsApiClient.instance;
@@ -135,6 +142,9 @@ class LrclibService {
       }
     }
 
+    // One deadline for both rounds.
+    final deadline = DateTime.now().add(_collectBudget);
+
     // Three readings is enough to cover every tag shape a catalogue produces;
     // more only multiplies requests for records that would lose the ranking.
     final attempts = queries.take(3).toList();
@@ -167,20 +177,24 @@ class LrclibService {
         ),
       );
     }
-    await Future.wait(lookups);
+    await _settleWithin(lookups, _collectBudget);
 
-    // Last resort for uploads whose title matches no field query.
+    // Last resort for uploads whose title matches no field query; it only gets
+    // what is left of the budget.
     if (found.isEmpty) {
       final freeText = <String>{
         for (final query in attempts)
           [query.title, query.artist].whereType<String>().join(' ').trim(),
       };
-      await Future.wait([
-        for (final query in freeText)
-          searchFreeText(query).then(keep).catchError((Object error) {
-            stderr.writeln('Lyrics: free-text search failed: $error');
-          }),
-      ]);
+      await _settleWithin(
+        [
+          for (final query in freeText)
+            searchFreeText(query).then(keep).catchError((Object error) {
+              stderr.writeln('Lyrics: free-text search failed: $error');
+            }),
+        ],
+        deadline.difference(DateTime.now()),
+      );
     }
 
     return (
@@ -519,10 +533,11 @@ class LrclibService {
   }
 
   Future<Object?> _getJson(String path, Map<String, String> params) async {
-    final client = HttpClient();
+    // Pooled client: a fresh one per lookup re-paid the handshake.
+    final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(_host, path, params);
-      final request = await client.getUrl(uri);
+      final request = await client.getUrl(uri).timeout(_connectTimeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(
         HttpHeaders.userAgentHeader,
@@ -546,8 +561,23 @@ class LrclibService {
       return null;
     } on FormatException catch (_) {
       return null;
-    } finally {
-      client.close(force: true);
+    }
+  }
+
+  /// Waits for [futures] up to [budget], then keeps whatever arrived.
+  static Future<void> _settleWithin(
+    Iterable<Future<void>> futures,
+    Duration budget,
+  ) async {
+    if (futures.isEmpty || budget <= Duration.zero) return;
+    final safe = <Future<void>>[
+      for (final future in futures)
+        future.then<void>((_) {}, onError: (Object _, StackTrace __) {}),
+    ];
+    try {
+      await Future.wait(safe).timeout(budget);
+    } on TimeoutException catch (_) {
+      // Partial results are the point.
     }
   }
 

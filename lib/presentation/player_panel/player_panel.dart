@@ -255,10 +255,7 @@ class PlayerPanelController {
         velocity.abs() > tuning.flingVelocity) {
       MotionHaptics.light();
     }
-    // The speed the finger left behind goes into the spring, so a throw and a
-    // nudge land differently instead of both replaying one keyframed curve. It
-    // is capped: a hard flick carries several screenfuls a second, and pouring
-    // all of that in emptied the travel before it could be seen or caught.
+    // The finger's speed goes into the spring, capped so a flick still reads.
     final double momentum = PanelRelease.momentum(
       velocity: velocity,
       travel: _travel,
@@ -381,9 +378,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   /// into the real control instead of replacing it.
   static double _strengthAt(double p, bool flying) {
     if (!flying) return 0;
-    // Wide enough that the crossfade between the shuttle and the real artwork
-    // is a fade the eye can follow. A narrow window on a fast spring was one
-    // frame of ghosting on each end.
+    // Wide enough for the shuttle handoff to read as a fade, not a ghost frame.
     return (math.min(p.clamp(0.0, 1.0), 1 - p.clamp(0.0, 1.0)) / 0.12)
         .clamp(0.0, 1.0);
   }
@@ -555,12 +550,8 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
         builder: (context, child) {
           final double p = _panel.value;
           final double clamped = p.clamp(0.0, 1.0);
-          // Position, not `isAnimating`: a spring that has already carried the
-          // panel below its seat keeps animating through an invisible tail, and
-          // this used to stay true for that whole tail — leaving a full-screen
-          // hit area over the dock that swallowed the tap which reopens the
-          // player. A finger still counts, so a drag past the bottom keeps the
-          // surface under it.
+          // Position, not isAnimating: the spring's tail below the screen kept a
+          // full-screen hit area over the dock.
           final bool active = p > 0.0005 || _panel.isDragging;
           if (_travel <= 0) _measureTravel();
           final Size size = MediaQuery.sizeOf(context);
@@ -574,9 +565,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           final double right =
               (size.width - from.right).clamp(0.0, size.width) * (1 - widen);
           final double radius = _originRadius * (1 - widen);
-          // A real fade rather than a pop: eased over a wider slice of the
-          // travel, so the surface comes up out of the bar instead of arriving
-          // at full opacity on the second frame.
+          // A fade over a wider slice of the travel, not a pop on frame two.
           final double shell = Curves.easeInOut.transform(
             (clamped / 0.18).clamp(0.0, 1.0),
           );

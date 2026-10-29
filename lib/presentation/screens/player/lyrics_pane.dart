@@ -636,9 +636,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     // plain line-synced lyrics are fine on the ~5Hz position samples.
     if (_gapSlot.value < 0 && !_activeLineHasWords()) return;
     final Duration dt = elapsed - _sampleElapsed;
-    // A ticker muted by a frozen surface resumes with the whole pause folded
-    // into its elapsed value. Extrapolating across that would throw the word
-    // wipe forward by the length of the freeze, so it re-anchors instead.
+    // A muted ticker's elapsed includes the pause; re-anchor rather than jump.
     if (dt > const Duration(milliseconds: 250)) {
       _sampleElapsed = elapsed;
       _sampleAt = player.position;

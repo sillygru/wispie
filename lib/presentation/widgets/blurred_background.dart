@@ -285,19 +285,13 @@ class _ThrottledSpinState extends State<_ThrottledSpin>
   static const Duration _powerSaveInterval = Duration(microseconds: 100000);
   static const Duration _spinDuration = Duration(seconds: 90);
 
-  /// A gap this long between two ticks is a frozen surface, not a slow frame.
-  ///
-  /// `TickerMode` mutes a ticker without stopping it, so the tick that resumes
-  /// carries the whole pause in its elapsed value. This used to be read as a
-  /// clock, which meant every surface freeze (the player panel in flight, a tab
-  /// cross-fade, the drawer pushing the page aside) jumped the backdrop forward
-  /// by however long it lasted — visible as a pop of the artwork on landing.
+  /// A gap this long is a frozen surface, not a slow frame: TickerMode folds the
+  /// pause into the resumed tick's elapsed value.
   static const Duration _freezeGap = Duration(milliseconds: 200);
 
   late final Ticker _ticker;
 
-  /// Spin time accumulated from tick deltas rather than read off the ticker, so
-  /// a stop/start or a mute resumes the angle instead of re-phasing it.
+  /// Accumulated from tick deltas, so a stop or a mute resumes the angle.
   Duration _elapsedTotal = Duration.zero;
   Duration? _lastRawElapsed;
   Duration? _lastPaintTotal;

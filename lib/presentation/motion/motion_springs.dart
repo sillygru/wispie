@@ -43,12 +43,8 @@ abstract final class MotionSprings {
     damping: 32,
   );
 
-  /// The same surface on its way down into a dock that has room to absorb it.
-  ///
-  /// Softer and longer than the open: at this stiffness a stiff spring plus the
-  /// release speed emptied the whole travel inside ~150ms, which read as a cut
-  /// and left no window to catch the panel on its way back up. Lightly damped
-  /// on purpose, so a throw still dips past its seat instead of stopping dead.
+  /// The way home. Softer than the open, so a flick is a move rather than a cut
+  /// and there is time to catch it; lightly damped, so it still dips.
   static final SpringDescription panelClose =
       SpringDescription.withDampingRatio(mass: 1, stiffness: 130, ratio: 0.86);
 
@@ -62,9 +58,7 @@ abstract final class MotionSprings {
     damping: 19,
   );
 
-  /// The drawer arriving at its resting width. Softer than [elastic] so the
-  /// crest into the overshoot room is a visible swell rather than a few
-  /// pixels, and the extra damping keeps it from wobbling on its way in.
+  /// The drawer arriving at its seat: room for one visible crest, then still.
   static final SpringDescription drawerOpen =
       SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.72);
 
