@@ -181,11 +181,7 @@ class LibraryLogic {
       case SongSortOrder.recommended:
         // Same two-stage model shuffle draws from, so "Recommended" and shuffle
         // agree about taste.
-        final useSmart = tasteSnapshot != null &&
-            shuffleConfig?.personality == ShufflePersonality.smart;
-        if (userData == null ||
-            shuffleConfig == null ||
-            (!useSmart && affinities == null)) {
+        if (userData == null || shuffleConfig == null) {
           sorted.sort((a, b) {
             final titleA = lowerTitle[a.filename]!;
             final titleB = lowerTitle[b.filename]!;
@@ -194,7 +190,7 @@ class LibraryLogic {
           break;
         }
 
-        if (useSmart) {
+        if (tasteSnapshot != null) {
           final ranked = smartRecommendedOrder(
             sorted,
             tasteSnapshot,
@@ -207,8 +203,17 @@ class LibraryLogic {
           break;
         }
 
+        if (affinities == null) {
+          sorted.sort((a, b) {
+            final titleA = lowerTitle[a.filename]!;
+            final titleB = lowerTitle[b.filename]!;
+            return titleA.compareTo(titleB);
+          });
+          break;
+        }
+
         final playlistFilenames = _userPlaylistFilenames(userData);
-        final weights = ShuffleWeights.forPersonality(shuffleConfig);
+        final weights = ShuffleWeights.fallback(shuffleConfig);
 
         // Score once per song rather than inside the comparator, which would
         // recompute it O(N log N) times.
@@ -219,7 +224,7 @@ class LibraryLogic {
                 payload: song,
                 artist: song.artist,
                 album: song.album,
-                affinity: affinities![song.filename] ?? SongAffinity.unknown,
+                affinity: affinities[song.filename] ?? SongAffinity.unknown,
                 isFavorite: userData.isFavorite(song.filename),
                 isSuggestLess: userData.isSuggestLess(song.filename),
                 isInPlaylist: playlistFilenames.contains(song.filename),

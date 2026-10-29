@@ -1,9 +1,5 @@
 import 'package:equatable/equatable.dart';
 
-/// [smart] is the default. The rest are legacy: they keep their original
-/// scoring and are only offered as explicit choices.
-enum ShufflePersonality { smart, defaultMode, explorer, consistent, custom }
-
 class ShuffleConfig extends Equatable {
   final bool enabled;
   final bool antiRepeatEnabled;
@@ -11,26 +7,9 @@ class ShuffleConfig extends Equatable {
   final double favoriteMultiplier;
   final double suggestLessMultiplier;
   final int historyLimit;
-  final ShufflePersonality personality;
 
-  /// Smart only. 0 favours familiar songs, 1 favours discovery.
+  /// 0 favours familiar songs, 1 favours discovery.
   final double discoveryLevel;
-
-  bool get isLegacy => personality != ShufflePersonality.smart;
-
-  // Custom mode - Simple Settings
-  final bool avoidRepeatingSongs;
-  final bool avoidRepeatingArtists;
-  final bool avoidRepeatingAlbums;
-  final bool
-      favorLeastPlayed; // true = favor least played, false = favor most played
-
-  // Custom mode - Advanced Settings (-99 to +99, 0 = neutral)
-  final int leastPlayedWeight;
-  final int mostPlayedWeight;
-  final int favoritesWeight;
-  final int suggestLessWeight;
-  final int playlistSongsWeight;
 
   const ShuffleConfig({
     this.enabled = false,
@@ -39,19 +18,7 @@ class ShuffleConfig extends Equatable {
     this.favoriteMultiplier = 1.2,
     this.suggestLessMultiplier = 0.2,
     this.historyLimit = 200,
-    this.personality = ShufflePersonality.smart,
     this.discoveryLevel = 0.35,
-    // Custom mode - Simple (defaults)
-    this.avoidRepeatingSongs = true,
-    this.avoidRepeatingArtists = true,
-    this.avoidRepeatingAlbums = true,
-    this.favorLeastPlayed = true,
-    // Custom mode - Advanced (0 = neutral)
-    this.leastPlayedWeight = 0,
-    this.mostPlayedWeight = 0,
-    this.favoritesWeight = 0,
-    this.suggestLessWeight = 0,
-    this.playlistSongsWeight = 0,
   });
 
   factory ShuffleConfig.fromJson(Map<String, dynamic> json) {
@@ -64,19 +31,7 @@ class ShuffleConfig extends Equatable {
       suggestLessMultiplier:
           ((json['suggest_less_multiplier'] as num?) ?? 0.2).toDouble(),
       historyLimit: (json['history_limit'] as int?) ?? 200,
-      personality: _parsePersonality(json['personality'] as String?),
       discoveryLevel: _parseDiscoveryLevel(json['discovery_level']),
-      // Custom mode - Simple
-      avoidRepeatingSongs: (json['avoid_repeating_songs'] as bool?) ?? true,
-      avoidRepeatingArtists: (json['avoid_repeating_artists'] as bool?) ?? true,
-      avoidRepeatingAlbums: (json['avoid_repeating_albums'] as bool?) ?? true,
-      favorLeastPlayed: (json['favor_least_played'] as bool?) ?? true,
-      // Custom mode - Advanced
-      leastPlayedWeight: (json['least_played_weight'] as int?) ?? 0,
-      mostPlayedWeight: (json['most_played_weight'] as int?) ?? 0,
-      favoritesWeight: (json['favorites_weight'] as int?) ?? 0,
-      suggestLessWeight: (json['suggest_less_weight'] as int?) ?? 0,
-      playlistSongsWeight: (json['playlist_songs_weight'] as int?) ?? 0,
     );
   }
 
@@ -88,50 +43,8 @@ class ShuffleConfig extends Equatable {
       'favorite_multiplier': favoriteMultiplier,
       'suggest_less_multiplier': suggestLessMultiplier,
       'history_limit': historyLimit,
-      'personality': _personalityToString(personality),
       'discovery_level': discoveryLevel,
-      // Custom mode - Simple
-      'avoid_repeating_songs': avoidRepeatingSongs,
-      'avoid_repeating_artists': avoidRepeatingArtists,
-      'avoid_repeating_albums': avoidRepeatingAlbums,
-      'favor_least_played': favorLeastPlayed,
-      // Custom mode - Advanced
-      'least_played_weight': leastPlayedWeight,
-      'most_played_weight': mostPlayedWeight,
-      'favorites_weight': favoritesWeight,
-      'suggest_less_weight': suggestLessWeight,
-      'playlist_songs_weight': playlistSongsWeight,
     };
-  }
-
-  static ShufflePersonality _parsePersonality(String? val) {
-    switch (val) {
-      case 'default':
-        return ShufflePersonality.defaultMode;
-      case 'explorer':
-        return ShufflePersonality.explorer;
-      case 'consistent':
-        return ShufflePersonality.consistent;
-      case 'custom':
-        return ShufflePersonality.custom;
-      default:
-        return ShufflePersonality.smart;
-    }
-  }
-
-  static String _personalityToString(ShufflePersonality p) {
-    switch (p) {
-      case ShufflePersonality.smart:
-        return 'smart';
-      case ShufflePersonality.defaultMode:
-        return 'default';
-      case ShufflePersonality.explorer:
-        return 'explorer';
-      case ShufflePersonality.consistent:
-        return 'consistent';
-      case ShufflePersonality.custom:
-        return 'custom';
-    }
   }
 
   static double _parseDiscoveryLevel(Object? val) {
@@ -146,19 +59,7 @@ class ShuffleConfig extends Equatable {
     double? favoriteMultiplier,
     double? suggestLessMultiplier,
     int? historyLimit,
-    ShufflePersonality? personality,
     double? discoveryLevel,
-    // Custom mode - Simple
-    bool? avoidRepeatingSongs,
-    bool? avoidRepeatingArtists,
-    bool? avoidRepeatingAlbums,
-    bool? favorLeastPlayed,
-    // Custom mode - Advanced
-    int? leastPlayedWeight,
-    int? mostPlayedWeight,
-    int? favoritesWeight,
-    int? suggestLessWeight,
-    int? playlistSongsWeight,
   }) {
     return ShuffleConfig(
       enabled: enabled ?? this.enabled,
@@ -168,20 +69,7 @@ class ShuffleConfig extends Equatable {
       suggestLessMultiplier:
           suggestLessMultiplier ?? this.suggestLessMultiplier,
       historyLimit: historyLimit ?? this.historyLimit,
-      personality: personality ?? this.personality,
       discoveryLevel: discoveryLevel ?? this.discoveryLevel,
-      // Custom mode - Simple
-      avoidRepeatingSongs: avoidRepeatingSongs ?? this.avoidRepeatingSongs,
-      avoidRepeatingArtists:
-          avoidRepeatingArtists ?? this.avoidRepeatingArtists,
-      avoidRepeatingAlbums: avoidRepeatingAlbums ?? this.avoidRepeatingAlbums,
-      favorLeastPlayed: favorLeastPlayed ?? this.favorLeastPlayed,
-      // Custom mode - Advanced
-      leastPlayedWeight: leastPlayedWeight ?? this.leastPlayedWeight,
-      mostPlayedWeight: mostPlayedWeight ?? this.mostPlayedWeight,
-      favoritesWeight: favoritesWeight ?? this.favoritesWeight,
-      suggestLessWeight: suggestLessWeight ?? this.suggestLessWeight,
-      playlistSongsWeight: playlistSongsWeight ?? this.playlistSongsWeight,
     );
   }
 
@@ -193,19 +81,7 @@ class ShuffleConfig extends Equatable {
         favoriteMultiplier,
         suggestLessMultiplier,
         historyLimit,
-        personality,
         discoveryLevel,
-        // Custom mode - Simple
-        avoidRepeatingSongs,
-        avoidRepeatingArtists,
-        avoidRepeatingAlbums,
-        favorLeastPlayed,
-        // Custom mode - Advanced
-        leastPlayedWeight,
-        mostPlayedWeight,
-        favoritesWeight,
-        suggestLessWeight,
-        playlistSongsWeight,
       ];
 }
 
@@ -240,41 +116,24 @@ class HistoryEntry extends Equatable {
 class ShuffleState extends Equatable {
   final ShuffleConfig config;
 
-  /// App version that last migrated this state. Null means the state predates
-  /// the smart default and must be migrated (see `migrateShuffleState`).
-  final String? savedAppVersion;
-
-  const ShuffleState({
-    this.config = const ShuffleConfig(),
-    this.savedAppVersion,
-  });
+  const ShuffleState({this.config = const ShuffleConfig()});
 
   factory ShuffleState.fromJson(Map<String, dynamic> json) {
     return ShuffleState(
       config: json['config'] != null
           ? ShuffleConfig.fromJson(json['config'])
           : const ShuffleConfig(),
-      savedAppVersion: json['savedAppVersion'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'config': config.toJson(),
-      'savedAppVersion': savedAppVersion,
-    };
+    return {'config': config.toJson()};
   }
 
-  ShuffleState copyWith({
-    ShuffleConfig? config,
-    String? savedAppVersion,
-  }) {
-    return ShuffleState(
-      config: config ?? this.config,
-      savedAppVersion: savedAppVersion ?? this.savedAppVersion,
-    );
+  ShuffleState copyWith({ShuffleConfig? config}) {
+    return ShuffleState(config: config ?? this.config);
   }
 
   @override
-  List<Object?> get props => [config, savedAppVersion];
+  List<Object?> get props => [config];
 }

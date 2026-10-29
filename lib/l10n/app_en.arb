@@ -2058,45 +2058,17 @@
   "@profileSuggestLess": {
     "description": "Stat label for the suggest-less songs count"
   },
-  "profileShuffleSection": "Shuffle Personality",
+  "profileShuffleSection": "Shuffle",
   "@profileShuffleSection": {
-    "description": "Section header for shuffle personality"
+    "description": "Section header for shuffle settings"
   },
-  "profileSmart": "Smart",
+  "profileSmart": "Smart shuffle",
   "@profileSmart": {
-    "description": "Shuffle personality option: Smart"
+    "description": "Title of the smart shuffle block on the profile screen"
   },
-  "profileSmartSubtitle": "Learns your taste, trends and context. Recommended",
+  "profileSmartSubtitle": "Learns your taste, trends and context",
   "@profileSmartSubtitle": {
-    "description": "Subtitle for the Smart shuffle personality"
-  },
-  "profileDefault": "Default",
-  "@profileDefault": {
-    "description": "Shuffle personality option: Default"
-  },
-  "profileDefaultSubtitle": "Balanced mix with anti-repeat",
-  "@profileDefaultSubtitle": {
-    "description": "Subtitle for the Default shuffle personality"
-  },
-  "profileExplorer": "Explorer",
-  "@profileExplorer": {
-    "description": "Shuffle personality option: Explorer"
-  },
-  "profileExplorerSubtitle": "Prioritizes new & rare songs",
-  "@profileExplorerSubtitle": {
-    "description": "Subtitle for the Explorer shuffle personality"
-  },
-  "profileConsistent": "Consistent",
-  "@profileConsistent": {
-    "description": "Shuffle personality option: Consistent"
-  },
-  "profileConsistentSubtitle": "Favorites heavy",
-  "@profileConsistentSubtitle": {
-    "description": "Subtitle for the Consistent shuffle personality"
-  },
-  "profileCustomSubtitle": "Configure your own shuffle",
-  "@profileCustomSubtitle": {
-    "description": "Subtitle for the Custom shuffle personality"
+    "description": "Subtitle for the smart shuffle block"
   },
   "profileChangeName": "Change Display Name",
   "@profileChangeName": {
@@ -2123,22 +2095,6 @@
       }
     }
   },
-  "profilePersonalitySaved": "Personality saved",
-  "@profilePersonalitySaved": {
-    "description": "Snackbar shown after saving the shuffle personality"
-  },
-  "profileAppliesNextQueue": "Applies to the next queue",
-  "@profileAppliesNextQueue": {
-    "description": "Note that the personality applies to the next queue"
-  },
-  "profileConfigureCustomShuffle": "Configure Custom Shuffle",
-  "@profileConfigureCustomShuffle": {
-    "description": "Row title to configure custom shuffle"
-  },
-  "profileConfigureCustomShuffleSubtitle": "Adjust shuffle behavior settings",
-  "@profileConfigureCustomShuffleSubtitle": {
-    "description": "Subtitle for the custom shuffle configuration row"
-  },
   "profileThemeStorage": "Theme & storage",
   "@profileThemeStorage": {
     "description": "Subtitle for the settings entry on the profile screen"
@@ -2154,10 +2110,6 @@
   "profileFamiliarToDiscover": "Familiar to Discover",
   "@profileFamiliarToDiscover": {
     "description": "Title for the discovery level slider"
-  },
-  "profileLegacyCaption": "Legacy: fixed behaviour, kept for compatibility",
-  "@profileLegacyCaption": {
-    "description": "Caption shown under the Legacy shuffle personality option in the profile screen"
   },
   "storageManageTitle": "Manage Storage",
   "@storageManageTitle": {
@@ -2885,10 +2837,6 @@
   "@settingsCrumbManageStorage": {
     "description": "Breadcrumb path shown under settings search results for Manage Storage"
   },
-  "settingsCrumbProfileShuffle": "Profile › Shuffle",
-  "@settingsCrumbProfileShuffle": {
-    "description": "Breadcrumb path shown under settings search results for Profile shuffle"
-  },
   "settingsKwLibrary": "scan,folders,filters,songs",
   "@settingsKwLibrary": {
     "description": "Comma-separated extra search keywords for the Library settings page"
@@ -3136,10 +3084,6 @@
   "settingsKwAutoDelete": "prune,cleanup,retention,old",
   "@settingsKwAutoDelete": {
     "description": "Comma-separated search keywords for the Auto-Delete Old Backups setting"
-  },
-  "settingsKwShuffle": "shuffle,personality,weights,random,explorer",
-  "@settingsKwShuffle": {
-    "description": "Comma-separated search keywords for the Configure Custom Shuffle setting"
   },
   "setupUnableToAccessFolder": "Unable to access selected folder",
   "@setupUnableToAccessFolder": {
@@ -5090,93 +5034,9 @@
   "@shuffleResetDone": {
     "description": "Snackbar shown after resetting shuffle settings to defaults"
   },
-  "shuffleSaved": "Settings saved",
-  "@shuffleSaved": {
-    "description": "Snackbar shown after saving shuffle settings"
-  },
-  "shuffleUnsavedTitle": "Unsaved Changes",
-  "@shuffleUnsavedTitle": {
-    "description": "Dialog title for unsaved shuffle settings changes"
-  },
-  "shuffleUnsavedMessage": "Do you want to save your changes?",
-  "@shuffleUnsavedMessage": {
-    "description": "Dialog message asking whether to save unsaved shuffle changes"
-  },
-  "shuffleDiscard": "Discard",
-  "@shuffleDiscard": {
-    "description": "Button to discard unsaved shuffle changes"
-  },
-  "shuffleTitle": "Custom Shuffle Settings",
-  "@shuffleTitle": {
-    "description": "App bar title for Custom Shuffle Settings"
-  },
   "shuffleReset": "Reset",
   "@shuffleReset": {
     "description": "Reset label shared by shuffle settings and quick actions settings"
-  },
-  "shuffleNextQueueNote": "Changes will apply to next queue",
-  "@shuffleNextQueueNote": {
-    "description": "Note that shuffle changes apply to the next queue"
-  },
-  "shuffleBasicSettings": "Basic Settings",
-  "@shuffleBasicSettings": {
-    "description": "Section title for basic shuffle settings"
-  },
-  "shuffleAvoidSongsTitle": "Avoid Repeating Songs",
-  "@shuffleAvoidSongsTitle": {
-    "description": "Toggle title to avoid repeating songs"
-  },
-  "shuffleAvoidSongsSubtitle": "Reduce chance of playing recently played songs",
-  "@shuffleAvoidSongsSubtitle": {
-    "description": "Subtitle explaining reduced chance of recently played songs"
-  },
-  "shuffleAvoidArtistsTitle": "Avoid Repeating Artists",
-  "@shuffleAvoidArtistsTitle": {
-    "description": "Toggle title to avoid repeating artists"
-  },
-  "shuffleAvoidArtistsSubtitle": "Reduce chance of playing same artist consecutively",
-  "@shuffleAvoidArtistsSubtitle": {
-    "description": "Subtitle explaining reduced chance of the same artist consecutively"
-  },
-  "shuffleAvoidAlbumsTitle": "Avoid Repeating Albums",
-  "@shuffleAvoidAlbumsTitle": {
-    "description": "Toggle title to avoid repeating albums"
-  },
-  "shuffleAvoidAlbumsSubtitle": "Reduce chance of playing same album consecutively",
-  "@shuffleAvoidAlbumsSubtitle": {
-    "description": "Subtitle explaining reduced chance of the same album consecutively"
-  },
-  "shuffleAdvancedTitle": "Advanced Settings",
-  "@shuffleAdvancedTitle": {
-    "description": "Section title for advanced shuffle settings"
-  },
-  "shuffleAdvancedSubtitle": "Fine-tune individual weight values",
-  "@shuffleAdvancedSubtitle": {
-    "description": "Subtitle for fine-tuning individual weight values"
-  },
-  "shuffleWeightValuesTitle": "Weight Values (-99 to +99)",
-  "@shuffleWeightValuesTitle": {
-    "description": "Title for the shuffle weight values range"
-  },
-  "shuffleWeightValuesHint": "0 = neutral, negative = penalty, positive = boost",
-  "@shuffleWeightValuesHint": {
-    "description": "Hint explaining weight value meaning"
-  },
-  "shuffleWeightLeastPlayed": "Least Played Songs",
-  "@shuffleWeightLeastPlayed": {
-    "description": "Label for the least played songs weight"
-  },
-  "shuffleWeightMostPlayed": "Most Played Songs",
-  "@shuffleWeightMostPlayed": {
-    "description": "Label for the most played songs weight"
-  },
-  "shuffleWeightSuggestLess": "Suggest Less Songs",
-  "@shuffleWeightSuggestLess": {
-    "description": "Label for the suggest less songs weight"
-  },
-  "shuffleWeightPlaylistSongs": "Songs in Playlists",
-  "@shuffleWeightPlaylistSongs": {
-    "description": "Label for the playlist songs weight"
   },
   "lyricsGroupDisplayTiming": "Display & Timing",
   "@lyricsGroupDisplayTiming": {

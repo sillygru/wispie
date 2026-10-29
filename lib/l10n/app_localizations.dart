@@ -2799,65 +2799,23 @@ abstract class AppLocalizations {
   /// **'Suggest-less'**
   String get profileSuggestLess;
 
-  /// Section header for shuffle personality
+  /// Section header for shuffle settings
   ///
   /// In en, this message translates to:
-  /// **'Shuffle Personality'**
+  /// **'Shuffle'**
   String get profileShuffleSection;
 
-  /// Shuffle personality option: Smart
+  /// Title of the smart shuffle block on the profile screen
   ///
   /// In en, this message translates to:
-  /// **'Smart'**
+  /// **'Smart shuffle'**
   String get profileSmart;
 
-  /// Subtitle for the Smart shuffle personality
+  /// Subtitle for the smart shuffle block
   ///
   /// In en, this message translates to:
-  /// **'Learns your taste, trends and context. Recommended'**
+  /// **'Learns your taste, trends and context'**
   String get profileSmartSubtitle;
-
-  /// Shuffle personality option: Default
-  ///
-  /// In en, this message translates to:
-  /// **'Default'**
-  String get profileDefault;
-
-  /// Subtitle for the Default shuffle personality
-  ///
-  /// In en, this message translates to:
-  /// **'Balanced mix with anti-repeat'**
-  String get profileDefaultSubtitle;
-
-  /// Shuffle personality option: Explorer
-  ///
-  /// In en, this message translates to:
-  /// **'Explorer'**
-  String get profileExplorer;
-
-  /// Subtitle for the Explorer shuffle personality
-  ///
-  /// In en, this message translates to:
-  /// **'Prioritizes new & rare songs'**
-  String get profileExplorerSubtitle;
-
-  /// Shuffle personality option: Consistent
-  ///
-  /// In en, this message translates to:
-  /// **'Consistent'**
-  String get profileConsistent;
-
-  /// Subtitle for the Consistent shuffle personality
-  ///
-  /// In en, this message translates to:
-  /// **'Favorites heavy'**
-  String get profileConsistentSubtitle;
-
-  /// Subtitle for the Custom shuffle personality
-  ///
-  /// In en, this message translates to:
-  /// **'Configure your own shuffle'**
-  String get profileCustomSubtitle;
 
   /// Title of the change display name dialog
   ///
@@ -2889,30 +2847,6 @@ abstract class AppLocalizations {
   /// **'Current: {name}'**
   String profileCurrentName(String name);
 
-  /// Snackbar shown after saving the shuffle personality
-  ///
-  /// In en, this message translates to:
-  /// **'Personality saved'**
-  String get profilePersonalitySaved;
-
-  /// Note that the personality applies to the next queue
-  ///
-  /// In en, this message translates to:
-  /// **'Applies to the next queue'**
-  String get profileAppliesNextQueue;
-
-  /// Row title to configure custom shuffle
-  ///
-  /// In en, this message translates to:
-  /// **'Configure Custom Shuffle'**
-  String get profileConfigureCustomShuffle;
-
-  /// Subtitle for the custom shuffle configuration row
-  ///
-  /// In en, this message translates to:
-  /// **'Adjust shuffle behavior settings'**
-  String get profileConfigureCustomShuffleSubtitle;
-
   /// Subtitle for the settings entry on the profile screen
   ///
   /// In en, this message translates to:
@@ -2936,12 +2870,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Familiar to Discover'**
   String get profileFamiliarToDiscover;
-
-  /// Caption shown under the Legacy shuffle personality option in the profile screen
-  ///
-  /// In en, this message translates to:
-  /// **'Legacy: fixed behaviour, kept for compatibility'**
-  String get profileLegacyCaption;
 
   /// Title of the Manage Storage screen and its settings entry
   ///
@@ -3951,12 +3879,6 @@ abstract class AppLocalizations {
   /// **'Settings › Data Management › Manage Storage'**
   String get settingsCrumbManageStorage;
 
-  /// Breadcrumb path shown under settings search results for Profile shuffle
-  ///
-  /// In en, this message translates to:
-  /// **'Profile › Shuffle'**
-  String get settingsCrumbProfileShuffle;
-
   /// Comma-separated extra search keywords for the Library settings page
   ///
   /// In en, this message translates to:
@@ -4328,12 +4250,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'prune,cleanup,retention,old'**
   String get settingsKwAutoDelete;
-
-  /// Comma-separated search keywords for the Configure Custom Shuffle setting
-  ///
-  /// In en, this message translates to:
-  /// **'shuffle,personality,weights,random,explorer'**
-  String get settingsKwShuffle;
 
   /// Folder access error shared by setup, folder management, and home
   ///
@@ -6669,137 +6585,11 @@ abstract class AppLocalizations {
   /// **'Settings reset to defaults'**
   String get shuffleResetDone;
 
-  /// Snackbar shown after saving shuffle settings
-  ///
-  /// In en, this message translates to:
-  /// **'Settings saved'**
-  String get shuffleSaved;
-
-  /// Dialog title for unsaved shuffle settings changes
-  ///
-  /// In en, this message translates to:
-  /// **'Unsaved Changes'**
-  String get shuffleUnsavedTitle;
-
-  /// Dialog message asking whether to save unsaved shuffle changes
-  ///
-  /// In en, this message translates to:
-  /// **'Do you want to save your changes?'**
-  String get shuffleUnsavedMessage;
-
-  /// Button to discard unsaved shuffle changes
-  ///
-  /// In en, this message translates to:
-  /// **'Discard'**
-  String get shuffleDiscard;
-
-  /// App bar title for Custom Shuffle Settings
-  ///
-  /// In en, this message translates to:
-  /// **'Custom Shuffle Settings'**
-  String get shuffleTitle;
-
   /// Reset label shared by shuffle settings and quick actions settings
   ///
   /// In en, this message translates to:
   /// **'Reset'**
   String get shuffleReset;
-
-  /// Note that shuffle changes apply to the next queue
-  ///
-  /// In en, this message translates to:
-  /// **'Changes will apply to next queue'**
-  String get shuffleNextQueueNote;
-
-  /// Section title for basic shuffle settings
-  ///
-  /// In en, this message translates to:
-  /// **'Basic Settings'**
-  String get shuffleBasicSettings;
-
-  /// Toggle title to avoid repeating songs
-  ///
-  /// In en, this message translates to:
-  /// **'Avoid Repeating Songs'**
-  String get shuffleAvoidSongsTitle;
-
-  /// Subtitle explaining reduced chance of recently played songs
-  ///
-  /// In en, this message translates to:
-  /// **'Reduce chance of playing recently played songs'**
-  String get shuffleAvoidSongsSubtitle;
-
-  /// Toggle title to avoid repeating artists
-  ///
-  /// In en, this message translates to:
-  /// **'Avoid Repeating Artists'**
-  String get shuffleAvoidArtistsTitle;
-
-  /// Subtitle explaining reduced chance of the same artist consecutively
-  ///
-  /// In en, this message translates to:
-  /// **'Reduce chance of playing same artist consecutively'**
-  String get shuffleAvoidArtistsSubtitle;
-
-  /// Toggle title to avoid repeating albums
-  ///
-  /// In en, this message translates to:
-  /// **'Avoid Repeating Albums'**
-  String get shuffleAvoidAlbumsTitle;
-
-  /// Subtitle explaining reduced chance of the same album consecutively
-  ///
-  /// In en, this message translates to:
-  /// **'Reduce chance of playing same album consecutively'**
-  String get shuffleAvoidAlbumsSubtitle;
-
-  /// Section title for advanced shuffle settings
-  ///
-  /// In en, this message translates to:
-  /// **'Advanced Settings'**
-  String get shuffleAdvancedTitle;
-
-  /// Subtitle for fine-tuning individual weight values
-  ///
-  /// In en, this message translates to:
-  /// **'Fine-tune individual weight values'**
-  String get shuffleAdvancedSubtitle;
-
-  /// Title for the shuffle weight values range
-  ///
-  /// In en, this message translates to:
-  /// **'Weight Values (-99 to +99)'**
-  String get shuffleWeightValuesTitle;
-
-  /// Hint explaining weight value meaning
-  ///
-  /// In en, this message translates to:
-  /// **'0 = neutral, negative = penalty, positive = boost'**
-  String get shuffleWeightValuesHint;
-
-  /// Label for the least played songs weight
-  ///
-  /// In en, this message translates to:
-  /// **'Least Played Songs'**
-  String get shuffleWeightLeastPlayed;
-
-  /// Label for the most played songs weight
-  ///
-  /// In en, this message translates to:
-  /// **'Most Played Songs'**
-  String get shuffleWeightMostPlayed;
-
-  /// Label for the suggest less songs weight
-  ///
-  /// In en, this message translates to:
-  /// **'Suggest Less Songs'**
-  String get shuffleWeightSuggestLess;
-
-  /// Label for the playlist songs weight
-  ///
-  /// In en, this message translates to:
-  /// **'Songs in Playlists'**
-  String get shuffleWeightPlaylistSongs;
 
   /// Group header label for the Display & Timing section of Lyrics settings
   ///

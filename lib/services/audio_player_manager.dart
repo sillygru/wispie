@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart'; // For AppLifecycleListener
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
 import 'dart:isolate';
@@ -15,7 +14,6 @@ import '../models/queue_snapshot.dart';
 import '../models/shuffle_config.dart';
 import '../domain/models/play_source.dart';
 import '../domain/services/remembered_order.dart';
-import '../domain/services/shuffle_migration.dart';
 import '../domain/services/shuffle_selector.dart';
 import '../domain/services/smart_weights.dart';
 import '../domain/services/song_affinity.dart';
@@ -118,7 +116,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Set<String> _favoriteKeys = const <String>{};
   Set<String> _suggestLessKeys = const <String>{};
   Set<String> _hiddenKeys = const <String>{};
-  // Songs belonging to at least one user playlist, for `playlistSongsWeight`.
+  // Songs belonging to at least one user playlist, for the shuffle boost.
   Set<String> _playlistKeys = const <String>{};
 
   // Merged song groups for shuffle weighting
@@ -1049,24 +1047,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   Future<void> _initPersistence() async {
-    // Load shuffle state
     final savedShuffleJson = await _storageService.loadShuffleState();
-    _shuffleState = migrateShuffleState(
-      savedShuffleJson,
-      await _currentAppVersion(),
-    );
+    _shuffleState = savedShuffleJson == null
+        ? const ShuffleState()
+        : ShuffleState.fromJson(savedShuffleJson);
     shuffleStateNotifier.value = _shuffleState;
     shuffleNotifier.value = _shuffleState.config.enabled;
     await _saveShuffleState();
-  }
-
-  Future<String> _currentAppVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      return '${info.version}+${info.buildNumber}';
-    } catch (_) {
-      return 'unknown';
-    }
   }
 
   void _initVolumeMonitoring() {
@@ -1932,9 +1919,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Future<void> init(List<Song> songs, {bool autoSelect = false}) async {
     _allSongs = songs;
     _tasteDirty = true;
-    if (_shuffleState.config.personality == ShufflePersonality.smart) {
-      unawaited(tasteSnapshot());
-    }
+    unawaited(tasteSnapshot());
     _songMap = {for (var s in songs) s.filename: s};
     await _player.setShuffleModeEnabled(false);
 
@@ -3053,9 +3038,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   Future<TasteSnapshot?> _tasteForShuffle() async {
-    if (_shuffleState.config.personality != ShufflePersonality.smart) {
-      return null;
-    }
     return tasteSnapshot().timeout(_tasteWait, onTimeout: () => _taste);
   }
 
@@ -3116,8 +3098,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     }
   }
 
-  ShuffleWeights _weightsFor() =>
-      ShuffleWeights.forPersonality(_shuffleState.config);
+  ShuffleWeights _weightsFor() => ShuffleWeights.fallback(_shuffleState.config);
 
   /// Shuffles over most of the library are "library" picks. Anything smaller
   /// is scoped to an album, artist, playlist or search result.
@@ -3160,7 +3141,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     ];
   }
 
-  List<ShuffleCandidate<_VirtualShuffleItem>> _legacyCandidates(
+  List<ShuffleCandidate<_VirtualShuffleItem>> _fallbackCandidates(
     List<_VirtualShuffleItem> virtual,
     Map<String, SongAffinity> affinities,
     Map<String, int> historyIndex,
@@ -3286,7 +3267,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       );
     } else {
       final candidates =
-          _legacyCandidates(virtual, model.affinities, model.historyIndex);
+          _fallbackCandidates(virtual, model.affinities, model.historyIndex);
       seed = selectSeed(candidates, _weightsFor())?.payload;
     }
 
@@ -3325,7 +3306,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       );
     } else {
       final candidates =
-          _legacyCandidates(virtual, model.affinities, model.historyIndex);
+          _fallbackCandidates(virtual, model.affinities, model.historyIndex);
       ordered = [
         for (final c in orderQueue(
           candidates,

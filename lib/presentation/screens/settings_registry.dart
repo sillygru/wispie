@@ -6,7 +6,6 @@ import '../tokens/app_icons.dart';
 import 'about_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'backup_management_screen.dart';
-import 'custom_shuffle_settings_screen.dart';
 import 'backup_settings_screen.dart';
 import 'folder_management_screen.dart';
 import 'home_settings_screen.dart';
@@ -666,16 +665,6 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
       keywords: _kw(l.settingsKwPullToRefresh),
       open: () =>
           const LibrarySettingsScreen(highlightId: 'library.pull_to_refresh'),
-    ),
-
-    // ---------------------------------------------------------------- shuffle
-    SettingsDestination(
-      icon: AppIcons.tune,
-      title: l.profileConfigureCustomShuffle,
-      subtitle: l.profileConfigureCustomShuffleSubtitle,
-      breadcrumb: l.settingsCrumbProfileShuffle,
-      keywords: _kw(l.settingsKwShuffle),
-      open: () => const CustomShuffleSettingsScreen(),
     ),
   ];
 }

@@ -20,7 +20,6 @@ import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
 import 'settings_screen.dart';
 import 'backup_management_screen.dart';
-import 'custom_shuffle_settings_screen.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
@@ -38,8 +37,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen>
     with ScrollChromeMixin {
   String _appVersion = '';
-  ShufflePersonality? _pendingPersonality;
-  bool _hasPersonalityChanges = false;
   double? _discoveryDraft;
 
   @override
@@ -206,7 +203,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                   ),
                 ),
 
-                // Shuffle personality
+                // Shuffle
                 SliverToBoxAdapter(
                   child: AppSectionHeader(label: l10n.profileShuffleSection),
                 ),
@@ -217,146 +214,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                     ),
                     child: ValueListenableBuilder<ShuffleState>(
                       valueListenable: audioManager.shuffleStateNotifier,
-                      builder: (context, shuffleState, child) {
-                        final current = shuffleState.config.personality;
-                        final selectedValue = _pendingPersonality ?? current;
-
-                        return AppSurface(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppTokens.s2,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              RadioGroup<ShufflePersonality>(
-                                groupValue: selectedValue,
-                                onChanged: (v) {
-                                  if (v == null) return;
-                                  setState(() {
-                                    _pendingPersonality = v;
-                                    _hasPersonalityChanges = v != current;
-                                  });
-                                },
-                                child: Column(
-                                  children: [
-                                    _PersonalityTile(
-                                      title: l10n.profileSmart,
-                                      subtitle: l10n.profileSmartSubtitle,
-                                      value: ShufflePersonality.smart,
-                                    ),
-                                    _LegacyCaption(),
-                                    _PersonalityTile(
-                                      title: l10n.profileDefault,
-                                      subtitle: l10n.profileDefaultSubtitle,
-                                      value: ShufflePersonality.defaultMode,
-                                    ),
-                                    _PersonalityTile(
-                                      title: l10n.profileExplorer,
-                                      subtitle: l10n.profileExplorerSubtitle,
-                                      value: ShufflePersonality.explorer,
-                                    ),
-                                    _PersonalityTile(
-                                      title: l10n.profileConsistent,
-                                      subtitle: l10n.profileConsistentSubtitle,
-                                      value: ShufflePersonality.consistent,
-                                    ),
-                                    _PersonalityTile(
-                                      title: l10n.appearanceIntensityCustom,
-                                      subtitle: l10n.profileCustomSubtitle,
-                                      value: ShufflePersonality.custom,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _discoveryControl(
-                                audioManager,
-                                shuffleState,
-                                selectedValue,
-                              ),
-                              if (_hasPersonalityChanges)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    AppTokens.s4,
-                                    AppTokens.s2,
-                                    AppTokens.s2,
-                                    AppTokens.s1,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          l10n.profileAppliesNextQueue,
-                                          style: AppTokens.meta(context)
-                                              .copyWith(color: accent),
-                                        ),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => setState(() {
-                                          _pendingPersonality = null;
-                                          _hasPersonalityChanges = false;
-                                        }),
-                                        child: Text(l10n.actionCancel),
-                                      ),
-                                      const SizedBox(width: AppTokens.s2),
-                                      FilledButton(
-                                        onPressed: () {
-                                          audioManager.updateShuffleConfig(
-                                            shuffleState.config.copyWith(
-                                              personality: _pendingPersonality!,
-                                            ),
-                                            applyToCurrentQueue: false,
-                                          );
-                                          setState(() {
-                                            _pendingPersonality = null;
-                                            _hasPersonalityChanges = false;
-                                          });
-                                          appSnack(context,
-                                              l10n.profilePersonalitySaved,
-                                              tone: AppTone.success);
-                                        },
-                                        child: Text(l10n.metadataFixApply),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: ValueListenableBuilder<ShuffleState>(
-                    valueListenable: audioManager.shuffleStateNotifier,
-                    builder: (context, shuffleState, child) {
-                      if (shuffleState.config.personality !=
-                          ShufflePersonality.custom) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTokens.s4,
-                          AppTokens.s3,
-                          AppTokens.s4,
-                          0,
-                        ),
-                        child: AppSurfaceGroup(
+                      builder: (context, shuffleState, child) => AppSurface(
+                        padding: const EdgeInsets.only(bottom: AppTokens.s1),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _navRow(
-                              icon: AppIcons.tune,
-                              title: l10n.profileConfigureCustomShuffle,
-                              subtitle:
-                                  l10n.profileConfigureCustomShuffleSubtitle,
-                              accent: accent,
-                              onTap: () => context.pushApp(
-                                const CustomShuffleSettingsScreen(),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                AppTokens.s4,
+                                AppTokens.s3,
+                                AppTokens.s4,
+                                0,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    l10n.profileSmart,
+                                    style: AppTokens.rowTitle(context),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    l10n.profileSmartSubtitle,
+                                    style: AppTokens.rowSubtitle(context),
+                                  ),
+                                ],
                               ),
                             ),
+                            _discoveryControl(audioManager, shuffleState),
                           ],
                         ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
                 ),
 
@@ -595,203 +484,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                               ValueListenableBuilder<ShuffleState>(
                                 valueListenable:
                                     audioManager.shuffleStateNotifier,
-                                builder: (context, shuffleState, child) {
-                                  final current =
-                                      shuffleState.config.personality;
-                                  final selectedValue =
-                                      _pendingPersonality ?? current;
-                                  // One card per row under the compact seam:
-                                  // two 155px cards leave the subtitle no room.
-                                  final compact = WideLayout.isCompact(context);
-                                  return Column(
+                                builder: (context, shuffleState, child) =>
+                                    AppSurface(
+                                  padding: const EdgeInsets.only(
+                                    bottom: AppTokens.s1,
+                                  ),
+                                  child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      SizedBox(
-                                        height: 96,
-                                        child: _PersonalityCard(
-                                          title: l10n.profileSmart,
-                                          subtitle: l10n.profileSmartSubtitle,
-                                          value: ShufflePersonality.smart,
-                                          groupValue: selectedValue,
-                                          accent: accent,
-                                          onTap: (v) => setState(() {
-                                            _pendingPersonality = v;
-                                            _hasPersonalityChanges =
-                                                v != current;
-                                          }),
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          AppTokens.s4,
+                                          AppTokens.s3,
+                                          AppTokens.s4,
+                                          0,
                                         ),
-                                      ),
-                                      const SizedBox(height: AppTokens.s3),
-                                      const _LegacyCaption(),
-                                      GridView(
-                                        shrinkWrap: true,
-                                        physics:
-                                            const NeverScrollableScrollPhysics(),
-                                        gridDelegate:
-                                            SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: compact ? 1 : 2,
-                                          crossAxisSpacing: AppTokens.s3,
-                                          mainAxisSpacing: AppTokens.s3,
-                                          mainAxisExtent: 96,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              l10n.profileSmart,
+                                              style:
+                                                  AppTokens.rowTitle(context),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              l10n.profileSmartSubtitle,
+                                              style: AppTokens.rowSubtitle(
+                                                context,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        children: [
-                                          _PersonalityCard(
-                                            title: l10n.profileDefault,
-                                            subtitle:
-                                                l10n.profileDefaultSubtitle,
-                                            value:
-                                                ShufflePersonality.defaultMode,
-                                            groupValue: selectedValue,
-                                            accent: accent,
-                                            onTap: (v) => setState(() {
-                                              _pendingPersonality = v;
-                                              _hasPersonalityChanges =
-                                                  v != current;
-                                            }),
-                                          ),
-                                          _PersonalityCard(
-                                            title: l10n.profileExplorer,
-                                            subtitle:
-                                                l10n.profileExplorerSubtitle,
-                                            value: ShufflePersonality.explorer,
-                                            groupValue: selectedValue,
-                                            accent: accent,
-                                            onTap: (v) => setState(() {
-                                              _pendingPersonality = v;
-                                              _hasPersonalityChanges =
-                                                  v != current;
-                                            }),
-                                          ),
-                                          _PersonalityCard(
-                                            title: l10n.profileConsistent,
-                                            subtitle:
-                                                l10n.profileConsistentSubtitle,
-                                            value:
-                                                ShufflePersonality.consistent,
-                                            groupValue: selectedValue,
-                                            accent: accent,
-                                            onTap: (v) => setState(() {
-                                              _pendingPersonality = v;
-                                              _hasPersonalityChanges =
-                                                  v != current;
-                                            }),
-                                          ),
-                                          _PersonalityCard(
-                                            title:
-                                                l10n.appearanceIntensityCustom,
-                                            subtitle:
-                                                l10n.profileCustomSubtitle,
-                                            value: ShufflePersonality.custom,
-                                            groupValue: selectedValue,
-                                            accent: accent,
-                                            onTap: (v) => setState(() {
-                                              _pendingPersonality = v;
-                                              _hasPersonalityChanges =
-                                                  v != current;
-                                            }),
-                                          ),
-                                        ],
                                       ),
                                       _discoveryControl(
                                         audioManager,
                                         shuffleState,
-                                        selectedValue,
                                       ),
-                                      if (_hasPersonalityChanges)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: AppTokens.s3,
-                                          ),
-                                          child: AppSurface(
-                                            padding: const EdgeInsets.fromLTRB(
-                                              AppTokens.s4,
-                                              AppTokens.s2,
-                                              AppTokens.s2,
-                                              AppTokens.s2,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    l10n.profileAppliesNextQueue,
-                                                    style: AppTokens.meta(
-                                                      context,
-                                                    ).copyWith(color: accent),
-                                                  ),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () => setState(
-                                                    () {
-                                                      _pendingPersonality =
-                                                          null;
-                                                      _hasPersonalityChanges =
-                                                          false;
-                                                    },
-                                                  ),
-                                                  child:
-                                                      Text(l10n.actionCancel),
-                                                ),
-                                                const SizedBox(
-                                                  width: AppTokens.s2,
-                                                ),
-                                                FilledButton(
-                                                  onPressed: () {
-                                                    audioManager
-                                                        .updateShuffleConfig(
-                                                      shuffleState.config
-                                                          .copyWith(
-                                                        personality:
-                                                            _pendingPersonality!,
-                                                      ),
-                                                      applyToCurrentQueue:
-                                                          false,
-                                                    );
-                                                    setState(() {
-                                                      _pendingPersonality =
-                                                          null;
-                                                      _hasPersonalityChanges =
-                                                          false;
-                                                    });
-                                                    appSnack(
-                                                      context,
-                                                      l10n.profilePersonalitySaved,
-                                                      tone: AppTone.success,
-                                                    );
-                                                  },
-                                                  child: Text(
-                                                      l10n.metadataFixApply),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      if (shuffleState.config.personality ==
-                                          ShufflePersonality.custom)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: AppTokens.s3,
-                                          ),
-                                          child: AppSurfaceGroup(
-                                            children: [
-                                              _navRow(
-                                                icon: AppIcons.tune,
-                                                title: l10n
-                                                    .profileConfigureCustomShuffle,
-                                                subtitle: l10n
-                                                    .profileConfigureCustomShuffleSubtitle,
-                                                accent: accent,
-                                                onTap: () => context.pushApp(
-                                                  const CustomShuffleSettingsScreen(),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
                                     ],
-                                  );
-                                },
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -811,10 +546,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
   Widget _discoveryControl(
     AudioPlayerManager audioManager,
     ShuffleState shuffleState,
-    ShufflePersonality selected,
   ) {
     final l10n = AppLocalizations.of(context);
-    if (selected != ShufflePersonality.smart) return const SizedBox.shrink();
     final value = _discoveryDraft ?? shuffleState.config.discoveryLevel;
     final label = value < 0.34
         ? l10n.profileFamiliar
@@ -857,138 +590,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
         size: 20,
         color: AppTokens.fgTertiary,
       ),
-    );
-  }
-}
-
-class _PersonalityCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final ShufflePersonality value;
-  final ShufflePersonality groupValue;
-  final Color accent;
-  final ValueChanged<ShufflePersonality> onTap;
-
-  const _PersonalityCard({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.groupValue,
-    required this.accent,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = value == groupValue;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => onTap(value),
-        child: AnimatedContainer(
-          duration: AppTokens.dFast,
-          curve: AppTokens.cStandard,
-          padding: const EdgeInsets.all(AppTokens.s4),
-          decoration: BoxDecoration(
-            color: selected
-                ? accent.withValues(alpha: AppTokens.accentWashAlpha)
-                : AppTokens.surface(1),
-            borderRadius: AppTokens.brMd,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? accent : Colors.transparent,
-                ),
-                alignment: Alignment.center,
-                child: Container(
-                  width: selected ? 8 : 16,
-                  height: selected ? 8 : 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: selected
-                        ? AppTokens.onAccent(accent)
-                        : Colors.transparent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppTokens.s2),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTokens.rowTitle(context).copyWith(
-                        color: selected ? accent : null,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTokens.rowSubtitle(context).copyWith(
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LegacyCaption extends StatelessWidget {
-  const _LegacyCaption();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppTokens.s4,
-        AppTokens.s3,
-        AppTokens.s4,
-        AppTokens.s1,
-      ),
-      child: Text(
-        AppLocalizations.of(context).profileLegacyCaption,
-        style: AppTokens.meta(context),
-      ),
-    );
-  }
-}
-
-class _PersonalityTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final ShufflePersonality value;
-
-  const _PersonalityTile({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return RadioListTile<ShufflePersonality>(
-      value: value,
-      dense: true,
-      title: Text(title),
-      subtitle: Text(subtitle),
     );
   }
 }

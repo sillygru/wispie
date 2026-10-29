@@ -1598,35 +1598,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileSuggestLess => 'Suggest-less';
 
   @override
-  String get profileShuffleSection => 'Shuffle Personality';
+  String get profileShuffleSection => 'Shuffle';
 
   @override
-  String get profileSmart => 'Smart';
+  String get profileSmart => 'Smart shuffle';
 
   @override
-  String get profileSmartSubtitle =>
-      'Learns your taste, trends and context. Recommended';
-
-  @override
-  String get profileDefault => 'Default';
-
-  @override
-  String get profileDefaultSubtitle => 'Balanced mix with anti-repeat';
-
-  @override
-  String get profileExplorer => 'Explorer';
-
-  @override
-  String get profileExplorerSubtitle => 'Prioritizes new & rare songs';
-
-  @override
-  String get profileConsistent => 'Consistent';
-
-  @override
-  String get profileConsistentSubtitle => 'Favorites heavy';
-
-  @override
-  String get profileCustomSubtitle => 'Configure your own shuffle';
+  String get profileSmartSubtitle => 'Learns your taste, trends and context';
 
   @override
   String get profileChangeName => 'Change Display Name';
@@ -1646,19 +1624,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get profilePersonalitySaved => 'Personality saved';
-
-  @override
-  String get profileAppliesNextQueue => 'Applies to the next queue';
-
-  @override
-  String get profileConfigureCustomShuffle => 'Configure Custom Shuffle';
-
-  @override
-  String get profileConfigureCustomShuffleSubtitle =>
-      'Adjust shuffle behavior settings';
-
-  @override
   String get profileThemeStorage => 'Theme & storage';
 
   @override
@@ -1669,10 +1634,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileFamiliarToDiscover => 'Familiar to Discover';
-
-  @override
-  String get profileLegacyCaption =>
-      'Legacy: fixed behaviour, kept for compatibility';
 
   @override
   String get storageManageTitle => 'Manage Storage';
@@ -2283,9 +2244,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Settings › Data Management › Manage Storage';
 
   @override
-  String get settingsCrumbProfileShuffle => 'Profile › Shuffle';
-
-  @override
   String get settingsKwLibrary => 'scan,folders,filters,songs';
 
   @override
@@ -2479,9 +2437,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsKwAutoDelete => 'prune,cleanup,retention,old';
-
-  @override
-  String get settingsKwShuffle => 'shuffle,personality,weights,random,explorer';
 
   @override
   String get setupUnableToAccessFolder => 'Unable to access selected folder';
@@ -3927,74 +3882,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shuffleResetDone => 'Settings reset to defaults';
 
   @override
-  String get shuffleSaved => 'Settings saved';
-
-  @override
-  String get shuffleUnsavedTitle => 'Unsaved Changes';
-
-  @override
-  String get shuffleUnsavedMessage => 'Do you want to save your changes?';
-
-  @override
-  String get shuffleDiscard => 'Discard';
-
-  @override
-  String get shuffleTitle => 'Custom Shuffle Settings';
-
-  @override
   String get shuffleReset => 'Reset';
-
-  @override
-  String get shuffleNextQueueNote => 'Changes will apply to next queue';
-
-  @override
-  String get shuffleBasicSettings => 'Basic Settings';
-
-  @override
-  String get shuffleAvoidSongsTitle => 'Avoid Repeating Songs';
-
-  @override
-  String get shuffleAvoidSongsSubtitle =>
-      'Reduce chance of playing recently played songs';
-
-  @override
-  String get shuffleAvoidArtistsTitle => 'Avoid Repeating Artists';
-
-  @override
-  String get shuffleAvoidArtistsSubtitle =>
-      'Reduce chance of playing same artist consecutively';
-
-  @override
-  String get shuffleAvoidAlbumsTitle => 'Avoid Repeating Albums';
-
-  @override
-  String get shuffleAvoidAlbumsSubtitle =>
-      'Reduce chance of playing same album consecutively';
-
-  @override
-  String get shuffleAdvancedTitle => 'Advanced Settings';
-
-  @override
-  String get shuffleAdvancedSubtitle => 'Fine-tune individual weight values';
-
-  @override
-  String get shuffleWeightValuesTitle => 'Weight Values (-99 to +99)';
-
-  @override
-  String get shuffleWeightValuesHint =>
-      '0 = neutral, negative = penalty, positive = boost';
-
-  @override
-  String get shuffleWeightLeastPlayed => 'Least Played Songs';
-
-  @override
-  String get shuffleWeightMostPlayed => 'Most Played Songs';
-
-  @override
-  String get shuffleWeightSuggestLess => 'Suggest Less Songs';
-
-  @override
-  String get shuffleWeightPlaylistSongs => 'Songs in Playlists';
 
   @override
   String get lyricsGroupDisplayTiming => 'Display & Timing';

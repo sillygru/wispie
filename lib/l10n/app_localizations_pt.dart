@@ -1636,27 +1636,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Aprende seu gosto, tendências e contexto. Recomendado';
 
   @override
-  String get profileDefault => 'Padrão';
-
-  @override
-  String get profileDefaultSubtitle => 'Mistura equilibrada com anti-repetição';
-
-  @override
-  String get profileExplorer => 'Explorador';
-
-  @override
-  String get profileExplorerSubtitle => 'Prioriza músicas novas e raras';
-
-  @override
-  String get profileConsistent => 'Consistente';
-
-  @override
-  String get profileConsistentSubtitle => 'Com muitos favoritos';
-
-  @override
-  String get profileCustomSubtitle => 'Configure seu próprio aleatório';
-
-  @override
   String get profileChangeName => 'Alterar o nome exibido';
 
   @override
@@ -1674,20 +1653,6 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get profilePersonalitySaved => 'Personalidade salva';
-
-  @override
-  String get profileAppliesNextQueue => 'Aplica-se à próxima fila';
-
-  @override
-  String get profileConfigureCustomShuffle =>
-      'Configurar aleatório personalizado';
-
-  @override
-  String get profileConfigureCustomShuffleSubtitle =>
-      'Ajustar as configurações de comportamento do aleatório';
-
-  @override
   String get profileThemeStorage => 'Tema e armazenamento';
 
   @override
@@ -1698,10 +1663,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get profileFamiliarToDiscover => 'Familiar até Descobrir';
-
-  @override
-  String get profileLegacyCaption =>
-      'Legado: comportamento fixo, mantido por compatibilidade';
 
   @override
   String get storageManageTitle => 'Gerenciar armazenamento';
@@ -2320,9 +2281,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Configurações › Gerenciamento de dados › Gerenciar armazenamento';
 
   @override
-  String get settingsCrumbProfileShuffle => 'Perfil › Aleatório';
-
-  @override
   String get settingsKwLibrary =>
       'escaneamento,pastas,filtros,músicas,biblioteca';
 
@@ -2526,10 +2484,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsKwAutoDelete => 'poda,limpeza,retenção,antigo';
-
-  @override
-  String get settingsKwShuffle =>
-      'embaralhar,personalidade,pesos,aleatório,explorador';
 
   @override
   String get setupUnableToAccessFolder =>
@@ -3991,77 +3945,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get shuffleResetDone => 'Configurações restauradas para o padrão';
 
   @override
-  String get shuffleSaved => 'Configurações salvas';
-
-  @override
-  String get shuffleUnsavedTitle => 'Alterações não salvas';
-
-  @override
-  String get shuffleUnsavedMessage => 'Deseja salvar suas alterações?';
-
-  @override
-  String get shuffleDiscard => 'Descartar';
-
-  @override
-  String get shuffleTitle => 'Configurações de aleatório personalizado';
-
-  @override
   String get shuffleReset => 'Redefinir';
-
-  @override
-  String get shuffleNextQueueNote =>
-      'As alterações serão aplicadas à próxima fila';
-
-  @override
-  String get shuffleBasicSettings => 'Configurações básicas';
-
-  @override
-  String get shuffleAvoidSongsTitle => 'Evitar repetir músicas';
-
-  @override
-  String get shuffleAvoidSongsSubtitle =>
-      'Reduz a chance de tocar músicas reproduzidas recentemente';
-
-  @override
-  String get shuffleAvoidArtistsTitle => 'Evitar repetir artistas';
-
-  @override
-  String get shuffleAvoidArtistsSubtitle =>
-      'Reduz a chance de tocar o mesmo artista em sequência';
-
-  @override
-  String get shuffleAvoidAlbumsTitle => 'Evitar repetir álbuns';
-
-  @override
-  String get shuffleAvoidAlbumsSubtitle =>
-      'Reduz a chance de tocar o mesmo álbum em sequência';
-
-  @override
-  String get shuffleAdvancedTitle => 'Configurações avançadas';
-
-  @override
-  String get shuffleAdvancedSubtitle =>
-      'Ajuste fino dos valores de peso individuais';
-
-  @override
-  String get shuffleWeightValuesTitle => 'Valores de peso (-99 a +99)';
-
-  @override
-  String get shuffleWeightValuesHint =>
-      '0 = neutro, negativo = penalidade, positivo = impulso';
-
-  @override
-  String get shuffleWeightLeastPlayed => 'Músicas menos tocadas';
-
-  @override
-  String get shuffleWeightMostPlayed => 'Músicas mais tocadas';
-
-  @override
-  String get shuffleWeightSuggestLess =>
-      'Músicas sugeridas com menos frequência';
-
-  @override
-  String get shuffleWeightPlaylistSongs => 'Músicas em playlists';
 
   @override
   String get lyricsGroupDisplayTiming => 'Exibição e sincronização';
@@ -7505,27 +7389,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
       'Aprende o teu gosto, tendências e contexto. Recomendado';
 
   @override
-  String get profileDefault => 'Predefinido';
-
-  @override
-  String get profileDefaultSubtitle => 'Mistura equilibrada com anti-repetição';
-
-  @override
-  String get profileExplorer => 'Explorador';
-
-  @override
-  String get profileExplorerSubtitle => 'Prioriza músicas novas e raras';
-
-  @override
-  String get profileConsistent => 'Consistente';
-
-  @override
-  String get profileConsistentSubtitle => 'Com muitos favoritos';
-
-  @override
-  String get profileCustomSubtitle => 'Configura o teu próprio aleatório';
-
-  @override
   String get profileChangeName => 'Alterar o nome exibido';
 
   @override
@@ -7543,20 +7406,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   }
 
   @override
-  String get profilePersonalitySaved => 'Personalidade guardada';
-
-  @override
-  String get profileAppliesNextQueue => 'Aplica-se à próxima fila';
-
-  @override
-  String get profileConfigureCustomShuffle =>
-      'Configurar aleatório personalizado';
-
-  @override
-  String get profileConfigureCustomShuffleSubtitle =>
-      'Ajustar as definições de comportamento do aleatório';
-
-  @override
   String get profileThemeStorage => 'Tema e armazenamento';
 
   @override
@@ -7567,10 +7416,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get profileFamiliarToDiscover => 'Familiar até Descobrir';
-
-  @override
-  String get profileLegacyCaption =>
-      'Legado: comportamento fixo, mantido por compatibilidade';
 
   @override
   String get storageManageTitle => 'Gerir armazenamento';
@@ -8169,9 +8014,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
       'Definições › Gestão de dados › Gerir armazenamento';
 
   @override
-  String get settingsCrumbProfileShuffle => 'Perfil › Aleatório';
-
-  @override
   String get settingsKwLibrary => 'análise,pastas,filtros,músicas,biblioteca';
 
   @override
@@ -8369,10 +8211,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get settingsKwAutoDelete => 'poda,limpeza,retenção,antigo';
-
-  @override
-  String get settingsKwShuffle =>
-      'aleatorizar,personalidade,pesos,aleatório,explorador';
 
   @override
   String get setupUnableToAccessFolder =>
@@ -9827,77 +9665,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get shuffleResetDone => 'Definições restauradas para a predefinição';
 
   @override
-  String get shuffleSaved => 'Definições guardadas';
-
-  @override
-  String get shuffleUnsavedTitle => 'Alterações não guardadas';
-
-  @override
-  String get shuffleUnsavedMessage => 'Desejas guardar as tuas alterações?';
-
-  @override
-  String get shuffleDiscard => 'Descartar';
-
-  @override
-  String get shuffleTitle => 'Definições de aleatório personalizado';
-
-  @override
   String get shuffleReset => 'Redefinir';
-
-  @override
-  String get shuffleNextQueueNote =>
-      'As alterações serão aplicadas à próxima fila';
-
-  @override
-  String get shuffleBasicSettings => 'Definições básicas';
-
-  @override
-  String get shuffleAvoidSongsTitle => 'Evitar repetir músicas';
-
-  @override
-  String get shuffleAvoidSongsSubtitle =>
-      'Reduz a chance de tocar músicas reproduzidas recentemente';
-
-  @override
-  String get shuffleAvoidArtistsTitle => 'Evitar repetir artistas';
-
-  @override
-  String get shuffleAvoidArtistsSubtitle =>
-      'Reduz a chance de tocar o mesmo artista em sequência';
-
-  @override
-  String get shuffleAvoidAlbumsTitle => 'Evitar repetir álbuns';
-
-  @override
-  String get shuffleAvoidAlbumsSubtitle =>
-      'Reduz a chance de tocar o mesmo álbum em sequência';
-
-  @override
-  String get shuffleAdvancedTitle => 'Definições avançadas';
-
-  @override
-  String get shuffleAdvancedSubtitle =>
-      'Ajuste fino dos valores de peso individuais';
-
-  @override
-  String get shuffleWeightValuesTitle => 'Valores de peso (-99 a +99)';
-
-  @override
-  String get shuffleWeightValuesHint =>
-      '0 = neutro, negativo = penalidade, positivo = impulso';
-
-  @override
-  String get shuffleWeightLeastPlayed => 'Músicas menos tocadas';
-
-  @override
-  String get shuffleWeightMostPlayed => 'Músicas mais tocadas';
-
-  @override
-  String get shuffleWeightSuggestLess =>
-      'Músicas sugeridas com menos frequência';
-
-  @override
-  String get shuffleWeightPlaylistSongs => 'Músicas em listas de reprodução';
 
   @override
   String get lyricsGroupDisplayTiming => 'Exibição e sincronização';

@@ -1034,11 +1034,11 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
     switch (id) {
       case 'quick_picks':
-        if (taste != null && config?.personality == ShufflePersonality.smart) {
+        if (taste != null && config != null) {
           return LibraryLogic.smartRecommendedOrder(
             allSongs,
             taste,
-            config!,
+            config,
             state,
           ).take(10).toList();
         }

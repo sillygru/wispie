@@ -1,16 +1,8 @@
 /// Picks and orders songs for shuffle from the taste scores produced by
 /// `song_affinity.dart`.
 ///
-/// Two ideas shape this file:
-///
-/// 1. **Personality is data, not control flow.** Every personality resolves to
-///    a [ShuffleWeights] before any scoring happens, so the scoring maths is
-///    written once. Adding a personality means adding a constructor, not
-///    threading another `if` through the weight function.
-///
-/// 2. **Selecting and ordering are the same maths.** The song that plays first
-///    is drawn from the same distribution as the rest of the queue, so the
-///    listener's taste governs the track they actually hear.
+/// Selecting and ordering are the same maths: the song that plays first is
+/// drawn from the same distribution as the rest of the queue.
 ///
 /// Pure — the only randomness is the injected [Random].
 library;
@@ -52,7 +44,7 @@ class ShuffleCandidate<T> {
 /// to trust recent taste and context.
 enum ShuffleContext { library, scoped, sort }
 
-/// Resolved, personality-independent knobs the scoring maths reads.
+/// Resolved knobs the scoring maths reads.
 class ShuffleWeights {
   /// Exponent applied to affinity. Above 1 sharpens toward favourites, below 1
   /// flattens the field toward uniform.
@@ -99,108 +91,22 @@ class ShuffleWeights {
     required this.historyLimit,
   });
 
-  /// Resolves a [ShuffleConfig] — personality plus every user-facing setting —
-  /// into scoring knobs.
-  ///
-  /// Every field of [ShuffleConfig] is consumed here or by the caller. If a
-  /// setting is exposed in the UI it must have an effect on this struct.
-  ///
-  /// Smart never reaches this scoring path when a taste snapshot exists; without
-  /// one it falls back to the default weights.
-  factory ShuffleWeights.forPersonality(ShuffleConfig config) {
+  /// Weights used when no taste snapshot is ready yet, so a shuffle can still
+  /// start and still respect every user-facing setting.
+  factory ShuffleWeights.fallback(ShuffleConfig config) {
     final antiRepeat = config.antiRepeatEnabled;
     final streak = config.streakBreakerEnabled;
-
-    // Shared explicit-signal handling. `favoriteMultiplier` and
-    // `suggestLessMultiplier` apply in every personality, not just custom.
-    final baseFavorite = config.favoriteMultiplier;
-    final baseSuggestLess = config.suggestLessMultiplier;
-
-    switch (config.personality) {
-      case ShufflePersonality.consistent:
-        return ShuffleWeights(
-          affinityExponent: 2.0,
-          noveltyBoost: 0.05,
-          repeatAversion: antiRepeat ? 0.55 : 0.0,
-          skipAversion: 0.5,
-          burnoutDamping: 0.5,
-          artistSpacing: streak ? 3 : 0,
-          albumSpacing: streak ? 2 : 0,
-          favoriteBoost: max(baseFavorite, 1.4),
-          suggestLessPenalty: baseSuggestLess,
-          playlistBoost: 1.0,
-          historyLimit: config.historyLimit,
-        );
-
-      case ShufflePersonality.explorer:
-        return ShuffleWeights(
-          affinityExponent: 0.4,
-          noveltyBoost: 1.0,
-          repeatAversion: antiRepeat ? 0.95 : 0.0,
-          skipAversion: 0.35,
-          burnoutDamping: 1.5,
-          artistSpacing: streak ? 8 : 0,
-          albumSpacing: streak ? 6 : 0,
-          favoriteBoost: min(baseFavorite, 1.12),
-          suggestLessPenalty: baseSuggestLess,
-          playlistBoost: 1.0,
-          historyLimit: config.historyLimit,
-        );
-
-      case ShufflePersonality.custom:
-        return _customWeights(config);
-
-      case ShufflePersonality.smart:
-      case ShufflePersonality.defaultMode:
-        return ShuffleWeights(
-          affinityExponent: 1.2,
-          noveltyBoost: 0.25,
-          repeatAversion: antiRepeat ? 0.8 : 0.0,
-          skipAversion: 0.45,
-          burnoutDamping: 1.0,
-          artistSpacing: streak ? 5 : 0,
-          albumSpacing: streak ? 4 : 0,
-          favoriteBoost: baseFavorite,
-          suggestLessPenalty: baseSuggestLess,
-          playlistBoost: 1.0,
-          historyLimit: config.historyLimit,
-        );
-    }
-  }
-
-  static ShuffleWeights _customWeights(ShuffleConfig config) {
-    // The two play-count sliders oppose each other; their difference is the
-    // single "familiar vs unfamiliar" axis. `favorLeastPlayed` breaks the tie
-    // when the listener never touched the advanced sliders.
-    var net = (config.mostPlayedWeight - config.leastPlayedWeight) / 100.0;
-    if (config.mostPlayedWeight == 0 && config.leastPlayedWeight == 0) {
-      net = config.favorLeastPlayed ? -0.35 : 0.35;
-    }
-
-    final double affinityExponent =
-        net >= 0 ? 1.0 + net * 1.5 : 1.0 / (1.0 + net.abs() * 1.5);
-
     return ShuffleWeights(
-      affinityExponent: affinityExponent,
-      noveltyBoost: max(0.0, -net) * 1.2,
-      repeatAversion:
-          config.antiRepeatEnabled && config.avoidRepeatingSongs ? 0.85 : 0.0,
+      affinityExponent: 1.2,
+      noveltyBoost: 0.25,
+      repeatAversion: antiRepeat ? 0.8 : 0.0,
       skipAversion: 0.45,
       burnoutDamping: 1.0,
-      artistSpacing: config.avoidRepeatingArtists ? 5 : 0,
-      albumSpacing: config.avoidRepeatingAlbums ? 4 : 0,
-      // A slider left at 0 means "no opinion", which must fall back to the
-      // standard multiplier rather than silently ignoring favorites — the
-      // latter is what made custom mode feel like it disregarded taste.
-      favoriteBoost: config.favoritesWeight == 0
-          ? config.favoriteMultiplier
-          : 1.0 + config.favoritesWeight / 100.0,
-      suggestLessPenalty: config.suggestLessWeight == 0
-          ? config.suggestLessMultiplier
-          : (1.0 - config.suggestLessWeight / 100.0).clamp(0.0, 2.0),
-      // Playlist membership genuinely has no baseline preference, so 0 here
-      // really does mean neutral.
-      playlistBoost: 1.0 + config.playlistSongsWeight / 100.0,
+      artistSpacing: streak ? 5 : 0,
+      albumSpacing: streak ? 4 : 0,
+      favoriteBoost: config.favoriteMultiplier,
+      suggestLessPenalty: config.suggestLessMultiplier,
+      playlistBoost: 1.0,
       historyLimit: config.historyLimit,
     );
   }
@@ -217,7 +123,7 @@ double scoreCandidate<T>(
   final a = affinity.affinity.clamp(0.0, 1.0);
 
   // Familiarity: long-term taste, optionally blended with the 30-day trend,
-  // then sharpened or flattened by the personality's exponent.
+  // then sharpened or flattened by the weight exponent.
   double score = pow(a, weights.affinityExponent).toDouble();
 
   // Discovery: decays smoothly with play count rather than switching off after
@@ -261,10 +167,6 @@ List<double> scoreCandidates<T>(
     [for (final c in candidates) scoreCandidate(c, weights)];
 
 /// Draws one candidate proportional to its score.
-///
-/// This is what the shuffle button uses for the first track. Previously that
-/// song was drawn with a plain uniform `nextInt`, which is why no personality
-/// or weight setting could influence what the listener actually heard.
 ShuffleCandidate<T>? selectSeed<T>(
   List<ShuffleCandidate<T>> candidates,
   ShuffleWeights weights, {

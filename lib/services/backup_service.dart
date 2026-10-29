@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -16,7 +15,7 @@ import 'import_options.dart';
 import 'library_repair_service.dart';
 import 'song_identity_service.dart';
 import '../models/song.dart';
-import '../domain/services/shuffle_migration.dart';
+import '../models/shuffle_config.dart';
 import '../data/repositories/search_index_repository.dart';
 
 export 'backup_manifest.dart' show BackupContentType;
@@ -694,17 +693,6 @@ class BackupService {
   /// Applies every selected category from an extracted archive rooted at
   /// [importPath].
   ///
-  Future<String> _currentAppVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      return '${info.version}+${info.buildNumber}';
-    } catch (_) {
-      return 'unknown';
-    }
-  }
-
-  /// Used by both the "import a zip" and "restore a backup" flows so they can
-  /// never diverge in what they support.
   Future<void> _applyImport({
     required String importPath,
     String? statsDbPath,
@@ -750,11 +738,8 @@ class BackupService {
       if (await shuffleStateFile.exists()) {
         final data = decodeJson(await shuffleStateFile.readAsString());
         if (data is Map) {
-          final migrated = migrateShuffleState(
-            Map<String, dynamic>.from(data),
-            await _currentAppVersion(),
-          );
-          await storage.saveShuffleState(migrated.toJson());
+          final state = ShuffleState.fromJson(Map<String, dynamic>.from(data));
+          await storage.saveShuffleState(state.toJson());
         }
       }
     }
