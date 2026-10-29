@@ -348,7 +348,7 @@ class _DockBody extends ConsumerWidget {
   }
 }
 
-class _NavPill extends StatelessWidget {
+class _NavPill extends StatefulWidget {
   final List<AppNavItem> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
@@ -364,10 +364,42 @@ class _NavPill extends StatelessWidget {
   });
 
   @override
+  State<_NavPill> createState() => _NavPillState();
+}
+
+class _NavPillState extends State<_NavPill>
+    with SingleTickerProviderStateMixin {
+  /// The selected slot, in segments. Animating the *position* rather than the
+  /// highlight's rect keeps it exact while the pill is being resized by the
+  /// mini player's morph.
+  late final AnimationController _slide = AnimationController.unbounded(
+    vsync: this,
+    value: widget.selectedIndex.toDouble(),
+  );
+
+  @override
+  void didUpdateWidget(covariant _NavPill oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedIndex != oldWidget.selectedIndex) {
+      _slide.animateTo(
+        widget.selectedIndex.toDouble(),
+        duration: AppTokens.dBase,
+        curve: AppTokens.cEmphasized,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _slide.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: fill,
+        color: widget.fill,
         borderRadius: AppTokens.brPill,
         boxShadow: AppTokens.shadowFloating,
       ),
@@ -375,51 +407,52 @@ class _NavPill extends StatelessWidget {
         builder: (context, constraints) {
           final double inset = AppTokens.s1 + 2;
           final double segment =
-              (constraints.maxWidth - 2 * inset) / items.length;
-          return Stack(
-            children: [
-              // One indicator slides between destinations instead of each
-              // tab fading its own highlight in and out.
-              AnimatedPositioned(
-                duration: AppTokens.dBase,
-                curve: AppTokens.cEmphasized,
-                left: inset + segment * selectedIndex,
-                top: inset,
-                bottom: inset,
-                width: segment,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: AppTokens.accentWashAlpha),
-                    borderRadius: AppTokens.brPill,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: inset),
-                child: Row(
-                  children: [
-                    for (var i = 0; i < items.length; i++)
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected: i == selectedIndex,
-                          label: items[i].label,
-                          child: Pressable(
-                            haptic: PressHaptic.selection,
-                            spring: AppTokens.springSnappy,
-                            onTap: () => onSelected(i),
-                            child: _PillDestination(
-                              item: items[i],
-                              selected: i == selectedIndex,
-                              accent: accent,
-                            ),
+              (constraints.maxWidth - 2 * inset) / widget.items.length;
+          return AnimatedBuilder(
+            animation: _slide,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: inset),
+              child: Row(
+                children: [
+                  for (var i = 0; i < widget.items.length; i++)
+                    Expanded(
+                      child: Semantics(
+                        button: true,
+                        selected: i == widget.selectedIndex,
+                        label: widget.items[i].label,
+                        child: Pressable(
+                          haptic: PressHaptic.selection,
+                          spring: AppTokens.springSnappy,
+                          onTap: () => widget.onSelected(i),
+                          child: _PillDestination(
+                            item: widget.items[i],
+                            selected: i == widget.selectedIndex,
+                            accent: widget.accent,
                           ),
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
+            ),
+            builder: (context, navRow) => Stack(
+              children: [
+                Positioned(
+                  left: inset + segment * _slide.value,
+                  top: inset,
+                  bottom: inset,
+                  width: segment,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: widget.accent
+                          .withValues(alpha: AppTokens.accentWashAlpha),
+                      borderRadius: AppTokens.brPill,
+                    ),
+                  ),
+                ),
+                navRow!,
+              ],
+            ),
           );
         },
       ),
