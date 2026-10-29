@@ -15,7 +15,7 @@ class MetadataSaveIndicator extends ConsumerWidget {
     final metadataState = ref.watch(metadataSaveProvider);
 
     if (metadataState.status == MetadataSaveStatus.idle) {
-      return const SizedBox.shrink();
+      return const AppPopupSlot(child: null);
     }
 
     final (String text, AppTone tone, AppIconData icon, bool busy) =
@@ -40,6 +40,13 @@ class MetadataSaveIndicator extends ConsumerWidget {
         ),
     };
 
-    return AppStatusBanner(message: text, tone: tone, icon: icon, busy: busy);
+    return AppPopupSlot(
+      child: AppStatusBanner(
+        message: text,
+        tone: tone,
+        icon: icon,
+        busy: busy,
+      ),
+    );
   }
 }

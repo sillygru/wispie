@@ -94,14 +94,16 @@ class _AutoBackupIndicatorState extends ConsumerState<AutoBackupIndicator> {
         maxLines: 2,
       );
     } else {
-      return const SizedBox.shrink();
+      return const AppPopupSlot(child: null);
     }
 
-    return AppBannerDismiss(
-      // A run in progress stays up; finished ones clear themselves.
-      hold: Duration.zero,
-      onDismiss: _dismiss,
-      child: banner,
+    return AppPopupSlot(
+      child: AppBannerDismiss(
+        // A run in progress stays up; finished ones clear themselves.
+        hold: Duration.zero,
+        onDismiss: _dismiss,
+        child: banner,
+      ),
     );
   }
 }

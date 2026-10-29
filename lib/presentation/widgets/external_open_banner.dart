@@ -15,7 +15,7 @@ class ExternalOpenBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(openFilesProvider);
     if (!state.hasPending && state.error == null) {
-      return const SizedBox.shrink();
+      return const AppPopupSlot(child: null);
     }
 
     final notifier = ref.read(openFilesProvider.notifier);
@@ -23,22 +23,24 @@ class ExternalOpenBanner extends ConsumerWidget {
         state.error == null &&
         state.pendingImport.any((file) => !file.isRemote);
 
-    return AppBannerDismiss(
-      hold: Duration.zero,
-      onDismiss: () =>
-          state.error != null ? notifier.clearError() : notifier.dismiss(),
-      child: AppStatusBanner(
-        message: state.error ?? state.bannerLabel,
-        tone: state.error != null ? AppTone.danger : AppTone.info,
-        icon: state.error != null ? AppIcons.error : AppIcons.musicNote,
-        busy: state.isImporting,
-        maxLines: 2,
-        actionLabel: canImport && !state.isImporting
-            ? context.l10n.externalOpenAddToLibrary
-            : null,
-        onAction: notifier.importToLibrary,
+    return AppPopupSlot(
+      child: AppBannerDismiss(
+        hold: Duration.zero,
         onDismiss: () =>
             state.error != null ? notifier.clearError() : notifier.dismiss(),
+        child: AppStatusBanner(
+          message: state.error ?? state.bannerLabel,
+          tone: state.error != null ? AppTone.danger : AppTone.info,
+          icon: state.error != null ? AppIcons.error : AppIcons.musicNote,
+          busy: state.isImporting,
+          maxLines: 2,
+          actionLabel: canImport && !state.isImporting
+              ? context.l10n.externalOpenAddToLibrary
+              : null,
+          onAction: notifier.importToLibrary,
+          onDismiss: () =>
+              state.error != null ? notifier.clearError() : notifier.dismiss(),
+        ),
       ),
     );
   }

@@ -46,7 +46,7 @@ abstract final class MotionSprings {
   /// The way home. Softer than the open, so a flick is a move rather than a cut
   /// and there is time to catch it; lightly damped, so it still dips.
   static final SpringDescription panelClose =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 130, ratio: 0.86);
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 205, ratio: 0.86);
 
   /// A panel arriving where it still has room past its seat — the slide-in
   /// drawer, which is allowed to swell beyond its resting width. Lightly damped
@@ -61,6 +61,20 @@ abstract final class MotionSprings {
   /// The drawer arriving at its seat: room for one visible crest, then still.
   static final SpringDescription drawerOpen =
       SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.72);
+
+  /// A popup arriving from the top edge: one soft crest, then still.
+  static const SpringDescription bannerIn = SpringDescription(
+    mass: 1,
+    stiffness: 260,
+    damping: 23,
+  );
+
+  /// A popup leaving: quicker than it arrived, and never bounces.
+  static final SpringDescription bannerOut = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 300,
+    ratio: 0.9,
+  );
 
   /// Critically damped: fastest approach that never overshoots.
   static final SpringDescription critical = SpringDescription.withDampingRatio(

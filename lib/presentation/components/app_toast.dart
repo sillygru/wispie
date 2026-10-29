@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -91,9 +92,9 @@ class AppToasts {
   void clear() => current.value = null;
 }
 
-/// The status pill used for every floating message: metadata saves, auto
-/// backup, external opens and the transient toasts.
-class AppStatusBanner extends StatelessWidget {
+/// The popup at the top of the window, shared by every floating message:
+/// metadata saves, auto backup, external opens and the transient toasts.
+class AppStatusBanner extends StatefulWidget {
   final String message;
   final AppTone tone;
 
@@ -102,14 +103,14 @@ class AppStatusBanner extends StatelessWidget {
 
   final AppIconData? icon;
 
-  /// Determinate progress, 0..1. Drawn as a hairline under the pill.
+  /// Determinate progress, 0..1. Drawn as a bar under the message.
   final double? progress;
 
-  /// Trailing text button, for the one follow-up a message can offer.
+  /// Trailing button, for the one follow-up a message can offer.
   final String? actionLabel;
   final VoidCallback? onAction;
 
-  /// When set, the pill carries a close button.
+  /// When set, the popup carries a close button.
   final VoidCallback? onDismiss;
 
   final int maxLines;
@@ -124,107 +125,257 @@ class AppStatusBanner extends StatelessWidget {
     this.actionLabel,
     this.onAction,
     this.onDismiss,
-    this.maxLines = 1,
+    this.maxLines = 2,
   });
 
   @override
+  State<AppStatusBanner> createState() => _AppStatusBannerState();
+}
+
+class _AppStatusBannerState extends State<AppStatusBanner>
+    with SingleTickerProviderStateMixin {
+  /// Arrival, 0..1. The spring is allowed to crest past 1.
+  late final AnimationController _enter =
+      AnimationController.unbounded(vsync: this);
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MotionPolicy.read(context).reduceMotion) {
+      _enter.value = 1;
+    } else {
+      _enter.animateWith(SpringSimulation(MotionSprings.bannerIn, 0, 1, 0));
+    }
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final accent = tone.color(context);
+    final accent = widget.tone.color(context);
+    final canvas = Theme.of(context).scaffoldBackgroundColor;
+    // Opaque on purpose: a translucent popup smears the list moving behind it.
+    final fill = Color.alphaBlend(
+      accent.withValues(alpha: AppTokens.popupTintAlpha),
+      Color.alphaBlend(
+        Colors.black.withValues(alpha: AppTokens.popupScrimAlpha),
+        canvas,
+      ),
+    );
 
     return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-        padding: EdgeInsets.only(
-          left: AppTokens.s4,
-          right: onDismiss == null ? AppTokens.s4 : AppTokens.s1,
-          top: AppTokens.s2,
-          bottom: AppTokens.s2,
-        ),
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            accent.withValues(alpha: 0.16),
-            Colors.black.withValues(alpha: 0.72),
-          ),
-          borderRadius: AppTokens.brPill,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  SizedBox(
-                    width: 13,
-                    height: 13,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: accent,
-                    ),
-                  )
-                else
-                  AppIcon(icon ?? appToneIcon(tone), size: 15, color: accent),
-                const SizedBox(width: AppTokens.s2),
-                Flexible(
-                  child: Text(
-                    message,
-                    maxLines: maxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTokens.meta(context).copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (actionLabel != null) ...[
-                  const SizedBox(width: AppTokens.s2),
-                  TextButton(
-                    onPressed: onAction ?? () {},
-                    style: TextButton.styleFrom(
-                      foregroundColor: accent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppTokens.s3,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(actionLabel!),
-                  ),
-                ],
-                if (onDismiss != null)
-                  IconButton(
-                    onPressed: onDismiss,
-                    tooltip: context.l10n.actionClose,
-                    visualDensity: VisualDensity.compact,
-                    icon: AppIcon(AppIcons.close, size: 15, color: accent),
-                    padding: const EdgeInsets.all(AppTokens.s2),
-                    constraints: const BoxConstraints(),
-                  ),
-              ],
-            ),
-            if (progress != null) ...[
-              const SizedBox(height: AppTokens.s1 + 2),
-              ClipRRect(
-                borderRadius: AppTokens.brPill,
-                child: SizedBox(
-                  width: 140,
-                  child: LinearProgressIndicator(
-                    value: progress!.clamp(0.0, 1.0),
-                    minHeight: 2,
-                    backgroundColor: Colors.white.withValues(alpha: 0.12),
-                    valueColor: AlwaysStoppedAnimation<Color>(accent),
-                  ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppTokens.popupMaxWidth),
+        child: AnimatedBuilder(
+          animation: _enter,
+          builder: (context, child) {
+            final t = _enter.value;
+            return Opacity(
+              opacity: (t / 0.6).clamp(0.0, 1.0),
+              child: FractionalTranslation(
+                translation: Offset(0, -(1 - t)),
+                child: Transform.scale(
+                  scale: 0.94 + 0.06 * t,
+                  alignment: Alignment.topCenter,
+                  child: child,
                 ),
               ),
-            ],
-          ],
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+            constraints: const BoxConstraints(
+              minHeight: AppTokens.popupMinHeight,
+            ),
+            padding: const EdgeInsets.all(AppTokens.s3),
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: AppTokens.brSm,
+              boxShadow: AppTokens.shadowFloating,
+            ),
+            child: Row(
+              children: [
+                _tile(accent),
+                const SizedBox(width: AppTokens.s3),
+                Expanded(child: _body(context, accent)),
+                if (widget.actionLabel != null || widget.onDismiss != null) ...[
+                  const SizedBox(width: AppTokens.s2),
+                  _trailing(context, accent),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
+
+  Widget _tile(Color accent) {
+    return Container(
+      width: AppTokens.popupTileSize,
+      height: AppTokens.popupTileSize,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: AppTokens.popupTileAlpha),
+        borderRadius: AppTokens.brSm,
+      ),
+      child: widget.busy
+          ? SizedBox(
+              width: AppTokens.iconSm,
+              height: AppTokens.iconSm,
+              child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+            )
+          : AppIcon(
+              widget.icon ?? appToneIcon(widget.tone),
+              size: AppTokens.iconMd,
+              color: accent,
+            ),
+    );
+  }
+
+  Widget _body(BuildContext context, Color accent) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.message,
+          maxLines: widget.maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: AppTokens.rowTitle(context),
+        ),
+        if (widget.progress != null) ...[
+          const SizedBox(height: AppTokens.s2),
+          ClipRRect(
+            borderRadius: AppTokens.brPill,
+            child: LinearProgressIndicator(
+              value: widget.progress!.clamp(0.0, 1.0),
+              minHeight: 3,
+              backgroundColor: Colors.white.withValues(alpha: 0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _trailing(BuildContext context, Color accent) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.actionLabel != null)
+          FilledButton(
+            onPressed: widget.onAction ?? () {},
+            style: FilledButton.styleFrom(
+              backgroundColor: accent.withValues(alpha: 0.18),
+              foregroundColor: accent,
+              textStyle:
+                  AppTokens.meta(context).copyWith(fontWeight: FontWeight.w700),
+              minimumSize: const Size(0, 36),
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: AppTokens.brPill),
+            ),
+            child: Text(widget.actionLabel!),
+          ),
+        if (widget.onDismiss != null)
+          IconButton(
+            onPressed: widget.onDismiss,
+            tooltip: context.l10n.actionClose,
+            visualDensity: VisualDensity.compact,
+            icon: AppIcon(
+              AppIcons.close,
+              size: AppTokens.iconSm,
+              color: AppTokens.fgSecondary,
+            ),
+            padding: const EdgeInsets.all(AppTokens.s1),
+            constraints: const BoxConstraints(),
+          ),
+      ],
+    );
+  }
 }
 
-/// The transient slot: one pill, entering from above, leaving upward.
+/// Holds a popup until its exit finishes, so a status that clears is a fade
+/// rather than a cut. The banner itself owns the arrival.
+class AppPopupSlot extends StatefulWidget {
+  /// Null when there is nothing to show.
+  final Widget? child;
+
+  const AppPopupSlot({super.key, required this.child});
+
+  @override
+  State<AppPopupSlot> createState() => _AppPopupSlotState();
+}
+
+class _AppPopupSlotState extends State<AppPopupSlot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _exit = AnimationController(
+    vsync: this,
+    duration: MotionTokens.exit,
+    value: 1,
+  );
+  Widget? _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _shown = widget.child;
+  }
+
+  @override
+  void didUpdateWidget(AppPopupSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.child != null) {
+      _shown = widget.child;
+      _exit.value = 1;
+      return;
+    }
+    if (_shown == null) return;
+    if (MotionPolicy.read(context).reduceMotion) {
+      _shown = null;
+      return;
+    }
+    _exit.reverse().whenComplete(() {
+      if (mounted && widget.child == null) setState(() => _shown = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _exit.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final child = _shown;
+    if (child == null) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      animation: _exit,
+      builder: (context, child) {
+        // 0 at rest, 1 once it is gone.
+        final t = MotionTokens.emphasizedAccel.transform(1 - _exit.value);
+        return Opacity(
+          opacity: 1 - t,
+          child: Transform.translate(offset: Offset(0, -18 * t), child: child),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// The transient slot: one popup, arriving from above and leaving upward.
 ///
 /// Sits in the app's single feedback column, so it can never overlap a status
 /// bubble it does not know about.
@@ -239,9 +390,10 @@ class AppToastSlot extends StatelessWidget {
       valueListenable: AppToasts.instance.current,
       builder: (context, toast, _) {
         return AnimatedSwitcher(
-          duration: reduceMotion ? Duration.zero : MotionTokens.base,
-          switchInCurve: MotionTokens.enterCurve,
-          switchOutCurve: MotionTokens.exitCurve,
+          // The card springs itself in, so a replacement only cross-fades.
+          duration: reduceMotion ? Duration.zero : MotionTokens.micro,
+          switchInCurve: MotionTokens.standardCurve,
+          switchOutCurve: MotionTokens.linearCurve,
           layoutBuilder: (currentChild, previousChildren) => Stack(
             alignment: Alignment.topCenter,
             children: [
@@ -249,30 +401,8 @@ class AppToastSlot extends StatelessWidget {
               if (currentChild != null) currentChild,
             ],
           ),
-          transitionBuilder: (child, animation) {
-            final move = CurvedAnimation(
-              parent: animation,
-              curve: reduceMotion
-                  ? MotionTokens.linearCurve
-                  : MotionTokens.softOvershootCurve,
-              reverseCurve: MotionTokens.exitCurve,
-            );
-            return FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: reduceMotion
-                    ? MotionTokens.linearCurve
-                    : MotionTokens.standardCurve,
-              ),
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, -0.7),
-                  end: Offset.zero,
-                ).animate(move),
-                child: child,
-              ),
-            );
-          },
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
           child: toast == null
               ? const SizedBox.shrink()
               : AppBannerDismiss(
@@ -303,20 +433,20 @@ class AppToastSlot extends StatelessWidget {
 }
 
 /// Wraps a banner in the app's one dismissal behaviour: it follows the finger
-/// upward, resists a downward pull, springs back if released short, and leaves
-/// the screen the same way whatever dismissed it.
+/// upward, leans under a downward pull, springs back if released short, and
+/// leaves on a spring whatever dismissed it.
 class AppBannerDismiss extends StatefulWidget {
   final Widget child;
 
-  /// Called once the pill has finished leaving.
+  /// Called once the popup has finished leaving.
   final VoidCallback onDismiss;
 
   /// How long it holds before leaving on its own. [Duration.zero] keeps it up
   /// until it is dismissed.
   final Duration hold;
 
-  /// A tap anywhere clears it. Off for status pills, where the message is worth
-  /// reading and a stray tap should not hide it.
+  /// A tap anywhere clears it. Off for status messages, where a stray tap
+  /// should not hide something worth reading.
   final bool tapToDismiss;
 
   const AppBannerDismiss({
@@ -340,12 +470,11 @@ class _AppBannerDismissState extends State<AppBannerDismiss>
   Timer? _hold;
   double _rawDrag = 0;
 
-  /// How far the pill may travel up before it is gone.
-  static const double _travel = 140;
+  /// How far up it goes before it is gone.
+  static const double _travel = 160;
 
-  /// Downward pull is resisted: the pill belongs to the top edge and has nowhere
-  /// to go down, so it leans rather than follows.
-  static const double _downResistance = 0.22;
+  /// Downward pull asymptotes here: it belongs to the top edge, so it leans.
+  static const double _downRoom = 26;
 
   @override
   void initState() {
@@ -363,7 +492,7 @@ class _AppBannerDismissState extends State<AppBannerDismiss>
   void _armHold() {
     _hold?.cancel();
     if (widget.hold <= Duration.zero) return;
-    // A timeout is not a touch: no haptic for a pill that simply expired.
+    // A timeout is not a touch: no haptic for a popup that simply expired.
     _hold = Timer(widget.hold, () => _leave(haptic: false));
   }
 
@@ -375,18 +504,18 @@ class _AppBannerDismissState extends State<AppBannerDismiss>
   void _onDragUpdate(DragUpdateDetails details) {
     _rawDrag += details.primaryDelta ?? 0;
     _offset.value = _rawDrag < 0
-        ? _rawDrag.clamp(-_travel, 0.0)
-        : (_rawDrag * _downResistance).clamp(0.0, 28.0);
+        ? math.max(_rawDrag, -_travel)
+        : _downRoom * (1 - math.exp(-_rawDrag / _downRoom));
   }
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    if (_offset.value < -_travel * 0.35 || velocity < -420) {
+    if (_offset.value < -_travel * 0.28 || velocity < -380) {
       _leave(haptic: true);
       return;
     }
     // Short of the threshold it springs back and keeps its hold from where it
-    // was released, so brushing past a pill does not lose the message.
+    // was released, so brushing past a popup does not lose the message.
     _offset.animateWith(
       SpringSimulation(MotionSprings.gentle, _offset.value, 0, velocity),
     );
@@ -404,12 +533,17 @@ class _AppBannerDismissState extends State<AppBannerDismiss>
       onDismiss();
       return;
     }
-    await _offset.animateTo(
-      -_travel,
-      duration: MotionTokens.fast,
-      curve: MotionTokens.exitCurve,
+    // A spring, not a timed slide: a flick keeps its momentum, and the
+    // dismissal is never a cut.
+    await _offset.animateWith(
+      SpringSimulation(
+        MotionSprings.bannerOut,
+        _offset.value,
+        -_travel,
+        _offset.velocity,
+      ),
     );
-    // A status pill can be removed by its own provider while it animates; the
+    // A status popup can be removed by its own provider while it animates; the
     // dismissal callback closes over a state that is gone by then.
     if (!mounted) return;
     onDismiss();
@@ -429,7 +563,14 @@ class _AppBannerDismissState extends State<AppBannerDismiss>
           final travel = (-_offset.value / _travel).clamp(0.0, 1.0);
           return Transform.translate(
             offset: Offset(0, _offset.value),
-            child: Opacity(opacity: 1 - travel, child: child),
+            child: Opacity(
+              opacity: 1 - MotionTokens.emphasizedAccel.transform(travel),
+              child: Transform.scale(
+                scale: 1 - 0.05 * travel,
+                alignment: Alignment.topCenter,
+                child: child,
+              ),
+            ),
           );
         },
         child: Semantics(

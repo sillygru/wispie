@@ -320,6 +320,14 @@ class AppTokens {
         color: Colors.white,
       );
 
+  // ------------------------------------------------------------ top popup
+  static const double popupMaxWidth = 520;
+  static const double popupMinHeight = 72;
+  static const double popupTileSize = 40;
+  static const double popupScrimAlpha = 0.55;
+  static const double popupTintAlpha = 0.16;
+  static const double popupTileAlpha = 0.2;
+
   // ---------------------------------------------------------------- layout
   static const double rowHeight = PlayerTokens.rowHeight; // 68
   static const double rowHeightTall = PlayerTokens.rowHeightTall; // 80
