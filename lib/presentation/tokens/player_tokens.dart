@@ -162,6 +162,9 @@ class PlayerTokens {
   static const Duration dTrackSwitch = MotionTokens.long;
   static const Duration dTrackSwitchTimeout = Duration(milliseconds: 700);
   static const Duration dPaneSwitch = MotionTokens.medium;
+
+  /// How long a removed queue entry can be taken back.
+  static const Duration dQueueUndo = Duration(seconds: 4);
   static const double sheetGestureDeadSpace = 12;
 
   static const Curve cTrackSwitch = MotionTokens.exitCurve;

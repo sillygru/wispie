@@ -551,9 +551,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get queueRemoveFromQueueTooltip => 'Remove from queue';
 
   @override
-  String queueRemovedTitle(String title) {
-    return 'Removed $title';
-  }
+  String get queueRemovedLabel => 'Removed from queue';
 
   @override
   String get queueUndo => 'Undo';

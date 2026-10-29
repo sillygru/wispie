@@ -3660,14 +3660,17 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
       final item = _effectiveQueue.removeAt(oldIndex);
       _effectiveQueue.insert(targetIndex, item);
+      // Notified before the platform call: the drop animation is already over
+      // by then, so a late rebuild makes the row snap back and jump.
+      _updateQueueNotifier();
       try {
         await _player.moveAudioSource(oldIndex, targetIndex);
       } catch (e) {
         _effectiveQueue.removeAt(targetIndex);
         _effectiveQueue.insert(oldIndex, item);
+        _updateQueueNotifier();
         rethrow;
       }
-      _updateQueueNotifier();
       _savePlaybackState();
       await _updateCurrentSnapshotSongs();
     });

@@ -559,9 +559,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get queueRemoveFromQueueTooltip => 'Remover da fila';
 
   @override
-  String queueRemovedTitle(String title) {
-    return '$title removida';
-  }
+  String get queueRemovedLabel => 'Removed from queue';
 
   @override
   String get queueUndo => 'Desfazer';
@@ -6455,11 +6453,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get queueRemoveFromQueueTooltip => 'Remover da fila';
-
-  @override
-  String queueRemovedTitle(String title) {
-    return '$title removida';
-  }
 
   @override
   String get queueUndo => 'Desfazer';

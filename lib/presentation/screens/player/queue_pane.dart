@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -28,6 +29,7 @@ import '../../motion/motion.dart';
 import '../../tokens/app_tokens.dart';
 import '../../tokens/player_tokens.dart';
 import '../../utils/wide_layout.dart';
+import '../../widgets/album_art_image.dart';
 import '../../widgets/duration_display.dart' show DurationFormatter;
 import '../../widgets/song_options_menu.dart';
 
@@ -265,7 +267,8 @@ class _UpNextList extends ConsumerStatefulWidget {
   ConsumerState<_UpNextList> createState() => _UpNextListState();
 }
 
-class _UpNextListState extends ConsumerState<_UpNextList> {
+class _UpNextListState extends ConsumerState<_UpNextList>
+    with TickerProviderStateMixin {
   /// Rough height of the 'Played' section header, used only to get the current
   /// row built before [_snapCurrentToTop] measures it exactly.
   static const double _sectionHeaderHeight = 40;
@@ -280,8 +283,20 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   final Set<String> _dismissed = <String>{};
 
   _PendingRemoval? _pendingRemoval;
-  Timer? _undoTimer;
+
+  /// The undo window, 1 → 0, drawn as the line under the bar.
+  late final AnimationController _undoLeft = AnimationController(
+    vsync: this,
+    duration: PlayerTokens.dQueueUndo,
+    value: 1,
+  );
+
+  /// The bar's presence, 0 → 1, so it never cuts in or out.
+  late final AnimationController _undoIn =
+      AnimationController.unbounded(vsync: this);
+
   bool _didAutoScroll = false;
+  bool _undoInFlight = false;
 
   /// The row that last changed place, and when, so [MotionPop] can announce
   /// the move instead of letting the list teleport.
@@ -289,10 +304,61 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
   DateTime? _poppedAt;
 
   @override
+  void initState() {
+    super.initState();
+    _undoLeft.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed) _dismissUndo();
+    });
+  }
+
+  @override
   void dispose() {
-    _undoTimer?.cancel();
+    _undoLeft.dispose();
+    _undoIn.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Offers the undo, replacing any offer still up and restarting its window.
+  void _offerUndo(_PendingRemoval pending) {
+    setState(() => _pendingRemoval = pending);
+    if (MotionPolicy.read(context).reduceMotion) {
+      _undoIn.value = 1;
+    } else {
+      _undoIn.animateWith(
+        SpringSimulation(MotionSprings.bannerIn, _undoIn.value, 1, 0),
+      );
+    }
+    _undoLeft
+      ..stop()
+      ..value = 1
+      ..reverse();
+  }
+
+  /// Takes the bar away once it has left the screen, so the exit has a subject.
+  void _dismissUndo() {
+    _undoLeft.stop();
+    final pending = _pendingRemoval;
+    if (pending == null) return;
+    if (MotionPolicy.read(context).reduceMotion) {
+      _undoIn.value = 0;
+      setState(() => _pendingRemoval = null);
+      return;
+    }
+    _undoIn
+        .animateWith(
+      SpringSimulation(
+        MotionSprings.bannerOut,
+        _undoIn.value,
+        0,
+        _undoIn.velocity,
+      ),
+    )
+        .whenComplete(() {
+      if (!mounted || !identical(_pendingRemoval, pending)) return;
+      setState(() => _pendingRemoval = null);
+      _undoIn.value = 0;
+    });
   }
 
   /// Opens the list on the current track, pinned to the top, so what's coming
@@ -364,14 +430,8 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       return;
     }
 
-    _undoTimer?.cancel();
     if (!mounted) return;
-    setState(() {
-      _pendingRemoval = _PendingRemoval(item: item, index: index);
-    });
-    _undoTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted) setState(() => _pendingRemoval = null);
-    });
+    _offerUndo(_PendingRemoval(item: item, index: index));
   }
 
   /// The left-to-right swipe: push the entry to the top of the upcoming
@@ -542,7 +602,10 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
 
   Future<void> _undo(AudioPlayerManager audioManager) async {
     final pending = _pendingRemoval;
-    if (pending == null) return;
+    // The bar stays tappable through its exit; a second tap must not insert
+    // the track twice.
+    if (pending == null || _undoInFlight) return;
+    _undoInFlight = true;
 
     final length = audioManager.queueNotifier.value.length;
     await audioManager.insertIntoQueue(
@@ -550,13 +613,11 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
       pending.item,
     );
 
-    _undoTimer?.cancel();
+    _undoInFlight = false;
     if (!mounted) return;
-    setState(() {
-      _dismissed.remove(pending.item.queueId);
-      _pendingRemoval = null;
-    });
+    setState(() => _dismissed.remove(pending.item.queueId));
     _popRow(pending.item.queueId);
+    _dismissUndo();
   }
 
   void _confirmClear(AudioPlayerManager audioManager) {
@@ -760,10 +821,26 @@ class _UpNextListState extends ConsumerState<_UpNextList> {
                           left: PlayerTokens.s4,
                           right: PlayerTokens.s4,
                           bottom: PlayerTokens.s4,
-                          child: _UndoBar(
-                            title: _pendingRemoval!.item.song.title,
-                            accent: widget.accent,
-                            onUndo: () => _undo(audioManager),
+                          child: AnimatedBuilder(
+                            animation: _undoIn,
+                            builder: (context, child) {
+                              final double t = _undoIn.value;
+                              return Opacity(
+                                opacity: t.clamp(0.0, 1.0),
+                                // Its own height, so it rises from under the
+                                // edge without a magic distance.
+                                child: FractionalTranslation(
+                                  translation: Offset(0, 1 - t),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: _UndoBar(
+                              song: _pendingRemoval!.item.song,
+                              accent: widget.accent,
+                              left: _undoLeft,
+                              onUndo: () => _undo(audioManager),
+                            ),
                           ),
                         ),
                     ],
@@ -1166,43 +1243,97 @@ class _WideUpcomingRowState extends State<_WideUpcomingRow> {
   }
 }
 
+/// The offer that follows a removal: what left the queue, how long there is to
+/// take it back, and the countdown draining under it.
 class _UndoBar extends StatelessWidget {
-  final String title;
+  final Song song;
   final Color accent;
+
+  /// 1 → 0 across the undo window.
+  final Animation<double> left;
+
   final VoidCallback onUndo;
 
   const _UndoBar({
-    required this.title,
+    required this.song,
     required this.accent,
+    required this.left,
     required this.onUndo,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     // The one remaining glass surface: it floats over the scrolling list, so it
     // needs its own backing to stay readable.
     return PlayerGlassSurface(
       strong: true,
-      padding: const EdgeInsets.fromLTRB(
-        PlayerTokens.s4,
-        PlayerTokens.s2,
-        PlayerTokens.s2,
-        PlayerTokens.s2,
-      ),
-      child: Row(
+      padding: const EdgeInsets.all(PlayerTokens.s2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(
-              AppLocalizations.of(context).queueRemovedTitle(title),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: PlayerTokens.trackSubtitle(context),
-            ),
+          Row(
+            children: [
+              AlbumArtImage(
+                url: song.coverUrl ?? '',
+                width: PlayerTokens.dockArtSize,
+                height: PlayerTokens.dockArtSize,
+                borderRadius: PlayerTokens.rSm,
+              ),
+              const SizedBox(width: PlayerTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PlayerTokens.trackTitle(context),
+                    ),
+                    Text(
+                      l10n.queueRemovedLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PlayerTokens.meta(context),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: PlayerTokens.s2),
+              FilledButton(
+                onPressed: onUndo,
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent.withValues(alpha: 0.18),
+                  foregroundColor: accent,
+                  textStyle: PlayerTokens.meta(context)
+                      .copyWith(fontWeight: FontWeight.w700),
+                  minimumSize: const Size(0, 36),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: PlayerTokens.s3),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: PlayerTokens.brPill,
+                  ),
+                ),
+                child: Text(l10n.queueUndo),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: onUndo,
-            style: TextButton.styleFrom(foregroundColor: accent),
-            child: Text(AppLocalizations.of(context).queueUndo),
+          const SizedBox(height: PlayerTokens.s2),
+          AnimatedBuilder(
+            animation: left,
+            builder: (context, _) => ClipRRect(
+              borderRadius: PlayerTokens.brPill,
+              child: LinearProgressIndicator(
+                value: left.value.clamp(0.0, 1.0),
+                minHeight: 2,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation<Color>(accent),
+              ),
+            ),
           ),
         ],
       ),

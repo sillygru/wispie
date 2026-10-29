@@ -999,11 +999,11 @@ abstract class AppLocalizations {
   /// **'Remove from queue'**
   String get queueRemoveFromQueueTooltip;
 
-  /// Snackbar shown after removing a track; undo follows
+  /// Label under the track title in the undo bar shown after removing a track
   ///
   /// In en, this message translates to:
-  /// **'Removed {title}'**
-  String queueRemovedTitle(String title);
+  /// **'Removed from queue'**
+  String get queueRemovedLabel;
 
   /// Button that restores a just-removed track
   ///

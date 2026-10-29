@@ -687,14 +687,9 @@
   "@queueRemoveFromQueueTooltip": {
     "description": "Tooltip for the remove button on an upcoming row"
   },
-  "queueRemovedTitle": "Removed {title}",
-  "@queueRemovedTitle": {
-    "description": "Snackbar shown after removing a track; undo follows",
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
+  "queueRemovedLabel": "Removed from queue",
+  "@queueRemovedLabel": {
+    "description": "Label under the track title in the undo bar shown after removing a track"
   },
   "queueUndo": "Undo",
   "@queueUndo": {
