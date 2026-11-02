@@ -3148,8 +3148,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   ) =>
       [for (final v in virtual) _toCandidate(v, affinities, historyIndex)];
 
-  /// Smart pool: one candidate per virtual item. Taste is summed in the
-  /// weights step, so only identity and flags are needed here.
+  /// Smart pool: one candidate per virtual item. Every member is listed so
+  /// anti-repeat covers the whole group, but taste and flags come from the
+  /// representative version alone.
   List<SmartCandidate<_VirtualShuffleItem>> _smartCandidates(
     List<_VirtualShuffleItem> virtual,
   ) =>
@@ -3163,57 +3164,30 @@ class AudioPlayerManager extends WidgetsBindingObserver {
               v.representative.song.filename,
             ),
             albumKey: v.representative.song.album.trim().toLowerCase(),
-            isFavorite: v.items.any((q) => _isFavorite(q.song.filename)),
-            isSuggestLess: v.items.any((q) => _isSuggestLess(q.song.filename)),
-            isInPlaylist: v.items.any((q) => _isInPlaylist(q.song.filename)),
+            isFavorite: _isFavorite(v.representative.song.filename),
+            isSuggestLess: _isSuggestLess(v.representative.song.filename),
+            isInPlaylist: _isInPlaylist(v.representative.song.filename),
           ),
       ];
 
   /// Collapses a candidate (possibly a merge group) into the signals scoring
-  /// needs. Merge groups take the strongest signal across their members —
-  /// liking one version of a song means liking the group.
+  /// needs.
+  ///
+  /// A merge group is one queue entry, but it is scored as its representative
+  /// version. Favourites, play counts and playlist membership are never summed
+  /// across versions; only history spans the group so a sibling of the track
+  /// that just played is not scheduled next.
   ShuffleCandidate<_VirtualShuffleItem> _toCandidate(
     _VirtualShuffleItem virtual,
     Map<String, SongAffinity> affinities,
     Map<String, int> historyIndex,
   ) {
     final representative = virtual.representative;
+    final filename = representative.song.filename;
 
-    if (virtual.type == _VirtualItemType.standalone) {
-      final filename = representative.song.filename;
-      return ShuffleCandidate(
-        payload: virtual,
-        artist: representative.song.artist,
-        album: representative.song.album,
-        affinity: affinities[filename] ?? SongAffinity.unknown,
-        isFavorite: _isFavorite(filename),
-        isSuggestLess: _isSuggestLess(filename),
-        isInPlaylist: _isInPlaylist(filename),
-        historyIndex: historyIndex[filename],
-      );
-    }
-
-    var best = SongAffinity.unknown;
-    var isFavorite = false;
-    var isSuggestLess = false;
-    var isInPlaylist = false;
-    int? bestHistoryIndex;
-    var totalPlayCount = 0;
-
+    int? bestHistoryIndex = historyIndex[filename];
     for (final queueItem in virtual.items) {
-      final filename = queueItem.song.filename;
-      final affinity = affinities[filename];
-
-      if (affinity != null) {
-        totalPlayCount += affinity.playCount;
-        if (affinity.affinity > best.affinity) best = affinity;
-      }
-
-      if (_isFavorite(filename)) isFavorite = true;
-      if (_isSuggestLess(filename)) isSuggestLess = true;
-      if (_isInPlaylist(filename)) isInPlaylist = true;
-
-      final idx = historyIndex[filename];
+      final idx = historyIndex[queueItem.song.filename];
       if (idx != null && (bestHistoryIndex == null || idx < bestHistoryIndex)) {
         bestHistoryIndex = idx;
       }
@@ -3223,19 +3197,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       payload: virtual,
       artist: representative.song.artist,
       album: representative.song.album,
-      // Play counts sum across the group so novelty sees the group as one
-      // song that has been played as often as all its versions combined.
-      affinity: SongAffinity(
-        affinity: best.affinity,
-        recentSaturation: best.recentSaturation,
-        completionRate: best.completionRate,
-        skipRate: best.skipRate,
-        playCount: totalPlayCount,
-        lastPlayedAt: best.lastPlayedAt,
-      ),
-      isFavorite: isFavorite,
-      isSuggestLess: isSuggestLess,
-      isInPlaylist: isInPlaylist,
+      affinity: affinities[filename] ?? SongAffinity.unknown,
+      isFavorite: _isFavorite(filename),
+      isSuggestLess: _isSuggestLess(filename),
+      isInPlaylist: _isInPlaylist(filename),
       historyIndex: bestHistoryIndex,
     );
   }

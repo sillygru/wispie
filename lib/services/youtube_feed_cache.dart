@@ -5,8 +5,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'debug_sandbox.dart';
+import '../domain/services/cache_policy.dart';
 import 'online_music_service.dart';
+import 'wispie_cache.dart';
 
 /// The ranked feed as it was last shown, with enough context to decide whether
 /// it is still the right feed.
@@ -41,7 +42,7 @@ class YouTubeFeedCache {
 
   static final YouTubeFeedCache instance = YouTubeFeedCache._();
 
-  static const String _fileName = 'youtube_feed.json';
+  static const String _fileName = 'feed.json';
   static const int _version = 1;
 
   File? _file;
@@ -50,8 +51,8 @@ class YouTubeFeedCache {
   Future<File> _target() async {
     final cached = _file;
     if (cached != null) return cached;
-    final support = await getSupportDirectory();
-    return _file = File(p.join(support.path, _fileName));
+    final dir = await WispieCache.instance.directory(CacheBucket.youtube);
+    return _file = File(p.join(dir.path, _fileName));
   }
 
   /// The last snapshot, or null when nothing usable was ever stored.

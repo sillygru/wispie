@@ -1,19 +1,23 @@
 import 'dart:io' show exit;
+
 import 'package:flutter/material.dart';
-import '../components/ambient_scaffold.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../domain/services/cache_policy.dart';
 import '../../l10n/app_localizations.dart';
+import '../../providers/providers.dart';
+import '../../providers/setup_provider.dart';
+import '../../services/backup_service.dart';
 import '../../services/library_repair_service.dart';
 import '../../services/storage_analysis_service.dart';
-import '../../providers/setup_provider.dart';
-import '../../providers/providers.dart';
-import '../components/app_surface.dart';
-import '../components/app_screen_header.dart';
-import '../tokens/app_tokens.dart';
-import '../utils/wide_layout.dart';
+import '../components/ambient_scaffold.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
+import '../components/app_screen_header.dart';
+import '../components/app_surface.dart';
 import '../tokens/app_icons.dart';
+import '../tokens/app_tokens.dart';
+import '../utils/wide_layout.dart';
 
 class StorageManagementScreen extends ConsumerStatefulWidget {
   const StorageManagementScreen({super.key});
@@ -23,74 +27,54 @@ class StorageManagementScreen extends ConsumerStatefulWidget {
       _StorageManagementScreenState();
 }
 
+class _BucketSpec {
+  const _BucketSpec(
+      this.bucket, this.title, this.subtitle, this.icon, this.color);
+
+  final CacheBucket bucket;
+  final String title;
+  final String subtitle;
+  final AppIconData icon;
+  final Color color;
+}
+
 class _StorageManagementScreenState
     extends ConsumerState<StorageManagementScreen> {
-  bool _isLoading = true;
+  bool _isBusy = true;
   int _databaseSize = 0;
-  int _coversSize = 0;
   int _backupsSize = 0;
-  int _libraryCacheSize = 0;
   int _searchIndexSize = 0;
-  int _waveformCacheSize = 0;
-  int _beatMapCacheSize = 0;
-  int _colorCacheSize = 0;
-  int _lyricsCacheSize = 0;
-  int _blurredCacheSize = 0;
-  int _onlineAudioCacheSize = 0;
-  bool _isClearing = false;
+  String _backupsPath = '';
+  CacheUsage _usage = CacheUsage.empty;
 
   @override
   void initState() {
     super.initState();
-    _loadSizes();
+    _load();
   }
 
-  Future<void> _loadSizes() async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
+  Future<void> _load({bool refresh = false}) async {
+    if (mounted) setState(() => _isBusy = true);
     try {
-      final dbSize = await StorageAnalysisService.instance.getDatabaseSize();
-      final coversSize =
-          await StorageAnalysisService.instance.getCoversCacheSize();
-      final backupsSize =
-          await StorageAnalysisService.instance.getBackupsSize();
-      final libSize =
-          await StorageAnalysisService.instance.getLibraryCacheSize();
-      final searchSize =
-          await StorageAnalysisService.instance.getSearchIndexSize();
-      final waveformSize =
-          await StorageAnalysisService.instance.getWaveformCacheSize();
-      final beatMapSize =
-          await StorageAnalysisService.instance.getBeatMapCacheSize();
-      final colorSize =
-          await StorageAnalysisService.instance.getColorCacheSize();
-      final lyricsSize =
-          await StorageAnalysisService.instance.getLyricsCacheSize();
-      final blurredSize =
-          await StorageAnalysisService.instance.getBlurredCacheSize();
-      final onlineAudioSize =
-          await StorageAnalysisService.instance.getOnlineAudioCacheSize();
+      final service = StorageAnalysisService.instance;
+      final usage = await service.getCacheUsage(refresh: refresh);
+      final database = await service.getDatabaseSize();
+      final backups = await service.getBackupsSize();
+      final search = await service.getSearchIndexSize();
+      final backupsDir = await BackupService.instance.backupsDir;
 
-      if (mounted) {
-        setState(() {
-          _databaseSize = dbSize;
-          _coversSize = coversSize;
-          _backupsSize = backupsSize;
-          _libraryCacheSize = libSize;
-          _searchIndexSize = searchSize;
-          _waveformCacheSize = waveformSize;
-          _beatMapCacheSize = beatMapSize;
-          _colorCacheSize = colorSize;
-          _lyricsCacheSize = lyricsSize;
-          _blurredCacheSize = blurredSize;
-          _onlineAudioCacheSize = onlineAudioSize;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading storage sizes: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _usage = usage;
+        _databaseSize = database;
+        _backupsSize = backups;
+        _searchIndexSize = search;
+        _backupsPath = backupsDir.path;
+        _isBusy = false;
+      });
+    } catch (error) {
+      debugPrint('Error loading storage sizes: $error');
+      if (mounted) setState(() => _isBusy = false);
     }
   }
 
@@ -106,20 +90,19 @@ class _StorageManagementScreenState
         .storageSizeGb((bytes / (1024 * 1024 * 1024)).toStringAsFixed(1));
   }
 
-  Future<bool> _showConfirmationDialog({
+  Future<bool> _confirm({
     required String title,
-    required String content,
-    required String confirmText,
-    required Color confirmColor,
+    required String body,
+    required String action,
+    required Color color,
     bool requireTextInput = false,
-    String? textInputHint,
   }) async {
     final l10n = AppLocalizations.of(context);
-    final confirm1 = await showDialog<bool>(
+    final first = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
-        content: Text(content),
+        content: Text(body),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -128,23 +111,22 @@ class _StorageManagementScreenState
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(
-              backgroundColor: confirmColor,
+              backgroundColor: color,
               foregroundColor: Colors.white,
             ),
-            child: Text(confirmText),
+            child: Text(action),
           ),
         ],
       ),
     );
 
-    if (confirm1 != true) return false;
+    if (first != true) return false;
     if (!requireTextInput) return true;
     if (!mounted) return false;
 
-    // Second confirmation with text input
-    final word = textInputHint ?? l10n.storageDeleteKeyword;
+    final word = l10n.storageDeleteKeyword;
     final controller = TextEditingController();
-    final confirm2 = await showDialog<bool>(
+    final second = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(l10n.storageFinalConfirmTitle),
@@ -182,7 +164,7 @@ class _StorageManagementScreenState
               }
             },
             style: FilledButton.styleFrom(
-              backgroundColor: confirmColor,
+              backgroundColor: color,
               foregroundColor: Colors.white,
             ),
             child: Text(l10n.storageConfirmUpper),
@@ -191,406 +173,237 @@ class _StorageManagementScreenState
       ),
     );
 
-    return confirm2 == true;
+    return second == true;
+  }
+
+  Future<void> _run(Future<void> Function() action, String successMessage,
+      {Future<void> Function()? reload}) async {
+    if (mounted) setState(() => _isBusy = true);
+    try {
+      await action();
+      await (reload ?? _load)();
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, successMessage);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, '$error', tone: AppTone.danger);
+    }
   }
 
   Future<void> _handleClearDatabase() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await _confirm(
       title: l10n.storageClearDatabaseTitle,
-      content: l10n.storageClearDatabaseBody,
-      confirmText: l10n.storageClearDatabaseAction,
-      confirmColor: AppTokens.danger,
+      body: l10n.storageClearDatabaseBody,
+      action: l10n.storageClearDatabaseAction,
+      color: AppTokens.danger,
       requireTextInput: true,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
+    setState(() => _isBusy = true);
     try {
       await StorageAnalysisService.instance.clearDatabase();
-      if (mounted) {
-        final storage = ref.read(storageServiceProvider);
-        await storage.setSetupComplete(false);
-        ref.read(setupProvider.notifier).setComplete(false);
-        exit(0);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearDatabaseError('$e'));
-      }
+      final storage = ref.read(storageServiceProvider);
+      await storage.setSetupComplete(false);
+      ref.read(setupProvider.notifier).setComplete(false);
+      exit(0);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, l10n.storageClearDatabaseError('$error'),
+          tone: AppTone.danger);
     }
   }
 
   Future<void> _handleRepairLibrary() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await _confirm(
       title: l10n.storageRepairTitle,
-      content: l10n.storageRepairBody,
-      confirmText: l10n.storageRepair,
-      confirmColor: AppTokens.success,
+      body: l10n.storageRepairBody,
+      action: l10n.storageRepair,
+      color: AppTokens.success,
     );
-
     if (!confirmed || !mounted) return;
 
-    setState(() => _isClearing = true);
-
+    setState(() => _isBusy = true);
     try {
       final report = await LibraryRepairService.instance.repairLibrary();
       ref.invalidate(songsProvider);
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, report.summary);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageRepairError('$e'));
-      }
+      await _load(refresh: true);
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, report.summary);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, l10n.storageRepairError('$error'),
+          tone: AppTone.danger);
     }
   }
 
-  Future<void> _handleClearCovers() async {
+  Future<void> _handleCleanUp() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearCoversTitle,
-      content: l10n.storageClearCoversBody,
-      confirmText: l10n.storageClearCoversAction,
-      confirmColor: AppTokens.warning,
+    final confirmed = await _confirm(
+      title: l10n.storageCleanCacheTitle,
+      body: l10n.storageCleanCacheBody,
+      action: l10n.storageCleanCacheAction,
+      color: AppTokens.success,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
+    setState(() => _isBusy = true);
     try {
-      await StorageAnalysisService.instance.clearCoversCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearCoversSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearCoversError('$e'));
-      }
+      final report = await StorageAnalysisService.instance.cleanUp();
+      await _load(refresh: true);
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(
+        context,
+        report.freedAnything
+            ? l10n.storageCleanCacheSuccess(
+                _formatSize(l10n, report.reclaimedBytes))
+            : l10n.storageCleanCacheNothing,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, l10n.storageCleanCacheError('$error'),
+          tone: AppTone.danger);
     }
   }
 
-  Future<void> _handleClearBackups() async {
+  Future<void> _handleClearWispieCache() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearBackupsTitle,
-      content: l10n.storageClearBackupsBody,
-      confirmText: l10n.storageClearBackupsAction,
-      confirmColor: AppTokens.warning,
+    final confirmed = await _confirm(
+      title: l10n.storageClearWispieCacheTitle,
+      body: l10n.storageClearWispieCacheBody,
+      action: l10n.actionClear,
+      color: AppTokens.warning,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearBackups();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBackupsSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBackupsError('$e'));
-      }
-    }
+    await _run(StorageAnalysisService.instance.clearWispieCache,
+        l10n.storageClearWispieCacheSuccess,
+        reload: () => _load(refresh: true));
   }
 
-  Future<void> _handleClearLibraryCache() async {
+  Future<void> _handleClearBucket(_BucketSpec spec) async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearLibraryTitle,
-      content: l10n.storageClearLibraryBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
+    final confirmed = await _confirm(
+      title: l10n.storageClearBucketTitle(spec.title),
+      body: l10n.storageClearBucketBody,
+      action: l10n.actionClear,
+      color: AppTokens.warning,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearLibraryCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearLibrarySuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearLibraryError('$e'));
-      }
-    }
+    await _run(
+      () => StorageAnalysisService.instance.clearBucket(spec.bucket),
+      l10n.storageClearBucketSuccess(spec.title),
+      reload: () => _load(refresh: true),
+    );
   }
 
   Future<void> _handleClearSearchIndex() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await _confirm(
       title: l10n.storageClearSearchTitle,
-      content: l10n.storageClearSearchBody,
-      confirmText: l10n.storageClearSearchAction,
-      confirmColor: AppTokens.warning,
+      body: l10n.storageClearSearchBody,
+      action: l10n.storageClearSearchAction,
+      color: AppTokens.warning,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearSearchIndex();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearSearchSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearSearchError('$e'));
-      }
-    }
+    await _run(StorageAnalysisService.instance.clearSearchIndex,
+        l10n.storageClearSearchSuccess);
   }
 
-  Future<void> _handleClearWaveformCache() async {
+  Future<void> _handleClearBackups() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearWaveformTitle,
-      content: l10n.storageClearWaveformBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
+    final confirmed = await _confirm(
+      title: l10n.storageClearBackupsTitle,
+      body: l10n.storageClearBackupsBody,
+      action: l10n.storageClearBackupsAction,
+      color: AppTokens.warning,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearWaveformCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearWaveformSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearWaveformError('$e'));
-      }
-    }
-  }
-
-  Future<void> _handleClearBeatMapCache() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearBeatTitle,
-      content: l10n.storageClearBeatBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
-    );
-
-    if (!confirmed || !mounted) return;
-
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearBeatMapCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBeatSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBeatError('$e'));
-      }
-    }
-  }
-
-  Future<void> _handleClearColorCache() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearColorTitle,
-      content: l10n.storageClearColorBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
-    );
-
-    if (!confirmed || !mounted) return;
-
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearColorCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearColorSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearColorError('$e'));
-      }
-    }
-  }
-
-  Future<void> _handleClearLyricsCache() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearLyricsTitle,
-      content: l10n.storageClearLyricsBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
-    );
-
-    if (!confirmed || !mounted) return;
-
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearLyricsCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearLyricsSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearLyricsError('$e'));
-      }
-    }
-  }
-
-  Future<void> _handleClearBlurredCache() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearBlurredTitle,
-      content: l10n.storageClearBlurredBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
-    );
-
-    if (!confirmed || !mounted) return;
-
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
-    try {
-      await StorageAnalysisService.instance.clearBlurredCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBlurredSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearBlurredError('$e'));
-      }
-    }
-  }
-
-  Future<void> _handleClearOnlineAudioCache() async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
-      title: l10n.storageClearOnlineAudioTitle,
-      content: l10n.storageClearOnlineAudioBody,
-      confirmText: l10n.storageClearCache,
-      confirmColor: AppTokens.warning,
-    );
-
-    if (!confirmed || !mounted) return;
-
-    setState(() => _isClearing = true);
-
-    try {
-      await StorageAnalysisService.instance.clearOnlineAudioCache();
-      await _loadSizes();
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearOnlineAudioSuccess);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearOnlineAudioError('$e'));
-      }
-    }
+    await _run(StorageAnalysisService.instance.clearBackups,
+        l10n.storageClearBackupsSuccess);
   }
 
   Future<void> _handleDangerousClear() async {
     final l10n = AppLocalizations.of(context);
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await _confirm(
       title: l10n.storageClearAllTitle,
-      content: l10n.storageClearAllBody,
-      confirmText: l10n.storageClearAllAction,
-      confirmColor: AppTokens.danger,
+      body: l10n.storageClearAllBody,
+      action: l10n.storageClearAllAction,
+      color: AppTokens.danger,
       requireTextInput: true,
     );
-
     if (!confirmed || !mounted) return;
 
-    if (mounted) {
-      setState(() => _isClearing = true);
-    }
-
+    setState(() => _isBusy = true);
     try {
       await StorageAnalysisService.instance.clearAllUserData();
       if (mounted) exit(0);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isClearing = false);
-        appSnack(context, l10n.storageClearAllError('$e'));
-      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isBusy = false);
+      appSnack(context, l10n.storageClearAllError('$error'),
+          tone: AppTone.danger);
     }
   }
+
+  List<_BucketSpec> _bucketSpecs(AppLocalizations l10n) => [
+        _BucketSpec(CacheBucket.covers, l10n.storageCoverCacheTitle,
+            l10n.storageCoverCacheSubtitle, AppIcons.image, AppTokens.info),
+        _BucketSpec(CacheBucket.remoteArt, l10n.storageRemoteArtTitle,
+            l10n.storageRemoteArtSubtitle, AppIcons.image, AppTokens.info),
+        _BucketSpec(CacheBucket.blurred, l10n.storageBlurredCacheTitle,
+            l10n.storageBlurredCacheSubtitle, AppIcons.blur, AppTokens.info),
+        _BucketSpec(
+            CacheBucket.notification,
+            l10n.storageNotificationCacheTitle,
+            l10n.storageNotificationCacheSubtitle,
+            AppIcons.image,
+            AppTokens.info),
+        _BucketSpec(CacheBucket.waveforms, l10n.storageWaveformCacheTitle,
+            l10n.storageWaveformCacheSubtitle, AppIcons.waves, AppTokens.info),
+        _BucketSpec(
+            CacheBucket.beatMaps,
+            l10n.storageBeatAnalysisTitle,
+            l10n.storageBeatAnalysisSubtitle,
+            AppIcons.graphicEq,
+            AppTokens.success),
+        _BucketSpec(CacheBucket.lyrics, l10n.storageLyricsCacheTitle,
+            l10n.storageLyricsCacheSubtitle, AppIcons.lyrics, AppTokens.info),
+        _BucketSpec(CacheBucket.palettes, l10n.storageColorCacheTitle,
+            l10n.storageColorCacheSubtitle, AppIcons.palette, AppTokens.danger),
+        _BucketSpec(
+            CacheBucket.youtube,
+            l10n.storageYoutubeCacheTitle,
+            l10n.storageYoutubeCacheSubtitle,
+            AppIcons.cloudUpload,
+            AppTokens.warning),
+        _BucketSpec(CacheBucket.onlineAudio, l10n.storageOnlineAudioTitle,
+            l10n.storageOnlineAudioSubtitle, AppIcons.download, AppTokens.info),
+      ];
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return AmbientScaffold(
       appBar: AppTopBar(title: l10n.storageManageTitle),
-      body: _isLoading || _isClearing
+      body: _isBusy
           ? const Center(child: CircularProgressIndicator())
           : WideContentCenter(
               maxWidth: WideLayout.maxNarrowWidth,
               child: RefreshIndicator(
-                onRefresh: _loadSizes,
+                onRefresh: () => _load(refresh: true),
                 child: ListView(
                   padding: const EdgeInsets.all(AppTokens.s4),
                   children: [
@@ -602,34 +415,12 @@ class _StorageManagementScreenState
                       icon: AppIcons.storage,
                       color: AppTokens.info,
                       onClear: _databaseSize > 0 ? _handleClearDatabase : null,
+                      clearLabel: l10n.actionClear,
                       isDestructive: true,
                     ),
-                    _buildStorageCard(
-                      title: l10n.storageCoverCacheTitle,
-                      subtitle: l10n.storageCoverCacheSubtitle,
-                      size: _coversSize,
-                      icon: AppIcons.image,
-                      color: AppTokens.info,
-                      onClear: _coversSize > 0 ? _handleClearCovers : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageBackupsTitle,
-                      subtitle: l10n.storageBackupsSubtitle,
-                      size: _backupsSize,
-                      icon: AppIcons.cloudUpload,
-                      color: AppTokens.warning,
-                      onClear: _backupsSize > 0 ? _handleClearBackups : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageLibraryCacheTitle,
-                      subtitle: l10n.storageLibraryCacheSubtitle,
-                      size: _libraryCacheSize,
-                      icon: AppIcons.library,
-                      color: AppTokens.success,
-                      onClear: _libraryCacheSize > 0
-                          ? _handleClearLibraryCache
-                          : null,
-                    ),
+                    _buildWispieCacheCard(),
+                    for (final spec in _bucketSpecs(l10n))
+                      _buildBucketCard(spec),
                     _buildStorageCard(
                       title: l10n.storageSearchIndexTitle,
                       subtitle: l10n.storageSearchIndexSubtitle,
@@ -638,64 +429,19 @@ class _StorageManagementScreenState
                       color: AppTokens.success,
                       onClear:
                           _searchIndexSize > 0 ? _handleClearSearchIndex : null,
+                      clearLabel: l10n.actionClear,
                     ),
                     _buildStorageCard(
-                      title: l10n.storageWaveformCacheTitle,
-                      subtitle: l10n.storageWaveformCacheSubtitle,
-                      size: _waveformCacheSize,
-                      icon: AppIcons.waves,
-                      color: AppTokens.info,
-                      onClear: _waveformCacheSize > 0
-                          ? _handleClearWaveformCache
-                          : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageBeatAnalysisTitle,
-                      subtitle: l10n.storageBeatAnalysisSubtitle,
-                      size: _beatMapCacheSize,
-                      icon: AppIcons.graphicEq,
-                      color: AppTokens.success,
-                      onClear: _beatMapCacheSize > 0
-                          ? _handleClearBeatMapCache
-                          : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageColorCacheTitle,
-                      subtitle: l10n.storageColorCacheSubtitle,
-                      size: _colorCacheSize,
-                      icon: AppIcons.palette,
-                      color: AppTokens.danger,
-                      onClear:
-                          _colorCacheSize > 0 ? _handleClearColorCache : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageLyricsCacheTitle,
-                      subtitle: l10n.storageLyricsCacheSubtitle,
-                      size: _lyricsCacheSize,
-                      icon: AppIcons.lyrics,
-                      color: AppTokens.info,
-                      onClear:
-                          _lyricsCacheSize > 0 ? _handleClearLyricsCache : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageOnlineAudioTitle,
-                      subtitle: l10n.storageOnlineAudioSubtitle,
-                      size: _onlineAudioCacheSize,
-                      icon: AppIcons.download,
-                      color: AppTokens.info,
-                      onClear: _onlineAudioCacheSize > 0
-                          ? _handleClearOnlineAudioCache
-                          : null,
-                    ),
-                    _buildStorageCard(
-                      title: l10n.storageBlurredCacheTitle,
-                      subtitle: l10n.storageBlurredCacheSubtitle,
-                      size: _blurredCacheSize,
-                      icon: AppIcons.blur,
-                      color: AppTokens.info,
-                      onClear: _blurredCacheSize > 0
-                          ? _handleClearBlurredCache
-                          : null,
+                      title: l10n.storageBackupsTitle,
+                      subtitle: l10n.storageBackupsSubtitle,
+                      size: _backupsSize,
+                      icon: AppIcons.cloudUpload,
+                      color: AppTokens.warning,
+                      onClear: _backupsSize > 0 ? _handleClearBackups : null,
+                      clearLabel: l10n.actionClear,
+                      footer: _backupsPath.isEmpty
+                          ? null
+                          : l10n.storageBackupsLocation(_backupsPath),
                     ),
                     const SizedBox(height: 24),
                     const Divider(),
@@ -736,8 +482,8 @@ class _StorageManagementScreenState
   }
 
   /// Sits above the clear buttons on purpose: someone whose artwork vanished
-  /// after moving devices comes here to clear something, and repairing the
-  /// links is both what they actually want and the non-destructive option.
+  /// after moving devices comes here to clear something, and repairing links is
+  /// what they actually want and the non-destructive option.
   Widget _buildRepairCard() {
     final l10n = AppLocalizations.of(context);
     return AppSurface(
@@ -802,15 +548,7 @@ class _StorageManagementScreenState
     );
   }
 
-  Widget _buildStorageCard({
-    required String title,
-    required String subtitle,
-    required int size,
-    required AppIconData icon,
-    required Color color,
-    VoidCallback? onClear,
-    bool isDestructive = false,
-  }) {
+  Widget _buildWispieCacheCard() {
     final l10n = AppLocalizations.of(context);
     return AppSurface(
       padding: EdgeInsets.zero,
@@ -818,6 +556,123 @@ class _StorageManagementScreenState
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTokens.info.withValues(alpha: 0.1),
+                    borderRadius: AppTokens.brSm,
+                  ),
+                  child: const AppIcon(AppIcons.dataObject,
+                      color: AppTokens.info, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.storageWispieCacheTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.storageWispieCacheSubtitle,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  _formatSize(l10n, _usage.totalBytes),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTokens.s4),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _handleCleanUp,
+                    icon: const AppIcon(AppIcons.autoFix),
+                    label: Text(l10n.storageCleanCacheAction),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTokens.surface(2),
+                      foregroundColor: AppTokens.fgPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTokens.s3),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed:
+                        _usage.totalBytes > 0 ? _handleClearWispieCache : null,
+                    icon: const AppIcon(AppIcons.delete),
+                    label: Text(l10n.actionClear),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTokens.surface(2),
+                      foregroundColor: AppTokens.fgPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBucketCard(_BucketSpec spec) {
+    final l10n = AppLocalizations.of(context);
+    final bytes = _usage.bytesOf(spec.bucket);
+    return _buildStorageCard(
+      title: spec.title,
+      subtitle: spec.subtitle,
+      size: bytes,
+      icon: spec.icon,
+      color: spec.color,
+      onClear: bytes > 0 ? () => _handleClearBucket(spec) : null,
+      clearLabel: l10n.actionClear,
+      sizeLabel: bytes == 0 ? l10n.storageCacheEmpty : null,
+    );
+  }
+
+  Widget _buildStorageCard({
+    required String title,
+    required String subtitle,
+    required int size,
+    required AppIconData icon,
+    required Color color,
+    VoidCallback? onClear,
+    required String clearLabel,
+    bool isDestructive = false,
+    String? footer,
+    String? sizeLabel,
+  }) {
+    final l10n = AppLocalizations.of(context);
+    final ThemeData theme = Theme.of(context);
+    return AppSurface(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
@@ -845,7 +700,7 @@ class _StorageManagementScreenState
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: theme.colorScheme.onSurfaceVariant,
                           fontSize: 13,
                         ),
                       ),
@@ -854,7 +709,7 @@ class _StorageManagementScreenState
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  _formatSize(l10n, size),
+                  sizeLabel ?? _formatSize(l10n, size),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -862,6 +717,16 @@ class _StorageManagementScreenState
                 ),
               ],
             ),
+            if (footer != null) ...[
+              const SizedBox(height: AppTokens.s2),
+              Text(
+                footer,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                ),
+              ),
+            ],
             if (onClear != null) ...[
               const SizedBox(height: AppTokens.s4),
               SizedBox(
@@ -869,7 +734,7 @@ class _StorageManagementScreenState
                 child: FilledButton.icon(
                   onPressed: onClear,
                   icon: const AppIcon(AppIcons.delete),
-                  label: Text(l10n.actionClear),
+                  label: Text(clearLabel),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppTokens.surface(2),
                     foregroundColor:

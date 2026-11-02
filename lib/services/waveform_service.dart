@@ -11,12 +11,13 @@ import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
 import 'package:path/path.dart' as p;
 
-import 'cache_service.dart';
+import '../domain/services/cache_policy.dart';
+import 'wispie_cache.dart';
 import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
 
 class WaveformService {
-  final CacheService _cacheService;
+  final WispieCache _cacheService;
 
   WaveformService(this._cacheService);
 
@@ -50,7 +51,7 @@ class WaveformService {
   Future<bool> isWaveformCached(String filename) async {
     if (filename.isEmpty) return false;
     if (_memoryCache.containsKey(filename)) return true;
-    final cacheFile = await _cacheService.getWaveformCacheFile(filename);
+    final cacheFile = await _cacheService.waveformFile(filename);
     return cacheFile.exists();
   }
 
@@ -87,14 +88,14 @@ class WaveformService {
     final cached = _memoryCache[filename];
     if (cached != null) return cached;
 
-    final cacheFile = await _cacheService.getWaveformCacheFile(filename);
+    final cacheFile = await _cacheService.waveformFile(filename);
     if (await cacheFile.exists()) {
       try {
-        final content = await cacheFile.readAsString();
-        final List<dynamic> json = jsonDecode(content);
-        final samples = json.cast<double>();
-        _memoryCache[filename] = samples;
-        return samples;
+        final samples = decodeWaveformBars(await cacheFile.readAsBytes());
+        if (samples.isNotEmpty) {
+          _memoryCache[filename] = samples;
+          return samples;
+        }
       } catch (e) {
         debugPrint('Error reading waveform cache: $e');
       }
@@ -161,7 +162,7 @@ class WaveformService {
       return;
     }
 
-    final cacheFile = await _cacheService.getWaveformCacheFile(filename);
+    final cacheFile = await _cacheService.waveformFile(filename);
     if (await cacheFile.exists()) {
       try {
         final content = await cacheFile.readAsString();
@@ -496,7 +497,7 @@ Future<void> _isolateWriteWaveformCache(String path, List<double> samples) {
 }
 
 void writeWaveformCacheFile(String path, List<double> samples) {
-  File(path).writeAsStringSync(jsonEncode(samples));
+  File(path).writeAsBytesSync(encodeWaveformBars(samples));
 }
 
 /// Buckets 16-bit mono PCM [bytes] into [targetSamples] loudness bars.

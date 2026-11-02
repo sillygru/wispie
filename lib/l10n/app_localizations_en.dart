@@ -5744,4 +5744,91 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsSearchBatchReplaceSubtitle =>
       'Swap songs for better files from another folder';
+
+  @override
+  String get storageWispieCacheTitle => 'wispie cache';
+
+  @override
+  String get storageWispieCacheSubtitle =>
+      'Rebuilt on demand. Nothing here is your data.';
+
+  @override
+  String get storageCleanCacheAction => 'Clean up';
+
+  @override
+  String get storageCleanCacheTitle => 'Clean up cache?';
+
+  @override
+  String get storageCleanCacheBody =>
+      'Deletes cached files nothing refers to, empty files, and anything over its size limit. Everything is rebuilt when needed.';
+
+  @override
+  String storageCleanCacheSuccess(String size) {
+    return 'Cleaned $size';
+  }
+
+  @override
+  String get storageCleanCacheNothing => 'Cache is already tidy';
+
+  @override
+  String storageCleanCacheError(String error) {
+    return 'Error cleaning cache: $error';
+  }
+
+  @override
+  String get storageCacheEmpty => 'Empty';
+
+  @override
+  String storageClearBucketTitle(String name) {
+    return 'Clear $name?';
+  }
+
+  @override
+  String get storageClearBucketBody =>
+      'These files are rebuilt the next time they are needed.';
+
+  @override
+  String storageClearBucketSuccess(String name) {
+    return 'Cleared $name';
+  }
+
+  @override
+  String storageClearBucketError(String name, String error) {
+    return 'Error clearing $name: $error';
+  }
+
+  @override
+  String get storageClearWispieCacheTitle => 'Clear wispie cache?';
+
+  @override
+  String get storageClearWispieCacheBody =>
+      'Every cached file is deleted and rebuilt when needed. Your library, playlists and statistics are untouched.';
+
+  @override
+  String get storageClearWispieCacheSuccess => 'wispie cache cleared';
+
+  @override
+  String get storageRemoteArtTitle => 'Downloaded Artwork';
+
+  @override
+  String get storageRemoteArtSubtitle => 'Artwork fetched online for themes';
+
+  @override
+  String get storageNotificationCacheTitle => 'Notification Art';
+
+  @override
+  String get storageNotificationCacheSubtitle =>
+      'Square covers for the media notification';
+
+  @override
+  String get storageYoutubeCacheTitle => 'Online Pages';
+
+  @override
+  String get storageYoutubeCacheSubtitle =>
+      'Cached YouTube pages and the home feed';
+
+  @override
+  String storageBackupsLocation(String path) {
+    return 'Saved in $path';
+  }
 }

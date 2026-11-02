@@ -2,16 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path/path.dart' as p;
 
 import '../domain/models/lrclib_result.dart';
 import '../domain/models/rich_lyrics.dart';
 import '../domain/services/lrclib_match.dart';
 import '../domain/services/lrclib_query.dart';
 import '../models/song.dart';
-import 'cache_service.dart';
+import 'wispie_cache.dart';
 import 'music_utils_api_client.dart';
 import 'shared_http_client.dart';
 
@@ -297,7 +295,7 @@ class LrclibService {
   }
 
   Future<File> _cacheFileFor(Song song) =>
-      CacheService.instance.getRemoteLyricsFile(song.filename);
+      WispieCache.instance.remoteLyricsFile(song.filename);
 
   /// Best online lyrics for a track.
   ///
@@ -371,11 +369,8 @@ class LrclibService {
     return (lyrics: lyrics, settled: true);
   }
 
-  Future<File> _richCacheFileFor(Song song) async {
-    final digest = sha1.convert(utf8.encode(song.filename)).toString();
-    final base = await CacheService.instance.getV3File('lyrics_cache');
-    return File(p.join(base.parent.path, 'lyrics_cache', 'rich_$digest.json'));
-  }
+  Future<File> _richCacheFileFor(Song song) =>
+      WispieCache.instance.richLyricsFile(song.filename);
 
   static final Map<String, Future<({RichLyrics? lyrics, bool settled})>>
       _richSyncCache = {};

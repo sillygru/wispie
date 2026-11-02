@@ -1,5 +1,5 @@
 import 'shared_http_client.dart';
-import 'debug_sandbox.dart';
+import 'wispie_cache.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -273,12 +273,7 @@ class FFmpegService {
   ) async {
     final file = File(inputPath);
     final stat = await file.stat();
-    final supportDir = await getSupportDirectory();
-    final proxyDir =
-        Directory(p.join(supportDir.path, 'gru_cache_v3', 'ios_media_proxy'));
-    if (!await proxyDir.exists()) {
-      await proxyDir.create(recursive: true);
-    }
+    final proxyDir = await WispieCache.instance.proxyDirectory();
     final key = sha1
         .convert(utf8.encode(
             '$kind|$inputPath|${stat.modified.millisecondsSinceEpoch}|${stat.size}'))

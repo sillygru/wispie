@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
-import '../../services/cache_service.dart';
+import '../../services/wispie_cache.dart';
 import '../../services/ffmpeg_service.dart';
 import '../../services/media_decode_gate.dart';
 import '../models/cover_key.dart';
+import 'cache_policy.dart';
 
 /// Decode and cache seam for media work.
 ///
@@ -14,11 +13,11 @@ import '../models/cover_key.dart';
 /// is serialized through [MediaDecodeGate] so FFmpeg work does not overlap.
 /// Cache invalidation is unified behind [CoverKey].
 class MediaDecode {
-  final CacheService _cache;
+  final WispieCache _cache;
   final FFmpegService _ffmpeg;
 
-  MediaDecode({CacheService? cache, FFmpegService? ffmpeg})
-      : _cache = cache ?? CacheService.instance,
+  MediaDecode({WispieCache? cache, FFmpegService? ffmpeg})
+      : _cache = cache ?? WispieCache.instance,
         _ffmpeg = ffmpeg ?? FFmpegService.instance;
 
   /// Returns cached waveform peaks for [key], if present.
@@ -27,14 +26,10 @@ class MediaDecode {
   /// in [WaveformService]. Does not hold [MediaDecodeGate].
   Future<List<double>> getCachedWaveform(CoverKey key) async {
     if (key.isEmpty) return const <double>[];
-    final cacheFile = await _cache.getWaveformCacheFile(key.filename);
+    final cacheFile = await _cache.waveformFile(key.filename);
     if (!await cacheFile.exists()) return const <double>[];
     try {
-      final content = await cacheFile.readAsString();
-      if (content.isEmpty) return const <double>[];
-      final decoded = await compute(_decodeJson, content);
-      if (decoded.isEmpty) return const <double>[];
-      return decoded.map((e) => (e as num).toDouble()).toList();
+      return await compute(decodeWaveformBars, await cacheFile.readAsBytes());
     } catch (e) {
       debugPrint(
           'MediaDecode: waveform cache read failed for ${key.filename}: $e');
@@ -106,12 +101,12 @@ class MediaDecode {
 
   /// Cache invalidation unified behind CoverKey so callers do not pass
   /// raw strings with varying `file://` handling.
-  Future<void> invalidateBlurredCache(CoverKey key) =>
-      _cache.invalidateBlurredCache(key.filename);
+  Future<void> invalidateBlurred(CoverKey key) =>
+      _cache.invalidateBlurred(key.filename);
 
   Future<void> invalidateWaveformCache(CoverKey key) async {
     try {
-      final file = await _cache.getWaveformCacheFile(key.filename);
+      final file = await _cache.waveformFile(key.filename);
       if (await file.exists()) await file.delete();
     } catch (_) {}
   }
@@ -121,20 +116,11 @@ class MediaDecode {
       CoverKey.notificationKeyForCoverPath(coverPath);
 }
 
-List<dynamic> _decodeJson(String content) {
-  if (content.isEmpty) return <dynamic>[];
-  try {
-    final decoded = jsonDecode(content);
-    if (decoded is List) return decoded;
-  } catch (_) {}
-  return <dynamic>[];
-}
-
 /// In-memory fake for tests — no FFmpeg, no files.
 class FakeMediaDecode extends MediaDecode {
   final Map<String, List<double>> waveforms = {};
 
-  FakeMediaDecode() : super(cache: CacheService.instance);
+  FakeMediaDecode() : super(cache: WispieCache.instance);
 
   @override
   Future<List<double>> getCachedWaveform(CoverKey key) async {

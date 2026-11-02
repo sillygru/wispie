@@ -1,4 +1,3 @@
-import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
@@ -6,13 +5,12 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:crypto/crypto.dart';
-import 'package:path/path.dart' as p;
 import 'package:image/image.dart' as img;
 
 import '../domain/services/cover_palette.dart';
 import '../domain/services/cover_path.dart';
 import 'shared_http_client.dart';
+import 'wispie_cache.dart';
 
 class ExtractedPalette {
   final Color? used;
@@ -187,7 +185,6 @@ class ColorExtractionService {
   static LinkedHashMap<String, _CacheEntry> _paletteCache = LinkedHashMap();
   static final Map<String, Future<ExtractedPalette?>> _pendingPalettes = {};
   static File? _cacheFile;
-  static Directory? _paletteDir;
   static bool _initialized = false;
   static Future<void>? _initFuture;
   static Timer? _saveDebounceTimer;
@@ -207,13 +204,7 @@ class ColorExtractionService {
 
   static Future<void> _initInternal() async {
     try {
-      final appSupportDir = await getSupportDirectory();
-      _cacheFile = File(p.join(appSupportDir.path, 'palette_cache.json'));
-      _paletteDir = Directory(p.join(appSupportDir.path, 'palettes'));
-
-      if (!await _paletteDir!.exists()) {
-        await _paletteDir!.create(recursive: true);
-      }
+      _cacheFile = await WispieCache.instance.paletteIndexFile();
 
       if (await _cacheFile!.exists()) {
         final Map<String, dynamic> json =
@@ -305,11 +296,7 @@ class ColorExtractionService {
 
   static Future<File?> _downloadArtwork(Uri uri) async {
     try {
-      final support = await getSupportDirectory();
-      final directory = Directory(p.join(support.path, 'artwork_cache'));
-      if (!await directory.exists()) await directory.create(recursive: true);
-      final digest = sha1.convert(utf8.encode(uri.toString())).toString();
-      final file = File(p.join(directory.path, 'art_$digest.img'));
+      final file = await WispieCache.instance.remoteArtFile(uri.toString());
       if (await file.exists() && await file.length() > 0) return file;
 
       final request = await SharedHttpClient.instance
@@ -609,15 +596,6 @@ class ColorExtractionService {
     if (_cacheFile != null && await _cacheFile!.exists()) {
       await _cacheFile!.delete();
     }
-    if (_paletteDir != null && await _paletteDir!.exists()) {
-      await _paletteDir!.delete(recursive: true);
-      await _paletteDir!.create();
-    }
-  }
-
-  static Future<int> getCacheSize() async {
-    if (_cacheFile == null || !await _cacheFile!.exists()) return 0;
-    return await _cacheFile!.length();
   }
 
   static int _batchProgress = 0;

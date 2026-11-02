@@ -48,7 +48,7 @@ Legacy: `lib/models/`, `lib/services/`, `lib/providers/`, `lib/theme/`. Newer: `
 
 ### `filename` is the primary key for user data
 
-Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `merged_song`, `recommendation_*`, `cover_miss`) keys on the song's **filename**, not a path or synthetic id. Renaming a file outside the app orphans its stats. Merged songs map several filenames to one group id (`AudioPlayerManager._getMergedSiblings`).
+Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `merged_song`, `recommendation_*`, `cover_miss`) keys on the song's **filename**, not a path or synthetic id. Renaming a file outside the app orphans its stats. Merged songs map several filenames to one group id (`AudioPlayerManager._getMergedSiblings`). A merge group is a queue-builder relation only: the queue treats its members as one track so it never schedules two versions, while favourites, play counts, playlist membership and every other per-song signal stay independent.
 
 ### Databases
 

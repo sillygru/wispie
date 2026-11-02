@@ -8,7 +8,7 @@ import '../data/repositories/song_identity_repository.dart';
 import '../data/repositories/song_repository.dart';
 import '../models/song.dart';
 import '../providers/artist_album_art_provider.dart';
-import '../services/cache_service.dart';
+import '../services/wispie_cache.dart';
 import '../services/color_extraction_service.dart';
 import '../services/cover_refresh_service.dart';
 import '../services/database_optimizer_service.dart';
@@ -511,11 +511,11 @@ class IndexerNotifier extends Notifier<IndexerState> {
   Future<_Plan<Song>> _waveformPlan(List<Song> songs,
       {required bool force}) async {
     if (force) return _Plan(songs, songs);
-    final cache = CacheService.instance;
+    final cache = WispieCache.instance;
     return _Plan(
       songs,
       await _whereAsync(songs, (s) async {
-        final f = await cache.getWaveformCacheFile(s.filename);
+        final f = await cache.waveformFile(s.filename);
         return !await f.exists();
       }),
     );
@@ -544,11 +544,11 @@ class IndexerNotifier extends Notifier<IndexerState> {
     final withCover =
         await _whereAsync(songs, (s) => _nonEmptyFile(s.coverUrl));
     if (force) return _Plan(withCover, withCover);
-    final cache = CacheService.instance;
+    final cache = WispieCache.instance;
     return _Plan(
       withCover,
       await _whereAsync(withCover, (s) async {
-        final f = await cache.getBlurredCacheFile(s.filename);
+        final f = await cache.blurredFile(s.filename);
         return !await f.exists();
       }),
     );
@@ -722,14 +722,14 @@ class IndexerNotifier extends Notifier<IndexerState> {
 
   Future<IndexerResult> _rebuildWaveforms(_Run run, List<Song> targets,
       {required bool force}) async {
-    final cache = CacheService.instance;
+    final cache = WispieCache.instance;
     final waveforms = WaveformService(cache);
     run.start(targets.length);
     try {
       for (final song in targets) {
         if (run.cancelled) break;
         try {
-          final file = await cache.getWaveformCacheFile(song.filename);
+          final file = await cache.waveformFile(song.filename);
           if (force && await file.exists()) await file.delete();
           final data = await waveforms.getWaveform(song.filename, song.url);
           run.tick(failedItem: data.isEmpty ? song.filename : null);
@@ -760,13 +760,13 @@ class IndexerNotifier extends Notifier<IndexerState> {
   }
 
   Future<IndexerResult> _rebuildBlurred(_Run run, List<Song> targets) async {
-    final cache = CacheService.instance;
+    final cache = WispieCache.instance;
     final ffmpeg = FFmpegService();
     run.start(targets.length);
     for (final song in targets) {
       if (run.cancelled) break;
       try {
-        final out = await cache.getBlurredCacheFile(song.filename);
+        final out = await cache.blurredFile(song.filename);
         final ok = await ffmpeg.generateBlurredImage(
           inputPath: song.coverUrl!,
           outputPath: out.path,

@@ -1,15 +1,13 @@
-import '../../services/debug_sandbox.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:crypto/crypto.dart';
-import 'package:path/path.dart' as p;
+import '../../domain/services/cache_policy.dart';
 import '../../models/song.dart';
 import '../../services/ffmpeg_service.dart';
+import '../../services/wispie_cache.dart';
 
 class SongRepository {
   final FFmpegService _ffmpegService = FFmpegService();
-  static const String _lyricsCacheFolder = 'lyrics_cache';
 
   SongRepository();
 
@@ -96,10 +94,7 @@ class SongRepository {
 
   Future<void> clearLyricsCache() async {
     _resolvedLyrics.clear();
-    final dir = await _getLyricsCacheDirectory();
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
-    }
+    await WispieCache.instance.clearBucket(CacheBucket.lyrics);
   }
 
   Future<void> invalidateLyricsCache(Song song) async {
@@ -151,17 +146,8 @@ class SongRepository {
     } catch (_) {}
   }
 
-  Future<File> _getCacheFileForSong(Song song) async {
-    final dir = await _getLyricsCacheDirectory();
-    final digest = sha1.convert(utf8.encode(song.url)).toString();
-    return File(p.join(dir.path, '$digest.json'));
-  }
-
-  Future<Directory> _getLyricsCacheDirectory() async {
-    final supportDir = await getSupportDirectory();
-    return Directory(
-        p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheFolder));
-  }
+  Future<File> _getCacheFileForSong(Song song) =>
+      WispieCache.instance.songLyricsFile(song.url);
 }
 
 class _LyricsCacheEntry {

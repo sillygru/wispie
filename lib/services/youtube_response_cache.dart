@@ -8,7 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/services/youtube_library.dart';
-import 'cache_service.dart';
+import '../domain/services/cache_policy.dart';
+import 'wispie_cache.dart';
 
 /// Disk- and memory-backed cache for InnerTube responses.
 ///
@@ -143,11 +144,8 @@ class YouTubeResponseCache implements YouTubeResponseStore {
     return File(p.join(directory.path, '$_prefix$digest.json'));
   }
 
-  Future<Directory> _directory() async {
-    await CacheService.instance.init();
-    final file = await CacheService.instance.getV3File('youtube');
-    return file.parent;
-  }
+  Future<Directory> _directory() =>
+      WispieCache.instance.directory(CacheBucket.youtube);
 }
 
 class _Entry {

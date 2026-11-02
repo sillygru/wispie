@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../models/song.dart';
-import '../../services/cache_service.dart';
+import '../../services/wispie_cache.dart';
 import '../../services/ffmpeg_service.dart';
 import '../../services/wispie_paths.dart';
 import '../models/search_index_entry.dart';
@@ -342,8 +342,7 @@ class SearchIndexRepository {
   /// cache is the only copy that exists.
   Future<String?> _cachedRemoteLyrics(Song song) async {
     try {
-      final file =
-          await CacheService.instance.getRemoteLyricsFile(song.filename);
+      final file = await WispieCache.instance.remoteLyricsFile(song.filename);
       if (!await file.exists()) return null;
       final text = (await file.readAsString()).trim();
       if (text.isEmpty) return null;

@@ -8,7 +8,7 @@ import 'wispie_paths.dart';
 import '../presentation/widgets/in_app_folder_picker.dart';
 import 'android_storage_service.dart';
 import 'backup_manifest.dart';
-import 'cache_service.dart';
+import 'wispie_cache.dart';
 import 'ios_folder_access_service.dart';
 import 'import_options.dart';
 
@@ -194,7 +194,7 @@ class StorageService {
   }
 
   Future<void> _markLibraryFoldersChanged() async {
-    await CacheService.instance.markLibraryChanged();
+    await WispieCache.instance.markLibraryChanged();
   }
 
   /// Returns null when the user cancels. Throws [FolderPickerUnavailable]
@@ -823,7 +823,7 @@ class StorageService {
     await _importSettingsSubset(filtered, _scannerSettingsKeys);
     if (filtered.containsKey('music_folders_list')) {
       _cachedMusicFolders = null;
-      await CacheService.instance.markLibraryChanged();
+      await WispieCache.instance.markLibraryChanged();
     }
   }
 

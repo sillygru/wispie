@@ -9632,6 +9632,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Swap songs for better files from another folder'**
   String get settingsSearchBatchReplaceSubtitle;
+
+  /// No description provided for @storageWispieCacheTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'wispie cache'**
+  String get storageWispieCacheTitle;
+
+  /// No description provided for @storageWispieCacheSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuilt on demand. Nothing here is your data.'**
+  String get storageWispieCacheSubtitle;
+
+  /// No description provided for @storageCleanCacheAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean up'**
+  String get storageCleanCacheAction;
+
+  /// No description provided for @storageCleanCacheTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clean up cache?'**
+  String get storageCleanCacheTitle;
+
+  /// No description provided for @storageCleanCacheBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Deletes cached files nothing refers to, empty files, and anything over its size limit. Everything is rebuilt when needed.'**
+  String get storageCleanCacheBody;
+
+  /// No description provided for @storageCleanCacheSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleaned {size}'**
+  String storageCleanCacheSuccess(String size);
+
+  /// No description provided for @storageCleanCacheNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache is already tidy'**
+  String get storageCleanCacheNothing;
+
+  /// No description provided for @storageCleanCacheError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error cleaning cache: {error}'**
+  String storageCleanCacheError(String error);
+
+  /// No description provided for @storageCacheEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get storageCacheEmpty;
+
+  /// No description provided for @storageClearBucketTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear {name}?'**
+  String storageClearBucketTitle(String name);
+
+  /// No description provided for @storageClearBucketBody.
+  ///
+  /// In en, this message translates to:
+  /// **'These files are rebuilt the next time they are needed.'**
+  String get storageClearBucketBody;
+
+  /// No description provided for @storageClearBucketSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Cleared {name}'**
+  String storageClearBucketSuccess(String name);
+
+  /// No description provided for @storageClearBucketError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error clearing {name}: {error}'**
+  String storageClearBucketError(String name, String error);
+
+  /// No description provided for @storageClearWispieCacheTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear wispie cache?'**
+  String get storageClearWispieCacheTitle;
+
+  /// No description provided for @storageClearWispieCacheBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Every cached file is deleted and rebuilt when needed. Your library, playlists and statistics are untouched.'**
+  String get storageClearWispieCacheBody;
+
+  /// No description provided for @storageClearWispieCacheSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'wispie cache cleared'**
+  String get storageClearWispieCacheSuccess;
+
+  /// No description provided for @storageRemoteArtTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloaded Artwork'**
+  String get storageRemoteArtTitle;
+
+  /// No description provided for @storageRemoteArtSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Artwork fetched online for themes'**
+  String get storageRemoteArtSubtitle;
+
+  /// No description provided for @storageNotificationCacheTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification Art'**
+  String get storageNotificationCacheTitle;
+
+  /// No description provided for @storageNotificationCacheSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Square covers for the media notification'**
+  String get storageNotificationCacheSubtitle;
+
+  /// No description provided for @storageYoutubeCacheTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Online Pages'**
+  String get storageYoutubeCacheTitle;
+
+  /// No description provided for @storageYoutubeCacheSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached YouTube pages and the home feed'**
+  String get storageYoutubeCacheSubtitle;
+
+  /// No description provided for @storageBackupsLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved in {path}'**
+  String storageBackupsLocation(String path);
 }
 
 class _AppLocalizationsDelegate

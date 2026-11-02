@@ -10,8 +10,9 @@ import 'package:path/path.dart' as p;
 
 import '../domain/models/beat_map.dart';
 import '../domain/services/beat_analysis.dart';
+import '../domain/services/cache_policy.dart';
 import '../models/song.dart';
-import 'cache_service.dart';
+import 'wispie_cache.dart';
 import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
 import 'online_audio_cache.dart';
@@ -22,7 +23,7 @@ import 'online_audio_cache.dart';
 /// isolate, cache the result as JSON in the v3 cache directory. The expensive
 /// part happens exactly once per song, so playback never does DSP.
 class BeatAnalysisService {
-  final CacheService _cacheService;
+  final WispieCache _cacheService;
 
   BeatAnalysisService(this._cacheService);
 
@@ -55,7 +56,7 @@ class BeatAnalysisService {
   /// Never triggers analysis — for callers that want an instant answer.
   Future<BeatMap?> readCached(String filename) async {
     try {
-      final file = await _cacheService.getBeatMapCacheFile(filename);
+      final file = await _cacheService.beatMapFile(filename);
       if (!await file.exists()) return null;
       final json = jsonDecode(await file.readAsString());
       if (json is! Map<String, dynamic>) return null;
@@ -265,7 +266,7 @@ class BeatAnalysisService {
 
   Future<void> _writeCache(String filename, BeatMap map) async {
     try {
-      final file = await _cacheService.getBeatMapCacheFile(filename);
+      final file = await _cacheService.beatMapFile(filename);
       await file.writeAsString(jsonEncode(map.toJson()));
       _analyzed.add(filename);
     } catch (e) {
@@ -278,20 +279,8 @@ class BeatAnalysisService {
     await BeatAnalysisService.clearCachedMaps();
   }
 
-  static Future<void> clearCachedMaps() async {
-    final supportDir = await getSupportDirectory();
-    final dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-    if (!await dir.exists()) return;
-    await for (final entity in dir.list(followLinks: false)) {
-      if (entity is! File) continue;
-      final name = p.basename(entity.path);
-      if (name.startsWith('beatmap_') && name.endsWith('.json')) {
-        try {
-          await entity.delete();
-        } catch (_) {}
-      }
-    }
-  }
+  static Future<void> clearCachedMaps() =>
+      WispieCache.instance.clearBucket(CacheBucket.beatMaps);
 
   void dispose() {}
 }

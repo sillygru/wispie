@@ -28,9 +28,9 @@ const double _freshnessBoostAtFamiliar = 0.06;
 
 /// A song, or a merge group of songs, that smart shuffle may choose.
 ///
-/// [filenames] holds every member. Their taste is summed, so a merge group
-/// competes as one song. [isFavorite], [isSuggestLess] and [isInPlaylist] are
-/// true if any member carries the flag.
+/// The first of [filenames] is the version being scored; the rest only let
+/// queue anti-repeat treat the group as one track. Merging never shares
+/// favourites, play counts or playlist membership between versions.
 class SmartCandidate<T> {
   final T item;
   final List<String> filenames;
@@ -224,35 +224,30 @@ class _Signals {
   double saturation = 0.0;
   double skipRate = 0.0;
 
-  /// How new the freshest member is, 0..1.
+  /// How new the candidate's own file is, 0..1.
   double freshness = 0.0;
 }
 
-/// Sums member taste into one candidate. Skip rate is weighted by play count
-/// so a rarely played version does not drag the group.
+/// Reads the candidate's own taste. A merge group is one queue entry but each
+/// version keeps its own play counts, skip rate and newness.
 _Signals _signalsOf<T>(SmartCandidate<T> c, TasteSnapshot taste) {
   final out = _Signals();
-  var plays = 0;
-  var skipWeighted = 0.0;
-  for (final f in c.filenames) {
-    final song = taste.songs[f];
-    if (song == null) continue;
-    out.trend += song.trendMass;
-    out.long += song.longMass;
-    out.saturation += song.saturation;
-    plays += song.playCount;
-    skipWeighted += song.skipRate * song.playCount;
+  final filename = c.filenames.first;
+  final song = taste.songs[filename];
+  if (song != null) {
+    out.trend = song.trendMass;
+    out.long = song.longMass;
+    out.saturation = song.saturation;
+    out.skipRate = song.skipRate;
   }
-  // Looked up outside the loop: an unplayed arrival has no `SongTaste` entry,
-  // and that is exactly the row whose newness matters.
-  for (final f in c.filenames) {
-    final fresh = taste.newness[f] ?? 0.0;
-    if (fresh > out.freshness) out.freshness = fresh;
-  }
-  if (plays > 0) out.skipRate = skipWeighted / plays;
+  // An unplayed arrival has no `SongTaste` entry, and that is exactly the row
+  // whose newness matters.
+  out.freshness = taste.newness[filename] ?? 0.0;
   return out;
 }
 
+/// Anti-repeat is the one signal that spans a merge group: a sibling of the
+/// track that just played must not be scheduled next.
 int? _minHistory(List<String> filenames, Map<String, int> historyIndex) {
   int? best;
   for (final f in filenames) {

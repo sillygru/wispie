@@ -130,7 +130,7 @@ class BackupService {
   BackupService._();
 
   Future<Directory> get backupsDir async {
-    final appDir = await getWispieDirectory();
+    final appDir = await getWispieHomeDirectory();
     final backupsDir = Directory(p.join(appDir.path, backupsDirName));
     if (!await backupsDir.exists()) {
       await backupsDir.create(recursive: true);
@@ -296,7 +296,7 @@ class BackupService {
 
     final artifacts = await cacheArtifacts();
     for (final artifact in artifacts) {
-      if (!options.contentTypes.contains(artifact.type)) continue;
+      if (!artifact.coversAny(options.contentTypes)) continue;
       await stageArtifact(artifact, stagingDir.path);
     }
 
@@ -786,7 +786,7 @@ class BackupService {
           .toSet();
 
       for (final artifact in artifacts) {
-        if (!wantedTypes.contains(artifact.type)) continue;
+        if (!artifact.coversAny(wantedTypes)) continue;
         await restoreArtifact(artifact, importPath);
       }
     }

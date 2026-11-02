@@ -1,7 +1,10 @@
-import 'debug_sandbox.dart';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+
+import '../domain/services/cache_policy.dart';
+import 'wispie_cache.dart';
 import 'wispie_paths.dart';
 
 /// The kinds of content a backup archive can carry.
@@ -22,11 +25,11 @@ enum BackupContentType {
 /// One piece of cached content: where it lives on disk and where it is stored
 /// inside a backup archive.
 ///
-/// This is the single source of truth shared by the backup writer and the
-/// restore path, so a bucket can never be captured from one place and written
-/// back to another.
+/// [types] is a set because several content types share one directory: covers,
+/// artist art and album art all live in the cover store, and storing it once
+/// keeps archives from carrying the same images three times.
 class BackupArtifact {
-  final BackupContentType type;
+  final Set<BackupContentType> types;
 
   /// Path inside the archive, relative to the archive root.
   final String archivePath;
@@ -41,109 +44,111 @@ class BackupArtifact {
   /// Optional filter applied when a directory holds more than this bucket.
   final bool Function(File file)? filter;
 
+  /// False for entries kept only to read old archives, so new backups do not
+  /// duplicate their content.
+  final bool stage;
+
   const BackupArtifact({
-    required this.type,
+    required this.types,
     required this.archivePath,
     required this.sourcePath,
     required this.isDirectory,
     this.filter,
+    this.stage = true,
   });
+
+  bool covers(BackupContentType type) => types.contains(type);
+
+  bool coversAny(Set<BackupContentType> wanted) => wanted.any(types.contains);
 }
 
-/// Directory names used inside `gru_cache_v3`, mirrored from [CacheService].
-const String _blurredCacheDir = 'blurred_cache';
-const String _notificationCoverCacheDir = 'notification_cover_cache';
-const String _lyricsCacheDir = 'lyrics_cache';
-
 /// Builds the manifest of cache artifacts for the current device paths.
-///
-/// Documents/support directories are resolved once per call; the returned list
-/// is safe to filter by [BackupContentType].
 Future<List<BackupArtifact>> cacheArtifacts() async {
   final docDir = await getWispieDirectory();
-  final supportDir = await getSupportDirectory();
-  final v3Dir = p.join(supportDir.path, 'gru_cache_v3');
+  final cache = WispieCache.instance;
+  final covers = (await cache.directory(CacheBucket.covers)).path;
+  final blurred = (await cache.directory(CacheBucket.blurred)).path;
+  final notification = (await cache.directory(CacheBucket.notification)).path;
+  final lyrics = (await cache.directory(CacheBucket.lyrics)).path;
+  final waveforms = (await cache.directory(CacheBucket.waveforms)).path;
+  final palettes = (await cache.paletteIndexFile()).path;
+
+  const coverTypes = {
+    BackupContentType.coverCache,
+    BackupContentType.artistArtCache,
+    BackupContentType.albumArtCache,
+  };
 
   return [
-    // Covers: the real artwork lives in extracted_covers; the v3 directories
-    // hold derived thumbnails.
     BackupArtifact(
-      type: BackupContentType.coverCache,
+      types: coverTypes,
       archivePath: 'cache/covers/extracted',
-      sourcePath: p.join(supportDir.path, 'extracted_covers'),
+      sourcePath: covers,
       isDirectory: true,
     ),
     BackupArtifact(
-      type: BackupContentType.coverCache,
+      types: const {BackupContentType.coverCache},
       archivePath: 'cache/covers/blurred',
-      sourcePath: p.join(v3Dir, _blurredCacheDir),
+      sourcePath: blurred,
       isDirectory: true,
     ),
     BackupArtifact(
-      type: BackupContentType.coverCache,
+      types: const {BackupContentType.coverCache},
       archivePath: 'cache/covers/notification',
-      sourcePath: p.join(v3Dir, _notificationCoverCacheDir),
+      sourcePath: notification,
       isDirectory: true,
     ),
+    // Read-only duplicates for archives written before covers were stored once.
     BackupArtifact(
-      type: BackupContentType.libraryCache,
+      types: const {BackupContentType.artistArtCache},
+      archivePath: 'cache/artist_art',
+      sourcePath: covers,
+      isDirectory: true,
+      stage: false,
+    ),
+    BackupArtifact(
+      types: const {BackupContentType.albumArtCache},
+      archivePath: 'cache/album_art',
+      sourcePath: covers,
+      isDirectory: true,
+      stage: false,
+    ),
+    BackupArtifact(
+      types: const {BackupContentType.libraryCache},
       archivePath: 'cache/library/cached_songs.json',
       sourcePath: p.join(docDir.path, 'cached_songs.json'),
       isDirectory: false,
     ),
     BackupArtifact(
-      type: BackupContentType.searchIndex,
+      types: const {BackupContentType.searchIndex},
       archivePath: 'cache/search/wispie_search_index.db',
       sourcePath: p.join(docDir.path, 'wispie_search_index.db'),
       isDirectory: false,
     ),
     BackupArtifact(
-      type: BackupContentType.waveformCache,
+      types: const {BackupContentType.waveformCache},
       archivePath: 'cache/waveforms',
-      sourcePath: v3Dir,
+      sourcePath: waveforms,
       isDirectory: true,
-      filter: _isWaveformFile,
     ),
     BackupArtifact(
-      type: BackupContentType.colorCache,
+      types: const {BackupContentType.colorCache},
       archivePath: 'cache/color/palette_cache.json',
-      sourcePath: p.join(supportDir.path, 'palette_cache.json'),
+      sourcePath: palettes,
       isDirectory: false,
     ),
     BackupArtifact(
-      type: BackupContentType.colorCache,
-      archivePath: 'cache/color/palettes',
-      sourcePath: p.join(supportDir.path, 'palettes'),
-      isDirectory: true,
-    ),
-    BackupArtifact(
-      type: BackupContentType.lyricsCache,
+      types: const {BackupContentType.lyricsCache},
       archivePath: 'cache/lyrics',
-      sourcePath: p.join(v3Dir, _lyricsCacheDir),
-      isDirectory: true,
-    ),
-    BackupArtifact(
-      type: BackupContentType.artistArtCache,
-      archivePath: 'cache/artist_art',
-      sourcePath: p.join(supportDir.path, 'extracted_covers'),
-      isDirectory: true,
-    ),
-    BackupArtifact(
-      type: BackupContentType.albumArtCache,
-      archivePath: 'cache/album_art',
-      sourcePath: p.join(supportDir.path, 'extracted_covers'),
+      sourcePath: lyrics,
       isDirectory: true,
     ),
   ];
 }
 
-bool _isWaveformFile(File file) =>
-    p.basename(file.path).startsWith('waveform_');
-
 /// Copies an artifact's live content into [stagingRoot] under its archive path.
-///
-/// Returns the number of files staged (0 when the source does not exist).
 Future<int> stageArtifact(BackupArtifact artifact, String stagingRoot) async {
+  if (!artifact.stage) return 0;
   final target = p.join(stagingRoot, artifact.archivePath);
 
   if (!artifact.isDirectory) {
@@ -174,8 +179,6 @@ Future<int> stageArtifact(BackupArtifact artifact, String stagingRoot) async {
 
 /// Copies an artifact back from an extracted archive at [archiveRoot] to its
 /// live location. Existing files are overwritten; unrelated files are kept.
-///
-/// Returns the number of files restored (0 when the archive lacks this bucket).
 Future<int> restoreArtifact(BackupArtifact artifact, String archiveRoot) async {
   final source = p.join(archiveRoot, artifact.archivePath);
 
@@ -201,6 +204,7 @@ Future<int> restoreArtifact(BackupArtifact artifact, String archiveRoot) async {
     await entity.copy(destination.path);
     restored++;
   }
+  WispieCache.instance.invalidateUsage();
   return restored;
 }
 
@@ -210,7 +214,7 @@ Future<bool> archiveHasContent(
   BackupContentType type,
   String archiveRoot,
 ) async {
-  for (final artifact in artifacts.where((a) => a.type == type)) {
+  for (final artifact in artifacts.where((a) => a.covers(type))) {
     final path = p.join(archiveRoot, artifact.archivePath);
     if (artifact.isDirectory) {
       final dir = Directory(path);

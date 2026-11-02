@@ -15,7 +15,7 @@ import '../models/song.dart';
 import 'storage_service.dart';
 import 'android_storage_service.dart';
 import 'ffmpeg_service.dart';
-import 'cache_service.dart';
+import 'wispie_cache.dart';
 
 /// An Android document tree a media folder was granted as.
 ///
@@ -1090,15 +1090,14 @@ class FileManagerService {
   }
 
   /// Keys currently present in the notification-cover cache directory, plus the
-  /// [CacheService.notificationCoverGeneration] the listing was taken at.
+  /// [WispieCache.notificationGeneration] the listing was taken at.
   static Set<String>? _notifCoverIndex;
   static int _notifCoverIndexGeneration = -1;
   static Future<void>? _notifCoverIndexLoad;
 
   static bool get _notifCoverIndexIsFresh =>
       _notifCoverIndex != null &&
-      _notifCoverIndexGeneration ==
-          CacheService.instance.notificationCoverGeneration;
+      _notifCoverIndexGeneration == WispieCache.instance.notificationGeneration;
 
   /// Lists the notification-cover cache once so [peekNotificationCover] can
   /// answer without touching the filesystem. A queue rebuild asks about every
@@ -1113,10 +1112,10 @@ class FileManagerService {
   static Future<void> _loadNotificationCoverIndex() async {
     // Read the generation before listing: anything invalidated mid-listing then
     // leaves the index stale rather than falsely fresh.
-    final generation = CacheService.instance.notificationCoverGeneration;
+    final generation = WispieCache.instance.notificationGeneration;
     final keys = <String>{};
     try {
-      final dir = await CacheService.instance.notificationCoverCacheDir();
+      final dir = await WispieCache.instance.notificationCoverDirectory();
       await for (final entity in dir.list()) {
         if (entity is! File) continue;
         final name = p.basename(entity.path);
@@ -1143,7 +1142,7 @@ class FileManagerService {
     final key = notificationCoverKey(song);
     if (key == null || !_notifCoverIndex!.contains(key)) return null;
 
-    final dir = CacheService.instance.notificationCoverCacheDirSync();
+    final dir = WispieCache.instance.notificationCoverDirectorySync();
     if (dir == null) return null;
     return p.join(dir.path, '$key.jpg');
   }
@@ -1162,7 +1161,7 @@ class FileManagerService {
 
     final songFilename = notificationCoverKey(song)!;
     final cachedFile =
-        await CacheService.instance.getNotificationCoverCacheFile(songFilename);
+        await WispieCache.instance.notificationCoverFile(songFilename);
 
     if (await cachedFile.exists()) {
       _notifCoverIndex?.add(songFilename);

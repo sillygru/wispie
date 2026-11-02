@@ -8,7 +8,7 @@ import 'album_art_image.dart';
 import '../../domain/models/cover_key.dart';
 import '../motion/motion.dart';
 import '../../domain/services/media_decode.dart';
-import '../../services/cache_service.dart';
+import '../../services/wispie_cache.dart';
 import '../../services/cover_refresh_service.dart';
 import '../../services/power_state_service.dart';
 
@@ -74,7 +74,7 @@ class _BlurredBackgroundState extends State<BlurredBackground> {
     }
 
     final token = ++_requestToken;
-    final blurFile = await CacheService.instance.getBlurredCacheFile(filename);
+    final blurFile = await WispieCache.instance.blurredFile(filename);
     if (!mounted || token != _requestToken) return;
 
     _blurFile = blurFile;

@@ -16,7 +16,7 @@ import '../services/file_manager_service.dart';
 import '../services/bulk_rename_journal.dart';
 import '../services/beat_analysis_service.dart';
 import '../services/waveform_service.dart';
-import '../services/cache_service.dart';
+import '../services/wispie_cache.dart';
 import '../services/color_extraction_service.dart';
 import '../services/cover_refresh_service.dart';
 import '../services/notification_cover_warmer.dart';
@@ -425,13 +425,13 @@ final fileManagerServiceProvider = Provider<FileManagerService>((ref) {
 });
 
 final waveformServiceProvider = Provider<WaveformService>((ref) {
-  final service = WaveformService(CacheService.instance);
+  final service = WaveformService(WispieCache.instance);
   ref.onDispose(() => service.dispose());
   return service;
 });
 
 final beatAnalysisServiceProvider = Provider<BeatAnalysisService>((ref) {
-  final service = BeatAnalysisService(CacheService.instance);
+  final service = BeatAnalysisService(WispieCache.instance);
   ref.onDispose(() => service.dispose());
   return service;
 });
@@ -1281,7 +1281,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     notifier.start();
 
     final fileManager = ref.read(fileManagerServiceProvider);
-    final cache = CacheService.instance;
+    final cache = WispieCache.instance;
     final journal = BulkRenameJournal.instance;
     final cancelled = isCancelled ?? () => false;
 
@@ -1760,7 +1760,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
       // Wipe the blurred background cache so the player re-renders the
       // backdrop from the new artwork on the next display.
-      unawaited(CacheService.instance.invalidateBlurredCache(song.filename));
+      unawaited(WispieCache.instance.invalidateBlurred(song.filename));
 
       // Before publishing, so the queue rebuild and the cover warmer both see
       // the new artwork rather than re-reading the crop of the old one.
@@ -1799,7 +1799,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         FileManagerService.notificationCoverKey(updated),
       }) {
         if (key != null) {
-          await CacheService.instance.invalidateNotificationCover(key);
+          await WispieCache.instance.invalidateNotificationCover(key);
         }
       }
 

@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 import '../domain/services/embedded_cover_bytes.dart';
 import '../domain/services/library_repair_policy.dart';
 import '../models/song.dart';
-import 'cache_service.dart';
+import 'wispie_cache.dart';
 import 'cover_refresh_service.dart';
 import 'database_service.dart';
 import 'scanner_service.dart';
@@ -170,13 +170,13 @@ class LibraryRepairService {
     await DatabaseService.instance.clearAllCoverMisses();
     CoverRefreshService.instance.invalidateMisses();
 
-    // Deliberately not CacheService.pruneStaleSongCaches: it builds its keep-set
+    // Deliberately not WispieCache.prune: it builds its keep-set
     // from the cover paths currently in the library and deletes everything else
     // under extracted_covers, which after a device change would delete the very
     // files this pass exists to find.
 
     // Let the next launch run a real scan rather than trusting restored rows.
-    await CacheService.instance.markLibraryChanged();
+    await WispieCache.instance.markLibraryChanged();
 
     for (final path in changedCovers) {
       await CoverRefreshService.evictCoverFromImageCache(path);

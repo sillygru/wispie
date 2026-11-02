@@ -27,7 +27,7 @@ import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/providers.dart';
 import 'services/app_icon_service.dart';
-import 'services/cache_service.dart';
+import 'services/wispie_cache.dart';
 import 'services/storage_service.dart';
 import 'services/database_service.dart';
 import 'services/debug_sandbox.dart';
@@ -273,9 +273,9 @@ class _WispieAppState extends ConsumerState<WispieApp>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(CacheService.instance.init());
+      unawaited(WispieCache.instance.init());
       unawaited(ColorExtractionService.init());
-      unawaited(CacheService.instance.scheduleStartupMaintenance());
+      unawaited(WispieCache.instance.runMaintenance());
       PassiveArtFetcherService.instance.init(ref);
       // POST_NOTIFICATIONS is required on Android 13+ for the media
       // notification to appear. Fire-and-forget so startup is not blocked;

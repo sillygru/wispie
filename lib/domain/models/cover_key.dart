@@ -1,7 +1,4 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
-
+import '../services/cache_policy.dart';
 import '../value_objects/filename.dart';
 
 /// Typed identifier for cover and derived caches.
@@ -18,20 +15,17 @@ class CoverKey {
   bool get isEmpty => filename.isEmpty;
   bool get isNotEmpty => filename.isNotEmpty;
 
-  /// Stable hash used for cache file names (mirrors CacheService._cacheKey).
-  String get hash => sha1.convert(utf8.encode(filename)).toString();
+  /// Stable hash used for cache file names.
+  String get hash => cacheKeyFor(filename);
 
-  String waveformCacheName() => 'waveform_v2_$hash.json';
+  String waveformCacheName() =>
+      '$waveformCachePrefix$hash$waveformCacheExtension';
   String beatMapCacheName() => 'beatmap_$hash.json';
   String blurredCacheName() => 'blurred_$hash.jpg';
 
   /// Normalized cache key for notification covers (basename of cover file).
-  static String notificationKeyForCoverPath(String coverPath) {
-    final base = coverPath.split('/').last.split('\\').last;
-    final sanitized = base.replaceAll(RegExp(r'[^\w\-]'), '_');
-    if (sanitized.isEmpty || sanitized == '_') return 'cover';
-    return sanitized;
-  }
+  static String notificationKeyForCoverPath(String coverPath) =>
+      notificationCoverKey(coverPath);
 
   /// Normalize a possibly `file://` URI to a filesystem path.
   static String normalizePath(String path) {

@@ -1,282 +1,103 @@
-import 'debug_sandbox.dart';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'color_extraction_service.dart';
+
+import '../domain/services/cache_policy.dart';
+import 'backup_service.dart';
 import 'cover_refresh_service.dart';
 import 'database_service.dart';
 import 'online_audio_cache.dart';
+import 'wispie_cache.dart';
 import 'wispie_paths.dart';
 
+/// Sizes and destructive actions behind the storage screen.
+///
+/// All cache figures come from one [WispieCache] scan, so no bucket is counted
+/// twice and an empty card really means empty.
 class StorageAnalysisService {
   static final StorageAnalysisService instance = StorageAnalysisService._();
   StorageAnalysisService._();
-  static const String _lyricsCacheDirName = 'lyrics_cache';
-  static const String _blurredCacheDirName = 'blurred_cache';
 
   Future<int> getDatabaseSize() async {
-    int total = 0;
     try {
       final docDir = await getWispieDirectory();
-      final files = [
-        File(p.join(docDir.path, 'wispie_stats.db')),
-        File(p.join(docDir.path, 'wispie_data.db')),
-        // Include journal files if they exist
-        File(p.join(docDir.path, 'wispie_stats.db-journal')),
-        File(p.join(docDir.path, 'wispie_data.db-journal')),
-        File(p.join(docDir.path, 'wispie_stats.db-wal')),
-        File(p.join(docDir.path, 'wispie_data.db-wal')),
-        File(p.join(docDir.path, 'wispie_stats.db-shm')),
-        File(p.join(docDir.path, 'wispie_data.db-shm')),
-      ];
-
-      for (var f in files) {
-        if (await f.exists()) {
-          total += await f.length();
+      var total = 0;
+      for (final name in ['wispie_stats', 'wispie_data']) {
+        for (final suffix in ['', '-journal', '-wal', '-shm']) {
+          final file = File(p.join(docDir.path, '$name$suffix'));
+          if (await file.exists()) total += await file.length();
         }
       }
-    } catch (e) {
-      debugPrint('Error calculating database size: $e');
+      return total;
+    } catch (error) {
+      debugPrint('Error calculating database size: $error');
+      return 0;
     }
-    return total;
-  }
-
-  Future<int> getCoversCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
-      if (await coversDir.exists()) {
-        return await _getDirSize(coversDir);
-      }
-    } catch (e) {
-      debugPrint('Error calculating covers cache size: $e');
-    }
-    return 0;
   }
 
   Future<int> getBackupsSize() async {
     try {
-      final appDir = await getWispieDirectory();
-      final backupsDir = Directory(p.join(appDir.path, 'backups'));
-      if (await backupsDir.exists()) {
-        return await _getDirSize(backupsDir);
+      final dir = await BackupService.instance.backupsDir;
+      var total = 0;
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File) total += await entity.length();
       }
-    } catch (e) {
-      debugPrint('Error calculating backups size: $e');
-    }
-    return 0;
-  }
-
-  Future<int> getLibraryCacheSize() async {
-    try {
-      // The library cache includes:
-      // 1. The cached_songs.json file in Documents directory
-      // 2. The gru_cache_v3 directory in Application Support
-      int total = 0;
-
-      // Check for cached_songs.json files
-      final docDir = await getWispieDirectory();
-      await for (var entity in docDir.list()) {
-        if (entity is File) {
-          final name = p.basename(entity.path);
-          if (name.startsWith('cached_songs') && name.endsWith('.json')) {
-            total += await entity.length();
-          }
-        }
-      }
-
-      // Check for gru_cache_v3 directory
-      final supportDir = await getSupportDirectory();
-      final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await v3Dir.exists()) {
-        total += await _getDirSize(v3Dir);
-      }
-
       return total;
-    } catch (e) {
-      debugPrint('Error calculating library cache size: $e');
+    } catch (error) {
+      debugPrint('Error calculating backups size: $error');
+      return 0;
     }
-    return 0;
   }
 
   Future<int> getSearchIndexSize() async {
-    try {
-      final docDir = await getWispieDirectory();
-      final searchIndexFile =
-          File(p.join(docDir.path, 'wispie_search_index.db'));
-      if (await searchIndexFile.exists()) {
-        return await searchIndexFile.length();
+    for (final suffix in ['', '-journal', '-wal', '-shm']) {
+      try {
+        final docDir = await getWispieDirectory();
+        final file = File(p.join(docDir.path, 'wispie_search_index.db$suffix'));
+        if (await file.exists()) return await file.length();
+      } catch (error) {
+        debugPrint('Error calculating search index size: $error');
       }
-    } catch (e) {
-      debugPrint('Error calculating search index size: $e');
     }
     return 0;
   }
 
-  Future<int> getBeatMapCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await cacheDir.exists()) {
-        int total = 0;
-        await for (var entity
-            in cacheDir.list(recursive: true, followLinks: false)) {
-          if (entity is File) {
-            final name = p.basename(entity.path);
-            if (name.startsWith('beatmap_') && name.endsWith('.json')) {
-              total += await entity.length();
-            }
-          }
-        }
-        return total;
-      }
-    } catch (e) {
-      debugPrint('Error calculating beat map cache size: $e');
-    }
-    return 0;
-  }
+  Future<CacheUsage> getCacheUsage({bool refresh = false}) =>
+      WispieCache.instance.usage(refresh: refresh);
 
-  Future<int> getWaveformCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await cacheDir.exists()) {
-        int total = 0;
-        await for (var entity
-            in cacheDir.list(recursive: true, followLinks: false)) {
-          if (entity is File) {
-            final name = p.basename(entity.path);
-            if (name.startsWith('waveform_') && name.endsWith('.json')) {
-              total += await entity.length();
-            }
-          }
-        }
-        return total;
-      }
-    } catch (e) {
-      debugPrint('Error calculating waveform cache size: $e');
-    }
-    return 0;
-  }
-
-  Future<int> getColorCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final colorCacheFile = File(p.join(supportDir.path, 'color_cache.json'));
-      if (await colorCacheFile.exists()) {
-        return await colorCacheFile.length();
-      }
-    } catch (e) {
-      debugPrint('Error calculating color cache size: $e');
-    }
-    return 0;
-  }
-
-  Future<int> getLyricsCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final lyricsDir = Directory(
-          p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheDirName));
-      if (await lyricsDir.exists()) {
-        return await _getDirSize(lyricsDir);
-      }
-    } catch (e) {
-      debugPrint('Error calculating lyrics cache size: $e');
-    }
-    return 0;
-  }
-
-  /// Audio streamed from YouTube and kept for offline replay. Video is never
-  /// written to disk, so it has no entry here.
-  Future<int> getOnlineAudioCacheSize() async {
-    try {
-      return await OnlineAudioCache.instance.totalBytes();
-    } catch (e) {
-      debugPrint('Error calculating online audio cache size: $e');
-    }
-    return 0;
-  }
-
-  Future<void> clearOnlineAudioCache() async {
-    try {
+  /// Empties one cache bucket, keeping anything the user owns intact.
+  Future<void> clearBucket(CacheBucket bucket) async {
+    if (bucket == CacheBucket.onlineAudio) {
       await OnlineAudioCache.instance.clear();
-    } catch (e) {
-      debugPrint('Error clearing online audio cache: $e');
-      rethrow;
+      WispieCache.instance.invalidateUsage();
+      return;
     }
-  }
 
-  Future<int> getBlurredCacheSize() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final blurredDir = Directory(
-          p.join(supportDir.path, 'gru_cache_v3', _blurredCacheDirName));
-      if (await blurredDir.exists()) {
-        return await _getDirSize(blurredDir);
-      }
-    } catch (e) {
-      debugPrint('Error calculating blurred cache size: $e');
-    }
-    return 0;
-  }
+    await WispieCache.instance.clearBucket(bucket);
 
-  Future<int> _getDirSize(Directory dir) async {
-    int total = 0;
-    try {
-      await for (var entity in dir.list(recursive: true, followLinks: false)) {
-        if (entity is File) {
-          total += await entity.length();
-        }
-      }
-    } catch (e) {
-      debugPrint('Error calculating directory size for ${dir.path}: $e');
-    }
-    return total;
-  }
-
-  /// Clears only the database files
-  Future<void> clearDatabase() async {
-    try {
-      await DatabaseService.instance.close();
-      final docDir = await getWispieDirectory();
-      for (final name in ['wispie_stats', 'wispie_data']) {
-        for (final suffix in ['', '-journal', '-wal', '-shm']) {
-          final f = File(p.join(docDir.path, '$name$suffix'));
-          if (await f.exists()) await f.delete();
-        }
-      }
-    } catch (e) {
-      debugPrint('Error clearing database: $e');
-      rethrow;
-    }
-  }
-
-  /// Clears the covers cache, and everything that points into it.
-  ///
-  /// Deleting the files alone is what made this look like a no-op: every row
-  /// kept its `cover_url`, so the UI went on asking for paths that were now
-  /// holes, and `cover_miss` went on suppressing re-extraction for songs the
-  /// user was explicitly asking to redo. The paths have to become null for the
-  /// lazy extraction path to pick them back up.
-  Future<void> clearCoversCache() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
-      if (await coversDir.exists()) {
-        await coversDir.delete(recursive: true);
-      }
-      await coversDir.create(recursive: true);
-
+    if (bucket == CacheBucket.covers) {
+      // Rows still point at the files just deleted; null them so the lazy
+      // extraction path refills them instead of drawing holes forever.
       await DatabaseService.instance.clearCoverUrls();
       await DatabaseService.instance.clearAllCoverMisses();
       CoverRefreshService.instance.invalidateMisses();
       _clearDecodedImageCache();
-    } catch (e) {
-      debugPrint('Error clearing covers cache: $e');
-      rethrow;
     }
+  }
+
+  /// Prunes orphans, empty files and over-budget buckets.
+  Future<CacheMaintenanceReport> cleanUp() async {
+    final report = await WispieCache.instance.runMaintenance(force: true);
+    _clearDecodedImageCache();
+    return report;
+  }
+
+  Future<void> clearWispieCache() async {
+    await WispieCache.instance.clearCache();
+    _clearDecodedImageCache();
   }
 
   /// Drops decoded bitmaps so freshly re-extracted covers aren't masked by the
@@ -286,190 +107,65 @@ class StorageAnalysisService {
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
     } catch (_) {
-      // No binding (tests) — nothing decoded to drop.
+      // No binding (probes): nothing decoded to drop.
     }
   }
 
-  /// Clears only the backups
   Future<void> clearBackups() async {
     try {
-      final docDir = await getWispieDirectory();
-      final backupsDir = Directory(p.join(docDir.path, 'backups'));
-      if (await backupsDir.exists()) {
-        await backupsDir.delete(recursive: true);
-      }
-    } catch (e) {
-      debugPrint('Error clearing backups: $e');
+      final dir = await BackupService.instance.backupsDir;
+      if (await dir.exists()) await dir.delete(recursive: true);
+      await dir.create(recursive: true);
+    } catch (error) {
+      debugPrint('Error clearing backups: $error');
       rethrow;
     }
   }
 
-  /// Clears only the library cache (cached_songs.json and gru_cache_v3)
-  Future<void> clearLibraryCache() async {
-    try {
-      // Clear cached_songs.json files
-      final docDir = await getWispieDirectory();
-      await for (var entity in docDir.list()) {
-        if (entity is File) {
-          final name = p.basename(entity.path);
-          if (name.startsWith('cached_songs') && name.endsWith('.json')) {
-            await entity.delete();
-          }
-        }
-      }
-
-      // Clear gru_cache_v3 directory
-      final supportDir = await getSupportDirectory();
-      final v3Dir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await v3Dir.exists()) {
-        await v3Dir.delete(recursive: true);
-      }
-    } catch (e) {
-      debugPrint('Error clearing library cache: $e');
-      rethrow;
-    }
-  }
-
-  /// Clears only the search index
   Future<void> clearSearchIndex() async {
     try {
       final docDir = await getWispieDirectory();
-      final searchIndex = File(p.join(docDir.path, 'wispie_search_index.db'));
-      if (await searchIndex.exists()) await searchIndex.delete();
-    } catch (e) {
-      debugPrint('Error clearing search index: $e');
+      for (final suffix in ['', '-journal', '-wal', '-shm']) {
+        final file = File(p.join(docDir.path, 'wispie_search_index.db$suffix'));
+        if (await file.exists()) await file.delete();
+      }
+    } catch (error) {
+      debugPrint('Error clearing search index: $error');
       rethrow;
     }
   }
 
-  /// Clears only the cached beat maps. They are rebuilt on next play.
-  Future<void> clearBeatMapCache() async {
+  /// Clears the databases. The cache is left to the next maintenance pass.
+  Future<void> clearDatabase() async {
     try {
-      final supportDir = await getSupportDirectory();
-      final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await cacheDir.exists()) {
-        await for (var entity
-            in cacheDir.list(recursive: true, followLinks: false)) {
-          if (entity is File) {
-            final name = p.basename(entity.path);
-            if (name.startsWith('beatmap_') && name.endsWith('.json')) {
-              await entity.delete();
-            }
-          }
+      await DatabaseService.instance.close();
+      final docDir = await getWispieDirectory();
+      for (final name in ['wispie_stats', 'wispie_data']) {
+        for (final suffix in ['', '-journal', '-wal', '-shm']) {
+          final file = File(p.join(docDir.path, '$name$suffix'));
+          if (await file.exists()) await file.delete();
         }
       }
-    } catch (e) {
-      debugPrint('Error clearing beat map cache: $e');
-      rethrow;
-    }
-  }
-
-  /// Clears only the waveform cache
-  Future<void> clearWaveformCache() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final cacheDir = Directory(p.join(supportDir.path, 'gru_cache_v3'));
-      if (await cacheDir.exists()) {
-        await for (var entity
-            in cacheDir.list(recursive: true, followLinks: false)) {
-          if (entity is File) {
-            final name = p.basename(entity.path);
-            if (name.startsWith('waveform_') && name.endsWith('.json')) {
-              await entity.delete();
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error clearing waveform cache: $e');
-      rethrow;
-    }
-  }
-
-  /// Clears only the color cache
-  Future<void> clearColorCache() async {
-    try {
-      await ColorExtractionService.clearCache();
-    } catch (e) {
-      debugPrint('Error clearing color cache: $e');
-      rethrow;
-    }
-  }
-
-  /// Clears only the lyrics cache
-  Future<void> clearLyricsCache() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final lyricsDir = Directory(
-          p.join(supportDir.path, 'gru_cache_v3', _lyricsCacheDirName));
-      if (await lyricsDir.exists()) {
-        await lyricsDir.delete(recursive: true);
-      }
-    } catch (e) {
-      debugPrint('Error clearing lyrics cache: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> clearBlurredCache() async {
-    try {
-      final supportDir = await getSupportDirectory();
-      final blurredDir = Directory(
-          p.join(supportDir.path, 'gru_cache_v3', _blurredCacheDirName));
-      if (await blurredDir.exists()) {
-        await blurredDir.delete(recursive: true);
-      }
-    } catch (e) {
-      debugPrint('Error clearing blurred cache: $e');
+    } catch (error) {
+      debugPrint('Error clearing database: $error');
       rethrow;
     }
   }
 
   Future<void> clearAllUserData() async {
     try {
-      // Close DB before deleting files so SQLite doesn't lose its WAL/SHM
       await DatabaseService.instance.close();
-
-      // Delete database files
-      final docDir = await getWispieDirectory();
-      for (final name in ['wispie_stats', 'wispie_data']) {
-        for (final suffix in ['', '-journal', '-wal', '-shm']) {
-          final f = File(p.join(docDir.path, '$name$suffix'));
-          if (await f.exists()) await f.delete();
-        }
-      }
-
-      // Delete song covers directory (no SQL needed — DB is gone)
-      final supportDir = await getSupportDirectory();
-      final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
-      if (await coversDir.exists()) await coversDir.delete(recursive: true);
-
-      // Delete Backups
+      await clearDatabase();
+      await clearWispieCache();
+      await WispieCache.instance.clearBucket(CacheBucket.palettes);
       await clearBackups();
-
-      // Delete Library Cache
-      await clearLibraryCache();
-
-      // Delete Search Index
       await clearSearchIndex();
+      await OnlineAudioCache.instance.clear();
 
-      // Delete Waveform Cache
-      await clearWaveformCache();
-
-      // Clear Lyrics Cache
-      await clearLyricsCache();
-
-      // Clear Blurred Cache
-      await clearBlurredCache();
-
-      // Clear the streamed audio cache
-      await clearOnlineAudioCache();
-
-      // Clear Shared Preferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
-    } catch (e) {
-      debugPrint('Error clearing user data: $e');
+    } catch (error) {
+      debugPrint('Error clearing user data: $error');
       rethrow;
     }
   }
