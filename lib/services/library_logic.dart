@@ -600,8 +600,13 @@ class LibraryLogic {
     List<Song> songs, {
     Map<String, int>? playCounts,
   }) {
-    for (final song in sortSongsByPlayCount(songs, playCounts: playCounts)) {
+    final ordered = sortSongsByPlayCount(songs, playCounts: playCounts);
+    for (final song in ordered) {
       if (CoverPath.isLocal(song.coverUrl)) return song;
+    }
+    // Streamed tracks have no file: their art is a URL, and it still counts.
+    for (final song in ordered) {
+      if ((song.coverUrl ?? '').isNotEmpty) return song;
     }
     return null;
   }

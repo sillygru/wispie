@@ -62,6 +62,9 @@ class GradientDetailScreen extends ConsumerStatefulWidget {
   final String? artistName;
   final String? albumName;
 
+  /// A catalogue page: its art comes with it, and it owns no local files.
+  final bool fromCatalogue;
+
   const GradientDetailScreen({
     super.key,
     required this.title,
@@ -71,6 +74,7 @@ class GradientDetailScreen extends ConsumerStatefulWidget {
     this.isAlbum = false,
     this.artistName,
     this.albumName,
+    this.fromCatalogue = false,
   });
 
   @override
@@ -147,7 +151,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         : artworkPath;
     if (path == null || path.isEmpty) return;
     try {
-      final palette = await ColorExtractionService.extractPalette(path);
+      // Handles a local file and a streamed track's http cover alike.
+      final palette = await ColorExtractionService.extractPaletteForCover(path);
       if (!mounted) return;
       if (palette == null) return;
       _browsePalette.claim(this, palette);
@@ -244,15 +249,17 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final bool hasCustomArtwork =
         artworkPath != null && File(artworkPath).existsSync();
 
-    if (effectiveIsArtist && !hasCustomArtwork) {
-      PassiveArtFetcherService.instance.fetchArtistArtIfNeeded(
-        effectiveArtistName,
-      );
-    } else if (effectiveIsAlbum && !hasCustomArtwork) {
-      PassiveArtFetcherService.instance.fetchAlbumArtIfNeeded(
-        effectiveAlbumName,
-        effectiveArtistName,
-      );
+    if (!widget.fromCatalogue) {
+      if (effectiveIsArtist && !hasCustomArtwork) {
+        PassiveArtFetcherService.instance.fetchArtistArtIfNeeded(
+          effectiveArtistName,
+        );
+      } else if (effectiveIsAlbum && !hasCustomArtwork) {
+        PassiveArtFetcherService.instance.fetchAlbumArtIfNeeded(
+          effectiveAlbumName,
+          effectiveArtistName,
+        );
+      }
     }
 
     final bool isUnknownArtistOrAlbum = (effectiveIsArtist &&
@@ -303,7 +310,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final List<Color> gradient =
         CoverGradientPalette.detailGradient(baseAccent, isNeutral: baseNeutral);
 
-    final bool canFetchCover = widget.playlistId == null;
+    final bool canFetchCover =
+        widget.playlistId == null && !widget.fromCatalogue;
     void handleFetchCover() {
       if (effectiveIsArtist) {
         _showChangeArtistArtworkDialog(

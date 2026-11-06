@@ -182,7 +182,9 @@ class OnlineMusicService {
     return OnlineCollectionTracks(
       title: page.title,
       artist: page.artist,
-      coverUrl: page.thumbnailUrl,
+      // The header occasionally ships without art while its tracks have it.
+      coverUrl: page.thumbnailUrl ??
+          (page.tracks.isEmpty ? null : page.tracks.first.thumbnailUrl),
       tracks: List<OnlineTrack>.unmodifiable(
         page.tracks.map((item) => _fromItem(item, album: page.title)),
       ),
@@ -212,7 +214,8 @@ class OnlineMusicService {
     return OnlineArtist(
       id: page.id,
       name: page.name,
-      coverUrl: page.thumbnailUrl,
+      coverUrl: page.thumbnailUrl ??
+          (page.songs.isEmpty ? null : page.songs.first.thumbnailUrl),
       tracks: List<OnlineTrack>.unmodifiable(page.songs.map(_fromItem)),
       albums: _collections(page.albums),
       sorts: List<OnlineSort>.unmodifiable(
