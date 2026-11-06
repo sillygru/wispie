@@ -47,6 +47,21 @@ class BeatAnalysisService {
   /// asked for a map, so consumers re-read when their track shows up here.
   Stream<String> get analyzedFilenames => _analyzed.stream;
 
+  final StreamController<({String filename, BeatMap map})> _partialMaps =
+      StreamController.broadcast();
+  final Map<String, BeatMap> _latestPartialMaps = {};
+  Stream<({String filename, BeatMap map})> get partialMaps =>
+      _partialMaps.stream;
+  BeatMap? partialMap(String filename) => _latestPartialMaps[filename];
+
+  void _publishPartial(String filename, BeatMap map) {
+    if (map.durationMs <= (_latestPartialMaps[filename]?.durationMs ?? 0)) {
+      return;
+    }
+    _latestPartialMaps[filename] = map;
+    _partialMaps.add((filename: filename, map: map));
+  }
+
   /// Bounds how much speculative work can pile up if the user skips tracks
   /// rapidly. Prefetches beyond this are dropped rather than queued.
   static const int _maxQueuedPrefetch = 2;
@@ -170,7 +185,10 @@ class BeatAnalysisService {
     // The chain must not break on failure, or every later analysis is dropped.
     _chain = work.then((_) {}, onError: (_) {});
     _inFlight[filename] = work;
-    work.whenComplete(() => _inFlight.remove(filename));
+    work.whenComplete(() {
+      _inFlight.remove(filename);
+      _latestPartialMaps.remove(filename);
+    });
     return work;
   }
 
@@ -200,10 +218,21 @@ class BeatAnalysisService {
 
     File? raw;
     try {
-      raw = await _decodeToPcm(path);
+      raw = await _decodeToPcm(path, filename);
       if (raw == null) return null;
 
       final rawPath = raw.path;
+      final length = await raw.length();
+      for (var seconds = 10;
+          seconds * analysisSampleRate * 2 < length;
+          seconds *= 3) {
+        final limit = seconds * analysisSampleRate * 2;
+        final partial =
+            await Isolate.run(() => _analyzeRawFile(rawPath, limit));
+        if (partial != null && partial.hasBands) {
+          _publishPartial(filename, partial);
+        }
+      }
       final map = await _isolateAnalyzeRawFile(rawPath);
       if (map == null) return null;
 
@@ -225,7 +254,7 @@ class BeatAnalysisService {
   ///
   /// The decode goes through the shared gate so it never runs while a waveform
   /// (or another analysis) is mid-decode of the same file.
-  Future<File?> _decodeToPcm(String path) {
+  Future<File?> _decodeToPcm(String path, String filename) {
     return MediaDecodeGate.run(() async {
       final supportDir = await getSupportDirectory();
       final tempDir = Directory(p.join(supportDir.path, 'beat_analysis_temp'));
@@ -236,17 +265,44 @@ class BeatAnalysisService {
         'pcm_${DateTime.now().microsecondsSinceEpoch}.raw',
       );
 
-      final result = await FFmpegService.instance.executeFFmpeg([
-        '-threads', '1', // leave headroom for the audio callback
-        '-i', path,
-        '-vn', // ignore cover art and video streams
-        '-ac', '1', // mono
-        '-ar', '$analysisSampleRate',
-        '-f', _pcmFormat,
-        '-y', outputPath,
-      ]);
-
+      var active = true;
+      var analyzing = false;
+      var lastLength = 0;
       final file = File(outputPath);
+      final timer =
+          Timer.periodic(const Duration(milliseconds: 500), (_) async {
+        if (!active || analyzing) return;
+        analyzing = true;
+        try {
+          if (!await file.exists()) return;
+          final length = await file.length();
+          if (length - lastLength < analysisSampleRate * 2 * 5) return;
+          lastLength = length;
+          final map = await _isolateAnalyzeRawFile(outputPath);
+          if (active && map != null && map.hasBands) {
+            _publishPartial(filename, map);
+          }
+        } catch (_) {
+          // The decoder may still be creating or closing the file.
+        } finally {
+          analyzing = false;
+        }
+      });
+      late final FFmpegExecutionResult result;
+      try {
+        result = await FFmpegService.instance.executeFFmpeg([
+          '-threads', '1', // leave headroom for the audio callback
+          '-i', path,
+          '-vn', // ignore cover art and video streams
+          '-ac', '1', // mono
+          '-ar', '$analysisSampleRate',
+          '-f', _pcmFormat,
+          '-y', outputPath,
+        ]);
+      } finally {
+        active = false;
+        timer.cancel();
+      }
 
       if (!result.isSuccess) {
         if (kDebugMode) {
@@ -293,9 +349,17 @@ Future<BeatMap?> _isolateAnalyzeRawFile(String rawPath) {
   return Isolate.run(() => _analyzeRawFile(rawPath));
 }
 
-BeatMap? _analyzeRawFile(String rawPath) {
+BeatMap? _analyzeRawFile(String rawPath, [int? maxBytes]) {
   try {
-    final bytes = File(rawPath).readAsBytesSync();
+    final file = File(rawPath).openSync();
+    final Uint8List bytes;
+    try {
+      final length = file.lengthSync();
+      bytes =
+          file.readSync(maxBytes == null ? length : length.clamp(0, maxBytes));
+    } finally {
+      file.closeSync();
+    }
     if (bytes.length < 4) return null;
 
     // Trim any trailing partial frame before viewing as 16-bit, and copy when

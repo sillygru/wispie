@@ -193,9 +193,6 @@ class _ReactiveWaveformProgressBarState
 
     if (oldWidget.total != widget.total) {
       _formattedTotalTime = _formatDuration(widget.total);
-      if (oldWidget.total <= Duration.zero && widget.total > Duration.zero) {
-        _scheduleWaveformLoad();
-      }
     }
 
     if (oldWidget.positionStream != widget.positionStream) {

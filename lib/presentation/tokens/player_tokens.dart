@@ -163,7 +163,7 @@ class PlayerTokens {
   /// How long a panel that landed closed stays catchable, so a swipe down
   /// followed straight away by a swipe back up re-opens it. The window used to
   /// be the close itself: a fifth of a second on a hard flick.
-  static const Duration panelCloseGrace = Duration(milliseconds: 500);
+  static const Duration panelCloseGrace = Duration(milliseconds: 300);
 
   /// Share of the screen height, measured from the bottom, where the grace
   /// window listens. Higher up is a scroll on the screen underneath.

@@ -150,6 +150,7 @@ class PlayerPanelController {
   /// Where the finger picked the surface up, kept only to tell a deliberate
   /// drag from a hold that went nowhere.
   double _dragAnchor = 0;
+  double _lastDragY = 0;
 
   /// The accessibility policy lives above this controller, so the host hands it
   /// down rather than the controller reaching up for it.
@@ -217,9 +218,10 @@ class PlayerPanelController {
     snap.jumpTo(0);
   }
 
-  void dragStart() {
+  void dragStart(double globalY) {
     if (_dragging) return;
     _dragging = true;
+    _lastDragY = globalY;
     onGrabbed?.call();
     // A grab always takes over from what is drawn, never from the target, so a
     // panel caught mid-flight continues under the finger instead of jumping —
@@ -232,9 +234,11 @@ class PlayerPanelController {
     DisplayRefreshService.instance.boost120();
   }
 
-  /// [dy] is this event's vertical delta in logical pixels, positive downward.
-  void dragUpdate(double dy) {
+  /// Screen coordinates stay stable as the panel moves under the finger.
+  void dragUpdate(double globalY) {
     if (!_dragging) return;
+    final double dy = globalY - _lastDragY;
+    _lastDragY = globalY;
     progress.value = PanelRelease.resist(
       value - dy / _travel,
       low: -PlayerTokens.panelDip,
@@ -517,10 +521,11 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   // The grace window's own drag layer reports to the same controller the panes
   // use, so picking the surface back up after it lands and mid-flight are one
   // gesture as far as the panel is concerned.
-  void _onDismissDragStart(DragStartDetails details) => _panel.dragStart();
+  void _onDismissDragStart(DragStartDetails details) =>
+      _panel.dragStart(details.globalPosition.dy);
 
   void _onDismissDragUpdate(DragUpdateDetails details) =>
-      _panel.dragUpdate(details.delta.dy);
+      _panel.dragUpdate(details.globalPosition.dy);
 
   void _onDismissDragEnd(DragEndDetails details) =>
       _panel.dragEnd(velocity: details.primaryVelocity ?? 0);
@@ -617,7 +622,10 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           // Position, not isAnimating: the spring's tail below the screen kept a
           // full-screen hit area over the dock. The grace window is the one case
           // where a fully closed surface stays mounted on purpose.
-          final bool active = p > 0.0005 || _panel.isDragging || _inGrace;
+          final bool active = p > 0.0005 ||
+              _panel.isDragging ||
+              _inGrace ||
+              (!PlayerPanel.openState.value && _panel.isMoving);
           if (_travel <= 0) _measureTravel();
           final Size size = MediaQuery.sizeOf(context);
           final Rect from =
@@ -744,18 +752,18 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
                       ),
                     ),
                   ),
-                  // A landed-close panel inside its grace window: a drag-only
-                  // layer in the zone it left through, so a swipe back up picks
-                  // it up. It never takes taps, and it stands down the moment
-                  // the surface is on screen again.
-                  if (_inGrace)
+                  // Keep the exit zone catchable during the close and briefly
+                  // after it lands, without claiming taps.
+                  if (_panel.isDragging ||
+                      (!PlayerPanel.openState.value &&
+                          (_inGrace || _panel.isMoving)))
                     Positioned(
                       left: 0,
                       right: 0,
                       bottom: 0,
                       height: size.height * PlayerTokens.panelGraceZone,
                       child: IgnorePointer(
-                        ignoring: clamped > 0.0005 || _panel.isDragging,
+                        ignoring: _panel.isDragging,
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
                           dragStartBehavior: DragStartBehavior.down,

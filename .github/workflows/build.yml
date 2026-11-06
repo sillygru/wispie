@@ -57,6 +57,26 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          ndk_version=$(sed -n 's/^[[:space:]]*ndkVersion = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)
+          test -n "$ndk_version"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$sdkmanager" ]; then
+            echo "::error::Android SDK command-line tools not found at $sdkmanager"
+            exit 1
+          fi
+          ndk_dir="$ANDROID_HOME/ndk/$ndk_version"
+          for attempt in 1 2 3; do
+            if "$sdkmanager" "ndk;$ndk_version" && test -f "$ndk_dir/source.properties"; then
+              exit 0
+            fi
+            rm -rf "$ndk_dir"
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+          exit 1
+
       - name: Decode keystore and configure signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

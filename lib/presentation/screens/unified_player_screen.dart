@@ -423,10 +423,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   // waiting for the touch slop to be crossed.
   PlayerPanelController? get _panel => PlayerPanel.controller;
 
-  void _onDismissDragStart(DragStartDetails details) => _panel?.dragStart();
+  void _onDismissDragStart(DragStartDetails details) =>
+      _panel?.dragStart(details.globalPosition.dy);
 
   void _onDismissDragUpdate(DragUpdateDetails details) =>
-      _panel?.dragUpdate(details.delta.dy);
+      _panel?.dragUpdate(details.globalPosition.dy);
 
   void _onDismissDragEnd(DragEndDetails details) =>
       _panel?.dragEnd(velocity: details.primaryVelocity ?? 0);

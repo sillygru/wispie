@@ -63,9 +63,7 @@ class WaveformService {
   Future<void> warm(String filename, String path) async {
     if (filename.isEmpty || path.isEmpty) return;
     try {
-      // The same decode the seek bar subscribes to, so opening the player mid
-      // decode joins this stream instead of queueing a second FFmpeg session.
-      await getWaveformProgressive(filename, path, Duration.zero).drain<void>();
+      await getWaveform(filename, path);
     } on Object catch (error) {
       debugPrint('WaveformService: warm failed for $filename: $error');
     }
@@ -167,15 +165,15 @@ class WaveformService {
     final cacheFile = await _cacheService.waveformFile(filename);
     if (await cacheFile.exists()) {
       try {
-        final content = await cacheFile.readAsString();
-        final List<dynamic> json = jsonDecode(content);
-        final samples = json.cast<double>();
-        _memoryCache[filename] = samples;
-        controller.add(samples);
+        final samples = decodeWaveformBars(await cacheFile.readAsBytes());
+        if (samples.isNotEmpty) {
+          _memoryCache[filename] = samples;
+          controller.add(samples);
+          return;
+        }
       } catch (e) {
         debugPrint('Error reading waveform cache: $e');
       }
-      return;
     }
 
     final samples = await _extractWaveformProgressive(

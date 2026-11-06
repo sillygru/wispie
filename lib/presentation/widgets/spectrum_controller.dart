@@ -81,6 +81,8 @@ class SpectrumController extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<String>? _beatMapSub;
+  StreamSubscription<({String filename, BeatMap map})>? _partialMapSub;
+  bool _beatMapComplete = false;
   _LifecycleObserver? _observer;
 
   bool _wired = false;
@@ -174,6 +176,14 @@ class SpectrumController extends ChangeNotifier {
       _currentSong?.addListener(_loadBeatMap);
       // A streamed track's map arrives with its download, not with the song.
       _beatMapSub = _beatAnalysis?.analyzedFilenames.listen(_onBeatMapReady);
+      _partialMapSub = _beatAnalysis?.partialMaps.listen((partial) {
+        if (partial.filename != _beatMapFilename ||
+            _beatMapComplete ||
+            partial.map.durationMs <= (_beatMap?.durationMs ?? 0)) {
+          return;
+        }
+        _beatMap = partial.map;
+      });
       PowerStateService.instance.powerSave.addListener(_onPowerSave);
       _onPowerSave();
       _observer = _LifecycleObserver(_onLifecycle);
@@ -189,6 +199,8 @@ class SpectrumController extends ChangeNotifier {
       _currentSong?.removeListener(_loadBeatMap);
       _beatMapSub?.cancel();
       _beatMapSub = null;
+      _partialMapSub?.cancel();
+      _partialMapSub = null;
       PowerStateService.instance.powerSave.removeListener(_onPowerSave);
       if (_observer != null) {
         WidgetsBinding.instance.removeObserver(_observer!);
@@ -284,22 +296,25 @@ class SpectrumController extends ChangeNotifier {
       _beatMapToken++;
       return;
     }
-    if (song.filename == _beatMapFilename && _beatMap != null) return;
+    if (song.filename == _beatMapFilename && _beatMapComplete) return;
 
     _beatMapFilename = song.filename;
     final token = ++_beatMapToken;
-    _beatMap = null;
+    _beatMap = service.partialMap(song.filename);
+    _beatMapComplete = false;
     _gridBlend = 0;
 
     final cached = await service.readCached(song.filename);
     if (token != _beatMapToken) return;
     if (cached != null) {
+      _beatMapComplete = true;
       _beatMap = cached.hasBands ? cached : null;
       return;
     }
 
     final analyzed = await service.analyzeSong(song);
     if (token != _beatMapToken) return;
+    _beatMapComplete = analyzed != null;
     _beatMap = (analyzed?.hasBands ?? false) ? analyzed : null;
   }
 
@@ -341,6 +356,7 @@ class SpectrumController extends ChangeNotifier {
     final map = _beatMap;
     final synced = _mode == VisualizerMode.synced &&
         map != null &&
+        (_beatMapComplete || positionMs < map.durationMs) &&
         SpectrumBars.targetsAt(map, positionMs, _syncedTargets);
 
     if (synced) {
@@ -406,6 +422,7 @@ class SpectrumController extends ChangeNotifier {
     _positionSub?.cancel();
     _stateSub?.cancel();
     _beatMapSub?.cancel();
+    _partialMapSub?.cancel();
     _currentSong?.removeListener(_loadBeatMap);
     PowerStateService.instance.powerSave.removeListener(_onPowerSave);
     if (_observer != null) {
