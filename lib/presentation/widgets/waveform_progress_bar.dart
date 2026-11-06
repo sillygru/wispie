@@ -149,6 +149,11 @@ class _WaveformProgressBarState extends ConsumerState<WaveformProgressBar>
 
     if (oldWidget.total != widget.total) {
       _formattedTotalTime = _formatDuration(widget.total);
+      // The duration often lands after the decode started; it is what scales
+      // partial peaks, so the load is worth restarting once it is known.
+      if (oldWidget.total <= Duration.zero && widget.total > Duration.zero) {
+        _scheduleWaveformLoad();
+      }
     }
 
     if (oldWidget.positionStream != widget.positionStream) {

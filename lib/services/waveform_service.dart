@@ -63,7 +63,9 @@ class WaveformService {
   Future<void> warm(String filename, String path) async {
     if (filename.isEmpty || path.isEmpty) return;
     try {
-      await getWaveform(filename, path);
+      // The same decode the seek bar subscribes to, so opening the player mid
+      // decode joins this stream instead of queueing a second FFmpeg session.
+      await getWaveformProgressive(filename, path, Duration.zero).drain<void>();
     } on Object catch (error) {
       debugPrint('WaveformService: warm failed for $filename: $error');
     }
@@ -285,7 +287,7 @@ class WaveformService {
     final process = await FFmpegService.instance.startFFmpeg(args);
     if (process == null) {
       debugPrint('FFmpegService: Failed to start ffmpeg process for streaming');
-      return generateWaveformPlaceholderSamples(targetSamples);
+      return _failedWaveform(targetSamples);
     }
 
     final builder = BytesBuilder(copy: false);
@@ -293,11 +295,29 @@ class WaveformService {
     var lastEmitTime = DateTime.fromMillisecondsSinceEpoch(0);
     const int emitThresholdBytes = 3200;
 
+    // FFmpeg names the real duration on stderr before it decodes, so a track
+    // whose player duration is still unknown can reveal as it is read.
+    var stderrBytes = 0;
+    final stderrText = StringBuffer();
+    unawaited(process.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(
+          (String chunk) {
+            if (stderrBytes > 0 || stderrText.length > 8192) return;
+            stderrText.write(chunk);
+            stderrBytes = _pcmBytesForDurationText(stderrText.toString()) ?? 0;
+          },
+          onError: (Object _) {},
+        )
+        .asFuture<void>()
+        .catchError((Object _) {}));
+
     final completer = Completer<void>();
     final sub = process.stdout.listen(
       (chunk) {
         builder.add(chunk);
-        if (onPartial != null && expectedBytes > 0) {
+        final expected = expectedBytes > 0 ? expectedBytes : stderrBytes;
+        if (onPartial != null && expected > 0) {
           final currentLen = builder.length;
           final now = DateTime.now();
           if (currentLen - lastEmittedBytes >= emitThresholdBytes &&
@@ -308,7 +328,7 @@ class WaveformService {
             final peaks = progressiveWaveformPeaksFromS16Bytes(
               bytesSnapshot,
               targetSamples,
-              expectedBytes,
+              expected,
             );
             if (peaks.isNotEmpty) onPartial(peaks);
           }
@@ -323,21 +343,18 @@ class WaveformService {
       cancelOnError: false,
     );
 
-    // Drain stderr in background so the process never blocks on full pipe buffer
-    unawaited(process.stderr.drain().catchError((_) {}));
-
     final exitCode = await process.exitCode;
     await completer.future;
     await sub.cancel();
 
     if (exitCode != 0) {
       debugPrint('FFmpeg streaming exited with code $exitCode');
-      return generateWaveformPlaceholderSamples(targetSamples);
+      return _failedWaveform(targetSamples);
     }
 
     final fullBytes = builder.toBytes();
     if (fullBytes.length < 2) {
-      return generateWaveformPlaceholderSamples(targetSamples);
+      return _failedWaveform(targetSamples);
     }
 
     return extractWaveformPeaksFromS16Bytes(fullBytes, targetSamples);
@@ -411,12 +428,12 @@ class WaveformService {
 
         final isSuccess = await sessionCompleter.future;
         if (!isSuccess) {
-          return generateWaveformPlaceholderSamples(targetSamples);
+          return _failedWaveform(targetSamples);
         }
 
         final fullBytes = builder.toBytes();
         if (fullBytes.length < 2) {
-          return generateWaveformPlaceholderSamples(targetSamples);
+          return _failedWaveform(targetSamples);
         }
         return extractWaveformPeaksFromS16Bytes(fullBytes, targetSamples);
       } catch (e) {
@@ -469,19 +486,19 @@ class WaveformService {
 
       final result = await FFmpegService.instance.executeFFmpeg(args);
       if (!result.isSuccess) {
-        return generateWaveformPlaceholderSamples(targetSamples);
+        return _failedWaveform(targetSamples);
       }
 
       raw = File(outputPath);
       if (!await raw.exists()) {
-        return generateWaveformPlaceholderSamples(targetSamples);
+        return _failedWaveform(targetSamples);
       }
 
       final bytes = await raw.readAsBytes();
       return extractWaveformPeaksFromS16Bytes(bytes, targetSamples);
     } catch (e) {
       debugPrint('Fallback waveform extraction failed: $e');
-      return generateWaveformPlaceholderSamples(targetSamples);
+      return _failedWaveform(targetSamples);
     } finally {
       try {
         if (raw != null && await raw.exists()) await raw.delete();
@@ -509,7 +526,7 @@ List<double> extractWaveformPeaksFromS16Bytes(
   int targetSamples,
 ) {
   if (bytes.length < 2) {
-    return generateWaveformPlaceholderSamples(targetSamples);
+    return _failedWaveform(targetSamples);
   }
 
   final usable = bytes.length - (bytes.length % 2);
@@ -523,7 +540,7 @@ List<double> extractWaveformPeaksFromS16Bytes(
   }
 
   if (pcm.isEmpty) {
-    return generateWaveformPlaceholderSamples(targetSamples);
+    return _failedWaveform(targetSamples);
   }
 
   return _loudnessBars(pcm, targetSamples);
@@ -591,6 +608,17 @@ List<double> _loudnessBars(Int16List pcm, int targetSamples) {
   return samples;
 }
 
+/// PCM byte count of an FFmpeg `Duration: hh:mm:ss.cc` log line.
+int? _pcmBytesForDurationText(String text) {
+  final match = RegExp(r'Duration:\s*(\d+):(\d{2}):(\d{2})').firstMatch(text);
+  if (match == null) return null;
+  final seconds = int.parse(match.group(1)!) * 3600 +
+      int.parse(match.group(2)!) * 60 +
+      int.parse(match.group(3)!);
+  if (seconds <= 0) return null;
+  return seconds * WaveformService._pcmBytesPerSecond;
+}
+
 /// Buckets the decoded-so-far PCM into the first [targetSamples] * (bytes /
 /// [expectedBytes]) bars, so the waveform paints left-to-right as the file
 /// decodes instead of waiting for the whole read.
@@ -605,14 +633,6 @@ List<double> progressiveWaveformPeaksFromS16Bytes(
   return extractWaveformPeaksFromS16Bytes(bytes, filled);
 }
 
-List<double> generateWaveformPlaceholderSamples(int count) {
-  final samples = <double>[];
-  final random = DateTime.now().millisecond;
-  for (var i = 0; i < count; i++) {
-    final base = 0.05 + (i % 11) * 0.08;
-    final variation = ((random * (i + 1)) % 250) / 1000.0;
-    final value = (base + variation).clamp(0.0, 1.0);
-    samples.add(value);
-  }
-  return samples;
-}
+/// A failed decode yields no bars: synthetic peaks would be cached and drawn
+/// as if they were this track's waveform.
+List<double> _failedWaveform(int _) => const [];
