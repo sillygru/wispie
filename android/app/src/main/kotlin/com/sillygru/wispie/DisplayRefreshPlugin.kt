@@ -1,6 +1,7 @@
 package com.sillygru.wispie
 
 import android.os.Build
+import android.view.Display
 import android.view.Window
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -9,20 +10,21 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 
 /**
- * Lets the player hint the display refresh rate. Supports every weird
- * combination seen in the wild — 60/90/120, 60/90, 90-only, 60-only,
- * 120-only, 30/60/90/120, locked single-mode, Settings-only, and LTPO
- * 1-120 — by picking the closest *available* mode at the current
- * resolution and never inventing a rate.
+ * Lets the player hint the display refresh rate, and keeps panels whose rates
+ * are separate modes out of anything below 60 Hz.
  *
- * * 60-only locked + 30Hz hint stays 60 (no switch to non-existent mode).
- * * 60/90 + 120Hz boost lands on 90 (max ≤120 that exists, as requested).
- * * API 23-29: `preferredDisplayModeId` matched by width/height + refreshRate.
- * * API 30-33: `preferredDisplayModeId` + `preferredRefreshRate`.
- * * API 34+: also `setFrameRate(hz, COMPATIBILITY_DEFAULT)` for LTPO.
+ * Two panel classes, told apart by what the display advertises:
  *
- * Locked or Settings-only devices no-op. Failures are silent — the hint is
- * best effort.
+ * * Discrete (LTPS) — every rate is a `Display.Mode`, so a hint selects the
+ *   closest mode at or below the request and a rate the panel does not have is
+ *   never invented. Nothing below 60 is ever selected: on these panels that is a
+ *   real mode switch, which flickers for no visible win.
+ * * Variable (LTPO) — the panel advertises a seamless ladder of rates on the
+ *   current mode, so the hint becomes a min/max window on that mode and the
+ *   driver interpolates. Below 60 the window is released and the system runs its
+ *   own 1-120.
+ *
+ * Failures are silent — the hint is best effort.
  */
 class DisplayRefreshPlugin : MethodCallHandler {
     private val channelName = "wispie/display_refresh"
@@ -45,9 +47,8 @@ class DisplayRefreshPlugin : MethodCallHandler {
                 clearPreferred()
                 result.success(null)
             }
-            "getSupportedModes" -> {
-                result.success(getSupportedModesPayload())
-            }
+            "getSupportedModes" -> result.success(getSupportedModesPayload())
+            "getPanelInfo" -> result.success(getPanelInfoPayload())
             else -> result.notImplemented()
         }
     }
@@ -55,7 +56,7 @@ class DisplayRefreshPlugin : MethodCallHandler {
     private fun getSupportedModesPayload(): List<Map<String, Any>> {
         val w = window ?: return emptyList()
         return try {
-            val display = w.decorView.display ?: return emptyList()
+            val display = displayOf(w) ?: return emptyList()
             display.supportedModes.map { m ->
                 mapOf(
                     "modeId" to m.modeId,
@@ -69,54 +70,81 @@ class DisplayRefreshPlugin : MethodCallHandler {
         }
     }
 
+    /** Panel class plus its rates, for the Dart side's policy and diagnostics. */
+    private fun getPanelInfoPayload(): Map<String, Any> {
+        val w = window ?: return emptyPanelInfo()
+        return try {
+            val display = displayOf(w) ?: return emptyPanelInfo()
+            val rates = LinkedHashSet<Float>()
+            display.supportedModes.forEach { rates.add(it.refreshRate) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                display.mode.supportedRefreshRates.forEach { rates.add(it) }
+            }
+            mapOf(
+                "kind" to if (isVariable(display)) "variable" else "discrete",
+                "minRate" to (rates.minOrNull()?.toDouble() ?: 0.0),
+                "maxRate" to (rates.maxOrNull()?.toDouble() ?: 0.0),
+            )
+        } catch (_: Exception) {
+            emptyPanelInfo()
+        }
+    }
+
+    private fun emptyPanelInfo(): Map<String, Any> = mapOf(
+        "kind" to "unknown",
+        "minRate" to 0.0,
+        "maxRate" to 0.0,
+    )
+
+    /**
+     * A variable panel advertises rates it can hit without a mode switch, and at
+     * least one of them is below 60. A panel where a sub-60 rate is its own mode
+     * is discrete — those keep the 60 floor.
+     */
+    private fun isVariable(display: Display): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        return try {
+            val ladder = display.mode.supportedRefreshRates
+            val low = ladder.minOrNull() ?: return false
+            val high = ladder.maxOrNull() ?: return false
+            val subSixtyMode = display.supportedModes.any { it.refreshRate < 59.5f }
+            low < 59.5f && high >= 89.5f && !subSixtyMode
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun setPreferred(hz: Double) {
         val w = window ?: return
         try {
-            val display = w.decorView.display ?: return
-            val modes = display.supportedModes
-            if (modes.isEmpty()) {
-                setFrameRate(hz)
+            val display = displayOf(w) ?: return
+            if (isVariable(display)) {
+                hintVariable(w, hz)
                 return
             }
 
+            // Discrete panels: 60 is the floor. A 30Hz request on a 30/60 panel is
+            // a mode switch, not a frame-rate saving.
+            val target = if (hz < 60.0) 60.0 else hz
             val current = display.mode
-            val sameSize = modes.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-            if (sameSize.isEmpty()) {
-                setFrameRate(hz)
+            val sameSize = display.supportedModes.filter {
+                it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight
+            }
+            if (sameSize.size <= 1) {
+                hintSingleMode(w, target)
                 return
             }
-            // Locked single-mode — no switch.
-            if (sameSize.size == 1) {
-                // Stay on the single rate; 30Hz hint on 60-only stays 60.
-                setFrameRate(hz)
-                return
-            }
-
-            // Pick the closest *available* rate without inventing one:
-            // 30Hz hint -> min >=30 (60-only stays 60, 90-only stays 90)
-            // 60Hz hint -> min >=60
-            // 120Hz hint -> max <=120 (60/90 -> 90 as requested)
-            var best: android.view.Display.Mode? = null
-            when {
-                hz <= 30.5 -> {
-                    best = sameSize.filter { it.refreshRate >= 30f - 0.5f }.minByOrNull { it.refreshRate }
-                        ?: sameSize.minByOrNull { it.refreshRate }
-                }
-                hz <= 60.5 -> {
-                    best = sameSize.filter { it.refreshRate >= 60f - 0.5f }.minByOrNull { it.refreshRate }
-                        ?: sameSize.maxByOrNull { it.refreshRate }
-                }
-                hz >= 119.5 -> {
-                    best = sameSize.filter { it.refreshRate <= 120f + 0.5f }.maxByOrNull { it.refreshRate }
-                        ?: sameSize.maxByOrNull { it.refreshRate }
-                }
-                else -> {
-                    best = sameSize.firstOrNull { kotlin.math.abs(it.refreshRate - hz.toFloat()) < 0.5f }
-                        ?: sameSize.minByOrNull { kotlin.math.abs(it.refreshRate - hz.toFloat()) }
-                }
-            }
+            // Closest *available* rate, never an invented one: 60/90 lands on 90
+            // for a 120 request, 60/90/120 lands on 120.
+            val best = when {
+                target <= 60.5 ->
+                    sameSize.filter { it.refreshRate >= 59.5f }.minByOrNull { it.refreshRate }
+                target >= 119.5 ->
+                    sameSize.filter { it.refreshRate <= 120.5f }.maxByOrNull { it.refreshRate }
+                else -> sameSize.minByOrNull { kotlin.math.abs(it.refreshRate - target.toFloat()) }
+            } ?: sameSize.maxByOrNull { it.refreshRate }
             if (best == null) {
-                setFrameRate(hz)
+                hintSingleMode(w, target)
                 return
             }
 
@@ -125,11 +153,41 @@ class DisplayRefreshPlugin : MethodCallHandler {
                 params.preferredDisplayModeId = best.modeId
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                params.preferredRefreshRate = hz.toFloat()
+                params.preferredRefreshRate = target.toFloat()
             }
             w.attributes = params
-            // Also hint frame rate for LTPO interpolation on 34+.
-            setFrameRate(hz)
+        } catch (_: Exception) {
+            // Best effort.
+        }
+    }
+
+    private fun hintVariable(w: Window, hz: Double) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        try {
+            val params = w.attributes
+            // Never a mode id here: a mode switch is exactly what a variable
+            // panel must not do.
+            params.preferredDisplayModeId = 0
+            if (hz >= 60.0) {
+                params.preferredMinDisplayRefreshRate = hz.toFloat()
+                params.preferredMaxDisplayRefreshRate = hz.toFloat()
+            } else {
+                params.preferredMinDisplayRefreshRate = 0f
+                params.preferredMaxDisplayRefreshRate = 0f
+            }
+            w.attributes = params
+        } catch (_: Exception) {
+            // Best effort.
+        }
+    }
+
+    /** Single-mode panel: there is nothing to switch to, so only the rate hint. */
+    private fun hintSingleMode(w: Window, hz: Double) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        try {
+            val params = w.attributes
+            params.preferredRefreshRate = hz.toFloat()
+            w.attributes = params
         } catch (_: Exception) {
             // Best effort.
         }
@@ -141,38 +199,22 @@ class DisplayRefreshPlugin : MethodCallHandler {
             val params = w.attributes
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 params.preferredDisplayModeId = 0
+                params.preferredMinDisplayRefreshRate = 0f
+                params.preferredMaxDisplayRefreshRate = 0f
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 params.preferredRefreshRate = 0f
             }
             w.attributes = params
-            // Clear frame rate hint: 0 means no preference.
-            setFrameRate(0.0)
         } catch (_: Exception) {
+            // Best effort.
         }
     }
 
-    private fun setFrameRate(hz: Double) {
-        val w = window ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                // COMPATIBILITY_DEFAULT (0) lets LTPO interpolate; FIXED_SOURCE (1) would force mode switch.
-                // Use DEFAULT so discrete 30/60/90/120 still gets exact mode via preferredDisplayModeId,
-                // while LTPO gets smooth interpolation.
-                w.decorView.display?.let { _ ->
-                    // Window.setFrameRate is API 30+ on Window, but display mode path already handled.
-                    // For API 34+ SurfaceControl path, Window.setFrameRate is still the public API.
-                    // 0 = clear.
-                    if (hz <= 0) {
-                        w.attributes.let { p ->
-                            p.preferredRefreshRate = 0f
-                            w.attributes = p
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-            }
-        }
+    private fun displayOf(w: Window): Display? = try {
+        w.decorView.display
+    } catch (_: Exception) {
+        null
     }
 
     fun cleanup() {

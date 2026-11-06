@@ -43,10 +43,16 @@ abstract final class MotionSprings {
     damping: 32,
   );
 
-  /// The way home. Softer than the open, so a flick is a move rather than a cut
-  /// and there is time to catch it; lightly damped, so it still dips.
+  /// The way home. Softer than the open, so a slow release is a move rather
+  /// than a cut and there is time to catch it; lightly damped, so it still dips.
   static final SpringDescription panelClose =
       SpringDescription.withDampingRatio(mass: 1, stiffness: 205, ratio: 0.86);
+
+  /// The way home after a throw. Stiff enough that the surface leaves at the
+  /// speed the finger gave it: the soft spring above made every flick finish at
+  /// the same crawl, which reads as the surface not following the finger.
+  static final SpringDescription panelCloseThrow =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 900, ratio: 0.94);
 
   /// A panel arriving where it still has room past its seat — the slide-in
   /// drawer, which is allowed to swell beyond its resting width. Lightly damped

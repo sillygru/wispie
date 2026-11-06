@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -172,9 +173,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       _syncRefresh();
       _onSongChanged();
     });
-    // Enter player refresh hint: 60Hz when playing, 30Hz when paused/power-save.
+    // Enter player refresh hint: the panel's floor while the player is up, 120
+    // on interaction.
     DisplayRefreshService.instance.enterPlayer(
-      playing: _manager.playingNotifier.value,
       powerSave: PowerStateService.instance.powerSave.value,
     );
   }
@@ -367,20 +368,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   void _syncRefresh() {
     if (!_appActive || !mounted) return;
-    final playing = _manager.playingNotifier.value;
-    final powerSave = PowerStateService.instance.powerSave.value;
-    if (playing && !powerSave) {
-      // Stay at 60Hz idle; boost120() will temporarily lift to 120Hz.
-      DisplayRefreshService.instance.enterPlayer(
-        playing: true,
-        powerSave: false,
-      );
-    } else {
-      DisplayRefreshService.instance.enterPlayer(
-        playing: playing,
-        powerSave: powerSave,
-      );
-    }
+    // The rate follows the panel and the interaction, not playback: a discrete
+    // panel holds its floor, a variable one is left to the driver.
+    DisplayRefreshService.instance.enterPlayer(
+      powerSave: PowerStateService.instance.powerSave.value,
+    );
   }
 
   /// Holds the screen awake only while the Lyrics pane is showing, the
@@ -427,7 +419,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     _syncWakeLock();
   }
 
-  // The panel owns the motion; this screen only reports the finger.
+  // The panel owns the motion; this screen only reports the finger. Drags start
+  // from the touch point, so the surface follows the first pixel instead of
+  // waiting for the touch slop to be crossed.
   PlayerPanelController? get _panel => PlayerPanel.controller;
 
   void _onDismissDragStart(DragStartDetails details) => _panel?.dragStart();
@@ -590,6 +584,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                     _buildHeader(context, song),
                     GestureDetector(
                       behavior: HitTestBehavior.opaque,
+                      dragStartBehavior: DragStartBehavior.down,
                       onVerticalDragStart: _onDismissDragStart,
                       onVerticalDragUpdate: _onDismissDragUpdate,
                       onVerticalDragEnd: _onDismissDragEnd,
@@ -634,6 +629,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                               paused: _paneMoving,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.translucent,
+                                dragStartBehavior: DragStartBehavior.down,
                                 onVerticalDragStart: _onDismissDragStart,
                                 onVerticalDragUpdate: _onDismissDragUpdate,
                                 onVerticalDragEnd: _onDismissDragEnd,
@@ -822,6 +818,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
     return PlayerRouteEntrance(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
         onVerticalDragStart: _onDismissDragStart,
         onVerticalDragUpdate: _onDismissDragUpdate,
         onVerticalDragEnd: _onDismissDragEnd,

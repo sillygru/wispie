@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -181,10 +183,17 @@ class PlayerPanelController {
       onSettled?.call();
       return;
     }
+    // A close carrying real speed gets the throw spring: replaying the soft home
+    // spring made a hard flick finish as slowly as a nudge, which is the lag the
+    // finger reads as the surface not following it.
+    final bool thrown =
+        closing && velocity.abs() >= PlayerTokens.panelThrowSpeed;
     snap.springTo(
       target,
       spring: closing
-          ? PlayerTokens.panelCloseSpring
+          ? (thrown
+              ? PlayerTokens.panelCloseThrowSpring
+              : PlayerTokens.panelCloseSpring)
           : PlayerTokens.panelOpenSpring,
       velocity: velocity,
       onSettled: () {
@@ -329,6 +338,13 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   final ValueNotifier<double> _coverOpacity = ValueNotifier<double>(1);
 
   bool _mounted = false;
+
+  /// Live only inside the window after a close lands, while an upward swipe can
+  /// still pick the surface back up.
+  Timer? _graceTimer;
+
+  bool get _inGrace => _graceTimer != null;
+
   PlayerPane _pane = PlayerPane.player;
   bool _queueHistory = false;
 
@@ -350,7 +366,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
       ..travelOf = _measureTravel
       ..onClosing = _startFlight
       ..onGrabbed = _startFlight
-      ..onSettled = _endFlight
+      ..onSettled = _onSettled
       ..prefersInstant = () => MotionPolicy.read(context).reduceMotion;
     _panel.progress.addListener(_onTick);
     _panel.progress.addStatusListener(_onAnimationStatus);
@@ -373,6 +389,37 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     if (PlayerMorph.strength.value != 0) PlayerMorph.strength.value = 0;
   }
 
+  void _onSettled() {
+    _endFlight();
+    if (!mounted) return;
+    if (PlayerPanel.openState.value || _panel.isDragging) return;
+    if (_panel.value > 0.0005) return;
+    _startGrace();
+  }
+
+  /// Keeps a landed close catchable for a beat, so a swipe down followed by a
+  /// quick swipe back up brings the player straight back.
+  void _startGrace() {
+    _graceTimer?.cancel();
+    _graceTimer = Timer(PlayerTokens.panelCloseGrace, () {
+      if (!mounted) return;
+      // A finger that picked the surface up owns it; the window closes once the
+      // gesture is over, not under it.
+      if (_panel.isDragging) {
+        _startGrace();
+        return;
+      }
+      setState(() => _graceTimer = null);
+    });
+    setState(() {});
+  }
+
+  void _endGrace() {
+    if (_graceTimer == null) return;
+    _graceTimer?.cancel();
+    setState(() => _graceTimer = null);
+  }
+
   /// How much of the flight the shuttles own. It ramps from 0 at either rest
   /// state to 1 once the surface is clear of the bar, so the last frame blends
   /// into the real control instead of replacing it.
@@ -388,6 +435,8 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     _panel.progress.removeListener(_onTick);
     _panel.progress.removeStatusListener(_onAnimationStatus);
     _flying.dispose();
+    _graceTimer?.cancel();
+    _graceTimer = null;
     PlayerPanel._detach(this);
     _panel.dispose();
     super.dispose();
@@ -420,6 +469,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     if (song == null) return;
     final bool relayout =
         !_mounted || initialPane != _pane || queueShowsHistory != _queueHistory;
+    _endGrace();
     setState(() {
       _mounted = true;
       _pane = initialPane;
@@ -463,6 +513,19 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     _origin = resolved.rect;
     _originRadius = resolved.radius;
   }
+
+  // The grace window's own drag layer reports to the same controller the panes
+  // use, so picking the surface back up after it lands and mid-flight are one
+  // gesture as far as the panel is concerned.
+  void _onDismissDragStart(DragStartDetails details) => _panel.dragStart();
+
+  void _onDismissDragUpdate(DragUpdateDetails details) =>
+      _panel.dragUpdate(details.delta.dy);
+
+  void _onDismissDragEnd(DragEndDetails details) =>
+      _panel.dragEnd(velocity: details.primaryVelocity ?? 0);
+
+  void _onDismissDragCancel() => _panel.dragCancel();
 
   /// Marks both ends of the flight. Nothing is captured here: the rects are
   /// read from the live render objects while it runs, so the flight lands
@@ -552,8 +615,9 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           final double p = _panel.value;
           final double clamped = p.clamp(0.0, 1.0);
           // Position, not isAnimating: the spring's tail below the screen kept a
-          // full-screen hit area over the dock.
-          final bool active = p > 0.0005 || _panel.isDragging;
+          // full-screen hit area over the dock. The grace window is the one case
+          // where a fully closed surface stays mounted on purpose.
+          final bool active = p > 0.0005 || _panel.isDragging || _inGrace;
           if (_travel <= 0) _measureTravel();
           final Size size = MediaQuery.sizeOf(context);
           final Rect from =
@@ -649,7 +713,8 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
               // so a frozen subtree composites from one cached raster instead
               // of re-rasterising the whole screen for each frame of the
               // flight. It resumes the moment the surface settles.
-              enabled: active && !_panel.isMoving,
+              enabled:
+                  (clamped > 0.0005 || _panel.isDragging) && !_panel.isMoving,
               child: Stack(
                 children: [
                   if (active)
@@ -679,6 +744,28 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
                       ),
                     ),
                   ),
+                  // A landed-close panel inside its grace window: a drag-only
+                  // layer in the zone it left through, so a swipe back up picks
+                  // it up. It never takes taps, and it stands down the moment
+                  // the surface is on screen again.
+                  if (_inGrace)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: size.height * PlayerTokens.panelGraceZone,
+                      child: IgnorePointer(
+                        ignoring: clamped > 0.0005 || _panel.isDragging,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          dragStartBehavior: DragStartBehavior.down,
+                          onVerticalDragStart: _onDismissDragStart,
+                          onVerticalDragUpdate: _onDismissDragUpdate,
+                          onVerticalDragEnd: _onDismissDragEnd,
+                          onVerticalDragCancel: _onDismissDragCancel,
+                        ),
+                      ),
+                    ),
                   ...transport,
                   if (shuttle != null && song != null && shuttleSize != null)
                     Positioned.fromRect(

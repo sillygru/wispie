@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,7 +141,6 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       _onSongChanged();
     });
     DisplayRefreshService.instance.enterPlayer(
-      playing: _manager.playingNotifier.value,
       powerSave: PowerStateService.instance.powerSave.value,
     );
   }
@@ -286,11 +286,8 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
 
   void _syncRefresh() {
     if (!_appActive || !mounted) return;
-    final bool playing = _manager.playingNotifier.value;
-    final bool powerSave = PowerStateService.instance.powerSave.value;
     DisplayRefreshService.instance.enterPlayer(
-      playing: playing && !powerSave ? true : playing,
-      powerSave: playing && !powerSave ? false : powerSave,
+      powerSave: PowerStateService.instance.powerSave.value,
     );
   }
 
@@ -538,6 +535,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                       index: 1,
                       child: GestureDetector(
                         behavior: HitTestBehavior.translucent,
+                        dragStartBehavior: DragStartBehavior.down,
                         onVerticalDragStart: _onDismissDragStart,
                         onVerticalDragUpdate: _onDismissDragUpdate,
                         onVerticalDragEnd: _onDismissDragEnd,
@@ -761,6 +759,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
         // Wide: the header floats over the Lyrics/Queue switch, so it must let
         // taps through to it.
         behavior: wide ? HitTestBehavior.deferToChild : HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
         onVerticalDragStart: wide ? null : _onDismissDragStart,
         onVerticalDragUpdate: wide ? null : _onDismissDragUpdate,
         onVerticalDragEnd: wide ? null : _onDismissDragEnd,

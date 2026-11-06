@@ -147,8 +147,27 @@ class PlayerTokens {
   static const double panelRubberRoom = 0.05;
 
   /// Ceiling on release speed handed to the settle spring, in progress per
-  /// second; uncapped, a hard flick emptied the travel before it could be seen.
-  static const double panelMomentumLimit = 1.15;
+  /// second. High enough that a hard flick keeps its own speed instead of being
+  /// flattened into the same close as a nudge.
+  static const double panelMomentumLimit = 3.0;
+
+  /// Release speed at which a close reads as a throw and gets the stiff spring,
+  /// in progress per second. Matches the fling ratio the release decision uses,
+  /// so every release the panel treats as a flick also leaves like one.
+  static const double panelThrowSpeed = 0.6;
+
+  /// The close that keeps up with a throw, instead of the soft way home.
+  static final SpringDescription panelCloseThrowSpring =
+      MotionSprings.panelCloseThrow;
+
+  /// How long a panel that landed closed stays catchable, so a swipe down
+  /// followed straight away by a swipe back up re-opens it. The window used to
+  /// be the close itself: a fifth of a second on a hard flick.
+  static const Duration panelCloseGrace = Duration(milliseconds: 500);
+
+  /// Share of the screen height, measured from the bottom, where the grace
+  /// window listens. Higher up is a scroll on the screen underneath.
+  static const double panelGraceZone = 0.3;
 
   /// How far the dock sinks per unit of close overshoot.
   static const double dockDip = 46;
