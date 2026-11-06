@@ -47,11 +47,6 @@ class AppDrawer extends ConsumerStatefulWidget {
 }
 
 class _AppDrawerState extends ConsumerState<AppDrawer> {
-  static const _panelRadius = BorderRadius.only(
-    topRight: Radius.circular(AppTokens.rSm),
-    bottomRight: Radius.circular(AppTokens.rSm),
-  );
-
   Future<void> _closeDrawer() async {
     await widget.onClose();
   }
@@ -281,7 +276,6 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
         child: _DrawerSheet(
           position: widget.drawerPosition,
           geometry: widget.geometry,
-          panelRadius: _panelRadius,
           color: Color.alphaBlend(
             AppTokens.surface(1),
             Theme.of(context).scaffoldBackgroundColor,
@@ -424,14 +418,12 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
 class _DrawerSheet extends StatelessWidget {
   final Animation<double> position;
   final DrawerGeometry geometry;
-  final BorderRadius panelRadius;
   final Color color;
   final Widget child;
 
   const _DrawerSheet({
     required this.position,
     required this.geometry,
-    required this.panelRadius,
     required this.color,
     required this.child,
   });
@@ -442,12 +434,12 @@ class _DrawerSheet extends StatelessWidget {
       animation: Listenable.merge([position, geometry]),
       child: child,
       builder: (context, child) {
-        return ClipRRect(
-          borderRadius: panelRadius,
+        return ClipPath(
+          clipper: const _DrawerClipper(),
           child: ColoredBox(
             color: color,
             child: SizedBox(
-              width: geometry.panelWidth,
+              width: geometry.panelWidth + AppTokens.rSm,
               // Laid out at its resting width and clipped: a growing sheet
               // uncovers more panel rather than squeezing or rescaling the
               // content inside it.
@@ -467,4 +459,24 @@ class _DrawerSheet extends StatelessWidget {
       },
     );
   }
+}
+
+class _DrawerClipper extends CustomClipper<Path> {
+  const _DrawerClipper();
+
+  @override
+  Path getClip(Size size) {
+    final radius = AppTokens.rSm.clamp(0.0, size.height / 2);
+    final edge = (size.width - radius).clamp(0.0, size.width);
+    return Path()
+      ..lineTo(size.width, 0)
+      ..quadraticBezierTo(edge, 0, edge, radius)
+      ..lineTo(edge, size.height - radius)
+      ..quadraticBezierTo(edge, size.height, size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_DrawerClipper oldClipper) => false;
 }
