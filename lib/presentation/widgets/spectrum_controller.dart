@@ -199,7 +199,8 @@ class SpectrumController extends ChangeNotifier {
       _ticker = null;
       _lastEmitted = null;
       _beatMapToken++;
-      _resetLevels();
+      // Levels are kept on purpose: a surface that parks this visualiser while
+      // it moves repaints the frozen bars, and zeroing them made them blink.
     }
     _syncTicker();
   }

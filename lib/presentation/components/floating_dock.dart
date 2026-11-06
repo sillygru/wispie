@@ -628,18 +628,14 @@ class _MorphingMini extends ConsumerWidget {
                                       fit: BoxFit.cover,
                                     ),
                                   ),
-                                  // The ball has room for the track's own bars,
-                                  // so the same signal the expanded bar gives
-                                  // survives the collapse.
-                                  if (ballOpacity > 0)
-                                    Opacity(
-                                      opacity: ballOpacity,
-                                      child: PlayingVisualizerOverlay(
-                                        playing: playing,
-                                        mode: visualizerMode,
-                                        size: 20,
-                                      ),
-                                    ),
+                                  // Rides the travelling art from the first frame:
+                                  // gating it until the ball formed left the morph
+                                  // with no playing indicator for a few frames.
+                                  PlayingVisualizerOverlay(
+                                    playing: playing,
+                                    mode: visualizerMode,
+                                    size: 18,
+                                  ),
                                 ],
                               ),
                             ),
