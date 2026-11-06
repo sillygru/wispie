@@ -5,20 +5,8 @@ import 'package:flutter/services.dart';
 
 /// Controls the display refresh rate hint for the player screen.
 ///
-/// Panels come in two classes, and the difference is the whole point:
-///
-/// * Discrete (LTPS) — every rate is its own `Display.Mode`, so a rate the panel
-///   does not have is never invented: 60/90/120 lands on 60, 90 or 120, and
-///   nothing ever hints below 60. A sub-60 mode switch flickers the panel for no
-///   visible win.
-/// * Variable (LTPO) — the panel interpolates, so at rest the hint is released
-///   and the system runs its own 1-120 range. Only an interaction pins a rate.
-///
-/// Policy: 120 while scrolling/dragging (boost window 2s); otherwise 60 on a
-/// discrete panel and no pin at all on a variable one.
-///
-/// The native side may not be implemented (desktop, tests, old builds) — in that
-/// case all calls are no-ops and the service still tracks state for tests.
+/// Requests 120 Hz during interaction and 60 Hz after two seconds of inactivity.
+/// Android chooses an available rate; power saving disables the interaction boost.
 class DisplayRefreshService {
   static const MethodChannel _channel = MethodChannel('wispie/display_refresh');
 
@@ -111,16 +99,9 @@ class DisplayRefreshService {
   }
 
   void _applyForState() {
-    // A variable panel is never pinned at rest: the driver's own 1-120 ladder is
-    // both cheaper and smoother than any hint from here.
-    if (_variable) {
-      _clearHint();
-      return;
-    }
-    // Discrete panels hold their floor whether playing, paused or power-saving.
-    // The old 30Hz idle hint was a mode switch, which is exactly what a panel
-    // that can do 60 should not do.
-    _setHint(_discreteFloor);
+    _setHint(!_powerSave && (_boostTimer?.isActive ?? false)
+        ? _interactionRate
+        : _discreteFloor);
   }
 
   void _setHint(double hz) {

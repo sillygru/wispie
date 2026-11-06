@@ -173,8 +173,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       _syncRefresh();
       _onSongChanged();
     });
-    // Enter player refresh hint: the panel's floor while the player is up, 120
-    // on interaction.
     DisplayRefreshService.instance.enterPlayer(
       powerSave: PowerStateService.instance.powerSave.value,
     );
@@ -371,8 +369,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
 
   void _syncRefresh() {
     if (!_appActive || !mounted) return;
-    // The rate follows the panel and the interaction, not playback: a discrete
-    // panel holds its floor, a variable one is left to the driver.
     DisplayRefreshService.instance.enterPlayer(
       powerSave: PowerStateService.instance.powerSave.value,
     );
