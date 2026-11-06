@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../domain/models/online_search_result.dart';
 import '../domain/services/cover_optimizer.dart';
+import '../domain/services/cover_path.dart';
 import '../domain/services/embedded_cover_bytes.dart';
 import '../models/song.dart';
 import 'music_utils_api_client.dart';
@@ -30,6 +31,24 @@ class CoverLookupResult {
 }
 
 class OnlineMetadataService {
+  /// The collection's own covers, in the page's song order, so the artwork
+  /// picker can offer one of them when the online search has nothing.
+  static List<Map<String, String>> songCoverCandidates(List<Song> songs) {
+    final seen = <String>{};
+    final candidates = <Map<String, String>>[];
+    for (final song in songs) {
+      final cover = song.coverUrl?.trim() ?? '';
+      if (cover.isEmpty || !seen.add(cover)) continue;
+      // A MediaStore `content://` cover has no path to save as artwork.
+      if (!cover.startsWith('http') && CoverPath.toLocalPath(cover) == null) {
+        continue;
+      }
+      candidates.add({'url': cover, 'source': song.title});
+      if (candidates.length == 8) break;
+    }
+    return candidates;
+  }
+
   static final OnlineMetadataService instance =
       OnlineMetadataService._internal();
 

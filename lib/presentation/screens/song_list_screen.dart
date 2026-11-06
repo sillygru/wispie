@@ -10,6 +10,7 @@ import '../../providers/providers.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../domain/services/cover_path.dart';
 import '../../services/library_logic.dart';
 import '../../services/online_metadata_service.dart';
 import '../../services/youtube_service.dart';
@@ -35,6 +36,7 @@ import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/gradient_detail_screen.dart';
 import '../utils/wide_layout.dart';
+import '../widgets/album_art_image.dart';
 import '../widgets/album_card_selector.dart';
 import 'select_songs_screen.dart';
 import '../components/animated_removal.dart';
@@ -139,7 +141,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     final bool useFullBleed = ref.watch(
       settingsProvider.select((s) => s.fullBleedDesignEnabled),
     );
-    if (useFullBleed) {
+    // A streamed collection has no legacy layout that renders its art.
+    final bool streamed = songs.isNotEmpty && songs.every((s) => s.isRemote);
+    if (useFullBleed || streamed) {
       final bool looksArtist = isArtist || _looksLikeArtist(songs, title);
       final String lowerTitle = title.toLowerCase();
       final bool looksAlbum = isAlbum ||
@@ -150,7 +154,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                     s.album.toLowerCase().contains(lowerTitle) ||
                     lowerTitle.contains(s.album.toLowerCase()),
               ));
-      if (playlistId != null || looksArtist || looksAlbum) {
+      if (playlistId != null || looksArtist || looksAlbum || streamed) {
         return GradientDetailScreen(
           title: title,
           songs: songs,
@@ -249,15 +253,18 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     final bool hasCustomArtwork =
         artworkPath != null && File(artworkPath).existsSync();
 
-    if (effectiveIsArtist && !hasCustomArtwork) {
-      PassiveArtFetcherService.instance.fetchArtistArtIfNeeded(
-        effectiveArtistName,
-      );
-    } else if (effectiveIsAlbum && !hasCustomArtwork) {
-      PassiveArtFetcherService.instance.fetchAlbumArtIfNeeded(
-        effectiveAlbumName,
-        effectiveArtistName,
-      );
+    // Streamed collections already carry their catalogue art.
+    if (!streamed) {
+      if (effectiveIsArtist && !hasCustomArtwork) {
+        PassiveArtFetcherService.instance.fetchArtistArtIfNeeded(
+          effectiveArtistName,
+        );
+      } else if (effectiveIsAlbum && !hasCustomArtwork) {
+        PassiveArtFetcherService.instance.fetchAlbumArtIfNeeded(
+          effectiveAlbumName,
+          effectiveArtistName,
+        );
+      }
     }
 
     void handleFetchCover() {
@@ -773,14 +780,20 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     List<Song> songs,
   ) async {
     final l10n = AppLocalizations.of(context);
-    appSnack(context, l10n.songListSearchingArtwork(artist));
     final onlineService = OnlineMetadataService.instance;
+    // Streamed tracks already carry catalogue art; a name search finds nothing
+    // and only delays the picker.
+    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
+    final results = <Map<String, String>>[
+      ...OnlineMetadataService.songCoverCandidates(songs),
+    ];
 
-    final results = <Map<String, String>>[];
-
-    try {
-      results.addAll(await onlineService.searchArtistImageCandidates(artist));
-    } catch (_) {}
+    if (!streamed) {
+      appSnack(context, l10n.songListSearchingArtwork(artist));
+      try {
+        results.addAll(await onlineService.searchArtistImageCandidates(artist));
+      } catch (_) {}
+    }
 
     if (!context.mounted) return;
 
@@ -808,19 +821,20 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               if (results.isNotEmpty) const Divider(),
               ...results.map(
                 (res) => ListTile(
-                  leading: Image.network(
-                    res['url']!,
+                  leading: AlbumArtImage(
+                    url: res['url']!,
                     width: 48,
                     height: 48,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
+                    errorWidget: const AppIcon(AppIcons.image),
                   ),
                   title: Text(l10n.songListArtworkFrom('${res['source']}')),
-                  subtitle: Text(
-                    res['url']!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  subtitle: res['url']!.startsWith('http')
+                      ? Text(
+                          res['url']!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : null,
                   onTap: () => Navigator.pop(dialogContext, res['url']),
                 ),
               ),
@@ -867,6 +881,20 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       return;
     }
 
+    // A cover taken from one of the songs is already a file.
+    final String? songCover = CoverPath.toLocalPath(selected);
+    if (songCover != null) {
+      await ref.read(artistAlbumArtProvider.notifier).setArtistArt(
+            artistName: artist,
+            localPath: songCover,
+            source: 'song',
+          );
+      if (context.mounted) {
+        appSnack(context, l10n.songListArtworkUpdated(artist));
+      }
+      return;
+    }
+
     if (context.mounted) appSnack(context, l10n.songListDownloadingArtwork);
     final localPath = await onlineService.downloadAndCacheCover(
       selected,
@@ -896,20 +924,24 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     List<Song> songs,
   ) async {
     final l10n = AppLocalizations.of(context);
-    appSnack(context, l10n.songListSearchingArtwork(album));
     final onlineService = OnlineMetadataService.instance;
     final compositeKey = artist.isNotEmpty ? '$artist|$album' : album;
+    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
+    final results = <Map<String, String>>[
+      ...OnlineMetadataService.songCoverCandidates(songs),
+    ];
 
-    final results = <Map<String, String>>[];
-
-    try {
-      results.addAll(
-        await onlineService.searchAlbumImageCandidates(
-          album,
-          artistName: artist,
-        ),
-      );
-    } catch (_) {}
+    if (!streamed) {
+      appSnack(context, l10n.songListSearchingArtwork(album));
+      try {
+        results.addAll(
+          await onlineService.searchAlbumImageCandidates(
+            album,
+            artistName: artist,
+          ),
+        );
+      } catch (_) {}
+    }
 
     if (!context.mounted) return;
 
@@ -937,19 +969,20 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               if (results.isNotEmpty) const Divider(),
               ...results.map(
                 (res) => ListTile(
-                  leading: Image.network(
-                    res['url']!,
+                  leading: AlbumArtImage(
+                    url: res['url']!,
                     width: 48,
                     height: 48,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const AppIcon(AppIcons.image),
+                    errorWidget: const AppIcon(AppIcons.image),
                   ),
                   title: Text(l10n.songListArtworkFrom('${res['source']}')),
-                  subtitle: Text(
-                    res['url']!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  subtitle: res['url']!.startsWith('http')
+                      ? Text(
+                          res['url']!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : null,
                   onTap: () => Navigator.pop(dialogContext, res['url']),
                 ),
               ),
@@ -996,6 +1029,22 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
         if (context.mounted) {
           appSnack(context, l10n.songListArtworkUpdated(album));
         }
+      }
+      return;
+    }
+
+    // A cover taken from one of the songs is already a file.
+    final String? songCover = CoverPath.toLocalPath(selected);
+    if (songCover != null) {
+      await ref.read(artistAlbumArtProvider.notifier).setAlbumArt(
+            albumKey: compositeKey,
+            albumName: album,
+            artistName: artist.isNotEmpty ? artist : null,
+            localPath: songCover,
+            source: 'song',
+          );
+      if (context.mounted) {
+        appSnack(context, l10n.songListArtworkUpdated(album));
       }
       return;
     }

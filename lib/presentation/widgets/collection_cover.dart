@@ -35,6 +35,9 @@ class CollectionCover extends StatelessWidget {
       final bPlays = playCounts?[b.filename] ?? b.playCount;
       return bPlays.compareTo(aPlays);
     });
+    // A streamed collection shows the first song's art: a mosaic of unrelated
+    // catalogue stills reads as a collage of different albums.
+    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
     final seen = <String>{};
     final covers = <String>[];
     for (final song in ranked) {
@@ -42,7 +45,7 @@ class CollectionCover extends StatelessWidget {
       if (cover.isEmpty) continue;
       if (!seen.add(cover)) continue;
       covers.add(cover);
-      if (covers.length == 4) break;
+      if (streamed || covers.length == 4) break;
     }
     return covers;
   }
