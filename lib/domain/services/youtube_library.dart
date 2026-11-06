@@ -511,7 +511,13 @@ class YouTubeLibraryApi {
           ),
         );
       }
-      for (final container in parseMusicContainers(json)) {
+      // Only the result shelves: the page's discovery carousels name related
+      // artists, which is not an answer to the query.
+      var pageContainers = parseMusicContainers(json, shelvesOnly: true);
+      if (pageContainers.isEmpty) {
+        pageContainers = parseMusicContainers(json);
+      }
+      for (final container in pageContainers) {
         if (!seenContainers.add(container.id)) continue;
         containers.add(container);
       }
@@ -1228,23 +1234,47 @@ List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
 ///
 /// The same two renderers carry tracks and places; a row with no watch endpoint
 /// but a browse id that names an album, playlist or channel is a place.
-List<YouTubeContainer> parseMusicContainers(Object? json) {
+List<YouTubeContainer> parseMusicContainers(
+  Object? json, {
+  bool shelvesOnly = false,
+}) {
   final result = <YouTubeContainer>[];
   final seen = <String>{};
 
-  for (final node in walkJsonMaps(json)) {
+  final nodes = shelvesOnly ? _resultShelfRows(json) : walkJsonMaps(json);
+  for (final node in nodes) {
+    final card = node['musicCardShelfRenderer'];
     final twoRow = node['musicTwoRowItemRenderer'];
     final responsive = node['musicResponsiveListItemRenderer'];
-    final YouTubeContainer? container = twoRow is Map
-        ? _containerFromMusicTwoRow(twoRow)
-        : responsive is Map
-            ? _containerFromMusicResponsive(responsive)
-            : null;
+    final YouTubeContainer? container = card is Map
+        ? _containerFromMusicCard(card)
+        : twoRow is Map
+            ? _containerFromMusicTwoRow(twoRow)
+            : responsive is Map
+                ? _containerFromMusicResponsive(responsive)
+                : null;
     if (container == null) continue;
     if (!seen.add(container.id)) continue;
     result.add(container);
   }
   return result;
+}
+
+/// Rows of a search page's own result shelves and its top-result card.
+///
+/// The same page also carries discovery carousels (`you might also like`), whose
+/// rows are answers to nothing the listener asked for.
+Iterable<Map> _resultShelfRows(Object? json) sync* {
+  for (final node in walkJsonMaps(json)) {
+    final card = node['musicCardShelfRenderer'];
+    final shelf = node['musicShelfRenderer'];
+    if (card is! Map && shelf is! Map) continue;
+    if (card is Map) yield node;
+    if (shelf is! Map) continue;
+    for (final row in walkJsonMaps(shelf)) {
+      yield row;
+    }
+  }
 }
 
 /// The sort chips a music page offers (`Popularity`, `Release date`, ...).
@@ -1375,6 +1405,38 @@ YouTubeContainer? _containerFromMusicTwoRow(Map renderer) {
   );
 }
 
+/// The place a search's top-result card names, if it names one.
+YouTubeContainer? _containerFromMusicCard(Map renderer) {
+  final id = _browseIdOf(renderer);
+  if (id == null) return null;
+  final kind = _containerKindOf(id);
+  if (kind == null) return null;
+  final title = textOf(renderer['title']);
+  if (title == null || title.isEmpty) return null;
+
+  // Only a card that labels itself a place; a song card links its artist in
+  // the subtitle and must not turn into that artist.
+  final subtitle = textOf(renderer['subtitle']) ?? '';
+  final label = subtitle.split('•').first.trim().toLowerCase();
+  if (!_musicTypeLabels.contains(label)) return null;
+  if (_trackTypeLabels.contains(label)) return null;
+
+  final parts = <String>[];
+  for (final raw in subtitle.split('•')) {
+    final part = raw.trim();
+    if (part.isEmpty) continue;
+    if (_musicTypeLabels.contains(part.toLowerCase())) continue;
+    parts.add(part);
+  }
+  return YouTubeContainer(
+    id: id,
+    title: title,
+    subtitle: parts.join(' • '),
+    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
+    kind: kind,
+  );
+}
+
 YouTubeContainer? _containerFromMusicResponsive(Map renderer) {
   if (_isTrackRow(renderer)) return null;
   final id = _browseIdOf(renderer);
@@ -1413,6 +1475,12 @@ String? _browseIdOf(Map renderer) {
   final browse = mapOf(navigation['browseEndpoint'])['browseId']?.toString();
   if (browse != null && browse.isNotEmpty) return browse;
 
+  // A search shelf row holds its page on the title text, not on the row.
+  // The subtitle is never read: there it names the artist, not the row.
+  final textId = _browseIdInText(renderer['title']) ??
+      _browseIdInText(_flexColumn(renderer, 0));
+  if (textId != null) return textId;
+
   final playlist = mapOf(navigation['watchEndpoint'])['playlistId']?.toString();
   if (playlist != null && playlist.startsWith('VL')) return playlist;
 
@@ -1434,6 +1502,19 @@ String? _browseIdOf(Map renderer) {
   final inner = mapOf(mapOf(command)['innertubeCommand']);
   final innerBrowse = mapOf(inner['browseEndpoint'])['browseId']?.toString();
   if (innerBrowse != null && innerBrowse.isNotEmpty) return innerBrowse;
+  return null;
+}
+
+/// The first page link inside a text node, skipping ids the app cannot open.
+String? _browseIdInText(Object? node) {
+  for (final map in walkJsonMaps(node)) {
+    final browse =
+        mapOf(mapOf(map['navigationEndpoint'])['browseEndpoint'])['browseId']
+            ?.toString();
+    if (browse == null || browse.isEmpty) continue;
+    if (_containerKindOf(browse) == null) continue;
+    return browse;
+  }
   return null;
 }
 

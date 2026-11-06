@@ -493,8 +493,9 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
       return _message(AppIcons.musicNote, context.l10n.onlineNoResults);
     }
 
-    // Order follows how far a tap reaches: the songs first, then the album or
-    // playlist the query named, then the artist it named.
+    // Order follows how far a tap reaches: the songs first, then the album the
+    // query named, then the artist it named. Playlists are left out: browsing
+    // one needs an account session the app does not have.
     return ListView(
       controller: widget.scrollController,
       padding: const EdgeInsets.only(top: AppTokens.s2, bottom: AppTokens.s6),
@@ -506,10 +507,6 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
         if (results.albums.isNotEmpty) ...[
           _sectionHeader(context.l10n.youtubeSearchAlbums),
           for (final album in results.albums) _collectionRow(album),
-        ],
-        if (results.playlists.isNotEmpty) ...[
-          _sectionHeader(context.l10n.youtubeSearchPlaylists),
-          for (final playlist in results.playlists) _collectionRow(playlist),
         ],
         if (results.artists.isNotEmpty) ...[
           _sectionHeader(context.l10n.youtubeSearchArtists),

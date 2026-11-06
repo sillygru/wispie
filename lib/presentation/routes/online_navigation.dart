@@ -43,7 +43,7 @@ Future<List<OnlineCollection>> _search(
     return switch (kind) {
       OnlineCollectionKind.artist => results.artists,
       OnlineCollectionKind.album => results.albums,
-      OnlineCollectionKind.playlist => results.playlists,
+      OnlineCollectionKind.playlist => const [],
     };
   } on Object {
     return const [];

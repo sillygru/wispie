@@ -41,16 +41,32 @@ Map<String, Object?> _thumbs(String url, int width) => {
       },
     };
 
+Map<String, Object?> _linkedText(String value, String browseId) => {
+      'runs': [
+        {
+          'text': value,
+          'navigationEndpoint': {
+            'browseEndpoint': {'browseId': browseId},
+          },
+        },
+      ],
+    };
+
 Map<String, Object?> _shelfRow({
   required String title,
   String? videoId,
   String? browseId,
+  bool browseInTitle = false,
   String byline = 'Song • 4:11',
   List<String> extraColumns = const [],
 }) {
   final columns = <Map<String, Object?>>[
     {
-      'musicResponsiveListItemFlexColumnRenderer': {'text': _text(title)},
+      'musicResponsiveListItemFlexColumnRenderer': {
+        'text': browseInTitle && browseId != null
+            ? _linkedText(title, browseId)
+            : _text(title),
+      },
     },
     {
       'musicResponsiveListItemFlexColumnRenderer': {'text': _text(byline)},
@@ -105,11 +121,19 @@ Map<String, Object?> _twoRow({
       },
     };
 
-/// A search page that names a song, an album, a playlist and an artist.
+/// A search page: a song, the album and artist shelves, a top-result card and
+/// the discovery carousels that must not answer for the query.
 Map<String, Object?> _searchPage() => {
       'contents': {
         'sectionListRenderer': {
           'contents': [
+            {
+              'musicCardShelfRenderer': {
+                'title': _linkedText('Taylor Momsen', 'UCmomsen'),
+                'subtitle': _text('Artist'),
+                'thumbnail': _thumbs('https://yt3.ggpht.com/a=s480', 480),
+              },
+            },
             {
               'musicShelfRenderer': {
                 'contents': [
@@ -121,8 +145,15 @@ Map<String, Object?> _searchPage() => {
                   _shelfRow(
                     title: 'All My Demons',
                     browseId: 'MPREb_album1',
+                    browseInTitle: true,
                     byline: 'Album • Aurora',
                     extraColumns: ['2016'],
+                  ),
+                  _shelfRow(
+                    title: 'The Pretty Reckless',
+                    browseId: 'UCpretty',
+                    browseInTitle: true,
+                    byline: 'Artist',
                   ),
                 ],
               },
@@ -131,14 +162,9 @@ Map<String, Object?> _searchPage() => {
               'musicCarouselShelfRenderer': {
                 'contents': [
                   _twoRow(
-                    title: 'Aurora Mix',
-                    subtitle: 'Playlist • YouTube Music',
-                    browseId: 'VLPLmix1',
-                  ),
-                  _twoRow(
-                    title: 'Aurora',
+                    title: 'Oasis',
                     subtitle: 'Artist',
-                    browseId: 'UCartist1',
+                    browseId: 'UCoasis',
                   ),
                 ],
               },
@@ -242,27 +268,47 @@ void main() {
   final search = _searchPage();
   final tracks = parseMusicTracks(search);
   final containers = parseMusicContainers(search);
+  final shelfRows = parseMusicContainers(search, shelvesOnly: true);
   final albums = containers.where((c) => c.kind == YouTubeContainerKind.album);
-  final playlists =
-      containers.where((c) => c.kind == YouTubeContainerKind.playlist);
-  final artists =
-      containers.where((c) => c.kind == YouTubeContainerKind.artist);
+  final shelfAlbums =
+      shelfRows.where((c) => c.kind == YouTubeContainerKind.album);
+  final shelfArtists =
+      shelfRows.where((c) => c.kind == YouTubeContainerKind.artist).toList();
+  final shelfPlaylists =
+      shelfRows.where((c) => c.kind == YouTubeContainerKind.playlist);
 
   check('search: only the song is a track', tracks.length == 1,
       detail: tracks.map((t) => t.title).join(', '));
   check('search: the song keeps its plays', tracks.first.viewCountText != null,
       detail: tracks.first.viewCountText);
-  check('search: the album row is an album', albums.length == 1,
-      detail: albums.map((c) => '${c.title}/${c.id}').join(', '));
+  check('search: an album shelf row keeps its album',
+      shelfAlbums.length == 1 && shelfAlbums.first.id == 'MPREb_album1',
+      detail: shelfAlbums.map((c) => '${c.title}/${c.id}').join(', '));
   check('search: the album keeps its byline without the type label',
-      albums.firstOrNull?.subtitle == 'Aurora • 2016',
-      detail: albums.firstOrNull?.subtitle);
-  check('search: the carousel playlist is a playlist',
-      playlists.length == 1 && playlists.first.id == 'VLPLmix1',
-      detail: playlists.map((c) => c.id).join(', '));
-  check('search: the artist is an artist',
-      artists.length == 1 && artists.first.id == 'UCartist1',
-      detail: artists.map((c) => c.id).join(', '));
+      shelfAlbums.firstOrNull?.subtitle == 'Aurora • 2016',
+      detail: shelfAlbums.firstOrNull?.subtitle);
+  check('search: the searched artist is found on its shelf',
+      shelfArtists.any((c) => c.id == 'UCpretty'),
+      detail: shelfArtists.map((c) => '${c.title}/${c.id}').join(', '));
+  check('search: the top result card is read',
+      shelfArtists.any((c) => c.id == 'UCmomsen'),
+      detail: shelfArtists.map((c) => '${c.title}/${c.id}').join(', '));
+  check('search: a discovery carousel cannot answer for the query',
+      !shelfArtists.any((c) => c.id == 'UCoasis'),
+      detail: shelfArtists.map((c) => c.id).join(', '));
+  check('search: playlists are no longer part of a search',
+      shelfPlaylists.isEmpty,
+      detail: shelfPlaylists.map((c) => c.id).join(', '));
+  check('search: an unscoped page still reads its carousels',
+      containers.any((c) => c.id == 'UCoasis'),
+      detail: containers.map((c) => c.id).join(', '));
+  check(
+      'search: the shelf artist keeps its cover',
+      (shelfArtists.firstWhere((c) => c.id == 'UCpretty').thumbnailUrl ?? '')
+          .isNotEmpty,
+      detail: shelfArtists.map((c) => c.thumbnailUrl).join(', '));
+  check('search: a shelf album is still an album', albums.length == 1,
+      detail: albums.map((c) => c.id).join(', '));
 
   final artist = _artistPage();
   final header = parseArtistHeader(artist);

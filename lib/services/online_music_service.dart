@@ -72,20 +72,17 @@ class OnlineSort {
 class OnlineSearchResults {
   final List<OnlineTrack> tracks;
   final List<OnlineCollection> albums;
-  final List<OnlineCollection> playlists;
   final List<OnlineCollection> artists;
 
   const OnlineSearchResults({
     this.tracks = const [],
     this.albums = const [],
-    this.playlists = const [],
     this.artists = const [],
   });
 
   static const OnlineSearchResults empty = OnlineSearchResults();
 
-  bool get isEmpty =>
-      tracks.isEmpty && albums.isEmpty && playlists.isEmpty && artists.isEmpty;
+  bool get isEmpty => tracks.isEmpty && albums.isEmpty && artists.isEmpty;
 }
 
 /// An artist page: their songs in YouTube's ranking, plus albums and sorts.
@@ -170,7 +167,6 @@ class OnlineMusicService {
           page.tracks.take(limit).map(_fromItem),
         ),
         albums: _collections(page.albums),
-        playlists: _collections(page.playlists),
         artists: _collections(page.artists),
       );
     } on Object catch (error) {
