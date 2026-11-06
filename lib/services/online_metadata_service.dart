@@ -810,20 +810,25 @@ class OnlineMetadataService {
     final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(_lastfmHost, path);
-      final request = await client.getUrl(uri);
+      final request =
+          await SharedHttpClient.openUrl(client, uri, timeout: _timeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
         await _resolveUserAgent(),
       );
 
-      final response = await request.close().timeout(_timeout);
+      final response =
+          await SharedHttpClient.awaitResponse(request, timeout: _timeout);
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         return null;
       }
 
-      final html =
-          await response.transform(utf8.decoder).join().timeout(_timeout);
+      final html = await SharedHttpClient.readUtf8(
+        response,
+        request: request,
+        timeout: _timeout,
+      );
       return _extractLastfmImageUrl(html);
     } catch (e) {
       debugPrint('Last.fm scrape error for $path: $e');
@@ -877,21 +882,29 @@ class OnlineMetadataService {
     final client = SharedHttpClient.instance;
     try {
       final uri = Uri.parse(imageUrl);
-      final request = await client.getUrl(uri);
+      final request =
+          await SharedHttpClient.openUrl(client, uri, timeout: _timeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
         await _resolveUserAgent(),
       );
 
-      final response = await request.close().timeout(_timeout);
+      final response =
+          await SharedHttpClient.awaitResponse(request, timeout: _timeout);
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         return null;
       }
 
       final bytesBuilder = BytesBuilder();
-      await for (final chunk in response.timeout(_timeout)) {
-        bytesBuilder.add(chunk);
+      try {
+        await for (final chunk in response.timeout(_timeout)) {
+          bytesBuilder.add(chunk);
+        }
+      } on Object {
+        // A body that stopped arriving holds the connection; release it.
+        SharedHttpClient.abort(request);
+        rethrow;
       }
       final bytes = bytesBuilder.takeBytes();
       if (bytes.isEmpty) return null;
@@ -928,21 +941,26 @@ class OnlineMetadataService {
     final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(host, path, params);
-      final request = await client.getUrl(uri);
+      final request =
+          await SharedHttpClient.openUrl(client, uri, timeout: _timeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(
         HttpHeaders.userAgentHeader,
         await _resolveUserAgent(),
       );
 
-      final response = await request.close().timeout(_timeout);
+      final response =
+          await SharedHttpClient.awaitResponse(request, timeout: _timeout);
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         return null;
       }
 
-      final body =
-          await response.transform(utf8.decoder).join().timeout(_timeout);
+      final body = await SharedHttpClient.readUtf8(
+        response,
+        request: request,
+        timeout: _timeout,
+      );
       return jsonDecode(body);
     } catch (e) {
       debugPrint('OnlineMetadataService GET $path error: $e');

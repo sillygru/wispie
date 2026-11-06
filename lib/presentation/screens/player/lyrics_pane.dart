@@ -912,20 +912,28 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   static final Map<String, Future<String?>> _onlineLyrics = {};
 
   Future<String?> _fetchOnlineLyrics(Song song) {
-    return _onlineLyrics.putIfAbsent(song.filename, () async {
-      final saved = await _lrclibService.cachedForSong(song);
-      if (saved != null) return saved;
-      final result = await _lrclibService.fetchForSong(song);
-      final lyrics = result?.lyricsFor();
-      if (lyrics == null || lyrics.trim().isEmpty) {
-        // Not cached: an offline answer must not become permanent.
-        _onlineLyrics.remove(song.filename);
-        return null;
+    final filename = song.filename;
+    return _onlineLyrics.putIfAbsent(filename, () async {
+      try {
+        final saved = await _lrclibService.cachedForSong(song);
+        if (saved != null) return saved;
+        final result = await _lrclibService.fetchForSong(song);
+        final lyrics = result?.lyricsFor();
+        if (lyrics == null || lyrics.trim().isEmpty) {
+          // Not cached: an offline answer must not become permanent.
+          _onlineLyrics.remove(filename);
+          return null;
+        }
+        // Kept on disk so the next play does not re-query, even offline.
+        await _lrclibService.saveForSong(song, lyrics);
+        _indexSavedRemoteLyrics(song);
+        return lyrics;
+      } on Object {
+        // A lookup that failed outright is not an answer: the next open asks
+        // again instead of replaying the error until the app restarts.
+        _onlineLyrics.remove(filename);
+        rethrow;
       }
-      // Kept on disk so the next play does not re-query, even offline.
-      await _lrclibService.saveForSong(song, lyrics);
-      _indexSavedRemoteLyrics(song);
-      return lyrics;
     });
   }
 

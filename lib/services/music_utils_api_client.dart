@@ -53,14 +53,16 @@ class MusicUtilsApiClient {
         path: '${base.path.replaceFirst(RegExp(r'/$'), '')}$endpoint',
         queryParameters: params,
       );
-      final request = await client.getUrl(uri);
+      final request =
+          await SharedHttpClient.openUrl(client, uri, timeout: _timeout);
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(
         HttpHeaders.userAgentHeader,
         await _resolveUserAgent(),
       );
 
-      final response = await request.close().timeout(_timeout);
+      final response =
+          await SharedHttpClient.awaitResponse(request, timeout: _timeout);
       if (response.statusCode == HttpStatus.notFound) {
         await response.drain<void>();
         return const MusicUtilsResult(null, MusicUtilsStatus.notFound);
@@ -71,8 +73,11 @@ class MusicUtilsApiClient {
         return const MusicUtilsResult(null, MusicUtilsStatus.transient);
       }
 
-      final body =
-          await response.transform(utf8.decoder).join().timeout(_timeout);
+      final body = await SharedHttpClient.readUtf8(
+        response,
+        request: request,
+        timeout: _timeout,
+      );
       return MusicUtilsResult(jsonDecode(body), MusicUtilsStatus.ok);
     } on SocketException catch (_) {
       return const MusicUtilsResult(null, MusicUtilsStatus.transient);

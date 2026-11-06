@@ -299,16 +299,28 @@ class ColorExtractionService {
       final file = await WispieCache.instance.remoteArtFile(uri.toString());
       if (await file.exists() && await file.length() > 0) return file;
 
-      final request = await SharedHttpClient.instance
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 12));
-      final response =
-          await request.close().timeout(const Duration(seconds: 12));
+      final request = await SharedHttpClient.openUrl(
+        SharedHttpClient.instance,
+        uri,
+        timeout: const Duration(seconds: 12),
+      );
+      final response = await SharedHttpClient.awaitResponse(
+        request,
+        timeout: const Duration(seconds: 12),
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.drain<void>();
         return null;
       }
-      final bytes = await consolidateHttpClientResponseBytes(response);
+      final List<int> bytes;
+      try {
+        bytes = await consolidateHttpClientResponseBytes(response)
+            .timeout(const Duration(seconds: 12));
+      } on Object {
+        // A cover that stopped arriving holds the connection; release it.
+        SharedHttpClient.abort(request);
+        rethrow;
+      }
       if (bytes.isEmpty) return null;
       await file.writeAsBytes(bytes, flush: false);
       return file;

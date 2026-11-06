@@ -334,7 +334,15 @@ class LrclibService {
   Future<RichLyrics?> getRichSync(Song song) async {
     final key = song.filename;
     final lookup = _richSyncCache[key] ??= _readRichSync(song);
-    final result = await lookup;
+    final ({RichLyrics? lyrics, bool settled}) result;
+    try {
+      result = await lookup;
+    } on Object {
+      // A lookup that failed outright is not an answer: drop it so the next
+      // open asks again instead of replaying the failure until a restart.
+      _richSyncCache.remove(key);
+      rethrow;
+    }
     // Only a lookup the providers actually answered is remembered: a track they
     // have no word timings for is asked about once per session rather than on
     // every open of the pane, while a timeout or a 5xx is retried next time.
@@ -532,21 +540,29 @@ class LrclibService {
     final client = SharedHttpClient.instance;
     try {
       final uri = Uri.https(_host, path, params);
-      final request = await client.getUrl(uri).timeout(_connectTimeout);
+      final request = await SharedHttpClient.openUrl(
+        client,
+        uri,
+        timeout: _connectTimeout,
+      );
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
       request.headers.set(
         HttpHeaders.userAgentHeader,
         await _resolveUserAgent(),
       );
 
-      final response = await request.close().timeout(_timeout);
+      final response =
+          await SharedHttpClient.awaitResponse(request, timeout: _timeout);
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         return null;
       }
 
-      final body =
-          await response.transform(utf8.decoder).join().timeout(_timeout);
+      final body = await SharedHttpClient.readUtf8(
+        response,
+        request: request,
+        timeout: _timeout,
+      );
       return jsonDecode(body);
     } on SocketException catch (_) {
       return null;
