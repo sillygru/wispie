@@ -11,6 +11,7 @@ class OnlineTrack {
   final String id;
   final String title;
   final String artist;
+  final String album;
   final String? coverUrl;
   final Duration? duration;
 
@@ -21,6 +22,7 @@ class OnlineTrack {
     required this.id,
     required this.title,
     required this.artist,
+    this.album = '',
     this.coverUrl,
     this.duration,
     this.viewCountText,
@@ -30,6 +32,7 @@ class OnlineTrack {
         videoId: id,
         title: title,
         artist: artist,
+        album: album,
         coverUrl: coverUrl,
         duration: duration,
       );
@@ -184,7 +187,9 @@ class OnlineMusicService {
       title: page.title,
       artist: page.artist,
       coverUrl: page.thumbnailUrl,
-      tracks: List<OnlineTrack>.unmodifiable(page.tracks.map(_fromItem)),
+      tracks: List<OnlineTrack>.unmodifiable(
+        page.tracks.map((item) => _fromItem(item, album: page.title)),
+      ),
     );
   }
 
@@ -221,10 +226,15 @@ class OnlineMusicService {
     );
   }
 
-  static OnlineTrack _fromItem(YouTubePlaylistItem item) => OnlineTrack(
+  static OnlineTrack _fromItem(
+    YouTubePlaylistItem item, {
+    String album = '',
+  }) =>
+      OnlineTrack(
         id: item.videoId,
         title: item.title,
         artist: item.artist,
+        album: album,
         coverUrl: item.thumbnailUrl,
         duration: item.duration,
         viewCountText: item.viewCountText,

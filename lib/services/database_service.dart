@@ -85,6 +85,7 @@ class DatabaseService {
           if (oldV < 9) await upgradeUserDataFrom8To9(db);
           if (oldV < 10) await upgradeUserDataFrom9To10(db);
           if (oldV < 11) await upgradeUserDataFrom10To11(db);
+          if (oldV < 12) await upgradeUserDataFrom11To12(db);
         },
       );
     } catch (e) {
@@ -950,6 +951,7 @@ class DatabaseService {
         'remote_id': song.remoteId,
         'title': song.title,
         'artist': song.artist,
+        'album': song.album,
         'cover_url': song.coverUrl,
         'duration_ms': song.duration?.inMilliseconds,
         'is_available': song.isAvailable ? 1 : 0,
@@ -1003,6 +1005,7 @@ class DatabaseService {
               'remote_id': row['remote_id'],
               'title': row['title'],
               'artist': row['artist'],
+              'album': row['album'] ?? '',
               'cover_url': row['cover_url'],
               'duration': row['duration_ms'] == null
                   ? null

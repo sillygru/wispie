@@ -112,6 +112,7 @@ class Song extends Equatable {
     required String videoId,
     required String title,
     required String artist,
+    String album = '',
     String? coverUrl,
     Duration? duration,
     int playCount = 0,
@@ -122,7 +123,7 @@ class Song extends Equatable {
     return Song(
       title: title,
       artist: artist,
-      album: '',
+      album: album,
       filename: '${Song.youtubePrefix}$id',
       url: '',
       source: SongSource.youtube,

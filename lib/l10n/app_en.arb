@@ -6120,6 +6120,14 @@
   "@onlineNoResults": {
     "description": "Online search returned no tracks"
   },
+  "onlineArtistNotFound": "No YouTube artist found for that name.",
+  "@onlineArtistNotFound": {
+    "description": "An artist name on a streamed track did not resolve to a YouTube page"
+  },
+  "onlineAlbumNotFound": "No YouTube album found for that name.",
+  "@onlineAlbumNotFound": {
+    "description": "An album name on a streamed track did not resolve to a YouTube page"
+  },
   "onlineYoutubeError": "Could not load from YouTube.",
   "@onlineYoutubeError": {
     "description": "Fallback when a YouTube request fails without a more specific cause"

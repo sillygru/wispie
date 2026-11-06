@@ -86,6 +86,13 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   Song? _lookupSong(String filename) =>
       _songMap[filename] ?? _transientSongs[filename];
 
+  /// Patches the playing track's tags after an online metadata lookup.
+  void updateCurrentSongDetails(Song song) {
+    _songMap[song.filename] = song;
+    if (_currentSongFilename != song.filename) return;
+    if (currentSongNotifier.value != song) currentSongNotifier.value = song;
+  }
+
   /// Remote tracks are not part of the library map — they only exist in the
   /// queue (plus cached user data). Without this fallback the now-playing bar
   /// and the player panel had no song to show or open for anything streamed.

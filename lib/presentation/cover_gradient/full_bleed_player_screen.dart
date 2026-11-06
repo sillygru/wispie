@@ -218,6 +218,9 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
       _motion.beatMap = null;
       return;
     }
+    unawaited(
+      ref.read(userDataProvider.notifier).enrichRemoteSongMetadata(song),
+    );
     if (song.filename == _beatMapFilename && _motion.beatMap != null) return;
     _beatMapFilename = song.filename;
     final int token = ++_beatMapToken;
@@ -1400,8 +1403,12 @@ class _FullBleedInfoBlock extends ConsumerWidget {
                 artist: song.artist,
                 style:
                     PlayerTokens.trackSubtitle(context).copyWith(fontSize: 14),
-                onArtistTap: (artistName) =>
-                    songActionGoToArtistByName(context, ref, artistName),
+                onArtistTap: (artistName) => songActionGoToArtistByName(
+                  context,
+                  ref,
+                  artistName,
+                  remote: song.isRemote,
+                ),
               ),
               if (song.album.isNotEmpty) ...[
                 const SizedBox(height: 2),

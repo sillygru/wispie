@@ -152,8 +152,12 @@ class _NowPlayingPaneState extends ConsumerState<NowPlayingPane>
                   artist: widget.song.artist,
                   style: PlayerTokens.trackSubtitle(context)
                       .copyWith(fontSize: 14),
-                  onArtistTap: (artistName) =>
-                      songActionGoToArtistByName(context, ref, artistName),
+                  onArtistTap: (artistName) => songActionGoToArtistByName(
+                    context,
+                    ref,
+                    artistName,
+                    remote: widget.song.isRemote,
+                  ),
                 ),
                 if (widget.song.album.isNotEmpty) ...[
                   const SizedBox(height: 2),

@@ -7917,6 +7917,18 @@ abstract class AppLocalizations {
   /// **'No tracks found'**
   String get onlineNoResults;
 
+  /// An artist name on a streamed track did not resolve to a YouTube page
+  ///
+  /// In en, this message translates to:
+  /// **'No YouTube artist found for that name.'**
+  String get onlineArtistNotFound;
+
+  /// An album name on a streamed track did not resolve to a YouTube page
+  ///
+  /// In en, this message translates to:
+  /// **'No YouTube album found for that name.'**
+  String get onlineAlbumNotFound;
+
   /// Fallback when a YouTube request fails without a more specific cause
   ///
   /// In en, this message translates to:

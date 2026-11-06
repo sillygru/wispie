@@ -270,6 +270,9 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       _motion.beatMap = null;
       return;
     }
+    unawaited(
+      ref.read(userDataProvider.notifier).enrichRemoteSongMetadata(song),
+    );
     if (song.filename == _beatMapFilename && _motion.beatMap != null) return;
 
     _beatMapFilename = song.filename;
@@ -866,7 +869,11 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
                           style: PlayerTokens.trackSubtitle(context),
                           onArtistTap: (artistName) =>
                               songActionGoToArtistByName(
-                                  context, ref, artistName),
+                            context,
+                            ref,
+                            artistName,
+                            remote: song.isRemote,
+                          ),
                         ),
                       ],
                     ),

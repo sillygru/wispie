@@ -5,7 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../services/sync/hlc.dart';
 
 const int kStatsDbVersion = 6;
-const int kUserDataDbVersion = 11;
+const int kUserDataDbVersion = 12;
 
 // Every table that participates in E2EE sync carries a hybrid-logical-clock
 // stamp and a dirty flag. `dirty` defaults to 1 so a row written by code that
@@ -77,6 +77,7 @@ const List<String> _userDataTableStmts = [
       remote_id TEXT NOT NULL,
       title TEXT NOT NULL,
       artist TEXT NOT NULL,
+      album TEXT,
       cover_url TEXT,
       duration_ms INTEGER,
       is_available INTEGER NOT NULL DEFAULT 1,
@@ -566,6 +567,11 @@ Future<void> upgradeUserDataFrom9To10(Database db) async {
 Future<void> upgradeUserDataFrom10To11(Database db) async {
   await _addColumnIfMissing(
       db, 'remote_song', 'in_library', 'INTEGER NOT NULL DEFAULT 0');
+}
+
+/// User data v11 -> v12: streamed tracks keep the album found for them.
+Future<void> upgradeUserDataFrom11To12(Database db) async {
+  await _addColumnIfMissing(db, 'remote_song', 'album', 'TEXT');
 }
 
 Future<void> _createSongIdentityIndexes(Database db) async {

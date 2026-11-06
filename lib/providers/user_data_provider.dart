@@ -8,6 +8,8 @@ import 'providers.dart';
 import 'session_history_provider.dart';
 import '../services/database_service.dart';
 import '../services/library_logic.dart';
+import '../services/online_metadata_service.dart';
+import '../domain/models/online_search_result.dart';
 import '../domain/services/taste_model.dart';
 import '../models/playlist.dart';
 import '../models/shuffle_config.dart';
@@ -342,6 +344,83 @@ class UserDataNotifier extends Notifier<UserDataState> {
     }
     state = state.copyWith(remoteSongs: remoteSongs);
   }
+
+  /// One album lookup in flight per filename.
+  final Map<String, Future<void>> _albumLookups = {};
+
+  /// Fills a streamed track's missing album from the online catalogues and
+  /// keeps it, so the player can show and open it.
+  Future<void> enrichRemoteSongMetadata(Song song) {
+    if (!song.isRemote) return Future.value();
+    if (song.album.trim().isNotEmpty) return Future.value();
+    final known = state.remoteSongs[song.filename];
+    if (known != null && known.album.trim().isNotEmpty) return Future.value();
+
+    return _albumLookups.putIfAbsent(song.filename, () async {
+      try {
+        final album = await _lookUpAlbum(song);
+        if (album == null) return;
+        final updated = song.copyWith(album: album);
+        ref.read(audioPlayerManagerProvider).updateCurrentSongDetails(updated);
+        await cacheRemoteSong(updated);
+      } on Object catch (e) {
+        debugPrint('Remote album lookup failed for ${song.filename}: $e');
+      } finally {
+        _albumLookups.remove(song.filename);
+      }
+    });
+  }
+
+  Future<String?> _lookUpAlbum(Song song) async {
+    final results = await OnlineMetadataService.instance
+        .searchParallelForSong(song)
+        .timeout(const Duration(seconds: 10));
+    final album = _bestMetadataMatch(results, song)?.album.trim() ?? '';
+    if (album.isEmpty || album.toLowerCase() == 'unknown album') return null;
+    return album;
+  }
+
+  /// Only a result whose artist or length agrees with the track may name its
+  /// album; a same-titled cover would otherwise rename the album visibly.
+  static OnlineSearchResult? _bestMetadataMatch(
+    List<OnlineSearchResult> results,
+    Song song,
+  ) {
+    final title = _fold(song.title);
+    final artist = _fold(song.artist);
+    if (title.isEmpty) return null;
+    OnlineSearchResult? best;
+    var bestScore = 0;
+
+    for (final result in results) {
+      if (result.album.trim().isEmpty) continue;
+      final resultTitle = _fold(result.title);
+      if (resultTitle.isEmpty) continue;
+      if (!resultTitle.contains(title) && !title.contains(resultTitle)) {
+        continue;
+      }
+      final resultArtist = _fold(result.artist);
+      final artistMatch = artist.isNotEmpty &&
+          resultArtist.isNotEmpty &&
+          (resultArtist.contains(artist) || artist.contains(resultArtist));
+      final a = song.duration;
+      final b = result.duration;
+      final durationMatch =
+          a != null && b != null && (a - b).abs() <= const Duration(seconds: 8);
+      if (!artistMatch && !durationMatch) continue;
+
+      var score = (artistMatch ? 2 : 0) + (durationMatch ? 2 : 0);
+      if (resultTitle == title) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        best = result;
+      }
+    }
+    return best;
+  }
+
+  static String _fold(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
   Future<void> markRemoteSongUnavailable(Song song) async {
     if (!song.isRemote) return;

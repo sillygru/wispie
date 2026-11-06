@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
@@ -15,6 +17,7 @@ import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/youtube_error_message.dart';
 import '../routes/app_page_route.dart';
+import '../routes/online_navigation.dart';
 import '../screens/edit_metadata_screen.dart';
 import '../screens/song_list_screen.dart';
 import '../widgets/folder_picker.dart';
@@ -340,9 +343,14 @@ Future<void> songActionDelete(
   }
 }
 
-/// Opens the album this song belongs to. No-op when the library has not
-/// finished loading, since there is nothing to filter yet.
+/// Opens the album this song belongs to. A streamed track has no library rows,
+/// so its album opens on YouTube instead.
 void songActionGoToAlbum(BuildContext host, WidgetRef ref, Song song) {
+  if (song.isRemote && song.album.trim().isNotEmpty) {
+    unawaited(_openRemoteAlbum(host, song.album, song.artist));
+    return;
+  }
+
   final songs = ref.read(songsProvider).value;
   if (songs == null) return;
 
@@ -360,17 +368,52 @@ void songActionGoToAlbum(BuildContext host, WidgetRef ref, Song song) {
   );
 }
 
-/// Opens the specified artist screen. Filters all library songs where this artist is featured.
+Future<void> _openRemoteAlbum(
+  BuildContext host,
+  String albumName,
+  String artistName,
+) async {
+  if (await openOnlineAlbumByName(host, albumName, artistName: artistName)) {
+    return;
+  }
+  if (!host.mounted) return;
+  appSnack(host, AppLocalizations.of(host).onlineAlbumNotFound);
+}
+
+/// Opens the specified artist screen. A streamed track's artist is a YouTube
+/// channel, so those try the channel page before the library.
 void songActionGoToArtistByName(
   BuildContext host,
   WidgetRef ref,
+  String artistName, {
+  bool remote = false,
+}) {
+  final target = artistName.trim();
+  if (target.isEmpty) return;
+  if (remote) {
+    unawaited(_openArtistRemoteThenLocal(host, ref, target));
+    return;
+  }
+  _openLocalArtist(host, ref, target);
+}
+
+Future<void> _openArtistRemoteThenLocal(
+  BuildContext host,
+  WidgetRef ref,
   String artistName,
-) {
+) async {
+  if (await openOnlineArtistByName(host, artistName)) return;
+  if (!host.mounted) return;
+  if (_openLocalArtist(host, ref, artistName)) return;
+  appSnack(host, AppLocalizations.of(host).onlineArtistNotFound);
+}
+
+bool _openLocalArtist(BuildContext host, WidgetRef ref, String artistName) {
   final songs = ref.read(songsProvider).value;
-  if (songs == null) return;
+  if (songs == null) return false;
 
   final cleanTarget = artistName.trim().toLowerCase();
-  if (cleanTarget.isEmpty) return;
+  if (cleanTarget.isEmpty) return false;
 
   final artistSongs = songs.where((s) {
     final parsed = LibraryLogic.splitArtistNames(s.artist);
@@ -384,7 +427,7 @@ void songActionGoToArtistByName(
     final fallbackSongs = songs
         .where((s) => s.artist.toLowerCase().contains(cleanTarget))
         .toList();
-    if (fallbackSongs.isEmpty) return;
+    if (fallbackSongs.isEmpty) return false;
     host.pushApp(
       SongListScreen(
         title: artistName,
@@ -393,7 +436,7 @@ void songActionGoToArtistByName(
         artistName: artistName,
       ),
     );
-    return;
+    return true;
   }
 
   host.pushApp(
@@ -404,6 +447,7 @@ void songActionGoToArtistByName(
       artistName: artistName,
     ),
   );
+  return true;
 }
 
 /// Opens the artist this song belongs to. No-op when the library has not
@@ -411,7 +455,7 @@ void songActionGoToArtistByName(
 void songActionGoToArtist(BuildContext host, WidgetRef ref, Song song) {
   final artists = LibraryLogic.splitArtistNames(song.artist);
   final targetArtist = artists.isNotEmpty ? artists.first : song.artist;
-  songActionGoToArtistByName(host, ref, targetArtist);
+  songActionGoToArtistByName(host, ref, targetArtist, remote: song.isRemote);
 }
 
 Future<void> songActionFetchMissingCover(

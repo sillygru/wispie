@@ -4781,6 +4781,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get onlineNoResults => 'Nenhuma faixa encontrada';
 
   @override
+  String get onlineArtistNotFound => 'No YouTube artist found for that name.';
+
+  @override
+  String get onlineAlbumNotFound => 'No YouTube album found for that name.';
+
+  @override
   String get onlineYoutubeError => 'Could not load from YouTube.';
 
   @override
