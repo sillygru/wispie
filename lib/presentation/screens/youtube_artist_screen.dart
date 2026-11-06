@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../providers/selection_provider.dart';
 import '../../services/online_music_service.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_chip.dart';
@@ -10,6 +11,7 @@ import '../components/app_list_row.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/youtube_error_message.dart';
 import '../widgets/album_art_image.dart';
+import '../widgets/bulk_selection_bar.dart';
 import '../widgets/online_track_row.dart';
 import 'youtube_collection_screen.dart';
 
@@ -100,48 +102,58 @@ class _YouTubeArtistScreenState extends ConsumerState<YouTubeArtistScreen> {
   Widget build(BuildContext context) {
     final artist = _artist;
     final l10n = context.l10n;
+    final selectionState = ref.watch(selectionProvider);
 
-    return AmbientScaffold(
-      appBar: AppBar(
-        title: Text(
-          _name.isEmpty ? l10n.onlineTab : _name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+    return PopScope(
+      canPop: !selectionState.isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || !selectionState.isSelectionMode) return;
+        ref.read(selectionProvider.notifier).exitSelectionMode();
+      },
+      child: AmbientScaffold(
+        appBar: AppBar(
+          title: Text(
+            _name.isEmpty ? l10n.onlineTab : _name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
-      body: artist == null
-          ? _placeholder(context)
-          : ListView(
-              padding:
-                  const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-              children: [
-                _header(context, artist),
-                if (artist.sorts.length > 1) _sortChips(context, artist),
-                if (artist.tracks.isNotEmpty) ...[
-                  _sectionLabel(context, l10n.youtubeArtistSongsTitle),
-                  for (final track in artist.tracks)
-                    OnlineTrackRow(track: track, queue: artist.tracks),
-                ],
-                if (artist.albums.isNotEmpty) ...[
-                  _sectionLabel(context, l10n.youtubeArtistAlbumsTitle),
-                  for (final album in artist.albums)
-                    AppListRow(
-                      key: ValueKey('artist-album-${album.id}'),
-                      title: album.title,
-                      titleMaxLines: 1,
-                      subtitle: album.subtitle,
-                      subtitleMaxLines: 1,
-                      onTap: () => _openAlbum(album),
-                      leading: AlbumArtImage(
-                        url: album.coverUrl ?? '',
-                        width: 52,
-                        height: 52,
-                        borderRadius: AppTokens.rSm,
+        body: artist == null
+            ? _placeholder(context)
+            : ListView(
+                padding:
+                    const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+                children: [
+                  _header(context, artist),
+                  if (artist.sorts.length > 1) _sortChips(context, artist),
+                  if (artist.tracks.isNotEmpty) ...[
+                    _sectionLabel(context, l10n.youtubeArtistSongsTitle),
+                    for (final track in artist.tracks)
+                      OnlineTrackRow(track: track, queue: artist.tracks),
+                  ],
+                  if (artist.albums.isNotEmpty) ...[
+                    _sectionLabel(context, l10n.youtubeArtistAlbumsTitle),
+                    for (final album in artist.albums)
+                      AppListRow(
+                        key: ValueKey('artist-album-${album.id}'),
+                        title: album.title,
+                        titleMaxLines: 1,
+                        subtitle: album.subtitle,
+                        subtitleMaxLines: 1,
+                        onTap: () => _openAlbum(album),
+                        leading: AlbumArtImage(
+                          url: album.coverUrl ?? '',
+                          width: 52,
+                          height: 52,
+                          borderRadius: AppTokens.rSm,
+                        ),
                       ),
-                    ),
+                  ],
                 ],
-              ],
-            ),
+              ),
+        bottomNavigationBar:
+            selectionState.isSelectionMode ? const BulkSelectionBar() : null,
+      ),
     );
   }
 

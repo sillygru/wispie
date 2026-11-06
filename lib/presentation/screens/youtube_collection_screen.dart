@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../providers/selection_provider.dart';
 import '../../services/online_music_service.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_icon.dart';
@@ -10,6 +11,7 @@ import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/youtube_error_message.dart';
 import '../widgets/album_art_image.dart';
+import '../widgets/bulk_selection_bar.dart';
 import '../widgets/online_track_row.dart';
 
 /// The tracks of one album or one playlist.
@@ -88,34 +90,44 @@ class _YouTubeCollectionScreenState
     final tracks = _page?.tracks ?? const <OnlineTrack>[];
     final cover = _page?.coverUrl ?? widget.coverUrl;
     final loading = _page == null && _error == null;
+    final selectionState = ref.watch(selectionProvider);
 
-    return AmbientScaffold(
-      appBar: AppBar(
-        title: Text(
-          _title.isEmpty ? context.l10n.onlineTab : _title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+    return PopScope(
+      canPop: !selectionState.isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop || !selectionState.isSelectionMode) return;
+        ref.read(selectionProvider.notifier).exitSelectionMode();
+      },
+      child: AmbientScaffold(
+        appBar: AppBar(
+          title: Text(
+            _title.isEmpty ? context.l10n.onlineTab : _title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
-      body: loading
-          ? Center(
-              child: Semantics(
-                label: context.l10n.onlineLoading,
-                child: const CircularProgressIndicator(),
+        body: loading
+            ? Center(
+                child: Semantics(
+                  label: context.l10n.onlineLoading,
+                  child: const CircularProgressIndicator(),
+                ),
+              )
+            : ListView.builder(
+                padding:
+                    const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+                itemCount: tracks.isEmpty ? 1 : tracks.length + 1,
+                itemBuilder: (context, index) {
+                  if (index > 0) {
+                    return OnlineTrackRow(
+                        track: tracks[index - 1], queue: tracks);
+                  }
+                  return _header(context, cover: cover, tracks: tracks);
+                },
               ),
-            )
-          : ListView.builder(
-              padding:
-                  const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-              itemCount: tracks.isEmpty ? 1 : tracks.length + 1,
-              itemBuilder: (context, index) {
-                if (index > 0) {
-                  return OnlineTrackRow(
-                      track: tracks[index - 1], queue: tracks);
-                }
-                return _header(context, cover: cover, tracks: tracks);
-              },
-            ),
+        bottomNavigationBar:
+            selectionState.isSelectionMode ? const BulkSelectionBar() : null,
+      ),
     );
   }
 

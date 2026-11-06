@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../models/song.dart';
 import '../../providers/providers.dart';
+import '../../providers/selection_provider.dart';
 import '../../services/online_music_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
+import '../motion/motion.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/youtube_error_message.dart';
@@ -63,51 +68,82 @@ class OnlineTrackRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final song = track.toSong();
+    final selection = ref.watch(selectionProvider);
+    final isSelected = selection.selectedFilenames.contains(song.filename);
     final isFavorite = ref.watch(
       userDataProvider.select((state) => state.isFavorite(song.filename)),
     );
     return AppListRow(
       tall: true,
+      isActive: isSelected,
       title: track.title,
       titleMaxLines: 1,
       subtitle: subtitleOf(context, track),
       subtitleMaxLines: 1,
-      onTap: () => play(context, ref, track, queue),
+      onTap: selection.isSelectionMode
+          ? () => _toggleSelection(ref, song)
+          : () => play(context, ref, track, queue),
+      // Same hold as a library row: it starts a selection, and holding again
+      // while selecting opens the actions.
+      onLongPress: () {
+        if (selection.isSelectionMode) {
+          showSongOptionsMenu(context, ref, song.filename, song.title,
+              song: song);
+          return;
+        }
+        _remember(ref, song);
+        ref.read(selectionProvider.notifier).enterSelectionMode(song.filename);
+        MotionHaptics.heavy();
+      },
       leading: AlbumArtImage(
         url: track.coverUrl ?? '',
         width: 52,
         height: 52,
         borderRadius: AppTokens.rSm,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: isFavorite
-                ? context.l10n.songMenuRemoveFavorite
-                : context.l10n.songMenuAddFavorite,
-            onPressed: () => ref
-                .read(userDataProvider.notifier)
-                .toggleFavorite(song.filename, remoteSong: song),
-            icon: AppIcon(
-              AppIcons.favorite,
-              size: AppTokens.iconMd,
-              color: isFavorite ? AppTokens.danger : null,
+      trailing: selection.isSelectionMode
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: isFavorite
+                      ? context.l10n.songMenuRemoveFavorite
+                      : context.l10n.songMenuAddFavorite,
+                  onPressed: () => ref
+                      .read(userDataProvider.notifier)
+                      .toggleFavorite(song.filename, remoteSong: song),
+                  icon: AppIcon(
+                    AppIcons.favorite,
+                    size: AppTokens.iconMd,
+                    color: isFavorite ? AppTokens.danger : null,
+                  ),
+                ),
+                IconButton(
+                  tooltip: context.l10n.songMenuTitle,
+                  onPressed: () => showSongOptionsMenu(
+                    context,
+                    ref,
+                    song.filename,
+                    song.title,
+                    song: song,
+                  ),
+                  icon:
+                      const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
+                ),
+              ],
             ),
-          ),
-          IconButton(
-            tooltip: context.l10n.songMenuTitle,
-            onPressed: () => showSongOptionsMenu(
-              context,
-              ref,
-              song.filename,
-              song.title,
-              song: song,
-            ),
-            icon: const AppIcon(AppIcons.moreVert, size: AppTokens.iconMd),
-          ),
-        ],
-      ),
     );
+  }
+
+  /// A selected track can reach a playlist or favorites before it is played,
+  /// and those need the catalogue row behind the filename.
+  static void _remember(WidgetRef ref, Song song) {
+    unawaited(ref.read(userDataProvider.notifier).cacheRemoteSong(song));
+  }
+
+  static void _toggleSelection(WidgetRef ref, Song song) {
+    _remember(ref, song);
+    ref.read(selectionProvider.notifier).toggleSelection(song.filename);
   }
 }

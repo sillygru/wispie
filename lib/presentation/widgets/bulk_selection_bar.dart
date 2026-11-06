@@ -34,9 +34,18 @@ class BulkSelectionBar extends ConsumerWidget {
 
     final selectedCount = selectionState.selectedFilenames.length;
     final allSongs = ref.watch(songsProvider).value ?? [];
-    final selectedSongs = allSongs
-        .where((s) => selectionState.selectedFilenames.contains(s.filename))
-        .toList();
+    // A selection can include streamed tracks, which have no library row.
+    final byFilename = <String, Song>{
+      for (final song in allSongs) song.filename: song,
+      ...ref.watch(userDataProvider).remoteSongs,
+    };
+    final selectedSongs = <Song>[
+      for (final filename in selectionState.selectedFilenames)
+        if (byFilename[filename] != null) byFilename[filename]!,
+    ];
+    // Anything without a file behind it can only take the catalogue actions.
+    final fileOnly = selectedCount != selectedSongs.length ||
+        selectedSongs.any((song) => song.isRemote);
 
     final currentSong =
         ref.read(audioPlayerManagerProvider).currentSongNotifier.value;
@@ -58,19 +67,21 @@ class BulkSelectionBar extends ConsumerWidget {
               _buildPlaylistButton(context, ref, selectedSongs, selectedCount);
           break;
         case QuickAction.share:
-          button =
-              _buildShareButton(context, ref, selectedSongs, selectedCount);
+          button = _buildShareButton(context, ref, selectedSongs, selectedCount,
+              fileOnly: fileOnly);
           break;
         case QuickAction.editMetadata:
           button = _buildMetadataButton(
-              context, ref, selectedSongs, selectedCount, isCurrentlyPlaying);
+              context, ref, selectedSongs, selectedCount, isCurrentlyPlaying,
+              fileOnly: fileOnly);
           break;
         case QuickAction.hide:
           button = _buildHideButton(context, ref, selectedSongs, selectedCount);
           break;
         case QuickAction.delete:
-          button =
-              _buildDeleteButton(context, ref, selectedSongs, selectedCount);
+          button = _buildDeleteButton(
+              context, ref, selectedSongs, selectedCount,
+              fileOnly: fileOnly);
           break;
         case QuickAction.playNext:
           button =
@@ -78,7 +89,8 @@ class BulkSelectionBar extends ConsumerWidget {
           break;
         case QuickAction.moveToFolder:
           button = _buildMoveToFolderButton(
-              context, ref, selectedSongs, selectedCount);
+              context, ref, selectedSongs, selectedCount,
+              fileOnly: fileOnly);
           break;
         case QuickAction.toggleSuggestLess:
           button = _buildSuggestLessButton(
@@ -136,17 +148,19 @@ class BulkSelectionBar extends ConsumerWidget {
                   ]),
                 ),
                 const Spacer(),
-                TextButton(
-                  onPressed: () {
-                    final allFilenames =
-                        allSongs.map((s) => s.filename).toList();
-                    ref
-                        .read(selectionProvider.notifier)
-                        .selectAll(allFilenames);
-                  },
-                  style: TextButton.styleFrom(foregroundColor: accent),
-                  child: Text(AppLocalizations.of(context).bulkSelectAll),
-                ),
+                // Select all means the library, which a streamed selection is not.
+                if (!fileOnly)
+                  TextButton(
+                    onPressed: () {
+                      final allFilenames =
+                          allSongs.map((s) => s.filename).toList();
+                      ref
+                          .read(selectionProvider.notifier)
+                          .selectAll(allFilenames);
+                    },
+                    style: TextButton.styleFrom(foregroundColor: accent),
+                    child: Text(AppLocalizations.of(context).bulkSelectAll),
+                  ),
               ],
             ),
             const SizedBox(height: AppTokens.s2),
@@ -230,29 +244,33 @@ class BulkSelectionBar extends ConsumerWidget {
   }
 
   Widget _buildShareButton(
-      BuildContext context, WidgetRef ref, List<Song> songs, int count) {
+      BuildContext context, WidgetRef ref, List<Song> songs, int count,
+      {bool fileOnly = false}) {
     return _ActionButton(
       icon: AppIcons.share,
       label: AppLocalizations.of(context).songMenuShare,
-      onTap: () {
-        if (!context.mounted) return;
-        final xFiles = songs.map((s) => XFile(s.url)).toList();
-        final text = songs.length == 1
-            ? AppLocalizations.of(context)
-                .songShareText(songs[0].title, songs[0].artist)
-            : AppLocalizations.of(context).bulkSongsCount(songs.length);
-        SharePlus.instance.share(ShareParams(files: xFiles, text: text));
-        ref.read(selectionProvider.notifier).exitSelectionMode();
-      },
+      onTap: fileOnly
+          ? null
+          : () {
+              if (!context.mounted) return;
+              final xFiles = songs.map((s) => XFile(s.url)).toList();
+              final text = songs.length == 1
+                  ? AppLocalizations.of(context)
+                      .songShareText(songs[0].title, songs[0].artist)
+                  : AppLocalizations.of(context).bulkSongsCount(songs.length);
+              SharePlus.instance.share(ShareParams(files: xFiles, text: text));
+              ref.read(selectionProvider.notifier).exitSelectionMode();
+            },
     );
   }
 
   Widget _buildMetadataButton(BuildContext context, WidgetRef ref,
-      List<Song> songs, int count, bool isCurrentlyPlaying) {
+      List<Song> songs, int count, bool isCurrentlyPlaying,
+      {bool fileOnly = false}) {
     return _ActionButton(
       icon: AppIcons.edit,
       label: AppLocalizations.of(context).bulkMetadata,
-      onTap: isCurrentlyPlaying || count != 1
+      onTap: fileOnly || isCurrentlyPlaying || count != 1
           ? null
           : () {
               context.pushApp(EditMetadataScreen(song: songs[0]));
@@ -286,25 +304,28 @@ class BulkSelectionBar extends ConsumerWidget {
   }
 
   Widget _buildDeleteButton(
-      BuildContext context, WidgetRef ref, List<Song> songs, int count) {
+      BuildContext context, WidgetRef ref, List<Song> songs, int count,
+      {bool fileOnly = false}) {
     return _ActionButton(
       icon: AppIcons.delete,
       label: AppLocalizations.of(context).actionDelete,
       color: AppTokens.danger,
-      onTap: () async {
-        final l10n = AppLocalizations.of(context);
-        final confirmed = await showAppConfirm(
-          context,
-          title: l10n.bulkDeleteTitle,
-          message: l10n.bulkDeleteMessage(songs.length),
-          confirmLabel: l10n.actionDeletePermanently,
-          isDanger: true,
-        );
-        if (confirmed == true) {
-          ref.read(songsProvider.notifier).bulkDeleteSongs(songs);
-          ref.read(selectionProvider.notifier).exitSelectionMode();
-        }
-      },
+      onTap: fileOnly
+          ? null
+          : () async {
+              final l10n = AppLocalizations.of(context);
+              final confirmed = await showAppConfirm(
+                context,
+                title: l10n.bulkDeleteTitle,
+                message: l10n.bulkDeleteMessage(songs.length),
+                confirmLabel: l10n.actionDeletePermanently,
+                isDanger: true,
+              );
+              if (confirmed == true) {
+                ref.read(songsProvider.notifier).bulkDeleteSongs(songs);
+                ref.read(selectionProvider.notifier).exitSelectionMode();
+              }
+            },
     );
   }
 
@@ -320,8 +341,9 @@ class BulkSelectionBar extends ConsumerWidget {
         final audioManager = ref.read(audioPlayerManagerProvider);
 
         for (final filename in orderedFilenames) {
-          final song = songs.firstWhere((s) => s.filename == filename);
-          audioManager.playNext(song);
+          final index = songs.indexWhere((s) => s.filename == filename);
+          if (index < 0) continue;
+          audioManager.playNext(songs[index]);
         }
 
         ref.read(selectionProvider.notifier).exitSelectionMode();
@@ -335,67 +357,70 @@ class BulkSelectionBar extends ConsumerWidget {
   }
 
   Widget _buildMoveToFolderButton(
-      BuildContext context, WidgetRef ref, List<Song> songs, int count) {
+      BuildContext context, WidgetRef ref, List<Song> songs, int count,
+      {bool fileOnly = false}) {
     return _ActionButton(
       icon: AppIcons.folderMove,
       label: AppLocalizations.of(context).bulkMove,
-      onTap: () async {
-        if (kDebugMode) {
-          debugPrint("UI: Move Songs tapped for ${songs.length} songs");
-        }
-
-        if (!context.mounted) return;
-        final storage = ref.read(storageServiceProvider);
-        final rootPath = await storage.getMusicFolderPath();
-        if (rootPath == null) {
-          if (kDebugMode) {
-            debugPrint("UI: rootPath is null");
-          }
-          return;
-        }
-
-        if (context.mounted) {
-          if (kDebugMode) {
-            debugPrint("UI: Opening folder picker...");
-          }
-          final targetPath = await showFolderPicker(context, rootPath);
-          if (targetPath != null) {
-            if (kDebugMode) {
-              debugPrint("UI: Selected target path: $targetPath");
-            }
-            try {
-              for (final song in songs) {
-                await ref
-                    .read(songsProvider.notifier)
-                    .moveSong(song, targetPath);
-              }
-              ref.read(selectionProvider.notifier).exitSelectionMode();
-              if (!context.mounted) return;
-              if (context.mounted) {
-                appSnack(
-                  context,
-                  AppLocalizations.of(context)
-                      .bulkMovedTo(songs.length, targetPath),
-                );
-              }
-            } catch (e) {
+      onTap: fileOnly
+          ? null
+          : () async {
               if (kDebugMode) {
-                debugPrint("UI: ERROR during move: $e");
+                debugPrint("UI: Move Songs tapped for ${songs.length} songs");
               }
+
+              if (!context.mounted) return;
+              final storage = ref.read(storageServiceProvider);
+              final rootPath = await storage.getMusicFolderPath();
+              if (rootPath == null) {
+                if (kDebugMode) {
+                  debugPrint("UI: rootPath is null");
+                }
+                return;
+              }
+
               if (context.mounted) {
-                appSnack(
-                  context,
-                  AppLocalizations.of(context).bulkMoveError('$e'),
-                );
+                if (kDebugMode) {
+                  debugPrint("UI: Opening folder picker...");
+                }
+                final targetPath = await showFolderPicker(context, rootPath);
+                if (targetPath != null) {
+                  if (kDebugMode) {
+                    debugPrint("UI: Selected target path: $targetPath");
+                  }
+                  try {
+                    for (final song in songs) {
+                      await ref
+                          .read(songsProvider.notifier)
+                          .moveSong(song, targetPath);
+                    }
+                    ref.read(selectionProvider.notifier).exitSelectionMode();
+                    if (!context.mounted) return;
+                    if (context.mounted) {
+                      appSnack(
+                        context,
+                        AppLocalizations.of(context)
+                            .bulkMovedTo(songs.length, targetPath),
+                      );
+                    }
+                  } catch (e) {
+                    if (kDebugMode) {
+                      debugPrint("UI: ERROR during move: $e");
+                    }
+                    if (context.mounted) {
+                      appSnack(
+                        context,
+                        AppLocalizations.of(context).bulkMoveError('$e'),
+                      );
+                    }
+                  }
+                } else {
+                  if (kDebugMode) {
+                    debugPrint("UI: Folder picker cancelled");
+                  }
+                }
               }
-            }
-          } else {
-            if (kDebugMode) {
-              debugPrint("UI: Folder picker cancelled");
-            }
-          }
-        }
-      },
+            },
     );
   }
 
