@@ -53,6 +53,37 @@ const int _foregroundCacheBytes = 40 * 1024 * 1024; // 40MB
 const int _backgroundCacheSize = 50;
 const int _backgroundCacheBytes = 10 * 1024 * 1024; // 10MB
 
+/// Explicit phases of track fading, pause-fades and inter-track gaps.
+enum PlaybackTransitionPhase {
+  normal,
+  fadingOut,
+  inGap,
+  fadingIn,
+  pausingByFade,
+  playingByFade,
+}
+
+/// Explicit phases for sleep-timer queue parking.
+enum TrackParkPhase {
+  disarmed,
+  armedWaitingPlayback,
+  armedObserving,
+  parking,
+  settled,
+}
+
+/// Explicit phases for programmatic player queue mutations.
+enum PlayerMutationPhase {
+  idle,
+  mutating,
+}
+
+/// Explicit phases for hardware/system mute auto-pause.
+enum MutePausePhase {
+  active,
+  pausedByMute,
+}
+
 enum PlaybackMediaMode { audio, video }
 
 class AudioPlayerManager extends WidgetsBindingObserver {
@@ -272,6 +303,32 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   double _foregroundDuration = 0.0;
   double _backgroundDuration = 0.0;
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+
+  PlaybackTransitionPhase get transitionPhase {
+    if (_isFadingOut) return PlaybackTransitionPhase.fadingOut;
+    if (_isInGap) return PlaybackTransitionPhase.inGap;
+    if (_isPausingByFade) return PlaybackTransitionPhase.pausingByFade;
+    if (_isPlayPauseFading) {
+      return playingNotifier.value
+          ? PlaybackTransitionPhase.playingByFade
+          : PlaybackTransitionPhase.pausingByFade;
+    }
+    return PlaybackTransitionPhase.normal;
+  }
+
+  TrackParkPhase get parkPhase {
+    if (_parking) return TrackParkPhase.parking;
+    if (!_parkPending) return TrackParkPhase.disarmed;
+    if (!_parkSawPlayback) return TrackParkPhase.armedWaitingPlayback;
+    return TrackParkPhase.armedObserving;
+  }
+
+  PlayerMutationPhase get mutationPhase => _playerMutationDepth > 0
+      ? PlayerMutationPhase.mutating
+      : PlayerMutationPhase.idle;
+
+  MutePausePhase get mutePausePhase =>
+      _wasPausedByMute ? MutePausePhase.pausedByMute : MutePausePhase.active;
 
   final ValueNotifier<bool> shuffleNotifier = ValueNotifier(false);
   final ValueNotifier<ShuffleState> shuffleStateNotifier = ValueNotifier(

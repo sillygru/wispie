@@ -34,6 +34,13 @@ enum SyncStatus {
   error,
 }
 
+/// Execution state of the single-flight sync runner.
+enum SyncFlightState {
+  idle,
+  executing,
+  replaying,
+}
+
 /// App-level owner of the sync account and engine (plan_sync.md section 1.9).
 /// Single-flight: one operation at a time, requests while busy coalesce.
 class SyncService extends ChangeNotifier {
@@ -60,7 +67,7 @@ class SyncService extends ChangeNotifier {
   SyncEngine? _engine;
   SyncKv? _kv;
   String? _deviceId;
-  bool _busy = false;
+  SyncFlightState _flightState = SyncFlightState.idle;
   bool _syncAgain = false;
   // A manual sync requested while another op ran must keep its manual intent
   // (it gates applying the cloud queue) when it is replayed.
@@ -77,7 +84,8 @@ class SyncService extends ChangeNotifier {
   Stream<SyncProgress> get progressStream => _progressCtl.stream;
   SyncProgress? get progress => _progress;
   AccountService get account => _account;
-  bool get isBusy => _busy;
+  SyncFlightState get flightState => _flightState;
+  bool get isBusy => _flightState != SyncFlightState.idle;
   String? get lastError => _lastError;
   String? get username => _account.session?.username;
   String? get serverUrl => _account.session?.serverUrl;
@@ -85,11 +93,11 @@ class SyncService extends ChangeNotifier {
 
   /// Kept for callers that only care about being signed in.
   bool get isSignedIn => isLoggedIn;
-  bool get isSyncing => _busy;
+  bool get isSyncing => isBusy;
 
   SyncStatus get status {
     if (!isLoggedIn) return SyncStatus.loggedOut;
-    if (_busy) return SyncStatus.syncing;
+    if (isBusy) return SyncStatus.syncing;
     final e = _engine;
     if (e == null || !e.initialDone) return SyncStatus.needsInitialChoice;
     if (e.pausedForEpoch != null) return SyncStatus.pausedEpochChanged;
@@ -345,11 +353,11 @@ class SyncService extends ChangeNotifier {
       {bool queueIfBusy = false}) async {
     final e = _engine;
     if (e == null) return false;
-    if (_busy) {
+    if (isBusy) {
       if (queueIfBusy) _syncAgain = true;
       return false;
     }
-    _busy = true;
+    _flightState = SyncFlightState.executing;
     _lastError = null;
     notifyListeners();
     var ok = false;
@@ -368,13 +376,14 @@ class SyncService extends ChangeNotifier {
       _lastError = _describe(err);
       _emit(SyncProgress(SyncPhase.error, message: _lastError!));
     } finally {
-      _busy = false;
+      _flightState = SyncFlightState.idle;
       notifyListeners();
     }
     if (_syncAgain) {
       final manual = _syncAgainManual;
       _syncAgain = false;
       _syncAgainManual = false;
+      _flightState = SyncFlightState.replaying;
       unawaited(syncNow(manual: manual));
     }
     return ok;
@@ -386,7 +395,7 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<bool> syncNow({bool manual = false}) {
-    if (manual && _busy) _syncAgainManual = true;
+    if (manual && isBusy) _syncAgainManual = true;
     return _run((e) => e.sync(manual: manual), queueIfBusy: true);
   }
 
@@ -429,7 +438,7 @@ class SyncService extends ChangeNotifier {
 
   /// Called after a user-intent write stamped a synced row.
   void notifyLocalWrite() {
-    if (_busy || !_autoReady) return;
+    if (isBusy || !_autoReady) return;
     _debounce?.cancel();
     _debounce = Timer(_dirtyDebounce, () {
       if (_autoReady) unawaited(syncNow());

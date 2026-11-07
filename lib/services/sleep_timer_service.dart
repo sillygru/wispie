@@ -12,6 +12,14 @@ enum SleepTimerMode {
   stopAfterTracks,
 }
 
+/// Lifecycle states of the sleep timer service.
+enum SleepTimerState {
+  idle,
+  countingDown,
+  trackingTracks,
+  shuttingDown,
+}
+
 /// Decides when listening should end; [AudioPlayerManager] performs the ending.
 ///
 /// The manager owns the playhead and the track boundary, so it can play the
@@ -47,6 +55,16 @@ class SleepTimerService extends ChangeNotifier {
 
   /// Whether a sleep timer is currently active
   bool get isActive => _isActive;
+
+  /// Explicit operational state of the sleep timer.
+  SleepTimerState get state {
+    if (!_isActive) return SleepTimerState.idle;
+    if (_isShuttingDown) return SleepTimerState.shuttingDown;
+    if (_currentMode == SleepTimerMode.stopAfterTracks) {
+      return SleepTimerState.trackingTracks;
+    }
+    return SleepTimerState.countingDown;
+  }
 
   /// The current timer mode, or null if not active
   SleepTimerMode? get currentMode => _currentMode;

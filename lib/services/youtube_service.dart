@@ -73,6 +73,12 @@ enum YouTubeErrorKind {
   other,
 }
 
+/// Operational state of an InnerTube client profile under rotation.
+enum ClientProfileStatus {
+  active,
+  benched,
+}
+
 class YouTubeApiException implements Exception {
   final String message;
   final YouTubeErrorKind kind;
@@ -659,6 +665,10 @@ class YouTubeService {
     final until = _profileBlockedUntil[index];
     return until != null && DateTime.now().isBefore(until);
   }
+
+  ClientProfileStatus profileStatus(int index) => _isProfileBlocked(index)
+      ? ClientProfileStatus.benched
+      : ClientProfileStatus.active;
 
   void _pruneAudioCache() {
     if (_audioCache.length <= 64) return;

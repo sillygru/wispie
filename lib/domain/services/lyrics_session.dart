@@ -7,6 +7,14 @@ import '../../services/database_service.dart';
 import '../../services/lingva_translate_service.dart';
 import '../models/rich_lyrics.dart';
 
+/// Explicit phases for lyrics translation.
+enum LyricsTranslationPhase {
+  none,
+  translating,
+  translated,
+  sameLanguage,
+}
+
 /// Deep module behind the lyrics pane.
 ///
 /// Before: `LyricsPane:1206` owned 7 notifiers, 4 `ref.listen`s,
@@ -44,6 +52,15 @@ class LyricsSession extends ChangeNotifier {
   bool get translating => _translating;
   bool get hasCachedTranslation => _hasCached;
   bool get isSameLanguage => _isSameLanguage;
+
+  LyricsTranslationPhase get translationPhase {
+    if (_translating) return LyricsTranslationPhase.translating;
+    if (_isSameLanguage) return LyricsTranslationPhase.sameLanguage;
+    if (_translated != null && _translated!.isNotEmpty) {
+      return LyricsTranslationPhase.translated;
+    }
+    return LyricsTranslationPhase.none;
+  }
 
   /// Load lyrics for `filename` with `content` (LRC text) and `duration`.
   ///

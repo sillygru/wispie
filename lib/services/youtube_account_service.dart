@@ -13,6 +13,14 @@ import 'youtube_response_cache.dart';
 import 'sync/account_service.dart'
     show SecretStore, SecretStoreException, SecureSecretStore;
 
+/// Explicit authentication lifecycle states for the YouTube account session.
+enum YouTubeAuthState {
+  signedOut,
+  validating,
+  signedIn,
+  sessionExpired,
+}
+
 /// What the app knows about the YouTube account right now.
 class YouTubeAccountSnapshot {
   final bool signedIn;
@@ -21,15 +29,23 @@ class YouTubeAccountSnapshot {
   /// Set when the stored cookies stopped working and the user has to sign in
   /// again — a revoked session or a cleared browser jar, not a network hiccup.
   final bool sessionExpired;
+  final YouTubeAuthState authState;
 
   const YouTubeAccountSnapshot({
     required this.signedIn,
     this.profile,
     this.sessionExpired = false,
-  });
+    YouTubeAuthState? authState,
+  }) : authState = authState ??
+            (sessionExpired
+                ? YouTubeAuthState.sessionExpired
+                : (signedIn
+                    ? YouTubeAuthState.signedIn
+                    : YouTubeAuthState.signedOut));
 
   static const YouTubeAccountSnapshot empty = YouTubeAccountSnapshot(
     signedIn: false,
+    authState: YouTubeAuthState.signedOut,
   );
 }
 
@@ -72,15 +88,24 @@ class YouTubeAccountService {
   YouTubeAccountProfile? _profile;
   YouTubeLibraryApi? _api;
   bool _sessionExpired = false;
+  bool _isValidating = false;
 
   YouTubeAccountProfile? get cachedProfile => _profile;
 
   bool get isSignedIn => _session != null && !_sessionExpired;
 
+  YouTubeAuthState get authState {
+    if (_isValidating) return YouTubeAuthState.validating;
+    if (_sessionExpired) return YouTubeAuthState.sessionExpired;
+    if (_session != null) return YouTubeAuthState.signedIn;
+    return YouTubeAuthState.signedOut;
+  }
+
   YouTubeAccountSnapshot get snapshot => YouTubeAccountSnapshot(
         signedIn: isSignedIn,
         profile: _profile,
         sessionExpired: _sessionExpired,
+        authState: authState,
       );
 
   /// Loads the stored session and profile. Safe to call twice.
@@ -109,6 +134,7 @@ class YouTubeAccountService {
     final previousExpired = _sessionExpired;
     _session = session;
     _sessionExpired = false;
+    _isValidating = true;
     try {
       final profile = await libraryApi().account();
       if (profile == null) {
@@ -128,6 +154,8 @@ class YouTubeAccountService {
       _session = previousSession;
       _sessionExpired = previousExpired;
       rethrow;
+    } finally {
+      _isValidating = false;
     }
   }
 

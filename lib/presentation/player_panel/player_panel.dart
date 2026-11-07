@@ -27,6 +27,14 @@ import '../widgets/collection_accent_scope.dart';
 /// produces: one controller, one travel distance, and every visual a function
 /// of that value. That is what makes a flick, a grab mid-flight and a tap all
 /// feel like the same object moving.
+/// Explicit phases for the player panel bottom sheet and morph animation.
+enum PlayerPanelPhase {
+  docked,
+  dragging,
+  settling,
+  expanded,
+}
+
 abstract final class PlayerPanel {
   static _PlayerPanelHostState? _host;
   static PlayerPanelController? _controller;
@@ -129,6 +137,14 @@ class PlayerPanelController {
   bool get isOpen => PlayerPanel.openState.value;
 
   double get value => progress.value;
+
+  /// Explicit operational phase of the panel.
+  PlayerPanelPhase get phase {
+    if (_dragging) return PlayerPanelPhase.dragging;
+    if (progress.isAnimating) return PlayerPanelPhase.settling;
+    if (isOpen || value >= 0.999) return PlayerPanelPhase.expanded;
+    return PlayerPanelPhase.docked;
+  }
 
   /// True while a finger owns the surface.
   bool get isDragging => _dragging;

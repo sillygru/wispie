@@ -540,6 +540,20 @@ type uploadRow struct {
 	file           string
 }
 
+type UploadPhase int
+
+const (
+	UploadPhaseReceiving UploadPhase = iota
+	UploadPhaseReady
+)
+
+func (u uploadRow) Phase() UploadPhase {
+	if u.received >= u.size {
+		return UploadPhaseReady
+	}
+	return UploadPhaseReceiving
+}
+
 func (s *Service) loadUpload(q querier, id, accountID string) (uploadRow, error) {
 	var u uploadRow
 	err := q.QueryRow(`SELECT kind, epoch, base_seq, size, received, file FROM uploads WHERE id = ? AND account_id = ?`, id, accountID).
@@ -631,7 +645,7 @@ func (s *Service) uploadCommit(w http.ResponseWriter, r *http.Request, p auth.Pr
 	if err != nil {
 		return err
 	}
-	if u.received != u.size {
+	if u.Phase() != UploadPhaseReady {
 		return httpx.Err(400, "incomplete", "upload not fully received")
 	}
 	hdr, err := headerFromFile(s.blobPath(p.AccountID, u.file))

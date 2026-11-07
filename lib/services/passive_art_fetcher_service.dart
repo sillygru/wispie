@@ -68,6 +68,15 @@ typedef ArtBurstResult = ({
 ///   of the last failed lookup. Survive restarts.
 /// * `_triedThisLaunchArtists/_triedThisLaunchAlbums` — transient failures
 ///   already retried 3 times this launch. Never persisted.
+/// Operational phases and circuit-breaker states for the passive art fetcher.
+enum ArtFetcherPhase {
+  idle,
+  running,
+  suspendedBackground,
+  circuitBrokenCooldown,
+  probingHost,
+}
+
 class PassiveArtFetcherService with WidgetsBindingObserver {
   static final PassiveArtFetcherService instance =
       PassiveArtFetcherService._internal();
@@ -123,6 +132,18 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   dynamic _containerRef;
   bool _isForegrounded = true;
   bool _isRunning = false;
+
+  /// Operational state including circuit-breaker and background transitions.
+  ArtFetcherPhase get phase {
+    if (_probeInFlight != null) return ArtFetcherPhase.probingHost;
+    if (_offlineBackoffUntil != null &&
+        DateTime.now().isBefore(_offlineBackoffUntil!)) {
+      return ArtFetcherPhase.circuitBrokenCooldown;
+    }
+    if (!_isForegrounded) return ArtFetcherPhase.suspendedBackground;
+    if (_isRunning) return ArtFetcherPhase.running;
+    return ArtFetcherPhase.idle;
+  }
 
   /// Passive sweep backoff only. Explicit user runs (driven mode) always
   /// bypass it: a tap means "try the network now".

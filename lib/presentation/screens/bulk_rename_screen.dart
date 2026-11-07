@@ -84,6 +84,16 @@ class BulkRenameScreen extends ConsumerStatefulWidget {
   ConsumerState<BulkRenameScreen> createState() => _BulkRenameScreenState();
 }
 
+/// Pipeline phases for bulk renaming.
+enum BulkRenameWorkflowPhase {
+  idle,
+  analyzing,
+  checkingCollisions,
+  ready,
+  executing,
+  cancelling,
+}
+
 class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
   /// Index into [BulkRenameSegment.presets], or null when the user is building
   /// their own format.
@@ -129,6 +139,21 @@ class _BulkRenameScreenState extends ConsumerState<BulkRenameScreen> {
   int _total = 0;
 
   bool get _isChecking => _checkingTotal > 0 && _checkingDone < _checkingTotal;
+
+  /// Explicit workflow phase of the bulk rename pipeline.
+  BulkRenameWorkflowPhase get workflowPhase {
+    if (_isRunning) {
+      return _cancelRequested
+          ? BulkRenameWorkflowPhase.cancelling
+          : BulkRenameWorkflowPhase.executing;
+    }
+    if (_analyzing) return BulkRenameWorkflowPhase.analyzing;
+    if (_isChecking) return BulkRenameWorkflowPhase.checkingCollisions;
+    if (_validated.isNotEmpty || _preview.isNotEmpty) {
+      return BulkRenameWorkflowPhase.ready;
+    }
+    return BulkRenameWorkflowPhase.idle;
+  }
 
   /// True while a plan is being built. Nothing downstream may be trusted until
   /// it is false: [plan] has to return before there is a count to show.

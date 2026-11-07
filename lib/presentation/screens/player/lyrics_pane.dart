@@ -400,6 +400,15 @@ class LyricsPane extends ConsumerStatefulWidget {
   }
 }
 
+/// Operational phases for lyrics presentation.
+enum LyricsViewPhase {
+  loading,
+  empty,
+  plain,
+  lineSynced,
+  wordSynced,
+}
+
 class _LyricsPaneState extends ConsumerState<LyricsPane>
     with
         AutomaticKeepAliveClientMixin,
@@ -479,6 +488,15 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   bool _loading = true;
   bool _hasSynced = false;
   String? _loadedFilename;
+
+  /// Explicit view phase of the lyrics pane.
+  LyricsViewPhase get viewPhase {
+    if (_loading) return LyricsViewPhase.loading;
+    if (_lyrics == null || _lyrics!.isEmpty) return LyricsViewPhase.empty;
+    if (_richSyncAvailable) return LyricsViewPhase.wordSynced;
+    if (_hasSynced) return LyricsViewPhase.lineSynced;
+    return LyricsViewPhase.plain;
+  }
 
   /// The playhead is followed off a subscription rather than a `StreamBuilder`
   /// around the list.

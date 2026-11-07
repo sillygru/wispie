@@ -26,6 +26,16 @@ import 'youtube_service.dart';
 /// While streaming it also fills the disk cache, so the second play of a track
 /// never touches the network. A partial file is kept when playback is
 /// interrupted; the next request for the same range appends to it.
+enum AudioStreamPhase {
+  unresolved,
+  resolving,
+  streamingDirect,
+  streamingAndCaching,
+  streamingAndAppending,
+  completed,
+  failed,
+}
+
 class YouTubeAudioSource extends StreamAudioSource {
   YouTubeAudioSource({
     required this.videoId,
@@ -40,6 +50,9 @@ class YouTubeAudioSource extends StreamAudioSource {
 
   static const Duration _headTimeout = Duration(seconds: 12);
   static final Set<String> _cacheWriters = {};
+
+  AudioStreamPhase _phase = AudioStreamPhase.unresolved;
+  AudioStreamPhase get phase => _phase;
 
   YouTubeAudioStream? _stream;
 
@@ -136,6 +149,9 @@ class YouTubeAudioSource extends StreamAudioSource {
             _target = target;
             _partial = File('${target.path}.part');
             sink = await _openSink(append: sameFormat);
+            _phase = sameFormat
+                ? AudioStreamPhase.streamingAndAppending
+                : AudioStreamPhase.streamingAndCaching;
           }
         }
       } catch (error) {
@@ -158,6 +174,10 @@ class YouTubeAudioSource extends StreamAudioSource {
             ? (end - from).clamp(0, available).toInt()
             : available;
 
+    if (sink == null) {
+      _phase = AudioStreamPhase.streamingDirect;
+    }
+
     return StreamAudioResponse(
       sourceLength: total > 0 ? total : null,
       offset: length == null ? null : from,
@@ -169,6 +189,7 @@ class YouTubeAudioSource extends StreamAudioSource {
 
   Future<YouTubeAudioStream> _resolve({required bool refresh}) async {
     if (!refresh && _stream != null) return _stream!;
+    _phase = AudioStreamPhase.resolving;
     try {
       final stream = await YouTubeService.instance.resolveAudioStream(videoId);
       _stream = stream;

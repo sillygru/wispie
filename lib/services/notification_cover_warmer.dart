@@ -7,6 +7,14 @@ import '../models/song.dart';
 import 'cover_refresh_service.dart';
 import 'file_manager_service.dart';
 
+/// Operational state of the notification cover warming pipeline.
+enum CoverWarmerState {
+  idle,
+  warming,
+  pausedForScan,
+  backgroundBudgetExhausted,
+}
+
 /// Produces the square notification covers for a playback queue passively, one
 /// song at a time, instead of all at once when the queue is built.
 ///
@@ -84,6 +92,15 @@ class NotificationCoverWarmer {
 
   @visibleForTesting
   bool get isRunning => _running;
+
+  CoverWarmerState get state {
+    if (_pauseDepth > 0) return CoverWarmerState.pausedForScan;
+    if (!_foreground && _backgroundProcessed >= _backgroundBudget) {
+      return CoverWarmerState.backgroundBudgetExhausted;
+    }
+    if (_running) return CoverWarmerState.warming;
+    return CoverWarmerState.idle;
+  }
 
   @visibleForTesting
   int get backgroundProcessedCount => _backgroundProcessed;

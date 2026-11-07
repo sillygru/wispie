@@ -68,6 +68,14 @@ class MainScreen extends ConsumerStatefulWidget {
   ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
+/// Explicit lifecycle states for the side navigation drawer.
+enum NavigationDrawerState {
+  closed,
+  dragging,
+  settling,
+  open,
+}
+
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
@@ -147,13 +155,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
   /// list the dock and rail drew.
   List<_ShellTab> _visibleTabs = const [];
 
+  /// Explicit state machine phase of the navigation drawer.
+  NavigationDrawerState get drawerState {
+    if (_isDraggingDrawer) return NavigationDrawerState.dragging;
+    if (_drawerController.isAnimating) return NavigationDrawerState.settling;
+    if (_isDrawerOpen || _drawerController.value >= 0.999) {
+      return NavigationDrawerState.open;
+    }
+    return NavigationDrawerState.closed;
+  }
+
   /// True while the drawer is far enough open that chrome (scrim, panel) should
   /// stay mounted. A tiny leftover spring value must not keep a GestureDetector
   /// over the content — that is what killed vertical scroll after open/close.
   bool get _drawerChromeVisible =>
-      _isDrawerOpen ||
-      _isDraggingDrawer ||
-      _drawerController.isAnimating ||
+      drawerState != NavigationDrawerState.closed ||
       _drawerController.value.abs() > 0.002;
 
   late final List<ScrollController> _scrollControllers;
