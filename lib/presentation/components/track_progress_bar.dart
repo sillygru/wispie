@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
@@ -31,61 +33,44 @@ class TrackProgressBar extends ConsumerStatefulWidget {
 }
 
 class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
-  static const Duration _pathRetryDelay = Duration(seconds: 3);
-
-  /// How many times a streamed track's cache is re-checked while it plays.
-  ///
-  /// The cache entry only appears when the last byte of the download lands,
-  /// which for a streamed track is near the end of playback, so the window has
-  /// to cover the whole song: a fixed 60s cap left every three-minute track
-  /// showing the plain bar and never generating a waveform.
-  int get _maxPathAttempts {
-    final seconds = widget.total.inSeconds;
-    return seconds <= 0 ? 40 : (seconds ~/ _pathRetryDelay.inSeconds) + 20;
-  }
-
   Future<String?>? _path;
-  int _pathAttempts = 0;
-  bool _retryScheduled = false;
+  StreamSubscription<String>? _downloadSubscription;
 
   @override
   void initState() {
     super.initState();
-    _path = _resolvePath();
+    _watchPath();
   }
 
   @override
   void didUpdateWidget(TrackProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.song.filename != widget.song.filename) {
-      _pathAttempts = 0;
-      _path = _resolvePath();
+      _watchPath();
     }
   }
 
-  void _retryRemotePath() {
-    if (_retryScheduled || _pathAttempts >= _maxPathAttempts) return;
-    _retryScheduled = true;
-    Future<void>.delayed(_pathRetryDelay, () {
-      _retryScheduled = false;
-      if (!mounted) return;
-      _pathAttempts++;
-      setState(() => _path = _resolvePath());
-    });
+  @override
+  void dispose() {
+    _downloadSubscription?.cancel();
+    super.dispose();
   }
 
-  Future<String?> _resolvePath() async {
+  void _watchPath() {
+    _downloadSubscription?.cancel();
+    _downloadSubscription = null;
+    _path = null;
     final song = widget.song;
-    if (song.isLocal) return song.url;
     final id = song.remoteId;
-    if (song.isYoutube && id != null && id.isNotEmpty) {
-      final file = await OnlineAudioCache.instance.completeFile(
-        OnlineAudioCache.providerYouTube,
-        id,
-      );
-      return file?.path;
-    }
-    return null;
+    if (!song.isYoutube || id == null || id.isEmpty) return;
+
+    final cache = OnlineAudioCache.instance;
+    Future<String?> resolvePath() async =>
+        (await cache.completeFile(OnlineAudioCache.providerYouTube, id))?.path;
+    _downloadSubscription = cache.completions.listen((completed) {
+      if (completed == id) setState(() => _path = resolvePath());
+    });
+    _path = resolvePath();
   }
 
   @override
@@ -130,11 +115,11 @@ class _TrackProgressBarState extends ConsumerState<TrackProgressBar> {
     if (widget.song.isLocal) return waveform(widget.song.url);
 
     return FutureBuilder<String?>(
+      key: ValueKey(filename),
       future: _path,
       builder: (context, snapshot) {
         final path = snapshot.data;
         if (path == null || path.isEmpty) {
-          _retryRemotePath();
           return basic();
         }
         return waveform(path);

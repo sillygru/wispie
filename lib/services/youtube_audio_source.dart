@@ -39,6 +39,7 @@ class YouTubeAudioSource extends StreamAudioSource {
   final String artist;
 
   static const Duration _headTimeout = Duration(seconds: 12);
+  static final Set<String> _cacheWriters = {};
 
   YouTubeAudioStream? _stream;
 
@@ -46,7 +47,6 @@ class YouTubeAudioSource extends StreamAudioSource {
   File? _partial;
   int _writtenBytes = 0;
   bool _cacheable = true;
-  bool _cacheWriteActive = false;
 
   @override
   Future<StreamAudioResponse> request([int? start, int? end]) async {
@@ -63,7 +63,6 @@ class YouTubeAudioSource extends StreamAudioSource {
         if (attempt > 1) break;
         // A stale or refused CDN URL is recovered by asking a different client
         // for a fresh one, which is what yt-dlp does when a media request 403s.
-        _cacheWriteActive = false;
         YouTubeService.instance.reportStreamFailure(videoId);
         _stream = null;
       }
@@ -102,31 +101,48 @@ class YouTubeAudioSource extends StreamAudioSource {
       );
     }
 
-    final total = _totalLength(response, from, audio.contentLength);
+    final total = _totalLength(response, audio.contentLength);
 
-    // Players read a file in ranges rather than asking for it whole, so caching
-    // only a whole-track request meant the download never finished and a
-    // streamed track could never produce a waveform. Write every contiguous
-    // range instead: append when it picks up exactly where the last one
-    // stopped, and restart only for a fresh request at the start of the file.
-    const int restartWindow = 64 * 1024;
-    final resumes = from == _writtenBytes;
-    final restarts = from == 0 && _writtenBytes < restartWindow;
+    // A short header probe can overlap the first playback request.
+    final isHeaderProbe = from == 0 && end != null && end <= 3 && end < total;
+    final range = response.headers.value(HttpHeaders.contentRangeHeader);
+    final startsAtRequestedByte = response.statusCode == HttpStatus.ok
+        ? from == 0
+        : range?.startsWith('bytes $from-') == true;
     RandomAccessFile? sink;
     if (_cacheable &&
         total > 0 &&
-        !_cacheWriteActive &&
-        (resumes || restarts)) {
-      final target = await OnlineAudioCache.instance.fileFor(
-        provider: OnlineAudioCache.providerYouTube,
-        id: videoId,
-        itag: audio.itag,
-        extension: audio.containerExtension,
-      );
-      _target ??= target;
-      _partial ??= File('${target.path}.part');
-      sink = await _openSink(append: resumes && !restarts);
-      _cacheWriteActive = sink != null;
+        !isHeaderProbe &&
+        _writtenBytes < total &&
+        (end == null || end > _writtenBytes) &&
+        startsAtRequestedByte &&
+        from <= _writtenBytes &&
+        _cacheWriters.add(videoId)) {
+      try {
+        final cache = OnlineAudioCache.instance;
+        final existing = await cache.completeFile(
+          OnlineAudioCache.providerYouTube,
+          videoId,
+        );
+        if (existing == null) {
+          final target = await cache.fileFor(
+            provider: OnlineAudioCache.providerYouTube,
+            id: videoId,
+            itag: audio.itag,
+            extension: audio.containerExtension,
+          );
+          final sameFormat = _target?.path == target.path;
+          if (sameFormat || from == 0) {
+            _target = target;
+            _partial = File('${target.path}.part');
+            sink = await _openSink(append: sameFormat);
+          }
+        }
+      } catch (error) {
+        debugPrint('YouTube: could not open the cache for $videoId: $error');
+      } finally {
+        if (sink == null) _cacheWriters.remove(videoId);
+      }
     }
 
     // just_audio forwards the client's last byte + 1 as an exclusive end, so a
@@ -147,7 +163,7 @@ class YouTubeAudioSource extends StreamAudioSource {
       offset: length == null ? null : from,
       contentLength: length,
       contentType: audio.mimeType,
-      stream: _tee(response, sink, total),
+      stream: sink == null ? response : _tee(response, sink, from, total),
     );
   }
 
@@ -166,7 +182,6 @@ class YouTubeAudioSource extends StreamAudioSource {
 
   int _totalLength(
     HttpClientResponse response,
-    int from,
     int? declaredLength,
   ) {
     final range = response.headers.value(HttpHeaders.contentRangeHeader);
@@ -188,12 +203,17 @@ class YouTubeAudioSource extends StreamAudioSource {
     final partial = _partial;
     if (partial == null) return null;
     try {
-      if (!append) {
-        if (await partial.exists()) await partial.delete();
-        _writtenBytes = 0;
+      if (append &&
+          await partial.exists() &&
+          await partial.length() == _writtenBytes) {
+        return await partial.open(mode: FileMode.append);
       }
-      return await partial.open(
-          mode: append ? FileMode.append : FileMode.write);
+      if (!append || _writtenBytes == 0) {
+        _writtenBytes = 0;
+        return await partial.open(mode: FileMode.write);
+      }
+      _writtenBytes = 0;
+      return null;
     } catch (error) {
       debugPrint('YouTube: cache write disabled: $error');
       _cacheable = false;
@@ -201,40 +221,59 @@ class YouTubeAudioSource extends StreamAudioSource {
     }
   }
 
-  /// Copies the response through to the player while writing it to disk. The
-  /// sink belongs to this request, so a cancelled subscription or a concurrent
-  /// seek closes only its own handle and leaves the partial file resumable.
+  /// The player can abandon its initial response to read the MP4 index or seek.
+  /// Keep consuming that same response so the download can still finish.
   Stream<List<int>> _tee(
     HttpClientResponse response,
-    RandomAccessFile? sink,
+    RandomAccessFile sink,
+    int from,
     int total,
   ) async* {
+    final chunks = StreamIterator(response.timeout(_headTimeout));
+    var offset = from;
+    var responseEnded = false;
+
+    Future<void> cacheChunk(List<int> chunk) async {
+      final end = offset + chunk.length;
+      if (end > _writtenBytes && _writtenBytes < total) {
+        final writeEnd = end > total ? total : end;
+        await sink.writeFrom(chunk, _writtenBytes - offset, writeEnd - offset);
+        _writtenBytes = writeEnd;
+      }
+      offset = end;
+    }
+
     try {
-      await for (final chunk in response) {
-        if (sink != null) {
-          await sink.writeFrom(chunk);
-          _writtenBytes += chunk.length;
-        }
+      while (await chunks.moveNext()) {
+        final chunk = chunks.current;
+        await cacheChunk(chunk);
         yield chunk;
       }
+      responseEnded = true;
     } catch (error) {
+      responseEnded = true;
       debugPrint('YouTube: stream for $videoId ended early: $error');
       rethrow;
     } finally {
-      await _closeSink(sink);
-      if (sink != null && total > 0 && _writtenBytes >= total) {
-        await _finalize();
+      try {
+        if (!responseEnded) {
+          while (_writtenBytes < total && await chunks.moveNext()) {
+            await cacheChunk(chunks.current);
+          }
+        }
+      } catch (error) {
+        debugPrint('YouTube: cache fill for $videoId ended early: $error');
+      } finally {
+        try {
+          await chunks.cancel();
+          await sink.close();
+          if (_writtenBytes == total) await _finalize();
+        } catch (error) {
+          debugPrint('YouTube: could not close the cache for $videoId: $error');
+        } finally {
+          _cacheWriters.remove(videoId);
+        }
       }
-    }
-  }
-
-  Future<void> _closeSink(RandomAccessFile? sink) async {
-    if (sink == null) return;
-    _cacheWriteActive = false;
-    try {
-      await sink.close();
-    } catch (_) {
-      // Closing a file we already finished with is not an error worth surfacing.
     }
   }
 
