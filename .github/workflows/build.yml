@@ -282,7 +282,7 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -300,11 +300,11 @@ jobs:
           flutter --version
           xcodebuild -version
 
-      - name: Select Xcode 16.2 (newest on macos-14 image)
-        # Newer toolchain, fewer surprises than the default 15.4.
-        # (video_player_avfoundation's bare `#if TARGET_OS_OSX` fails
-        # identically on both toolchains; patch_darwin_headers.sh handles it.)
-        # Verified present on image 20260831.
+      - name: Select Xcode 16.2
+        # Pinned to the toolchain the 2.4.x builds shipped with; the macOS 15
+        # image also carries it. Newer toolchain, fewer surprises than the old
+        # default. (video_player_avfoundation's bare `#if TARGET_OS_OSX` fails
+        # identically across Xcode versions; patch_darwin_headers.sh handles it.)
         run: |
           sudo xcode-select -s /Applications/Xcode_16.2.app
           xcodebuild -version
@@ -432,7 +432,7 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
 
   ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
