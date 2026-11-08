@@ -10,11 +10,13 @@ mod formats;
 mod image_sig;
 mod meta;
 mod model;
+mod prosody;
 mod scan;
+mod search;
 mod tasks;
 
 use emitter::{Emit, Emitter, RawCallback};
-use model::{CompactRequest, FactsRequest, ListRequest, ScanRequest, SongsRequest};
+use model::{CompactRequest, FactsRequest, ListRequest, ProsodyRequest, ScanRequest, SongsRequest};
 use std::ffi::{c_char, c_void, CStr};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,6 +118,10 @@ fn dispatch(payload: serde_json::Value, emitter: &Emitter) -> Result<(), String>
         "read_facts" => tasks::read_facts(parse(payload)?, emitter),
         "list_media" => tasks::list_media(parse(payload)?, emitter),
         "compact_covers" => tasks::compact_covers(parse(payload)?, emitter),
+        "prosody" => prosody::run(parse::<ProsodyRequest>(payload)?.lines, emitter),
+        "rank_search" => search::rank(parse(payload)?, emitter),
+        "search_prepare" => search::prepare(parse(payload)?, emitter),
+        "fuzzy_search" => search::fuzzy(parse(payload)?, emitter),
         "formats" => {
             emitter.emit(Emit::Done {
                 unreadable: 0,

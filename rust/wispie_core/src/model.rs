@@ -141,3 +141,107 @@ pub struct FolderFact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ProsodyRequest {
+    pub lines: Vec<ProsodyLine>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProsodyLine {
+    pub text: String,
+    pub start_us: i64,
+    pub end_us: i64,
+    pub song_cps: f64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct RankRequest {
+    pub query: String,
+    pub results: Vec<RankResult>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RankResult {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub matched_title: bool,
+    pub matched_artist: bool,
+    pub matched_album: bool,
+    pub lyrics_line: Option<String>,
+    pub taste: f64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct FuzzyRequest {
+    pub generation: u64,
+    pub tokens: Vec<String>,
+    pub titles: bool,
+    pub artists: bool,
+    pub albums: bool,
+    pub exclude: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PrepareRequest {
+    pub generation: u64,
+    pub songs: Vec<FuzzySong>,
+}
+
+/// Positional on purpose: a library crosses the boundary on every keystroke.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FuzzySong(pub String, pub String, pub String, pub String, pub f64);
+
+impl FuzzySong {
+    pub fn filename(&self) -> &str {
+        &self.0
+    }
+
+    pub fn title(&self) -> &str {
+        &self.1
+    }
+
+    pub fn artist(&self) -> &str {
+        &self.2
+    }
+
+    pub fn album(&self) -> &str {
+        &self.3
+    }
+
+    pub fn taste(&self) -> f64 {
+        self.4
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FuzzyMatch {
+    pub index: usize,
+    pub field: FuzzyField,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FuzzyField {
+    Songs,
+    Artists,
+    Albums,
+}
+
+impl FuzzyField {
+    /// `SearchFilterType.index`, which the typo cost adds in.
+    pub fn rank(self) -> u8 {
+        match self {
+            FuzzyField::Songs => 1,
+            FuzzyField::Artists => 2,
+            FuzzyField::Albums => 3,
+        }
+    }
+}

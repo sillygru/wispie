@@ -29,6 +29,7 @@ pub enum Emit {
     Facts(Vec<FolderFact>),
     Paths(Vec<String>),
     Compacted(HashMap<String, String>),
+    Json(serde_json::Value),
     Progress {
         done: u64,
         total: u64,
@@ -61,6 +62,7 @@ impl Emitter {
             Emit::Facts(facts) => (EVENT_ITEMS, json!({ "facts": facts })),
             Emit::Paths(paths) => (EVENT_ITEMS, json!({ "paths": paths })),
             Emit::Compacted(compacted) => (EVENT_ITEMS, json!({ "compacted": compacted })),
+            Emit::Json(value) => (EVENT_ITEMS, value),
             Emit::Progress { done, total } => {
                 (EVENT_PROGRESS, json!({ "done": done, "total": total }))
             }

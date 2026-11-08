@@ -2,6 +2,7 @@ import '../../models/song.dart';
 import '../models/search_filter.dart';
 import '../models/search_result.dart';
 import '../../data/repositories/search_index_repository.dart';
+import 'search_fuzzy.dart';
 import 'search_ranking.dart';
 import 'search_taste.dart';
 
@@ -121,7 +122,7 @@ class SearchService {
         lowerQuery.length >= 4 &&
         (searchTitles || searchArtists || searchAlbums)) {
       final seen = {for (final r in results) r.song.filename};
-      results.addAll(_fuzzyMatches(
+      results.addAll(fuzzyMatches(
         tokens,
         allSongs,
         seen,
@@ -136,104 +137,6 @@ class SearchService {
   }
 
   static const int _fuzzyTopUpBelow = 12;
-
-  List<SearchResult> _fuzzyMatches(
-    List<String> tokens,
-    List<Song> songs,
-    Set<String> exclude, {
-    required SearchTaste taste,
-    required bool titles,
-    required bool artists,
-    required bool albums,
-  }) {
-    final scored = <(int, SearchResult)>[];
-
-    for (final song in songs) {
-      if (exclude.contains(song.filename)) continue;
-      // Field order is also the rank: a title hit beats an artist hit.
-      final fields = <(String, SearchFilterType)>[
-        if (titles) (song.title, SearchFilterType.songs),
-        if (artists) (song.artist, SearchFilterType.artists),
-        if (albums) (song.album, SearchFilterType.albums),
-      ];
-      for (final (text, type) in fields) {
-        final cost = _fuzzyFieldCost(tokens, text.toLowerCase());
-        if (cost == null) continue;
-        scored.add((
-          cost * 10 + type.index,
-          SearchResult(song: song, matchedFilters: {type}),
-        ));
-        break;
-      }
-    }
-
-    scored.sort((a, b) {
-      if (a.$1 != b.$1) return a.$1.compareTo(b.$1);
-      final tasteA = taste.scoreOf(a.$2.song);
-      final tasteB = taste.scoreOf(b.$2.song);
-      if (tasteA != tasteB) return tasteB.compareTo(tasteA);
-      return a.$2.song.title.compareTo(b.$2.song.title);
-    });
-    return [for (final e in scored.take(30)) e.$2];
-  }
-
-  /// Total typo cost if every query token matches some word in [text] within
-  /// tolerance, otherwise null.
-  int? _fuzzyFieldCost(Iterable<String> tokens, String text) {
-    if (text.isEmpty) return null;
-    final words = text.split(RegExp(r'[^\p{L}\p{N}]+', unicode: true))
-      ..removeWhere((w) => w.isEmpty);
-    var total = 0;
-    for (final token in tokens) {
-      final maxCost = token.length <= 3 ? 0 : (token.length <= 7 ? 1 : 2);
-      int? best;
-      for (final word in words) {
-        if (word.length < token.length - maxCost) {
-          // Too short even as a prefix match.
-          continue;
-        }
-        // Prefix compare so a half-typed, slightly wrong word still matches.
-        final head =
-            word.length > token.length ? word.substring(0, token.length) : word;
-        final d = _editDistance(token, head, maxCost);
-        if (d <= maxCost && (best == null || d < best)) best = d;
-      }
-      if (best == null) return null;
-      total += best;
-    }
-    return total;
-  }
-
-  /// Optimal string alignment distance (a swap counts as one edit), bailing
-  /// out early once every cell exceeds [limit].
-  int _editDistance(String a, String b, int limit) {
-    if ((a.length - b.length).abs() > limit) return limit + 1;
-    var prev2 = List<int>.filled(b.length + 1, 0);
-    var prev = List<int>.generate(b.length + 1, (j) => j);
-    for (var i = 1; i <= a.length; i++) {
-      final cur = List<int>.filled(b.length + 1, 0)..[0] = i;
-      var rowMin = cur[0];
-      for (var j = 1; j <= b.length; j++) {
-        final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
-        var v = prev[j - 1] + cost;
-        if (prev[j] + 1 < v) v = prev[j] + 1;
-        if (cur[j - 1] + 1 < v) v = cur[j - 1] + 1;
-        if (i > 1 &&
-            j > 1 &&
-            a.codeUnitAt(i - 1) == b.codeUnitAt(j - 2) &&
-            a.codeUnitAt(i - 2) == b.codeUnitAt(j - 1) &&
-            prev2[j - 2] + 1 < v) {
-          v = prev2[j - 2] + 1;
-        }
-        cur[j] = v;
-        if (v < rowMin) rowMin = v;
-      }
-      if (rowMin > limit) return limit + 1;
-      prev2 = prev;
-      prev = cur;
-    }
-    return prev[b.length];
-  }
 
   /// Groups search results by artist
   Map<String, List<SearchResult>> groupByArtist(List<SearchResult> results) {

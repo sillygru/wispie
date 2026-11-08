@@ -245,6 +245,29 @@ class RichLyrics {
       songCps *= expert.linguisticTempoScale;
     }
 
+    // Timed lines are collected first so the whole sheet crosses once.
+    final lineEnds = <int, Duration>{};
+    for (var index = 0; index < source.length; index++) {
+      final line = source[index];
+      if (!line.isSynced || line.text.trim().isEmpty) continue;
+      final nextTimed = _nextTimedLine(source, index);
+      final end =
+          nextTimed ?? songDuration ?? line.time + const Duration(seconds: 4);
+      lineEnds[index] =
+          end > line.time ? end : line.time + const Duration(seconds: 1);
+    }
+
+    final timedWords = LyricsProsodicEstimator.estimateLinesWords([
+      for (final entry in lineEnds.entries)
+        (
+          text: source[entry.key].text,
+          start: source[entry.key].time,
+          end: entry.value,
+          songCps: songCps,
+        ),
+    ]);
+    var timedIndex = 0;
+
     for (var index = 0; index < source.length; index++) {
       final line = source[index];
       if (!line.isSynced || line.text.trim().isEmpty) {
@@ -256,22 +279,11 @@ class RichLyrics {
         continue;
       }
 
-      final nextTimed = _nextTimedLine(source, index);
-      final end =
-          nextTimed ?? songDuration ?? line.time + const Duration(seconds: 4);
-      final lineEnd =
-          end > line.time ? end : line.time + const Duration(seconds: 1);
-      final words = LyricsProsodicEstimator.estimateLineWords(
-        line.text,
-        line.time,
-        lineEnd,
-        songCps: songCps,
-      );
       lines.add(RichLyricLine(
         start: line.time,
-        end: lineEnd,
+        end: lineEnds[index]!,
         text: line.text,
-        words: words,
+        words: timedWords[timedIndex++],
         isSimulated: true,
       ));
     }
