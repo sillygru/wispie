@@ -445,8 +445,10 @@ jobs:
           cache: true
           architecture: arm64
 
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+      - name: Select Xcode 16.4 (image default)
+        # Xcode 16.2 is still on the macOS 15 image but without its iOS
+        # platform, so xcodebuild resolves no device destination for it.
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Purge stale SwiftPM/Xcode caches (CI-only)
         run: |
