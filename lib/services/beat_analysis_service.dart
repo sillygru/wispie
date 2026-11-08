@@ -1,4 +1,3 @@
-import 'debug_sandbox.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -20,8 +19,7 @@ import 'online_audio_cache.dart';
 /// Produces and caches the [BeatMap] for a song.
 ///
 /// Deliberately a sibling of `WaveformService`: decode with ffmpeg, crunch in an
-/// isolate, cache the result as JSON in the v3 cache directory. The expensive
-/// part happens exactly once per song, so playback never does DSP.
+/// isolate, cache as JSON. So playback never does DSP.
 class BeatAnalysisService {
   final WispieCache _cacheService;
 
@@ -256,9 +254,7 @@ class BeatAnalysisService {
   /// (or another analysis) is mid-decode of the same file.
   Future<File?> _decodeToPcm(String path, String filename) {
     return MediaDecodeGate.run(() async {
-      final supportDir = await getSupportDirectory();
-      final tempDir = Directory(p.join(supportDir.path, 'beat_analysis_temp'));
-      if (!await tempDir.exists()) await tempDir.create(recursive: true);
+      final tempDir = await _cacheService.scratchDirectory();
 
       final outputPath = p.join(
         tempDir.path,

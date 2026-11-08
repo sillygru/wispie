@@ -512,11 +512,18 @@ class WispieCache {
         orphanDirs: orphanDirs,
       );
       if (result.migratedAnything) {
-        debugPrint('WispieCache: migrated ${result.moved} files, '
-            'dropped ${result.dropped}');
+        debugPrint('WispieCache: migration $result');
       }
 
       await _migrateLegacyBackups();
+
+      // The marker promises that nothing legacy is left. Recording it after a
+      // partial pass would strand the leftover files for good.
+      if (!result.complete) {
+        debugPrint('WispieCache: ${result.failed} files left behind; '
+            'retrying on the next launch');
+        return;
+      }
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_layoutVersionKey, cacheLayoutVersion);

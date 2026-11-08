@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Probe for the wispie cache: file naming, budgets, the binary waveform format
-// and the migration off the old `gru_cache_v3` layout.
+// Probe for the wispie cache: file naming, budgets, the binary waveform format,
+// atomic waveform writes and the migration off the old `gru_cache_v3` layout.
 //
 //   dart run tool/cache_probe.dart
 //
@@ -34,6 +34,7 @@ void check(String name, bool condition, {Object? detail}) {
 
 Future<void> main() async {
   _checkWaveforms();
+  _checkWaveformFiles();
   _checkNames();
   _checkBuckets();
   _checkGate();
@@ -54,11 +55,13 @@ Future<void> main() async {
   if (_failed > 0) exitCode = 1;
 }
 
+List<double> _probeBars() => List<double>.generate(
+      waveformBarCount,
+      (i) => (0.5 + 0.5 * math.sin(i / 12)).clamp(0.0, 1.0),
+    );
+
 void _checkWaveforms() {
-  final bars = List<double>.generate(
-    2000,
-    (i) => (0.5 + 0.5 * math.sin(i / 12)).clamp(0.0, 1.0),
-  );
+  final bars = _probeBars();
   final encoded = encodeWaveformBars(bars);
   final decoded = decodeWaveformBars(encoded);
   final jsonBytes = utf8.encode(jsonEncode(bars)).length;
@@ -89,6 +92,65 @@ void _checkWaveforms() {
   check('truncated payload is rejected',
       decodeWaveformBars(encoded.sublist(0, encoded.length - 4)).isEmpty);
   check('empty payload is rejected', decodeWaveformBars(Uint8List(0)).isEmpty);
+}
+
+/// The waveform cache file is staged then renamed, and an entry that is not a
+/// whole waveform is never read (or written) as one.
+void _checkWaveformFiles() {
+  final dir = Directory.systemTemp.createTempSync('wispie_waveform_probe_');
+  try {
+    final bars = _probeBars();
+    final path =
+        p.join(dir.path, 'waveforms', '${waveformCachePrefix}probe.wfm');
+
+    check('a complete waveform is written', writeWaveformCacheFile(path, bars));
+    check('a written waveform reads back whole',
+        readWaveformCacheFile(path)?.length == waveformBarCount);
+    check('a write leaves no staging file',
+        !File('$path$cacheStagingSuffix').existsSync());
+
+    final before = File(path).readAsBytesSync();
+    check('an incomplete waveform is refused',
+        !writeWaveformCacheFile(path, bars.sublist(0, 400)));
+    check(
+      'a refused write leaves the previous entry intact',
+      _sameBytes(File(path).readAsBytesSync(), before),
+    );
+
+    final replacement = List<double>.filled(waveformBarCount, 1.0);
+    check(
+      'a rewrite replaces the entry in one step',
+      writeWaveformCacheFile(path, replacement) &&
+          readWaveformCacheFile(path)!.every((v) => v == 1),
+    );
+
+    final truncated = File(p.join(dir.path, 'truncated.wfm'))
+      ..writeAsBytesSync(encodeWaveformBars(bars).sublist(0, 120));
+    check('a truncated entry is rejected',
+        readWaveformCacheFile(truncated.path) == null);
+
+    final short = File(p.join(dir.path, 'short.wfm'))
+      ..writeAsBytesSync(encodeWaveformBars(bars.sublist(0, 900)));
+    check('an entry with too few bars is rejected',
+        readWaveformCacheFile(short.path) == null);
+
+    final retired = File(p.join(dir.path, 'retired.wfm'))
+      ..writeAsStringSync('[0.1,0.2,0.3]');
+    check('a retired JSON entry is rejected',
+        readWaveformCacheFile(retired.path) == null);
+
+    check('a staging leftover is not read as a waveform',
+        readWaveformCacheFile('$path$cacheStagingSuffix') == null);
+    check('a missing entry reads as null',
+        readWaveformCacheFile(p.join(dir.path, 'absent.wfm')) == null);
+
+    final emptied = File(p.join(dir.path, 'empty.wfm'))
+      ..writeAsBytesSync(Uint8List(0));
+    check('an emptied waveform is rejected',
+        readWaveformCacheFile(emptied.path) == null);
+  } finally {
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
 }
 
 void _checkNames() {
@@ -179,6 +241,7 @@ Future<void> _checkMigration() async {
     }
 
     await write('blurred_cache/b1.jpg', 'blur');
+    await write('blurred_cache/nested/b2.jpg', 'blur');
     await write('notification_cover_cache/n1.jpg', 'notif');
     await write('lyrics_cache/remote_a.lrc', 'lyrics');
     await write('lyrics_cache/rich_a.json', '{}');
@@ -187,6 +250,7 @@ Future<void> _checkMigration() async {
     await write('beatmap_abc.json', '{}');
     await write('ios_media_proxy/proxy.mp4', 'proxy');
     await write('youtube_abc.json', '{}');
+    await write('unknown_thing.bin', 'junk');
 
     await File(p.join(support.path, 'palette_cache.json'))
         .writeAsString(palettesJson);
@@ -204,6 +268,14 @@ Future<void> _checkMigration() async {
         .create(recursive: true);
 
     final root = p.join(support.path, 'wispie_cache');
+    final waveformDir = Directory(p.join(root, 'waveforms'));
+    await waveformDir.create(recursive: true);
+    final keptWaveform = p.join(waveformDir.path, 'waveform_v3_keep.wfm');
+    await File(keptWaveform).writeAsString('keep');
+    final stagedWaveform =
+        p.join(waveformDir.path, 'waveform_v3_x.wfm$cacheStagingSuffix');
+    await File(stagedWaveform).writeAsString('partial');
+
     final result = await migrateLegacyCacheLayout(
       supportPath: support.path,
       cacheRootPath: root,
@@ -212,8 +284,10 @@ Future<void> _checkMigration() async {
     bool exists(String relative) => File(p.join(root, relative)).existsSync();
 
     check('migration reports the legacy layout', result.legacyFound,
-        detail: result.moved);
-    check('blurred backdrops move into their bucket', exists('blurred/b1.jpg'));
+        detail: result);
+    check('a clean pass reports no failures', result.complete, detail: result);
+    check('blurred backdrops move into their bucket',
+        exists('blurred/b1.jpg') && exists('blurred/nested/b2.jpg'));
     check('notification art moves into its bucket',
         exists('notification/n1.jpg'));
     check(
@@ -238,6 +312,10 @@ Future<void> _checkMigration() async {
         !exists('waveforms/waveform_v2_abc.json') && result.dropped >= 1,
         detail: result.dropped);
     check(
+        'a usable waveform survives the pass', File(keptWaveform).existsSync());
+    check('an interrupted write is cleaned out',
+        !File(stagedWaveform).existsSync());
+    check(
       'the legacy tree is gone',
       !legacy.existsSync() &&
           !Directory(p.join(support.path, 'artwork_cache')).existsSync() &&
@@ -259,13 +337,58 @@ Future<void> _checkMigration() async {
     check(
       'a second launch migrates nothing and loses nothing',
       !second.legacyFound &&
+          second.complete &&
           exists('blurred/b1.jpg') &&
           exists('lyrics/rich_a.json'),
-      detail: second.moved,
+      detail: second,
+    );
+
+    // A move that cannot finish must keep its source and ask for a retry.
+    final blockedSupport = Directory(p.join(sandbox.path, 'blocked_support'));
+    final blockedLegacy = Directory(
+      p.join(blockedSupport.path, 'gru_cache_v3', 'lyrics_cache'),
+    );
+    await blockedLegacy.create(recursive: true);
+    final stuckFile = File(p.join(blockedLegacy.path, 'stuck.json'));
+    await stuckFile.writeAsString('{}');
+    final blockedRoot = p.join(blockedSupport.path, 'wispie_cache');
+    final blocker = Directory(p.join(blockedRoot, 'lyrics', 'stuck.json'));
+    await blocker.create(recursive: true);
+
+    final blocked = await migrateLegacyCacheLayout(
+      supportPath: blockedSupport.path,
+      cacheRootPath: blockedRoot,
+    );
+    check('a failed move is reported', blocked.failed > 0 && !blocked.complete,
+        detail: blocked);
+    check('a failed move keeps its source file', stuckFile.existsSync());
+    check('a failed move keeps the legacy tree',
+        Directory(p.join(blockedSupport.path, 'gru_cache_v3')).existsSync());
+
+    await blocker.delete(recursive: true);
+    final retried = await migrateLegacyCacheLayout(
+      supportPath: blockedSupport.path,
+      cacheRootPath: blockedRoot,
+    );
+    check(
+      'the retry finishes what the failed pass could not',
+      retried.complete &&
+          !Directory(p.join(blockedSupport.path, 'gru_cache_v3'))
+              .existsSync() &&
+          File(p.join(blockedRoot, 'lyrics', 'stuck.json')).existsSync(),
+      detail: retried,
     );
   } finally {
     if (await sandbox.exists()) await sandbox.delete(recursive: true);
   }
+}
+
+bool _sameBytes(Uint8List a, Uint8List b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 double _maxError(List<double> expected, List<double> actual) {

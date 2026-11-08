@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -93,6 +94,25 @@ const List<int> waveformMagic = [0x57, 0x53, 0x50, 0x33];
 /// Hard cap so a corrupt header cannot make us allocate wildly.
 const int waveformBarLimit = 8192;
 
+/// Bars every cached waveform holds. Fewer means a decode that ended early or
+/// a file that was cut short, so both are treated as missing and rebuilt.
+const int waveformBarCount = 2000;
+
+/// Suffix of a cache file that is still being replaced.
+const String cacheStagingSuffix = '.part';
+
+/// True for a file this build can read as a waveform.
+bool isWaveformCacheFileName(String name) =>
+    name.startsWith(waveformCachePrefix) &&
+    name.endsWith(waveformCacheExtension);
+
+/// True for the JSON waveform entries the binary format replaced.
+bool isRetiredWaveformCacheName(String name) =>
+    name.startsWith('waveform_') && name.endsWith('.json');
+
+bool isCompleteWaveformBars(List<double> bars) =>
+    bars.length >= waveformBarCount;
+
 Uint8List encodeWaveformBars(List<double> bars) {
   final count = bars.length > waveformBarLimit ? waveformBarLimit : bars.length;
   final out = Uint8List(6 + count);
@@ -121,6 +141,60 @@ List<double> decodeWaveformBars(Uint8List bytes) {
     bars[i] = bytes[6 + i] / 255;
   }
   return bars;
+}
+
+/// Writes [samples] as the waveform at [path], refusing an incomplete list.
+/// Staged then renamed, so a reader never sees a truncated entry.
+bool writeWaveformCacheFile(String path, List<double> samples) {
+  if (!isCompleteWaveformBars(samples)) return false;
+
+  final target = File(path);
+  final staging = File('$path$cacheStagingSuffix');
+  final bytes = encodeWaveformBars(samples);
+  try {
+    target.parent.createSync(recursive: true);
+    // A leftover from an interrupted write would otherwise be appended to.
+    if (staging.existsSync()) staging.deleteSync();
+    staging.writeAsBytesSync(bytes, flush: true);
+    if (staging.lengthSync() != bytes.length) {
+      staging.deleteSync();
+      return false;
+    }
+    _replaceWithStaging(staging, target);
+    return true;
+  } on Object {
+    try {
+      if (staging.existsSync()) staging.deleteSync();
+    } on Object {
+      // The next sweep drops a staging file that will not delete.
+    }
+    return false;
+  }
+}
+
+/// Renames [staging] over [target]. Windows refuses to replace an existing file
+/// with a rename, so an old copy is removed first there and nowhere else.
+void _replaceWithStaging(File staging, File target) {
+  try {
+    staging.renameSync(target.path);
+    return;
+  } on FileSystemException {
+    if (target.existsSync()) target.deleteSync();
+  }
+  staging.renameSync(target.path);
+}
+
+/// Bars from the cache file at [path], or null when it is missing, retired or
+/// truncated, which makes the caller decode again and repair the entry.
+List<double>? readWaveformCacheFile(String path) {
+  try {
+    final file = File(path);
+    if (!file.existsSync()) return null;
+    final bars = decodeWaveformBars(file.readAsBytesSync());
+    return isCompleteWaveformBars(bars) ? bars : null;
+  } on Object {
+    return null;
+  }
 }
 
 /// File and byte counts for one [CacheBucket].
