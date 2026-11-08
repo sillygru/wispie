@@ -54,6 +54,14 @@ jobs:
           rm -f "$HOME/.config/dart/pub-credentials.json" "$HOME/.config/dart/pub-tokens.json"
           dart pub token remove --all || true
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -143,7 +151,15 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Build Linux release bundle (x64)
+        env:
+          WISPIE_REQUIRE_RUST_CORE: "1"
         run: flutter build linux --release
 
       - name: Download appimagetool
@@ -203,7 +219,15 @@ jobs:
           }
           nuget help | Select-Object -First 2
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Build Windows release (x64)
+        env:
+          WISPIE_REQUIRE_RUST_CORE: "1"
         run: flutter build windows --release
 
       - name: Portable zip with lowercase name
@@ -322,6 +346,17 @@ jobs:
           pod --version
           (cd macos && pod install)
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build Rust core (macOS)
+        run: dart run tool/rust/build.dart apple macos
+
       - name: Build macOS release (universal)
         id: build-attempt-1
         continue-on-error: true
@@ -417,6 +452,17 @@ jobs:
         run: |
           rm -rf "$HOME/Library/Caches/org.swift.swiftpm/artifacts"
           rm -rf "$HOME/Library/Developer/Xcode/DerivedData"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build Rust core (iOS)
+        run: dart run tool/rust/build.dart apple ios
 
       - name: Build unsigned iOS release
         run: flutter build ios --release --no-codesign

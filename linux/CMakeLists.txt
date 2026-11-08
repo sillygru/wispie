@@ -143,3 +143,21 @@ if(EXISTS "${PACKAGING_LINUX_DIR}/icons")
   install(DIRECTORY "${PACKAGING_LINUX_DIR}/icons/hicolor"
     DESTINATION "share/icons" COMPONENT Runtime)
 endif()
+
+# Native core: cargo builds the library, the bundle ships it.
+find_program(DART_EXECUTABLE dart)
+if(DART_EXECUTABLE)
+  add_custom_target(wispie_rust_core ALL
+    COMMAND "${DART_EXECUTABLE}" run tool/rust/build.dart linux
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    COMMENT "Building Rust core (linux)"
+    VERBATIM)
+  add_dependencies(${BINARY_NAME} wispie_rust_core)
+  install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/x86_64-unknown-linux-gnu/release/libwispie_core.so"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+elseif(WISPIE_REQUIRE_RUST_CORE OR DEFINED ENV{WISPIE_REQUIRE_RUST_CORE})
+  message(FATAL_ERROR "dart not found: required to build the Rust core")
+else()
+  message(WARNING "dart not found: building without the Rust core")
+endif()

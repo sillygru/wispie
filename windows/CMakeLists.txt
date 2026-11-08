@@ -106,3 +106,21 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# Native core: cargo builds the library, it ships next to the executable.
+find_program(DART_EXECUTABLE dart)
+if(DART_EXECUTABLE)
+  add_custom_target(wispie_rust_core ALL
+    COMMAND "${DART_EXECUTABLE}" run tool/rust/build.dart windows
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    COMMENT "Building Rust core (windows)"
+    VERBATIM)
+  add_dependencies(${BINARY_NAME} wispie_rust_core)
+  install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../rust/target/x86_64-pc-windows-msvc/release/wispie_core.dll"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+elseif(WISPIE_REQUIRE_RUST_CORE OR DEFINED ENV{WISPIE_REQUIRE_RUST_CORE})
+  message(FATAL_ERROR "dart not found: required to build the Rust core")
+else()
+  message(WARNING "dart not found: building without the Rust core")
+endif()

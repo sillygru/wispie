@@ -1,0 +1,42 @@
+name: Rust Checks
+
+# The Rust equivalent of flutter_tests.yml: formatting, lints and a type check.
+# Deliberately no release build here; build.yml compiles the release artifact.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust_checks.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'rust/**'
+      - '.github/workflows/rust_checks.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check
+        run: cargo check --all-targets

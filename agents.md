@@ -23,7 +23,7 @@ NEVER write unit tests after you write code.
 
 There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
 
-The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
+The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`, `rust_scan_probe.dart`, `rust_bench_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
 
 ## Verification
 
@@ -72,7 +72,7 @@ Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2200 lin
 
 ### Library scanning
 
-`ScannerService` runs in isolates (`Isolate.spawn` / `Isolate.run`), lazy: a fast scan writes minimal rows, then metadata enrichment and cover extraction in throttled batches. `lib/domain/services/media_formats.dart` is the one list of playable extensions — the scanner, the storage probe and the folder reader all ask it. Video thumbnails go through `FFmpegService`, which is platform-channel and main-thread only. `MediaDecodePriority` (`lib/services/media_decode_gate.dart`) serializes full-file decodes — waveform and beat analysis must not run concurrently on one file.
+`ScannerService` drives the native core (`lib/services/scanner_service.dart` → `lib/data/rust/`): a fast scan writes minimal rows, then metadata enrichment and cover extraction in throttled batches, all on Rust worker threads. `lib/domain/services/media_formats.dart` is the one list of playable extensions — `rust/wispie_core/src/formats.rs` mirrors it, and the scanner, the storage probe and the folder reader all ask it. Video thumbnails go through `FFmpegService`, which is platform-channel and main-thread only. `MediaDecodePriority` (`lib/services/media_decode_gate.dart`) serializes full-file decodes — waveform and beat analysis must not run concurrently on one file.
 
 ### Networking
 
@@ -144,3 +144,62 @@ server/              # self-hostable Go sync server (stores opaque encrypted blo
 tool/                # repeatable probes + icon generator
 third_party/         # vendored deps, wired via dependency_overrides
 ```
+
+## Rust core (`rust/`)
+
+The library scan, tag reading and cover cache live in a Rust crate behind a small
+C ABI, called from `lib/data/rust/`. It is the only implementation: scan,
+enrichment, cover sweeps and folder compares all run natively. There is no Dart
+fallback — when the library is missing or its ABI does not match,
+`WispieCore.isAvailable` is false and the scan reports an error instead of
+quietly building a library another way.
+
+Single-file paths stay in Dart on purpose: lazy on-demand cover extraction,
+folder-cover lookups and video thumbnails (FFmpeg, platform channel) are not
+batch work and never went through the core.
+
+### Build
+
+```bash
+dart run tool/rust/build.dart host          # this machine, for probes
+dart run tool/rust/build.dart android arm64-v8a
+dart run tool/rust/build.dart apple macos   # universal .a plus link xcconfig
+dart run tool/rust/build.dart apple ios
+dart run tool/rust/build.dart linux
+dart run tool/rust/build.dart windows
+```
+
+`flutter build linux/windows` runs the matching command through CMake, Android
+through the Gradle `buildRustCore` task, and CI runs the Apple ones before
+`flutter build`. A local Android/Linux/Windows build therefore needs a Rust
+toolchain too. The Apple xcconfig uses `-force_load`, not `-l`: Dart looks the
+symbols up at runtime, so a plain `-l` lets the linker drop the archive member
+and the app ships without a core.
+
+### Checks: no full compilation
+
+Treat `cargo check` as the Rust equivalent of `flutter analyze`: run that, not a
+release build. **Do not run `cargo build --release` or any cross-target build
+unless the task actually needs the artifact** (a probe that loads it, a packaging
+fix). Those compile the whole dependency tree and take minutes.
+
+```bash
+dart run tool/rust/build.dart check   # fmt --check, clippy -D warnings, check
+```
+
+`cargo fmt --all` before finishing. CI runs the same three checks in
+`rust_checks.yml`, so a clippy warning fails the build.
+
+### Invariants
+
+- `rust/wispie_core/src/formats.rs` mirrors `media_formats.dart` and
+  `Song.videoExtensions`; `tool/rust_scan_probe.dart` asserts they match.
+- The wire format is additive. Adding a JSON field is fine, changing or removing
+  one is not: bump `ABI_VERSION` (Rust) and `WispieCore.abiVersion` (Dart) together.
+- No panic may cross the FFI boundary. Per-file work is wrapped in `catch_unwind`.
+- Covers are content-addressed (`c_<sha1>`) and written atomically, which is why
+  the Rust path needs no file locks. Existing caches depend on that hash.
+- Probe: `WISPIE_CORE_LIB=rust/target/release/libwispie_core.dylib dart run tool/rust_scan_probe.dart`
+- Benchmark: `WISPIE_CORE_LIB=rust/target/release/libwispie_core.dylib dart run tool/rust_bench_probe.dart`
+  times native against the Dart paths it replaces and writes `build/rust_bench/report.md`;
+  it fails if the native core is slower, so a regression is caught, not just printed.

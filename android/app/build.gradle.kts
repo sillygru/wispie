@@ -1,4 +1,12 @@
 import java.util.Properties
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
 
 plugins {
     id("com.android.application")
@@ -118,6 +126,43 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
+}
+
+// Builds the Rust core for each packaged ABI before the APK is assembled.
+abstract class BuildRustCoreTask : DefaultTask() {
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @get:Input
+    abstract val abis: ListProperty<String>
+
+    @get:Internal
+    abstract val projectRoot: DirectoryProperty
+
+    @TaskAction
+    fun build() {
+        abis.get().forEach { abi ->
+            execOperations.exec {
+                workingDir(projectRoot.get().asFile)
+                commandLine("dart", "run", "tool/rust/build.dart", "android", abi)
+            }
+        }
+    }
+}
+
+val buildRustCore = tasks.register<BuildRustCoreTask>("buildRustCore") {
+    projectRoot.set(rootProject.projectDir.parentFile)
+    abis.set(
+        if (wispieAbiFilter != null) {
+            listOf(wispieAbiFilter)
+        } else {
+            listOf("arm64-v8a", "armeabi-v7a")
+        }
+    )
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildRustCore)
 }
 
 flutter {

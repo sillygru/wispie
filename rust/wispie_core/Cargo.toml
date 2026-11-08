@@ -1,0 +1,28 @@
+[package]
+name = "wispie_core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Native library scan, tag reading and cover cache for Wispie"
+
+[lib]
+name = "wispie_core"
+# staticlib feeds the Apple targets (linked into Runner), cdylib feeds
+# Android/Linux/Windows where the library is bundled next to the app.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+image = { version = "0.25", default-features = false, features = [
+    "bmp",
+    "gif",
+    "jpeg",
+    "png",
+    "webp",
+] }
+lofty = "0.25"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+walkdir = "2"

@@ -68,3 +68,11 @@ android/build/reports/problems/problems-report.html
 /temp
 /.opencode
 *.jks
+
+# Rust core: build output and generated link config
+/rust/target/
+/android/app/src/main/jniLibs/
+/macos/Runner/Configs/libwispie_core.a
+/macos/Runner/Configs/RustCore.xcconfig
+/ios/Flutter/libwispie_core.a
+/ios/Flutter/RustCore.xcconfig

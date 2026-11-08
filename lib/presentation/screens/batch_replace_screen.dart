@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-import '../../domain/services/song_folder_reader.dart';
+import '../../services/folder_scan_service.dart';
 import '../../domain/services/song_match_planner.dart';
 import '../../domain/services/song_replacement_rules.dart';
 import '../../l10n/l10n.dart';
@@ -195,7 +195,7 @@ class _BatchReplaceScreenState extends ConsumerState<BatchReplaceScreen> {
     });
 
     try {
-      final files = await SongFolderReader.listMediaFiles(
+      final files = await FolderScanService.listMediaFiles(
         folderPath,
         recursive: _recursive,
       );
@@ -216,7 +216,7 @@ class _BatchReplaceScreenState extends ConsumerState<BatchReplaceScreen> {
 
       final List<FolderSongRef> candidates;
       try {
-        candidates = await SongFolderReader.readFacts(
+        candidates = await FolderScanService.readFacts(
           files,
           progress: port.sendPort,
         );

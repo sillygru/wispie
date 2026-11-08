@@ -21,6 +21,7 @@ import 'media_decode_gate.dart';
 import 'permission_service.dart';
 import 'storage_probe_service.dart';
 import 'media_store_service.dart';
+import '../data/rust/rust_library_tasks.dart';
 
 /// Why a scan produced the songs it did.
 ///
@@ -57,7 +58,6 @@ class _ScanParams {
   final List<String> excludedFolders;
   final List<Song>? existingSongs;
   final String coversDirPath;
-  final String lockDirPath;
   final Map<String, int> playCounts;
   final SendPort sendPort;
   final bool includeVideos;
@@ -69,38 +69,12 @@ class _ScanParams {
     required this.excludedFolders,
     this.existingSongs,
     required this.coversDirPath,
-    required this.lockDirPath,
     required this.playCounts,
     required this.sendPort,
     this.includeVideos = true,
     this.minimumFileSizeBytes = 0,
     this.fastMode = false,
   });
-}
-
-class _RebuildParams {
-  final List<Song> songs;
-  final String coversDirPath;
-  final String lockDirPath;
-  final SendPort sendPort;
-  final bool force;
-
-  _RebuildParams({
-    required this.songs,
-    required this.coversDirPath,
-    required this.lockDirPath,
-    required this.sendPort,
-    this.force = false,
-  });
-}
-
-/// Result of enriching one batch: every song in the batch (enriched or not),
-/// plus just the ones that actually changed and need a DB write.
-class _EnrichResult {
-  final List<Song> songs;
-  final List<Song> changed;
-
-  _EnrichResult(this.songs, this.changed);
 }
 
 class ScannerService {
@@ -354,10 +328,6 @@ class ScannerService {
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
     }
-    final lockDir = Directory(p.join(supportDir.path, 'file_locks'));
-    if (!await lockDir.exists()) {
-      await lockDir.create(recursive: true);
-    }
 
     final receivePort = ReceivePort();
     final params = _ScanParams(
@@ -365,7 +335,6 @@ class ScannerService {
       excludedFolders: excludedFolders,
       existingSongs: existingSongs,
       coversDirPath: coversDir.path,
-      lockDirPath: lockDir.path,
       playCounts: effectivePlayCounts,
       sendPort: receivePort.sendPort,
       includeVideos: includeVideos,
@@ -373,7 +342,7 @@ class ScannerService {
       fastMode: fastMode,
     );
 
-    await Isolate.spawn(_isolateScan, params);
+    await _startScan(params);
 
     final completer = Completer<ScanResult>();
     final List<Song> allScannedSongs = [];
@@ -570,10 +539,6 @@ class ScannerService {
     if (!await coversDir.exists()) {
       await coversDir.create(recursive: true);
     }
-    final lockDir = Directory(p.join(supportDir.path, 'file_locks'));
-    if (!await lockDir.exists()) {
-      await lockDir.create(recursive: true);
-    }
 
     final receivePort = ReceivePort();
     final params = _ScanParams(
@@ -581,7 +546,6 @@ class ScannerService {
       excludedFolders: excludedFolders,
       existingSongs: existingSongs,
       coversDirPath: coversDir.path,
-      lockDirPath: lockDir.path,
       playCounts: effectivePlayCounts,
       sendPort: receivePort.sendPort,
       fastMode: fastMode,
@@ -589,7 +553,7 @@ class ScannerService {
       minimumFileSizeBytes: minimumFileSizeBytes,
     );
 
-    await Isolate.spawn(_isolateScan, params);
+    await _startScan(params);
 
     final completer = Completer<List<Song>>();
     final List<Song> allScannedSongs = [];
@@ -654,184 +618,26 @@ class ScannerService {
 
   /// Enriches minimal song records with metadata (title, artist, album, duration).
   ///
-  /// [amr.readMetadata] is fully synchronous, so parsing runs in a background
-  /// isolate one batch at a time — on the main isolate it would block the UI
-  /// thread for the entire library. Only the DB write and progress callback
-  /// stay here, since sqflite is not usable from a spawned isolate.
+  /// Tag parsing runs on the native core's workers; only the DB write and the
+  /// progress callback stay on this isolate, since sqflite is not usable from a
+  /// spawned one.
   static Future<List<Song>> enrichAllMetadata(
     List<Song> songs, {
     void Function(double progress)? onProgress,
     void Function(List<Song> enrichedBatch)? onBatchEnriched,
-  }) async {
-    final updated = <Song>[];
-    final total = songs.length;
-    const batchSize = 25;
-
-    for (int i = 0; i < total; i += batchSize) {
-      final end = (i + batchSize).clamp(0, total);
-      final batch = songs.sublist(i, end);
-
-      final result = await Isolate.run(() => _enrichBatch(batch));
-
-      updated.addAll(result.songs);
-
-      if (result.changed.isNotEmpty) {
-        await DatabaseService.instance.insertSongsBatch(result.changed);
-        onBatchEnriched?.call(result.changed);
-      }
-
-      onProgress?.call(end / total);
-    }
-
-    return updated;
+  }) {
+    return _enrichOnCore(songs,
+        onProgress: onProgress, onBatchEnriched: onBatchEnriched);
   }
 
-  /// Extracts cover art in background isolates for songs missing covers.
-  /// Runs on background isolates without blocking the UI thread.
+  /// Extracts cover art for songs missing covers, on the native core.
   static Future<List<Song>> extractCoversInBackground(
     List<Song> songs, {
     void Function(double progress)? onProgress,
     void Function(List<Song> updatedSongs)? onBatchExtracted,
-  }) async {
-    final toProcess = <Song>[];
-    for (final song in songs) {
-      if (song.coverUrl == null || song.coverUrl!.isEmpty) {
-        toProcess.add(song);
-      }
-    }
-    if (toProcess.isEmpty) return songs;
-
-    final supportDir = await getSupportDirectory();
-    final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
-    if (!await coversDir.exists()) {
-      await coversDir.create(recursive: true);
-    }
-
-    final updatedSongsMap = <String, Song>{};
-    const batchSize = 10;
-    for (int i = 0; i < toProcess.length; i += batchSize) {
-      final end = (i + batchSize).clamp(0, toProcess.length);
-      final batch = toProcess.sublist(i, end);
-
-      final coversDirPath = coversDir.path;
-      final batchCovers = await Isolate.run(() async {
-        final results = <String, String>{};
-        for (final song in batch) {
-          final coverPath = await extractCoverWithoutFFmpeg(
-            song.url,
-            coversDirPath,
-            song.filename,
-          );
-          if (coverPath != null) {
-            results[song.filename] = coverPath;
-          }
-        }
-        return results;
-      });
-
-      if (batchCovers.isNotEmpty) {
-        final newlyUpdated = <Song>[];
-        for (final song in batch) {
-          final coverPath = batchCovers[song.filename];
-          if (coverPath != null) {
-            final updated = _songWithCover(song, coverPath);
-            updatedSongsMap[song.filename] = updated;
-            newlyUpdated.add(updated);
-            unawaited(CoverRefreshService.evictCoverFromImageCache(coverPath));
-          }
-        }
-
-        if (newlyUpdated.isNotEmpty) {
-          await DatabaseService.instance.insertSongsBatch(newlyUpdated);
-          onBatchExtracted?.call(newlyUpdated);
-        }
-      }
-
-      onProgress?.call(end / toProcess.length);
-      await Future.delayed(Duration.zero);
-    }
-
-    if (updatedSongsMap.isEmpty) return songs;
-
-    return songs.map((s) => updatedSongsMap[s.filename] ?? s).toList();
-  }
-
-  /// Parses one batch of songs. Runs inside a background isolate — must not
-  /// touch DatabaseService or any plugin.
-  static Future<_EnrichResult> _enrichBatch(List<Song> batch) async {
-    final songs = <Song>[];
-    final changed = <Song>[];
-
-    for (final song in batch) {
-      final file = File(song.url);
-      if (!await file.exists()) {
-        songs.add(song);
-        continue;
-      }
-
-      // Only process records the fast scan left untouched. Testing the fields
-      // with || instead re-parses every song whose file simply has no album
-      // tag, on every single scan.
-      final isUnenriched =
-          song.title == p.basenameWithoutExtension(file.path) &&
-              song.artist == 'Unknown Artist' &&
-              song.album == 'Unknown Album';
-      if (!isUnenriched) {
-        songs.add(song);
-        continue;
-      }
-
-      // Skip video files — audio_metadata_reader can crash on video
-      // containers like MKV, WebM, AVI. Video metadata (title from
-      // filename) is already populated by the fast scan.
-      if (_isVideoFile(file.path)) {
-        songs.add(song);
-        continue;
-      }
-
-      try {
-        final metadata = amr.readMetadata(file);
-        String title = song.title;
-        String artist = song.artist;
-        String album = song.album;
-        Duration? duration = song.duration;
-        bool hasLyrics = song.hasLyrics;
-        double? songDateEpochSec = song.songDateEpochSec;
-
-        if (metadata.title?.isNotEmpty == true) title = metadata.title!;
-        if (metadata.artist?.isNotEmpty == true) artist = metadata.artist!;
-        if (metadata.album?.isNotEmpty == true) album = metadata.album!;
-        if (metadata.year != null) {
-          songDateEpochSec =
-              metadata.year!.millisecondsSinceEpoch.toDouble() / 1000.0;
-        }
-        duration = metadata.duration;
-        if (metadata.lyrics?.isNotEmpty == true) {
-          hasLyrics = true;
-        }
-
-        final enriched = Song(
-          title: title,
-          artist: artist,
-          album: album,
-          filename: song.filename,
-          url: song.url,
-          coverUrl: song.coverUrl,
-          hasLyrics: hasLyrics,
-          playCount: song.playCount,
-          duration: duration,
-          mtime: song.mtime,
-          createdEpochSec: song.createdEpochSec,
-          songDateEpochSec: songDateEpochSec,
-        );
-        changed.add(enriched);
-        songs.add(enriched);
-      } catch (_) {
-        songs.add(song);
-      }
-    }
-
-    return _EnrichResult(songs, changed);
+  }) {
+    return _extractCoversOnCore(songs,
+        onProgress: onProgress, onBatchExtracted: onBatchExtracted);
   }
 
   /// Extracts cover art for a single song on demand.
@@ -992,13 +798,7 @@ class ScannerService {
     void Function(double progress)? onProgress,
     bool force = false,
   }) async {
-    final supportDir = await getSupportDirectory();
     final coversDir = await coversDirectory();
-
-    final lockDir = Directory(p.join(supportDir.path, 'file_locks'));
-    if (!await lockDir.exists()) {
-      await lockDir.create(recursive: true);
-    }
 
     if (force) {
       try {
@@ -1037,35 +837,15 @@ class ScannerService {
       }
     }
 
-    // Process audio files in isolate (fast)
+    // Audio covers; video thumbnails stay on the main thread for FFmpeg.
     final coverResults = <String, String>{};
     if (otherSongs.isNotEmpty) {
-      final receivePort = ReceivePort();
-      await Isolate.spawn(
-          _isolateRebuildCovers,
-          _RebuildParams(
-            songs: otherSongs,
-            coversDirPath: coversDir.path,
-            lockDirPath: lockDir.path,
-            sendPort: receivePort.sendPort,
-            force: force,
-          ));
-
-      final completer = Completer<Map<String, String>>();
-      receivePort.listen((message) {
-        if (message is double) {
-          onProgress?.call(message * 0.7); // Audio files get 70% of progress
-        } else if (message is Map) {
-          receivePort.close();
-          completer.complete(Map<String, String>.from(message));
-        } else {
-          receivePort.close();
-          completer.completeError(message);
-        }
-      });
-
-      final audioResults = await completer.future;
-      coverResults.addAll(audioResults);
+      coverResults.addAll(await _rebuildCoversOnCore(
+        otherSongs,
+        coversDirPath: coversDir.path,
+        onProgress: (progress) => onProgress?.call(progress * 0.7),
+        force: force,
+      ));
     }
 
     // Process video files on main thread via FFmpeg (required for frame extraction)
@@ -1120,7 +900,6 @@ class ScannerService {
   }) async {
     final songs = await DatabaseService.instance.getSongs();
     final coversDir = await coversDirectory();
-    final updated = <Song>[];
     final total = songs.length;
     if (total == 0) return 0;
 
@@ -1133,121 +912,33 @@ class ScannerService {
       return 0;
     }
 
-    for (int i = 0; i < total; i++) {
-      final song = songs[i];
-      final coverPath = song.coverUrl;
-      if (coverPath != null && coverPath.isNotEmpty) {
-        final file = File(coverPath);
-        if (file.existsSync()) {
-          if (!p.basename(coverPath).startsWith('c_')) {
-            try {
-              final bytes = await file.readAsBytes();
-              if (bytes.isNotEmpty) {
-                final newPath = await CoverOptimizer.saveOptimizedCover(
-                  bytes,
-                  coversDir.path,
-                );
-                if (newPath != coverPath) {
-                  final updatedSong = song.copyWith(coverUrl: newPath);
-                  updated.add(updatedSong);
-                }
-              }
-            } catch (_) {}
-          }
-        }
+    final legacy = [
+      for (final song in songs)
+        if (song.coverUrl != null &&
+            song.coverUrl!.isNotEmpty &&
+            !p.basename(song.coverUrl!).startsWith('c_'))
+          song.coverUrl!,
+    ];
+
+    if (legacy.isNotEmpty) {
+      final compacted =
+          await RustLibraryTasks.compactCovers(coversDir.path, legacy);
+      onProgress?.call(1.0);
+      if (compacted.isEmpty) return 0;
+      final rewrites = <Song>[];
+      for (final song in songs) {
+        final cover = song.coverUrl;
+        final next = cover == null ? null : compacted[cover];
+        if (next != null) rewrites.add(song.copyWith(coverUrl: next));
       }
-      if (i % 20 == 0) {
-        onProgress?.call((i + 1) / total);
+      if (rewrites.isNotEmpty) {
+        await DatabaseService.instance.insertSongsBatch(rewrites);
       }
+      return rewrites.length;
     }
 
-    if (updated.isNotEmpty) {
-      await DatabaseService.instance.insertSongsBatch(updated);
-    }
     onProgress?.call(1.0);
-    return updated.length;
-  }
-
-  static Future<void> _isolateRebuildCovers(_RebuildParams params) async {
-    final coversDir = Directory(params.coversDirPath);
-    final folderCoverCache = <String, String?>{};
-    final coverResults = <String, String>{};
-
-    for (int i = 0; i < params.songs.length; i++) {
-      final song = params.songs[i];
-      final file = File(song.url);
-      String? resolvedCoverUrl;
-
-      if (await file.exists()) {
-        RandomAccessFile? lockHandle;
-        try {
-          lockHandle = await _acquireSharedLock(params.lockDirPath, file.path);
-
-          // Check if already exists - unless force is true
-          if (!params.force) {
-            for (final cachedPath
-                in coverCandidatePaths(coversDir.path, file.path)) {
-              final cachedFile = File(cachedPath);
-              if (await _isValidCoverFile(cachedFile)) {
-                resolvedCoverUrl = cachedFile.path;
-                break;
-              }
-            }
-          }
-
-          if (resolvedCoverUrl == null || params.force) {
-            if (!_isVideoFile(file.path)) {
-              try {
-                final metadata = amr.readMetadata(file, getImage: true);
-                if (metadata.pictures.isNotEmpty) {
-                  final cover =
-                      recoverEmbeddedCover(metadata.pictures.first.bytes);
-                  if (cover != null) {
-                    resolvedCoverUrl = await CoverOptimizer.saveOptimizedCover(
-                      cover.bytes,
-                      coversDir.path,
-                      fallbackExtension: cover.extension,
-                    );
-                  }
-                }
-              } catch (e) {
-                debugPrint('No embedded cover found for ${song.title}: $e');
-              }
-            }
-
-            // Folder cover before the manual byte scan — cheap exists()
-            // checks beat reading the whole audio file.
-            if (resolvedCoverUrl == null) {
-              final parentPath = p.dirname(file.path);
-              if (!folderCoverCache.containsKey(parentPath)) {
-                folderCoverCache[parentPath] =
-                    await _findCoverInFolder(parentPath);
-              }
-              resolvedCoverUrl = folderCoverCache[parentPath];
-            }
-
-            resolvedCoverUrl ??= await _tryManualCoverExtraction(
-                file, coversDir, p.basename(file.path));
-          }
-        } catch (e) {
-          debugPrint('Error rebuilding cover for ${song.title}: $e');
-        } finally {
-          await _releaseLock(lockHandle);
-        }
-
-        // Only a real resolution is reported. Staying silent for a song we
-        // couldn't extract from — and for every song whose file wasn't there to
-        // read — is what stops a rebuild from erasing covers it never examined.
-        if (resolvedCoverUrl != null) {
-          coverResults[song.url] = resolvedCoverUrl;
-        }
-      }
-
-      if (i % 10 == 0) {
-        params.sendPort.send((i + 1) / params.songs.length);
-      }
-    }
-    params.sendPort.send(coverResults);
+    return 0;
   }
 
   static Future<String?> _extractVideoThumbnailWithFallback({
@@ -1267,205 +958,41 @@ class ScannerService {
     return null;
   }
 
-  static Future<void> _isolateScan(_ScanParams params) async {
-    final coversDir = Directory(params.coversDirPath);
-
-    // Existing songs are looked up two ways on purpose. The path is the precise
-    // match, but the `song` table's primary key is the basename — so a file
-    // that merely moved between folders misses a path-only lookup, is treated
-    // as brand new, and then overwrites the row it should have matched. Falling
-    // back to the basename makes reconciliation agree with the write that
-    // follows it.
-    final Map<String, Song> existingByUrl = {};
-    final Map<String, Song> existingByFilename = {};
-    for (final song in params.existingSongs ?? const <Song>[]) {
-      existingByUrl[song.url] = song;
-      existingByFilename[song.filename] = song;
-    }
-
-    // Convert excluded folders to a set for faster lookup
-    final excludedSet = params.excludedFolders.toSet();
-
-    try {
-      final List<File> audioFiles = [];
-
-      // Scan all provided paths
-      for (final scanPath in params.paths) {
-        final dir = Directory(scanPath);
-        if (!await dir.exists()) {
-          // Report rather than silently yielding zero songs for this folder —
-          // the caller needs to tell "empty" apart from "couldn't look".
-          params.sendPort.send('unreachable:$scanPath');
-          continue;
+  /// Runs the library scan on the native core.
+  static Future<void> _startScan(_ScanParams params) async {
+    // Relay keeps the message contract the scan listeners already speak.
+    final relay = ReceivePort();
+    relay.listen((message) {
+      if (message is double || message is List<Song>) {
+        params.sendPort.send(message);
+      } else if (message is RustTaskDone) {
+        for (final root in message.unreachable) {
+          params.sendPort.send('unreachable:$root');
         }
-
-        try {
-          await for (final entity
-              in dir.list(recursive: true, followLinks: false)) {
-            if (entity is File) {
-              final path = entity.path;
-
-              // Check if file has supported extension
-              if (!MediaFormats.isSupportedPath(path)) {
-                continue;
-              }
-
-              // Skip video files if includeVideos is off
-              if (!params.includeVideos &&
-                  Song.videoExtensions
-                      .contains(p.extension(path).toLowerCase())) {
-                continue;
-              }
-
-              // Check if path is in excluded folder
-              bool isExcluded = false;
-              for (final excluded in excludedSet) {
-                if (p.isWithin(excluded, path) || p.equals(excluded, path)) {
-                  isExcluded = true;
-                  break;
-                }
-              }
-              if (isExcluded) continue;
-
-              audioFiles.add(entity);
-            }
-          }
-        } catch (e) {
-          debugPrint('Error scanning $scanPath: $e');
-          // A transient IO/permission error mid-listing is not "empty folder".
-          params.sendPort.send('unreachable:$scanPath');
+        if (message.unreadable > 0) {
+          params.sendPort.send('unreadable:${message.unreadable}');
         }
+        params.sendPort.send('done');
+        relay.close();
+      } else if (message is RustTaskError) {
+        params.sendPort.send('error: ${message.message}');
+        relay.close();
       }
+    });
 
-      final Map<String, String?> folderCoverCache = {};
-      final List<Song> songs = [];
-      int processedCount = 0;
-      int unreadableCount = 0;
-
-      for (int i = 0; i < audioFiles.length; i++) {
-        final file = audioFiles[i];
-        FileStat fileStat;
-        try {
-          fileStat = file.statSync();
-        } on FileSystemException catch (e) {
-          debugPrint('Scanner: cannot stat ${file.path}: $e');
-          unreadableCount++;
-          continue;
-        }
-        final currentMtime = fileStat.modified.millisecondsSinceEpoch / 1000.0;
-
-        // Skip files below minimum size
-        if (params.minimumFileSizeBytes > 0 &&
-            fileStat.size < params.minimumFileSizeBytes) {
-          if (i % 10 == 0) {
-            params.sendPort.send((i + 1) / audioFiles.length);
-          }
-          continue;
-        }
-
-        // Check if we can reuse existing song data
-        final existingSong = existingByUrl[file.path] ??
-            existingByFilename[p.basename(file.path)];
-        if (existingSong != null &&
-            existingSong.mtime != null &&
-            (existingSong.mtime! - currentMtime).abs() < 2.0) {
-          final updatedPlayCount = params.playCounts[existingSong.filename] ??
-              existingSong.playCount;
-          final createdEpochSec = existingSong.createdEpochSec ??
-              DateTime.now().millisecondsSinceEpoch / 1000.0;
-
-          songs.add(Song(
-            title: existingSong.title,
-            artist: existingSong.artist,
-            album: existingSong.album,
-            filename: existingSong.filename,
-            // The file we just walked to is where it is now; a row matched by
-            // basename may still carry the folder it used to be in.
-            url: file.path,
-            coverUrl: existingSong.coverUrl,
-            hasLyrics: existingSong.hasLyrics,
-            playCount: updatedPlayCount,
-            duration: existingSong.duration,
-            mtime: currentMtime,
-            createdEpochSec: createdEpochSec,
-            songDateEpochSec: existingSong.songDateEpochSec,
-          ));
-        } else if (params.fastMode) {
-          // Fast mode reads no metadata and extracts no art, so it has nothing
-          // better to offer than what a previous pass already found. Anything
-          // it doesn't carry forward here is simply lost — this branch also
-          // runs for songs that merely had their mtime nudged.
-          songs.add(Song(
-            title: existingSong?.title ?? p.basenameWithoutExtension(file.path),
-            artist: existingSong?.artist ?? 'Unknown Artist',
-            album: existingSong?.album ?? 'Unknown Album',
-            filename: p.basename(file.path),
-            url: file.path,
-            coverUrl: existingSong?.coverUrl,
-            hasLyrics: existingSong?.hasLyrics ?? false,
-            playCount: params.playCounts[p.basename(file.path)] ??
-                existingSong?.playCount ??
-                0,
-            duration: existingSong?.duration,
-            mtime: currentMtime,
-            createdEpochSec: existingSong?.createdEpochSec ??
-                DateTime.now().millisecondsSinceEpoch / 1000.0,
-            songDateEpochSec: existingSong?.songDateEpochSec,
-          ));
-        } else {
-          RandomAccessFile? lockHandle;
-          try {
-            lockHandle =
-                await _acquireSharedLock(params.lockDirPath, file.path);
-            final song = await _processSingleFile(
-                file, coversDir, folderCoverCache, params.playCounts,
-                mtime: currentMtime, existingSong: existingSong);
-            songs.add(song);
-          } finally {
-            await _releaseLock(lockHandle);
-          }
-          final lastSong = songs.isNotEmpty ? songs.last : null;
-          if (lastSong != null &&
-              lastSong.title == p.basenameWithoutExtension(file.path) &&
-              lastSong.artist == 'Unknown Artist' &&
-              lastSong.album == 'Unknown Album' &&
-              lastSong.coverUrl == null &&
-              lastSong.duration == null) {
-            unreadableCount++;
-          }
-        }
-
-        // Yield CPU every 20 files to avoid starving the system
-        processedCount++;
-        if (processedCount % 20 == 0) {
-          await Future.delayed(const Duration(milliseconds: 5));
-        }
-
-        if (i % 10 == 0) {
-          params.sendPort.send((i + 1) / audioFiles.length);
-        }
-
-        final targetChunkSize = params.fastMode ? 20 : 200;
-        if (songs.length >= targetChunkSize) {
-          params.sendPort.send(List<Song>.from(songs));
-          songs.clear();
-        }
-      }
-
-      // Send remaining songs
-      if (songs.isNotEmpty) {
-        params.sendPort.send(songs);
-      }
-
-      if (unreadableCount > 0) {
-        params.sendPort.send('unreadable:$unreadableCount');
-      }
-      // Signal completion
-      params.sendPort.send('done');
-    } catch (e) {
-      debugPrint('Error in scanner isolate: $e');
-      params.sendPort.send('error: $e');
-    }
+    await RustLibraryTasks.start(RustTaskRequest(
+      command: 'scan',
+      sendPort: relay.sendPort,
+      roots: params.paths,
+      excludedFolders: params.excludedFolders,
+      coversDir: params.coversDirPath,
+      includeVideos: params.includeVideos,
+      minFileSizeBytes: params.minimumFileSizeBytes,
+      fastMode: params.fastMode,
+      existingSongs: params.existingSongs ?? const [],
+      playCounts: params.playCounts,
+      batchSize: params.fastMode ? 20 : 200,
+    ));
   }
 
   /// Reads everything a single file says about itself, the way a scan would:
@@ -1809,27 +1336,131 @@ class ScannerService {
     return null;
   }
 
-  static Future<RandomAccessFile?> _acquireSharedLock(
-      String lockDirPath, String filePath) async {
-    try {
-      final hash = md5.convert(utf8.encode(filePath)).toString();
-      final lockFile = File(p.join(lockDirPath, '$hash.lock'));
-      final raf = await lockFile.open(mode: FileMode.append);
-      await raf.lock(FileLock.shared);
-      return raf;
-    } catch (e) {
-      debugPrint('Scanner: failed to acquire lock for $filePath: $e');
-      return null;
-    }
+  /// Native enrichment: parallel tag reads, DB writes on this isolate.
+  static Future<List<Song>> _enrichOnCore(
+    List<Song> songs, {
+    void Function(double progress)? onProgress,
+    void Function(List<Song> enrichedBatch)? onBatchEnriched,
+  }) async {
+    final relay = ReceivePort();
+    final messages = StreamController<dynamic>();
+    relay.listen(messages.add, onError: messages.addError);
+    final merged = <String, Song>{};
+
+    final worker = () async {
+      await for (final message in messages.stream) {
+        if (message is List<Song>) {
+          for (final song in message) {
+            merged[song.filename] = song;
+          }
+          if (message.isNotEmpty) {
+            await DatabaseService.instance.insertSongsBatch(message);
+            onBatchEnriched?.call(message);
+          }
+        } else if (message is double) {
+          onProgress?.call(message);
+        } else if (message is RustTaskDone || message is RustTaskError) {
+          if (message is RustTaskError) {
+            debugPrint('Rust enrich failed: ${message.message}');
+          }
+          await messages.close();
+          relay.close();
+        }
+      }
+    }();
+
+    await RustLibraryTasks.start(
+      RustTaskRequest(
+          command: 'enrich', sendPort: relay.sendPort, songs: songs),
+    );
+    await worker;
+    return [for (final song in songs) merged[song.filename] ?? song];
   }
 
-  static Future<void> _releaseLock(RandomAccessFile? raf) async {
-    if (raf == null) return;
-    try {
-      await raf.unlock();
-    } catch (_) {}
-    try {
-      await raf.close();
-    } catch (_) {}
+  /// Native cover sweep for songs that still have no art.
+  static Future<List<Song>> _extractCoversOnCore(
+    List<Song> songs, {
+    void Function(double progress)? onProgress,
+    void Function(List<Song> updatedSongs)? onBatchExtracted,
+  }) async {
+    final coversDir = await coversDirectory();
+    final relay = ReceivePort();
+    final messages = StreamController<dynamic>();
+    relay.listen(messages.add, onError: messages.addError);
+    final merged = <String, Song>{};
+
+    final worker = () async {
+      await for (final message in messages.stream) {
+        if (message is List<Song>) {
+          for (final song in message) {
+            merged[song.filename] = song;
+            final cover = song.coverUrl;
+            if (cover != null) {
+              unawaited(CoverRefreshService.evictCoverFromImageCache(cover));
+            }
+          }
+          if (message.isNotEmpty) {
+            await DatabaseService.instance.insertSongsBatch(message);
+            onBatchExtracted?.call(message);
+          }
+        } else if (message is double) {
+          onProgress?.call(message);
+        } else if (message is RustTaskDone || message is RustTaskError) {
+          if (message is RustTaskError) {
+            debugPrint('Rust cover sweep failed: ${message.message}');
+          }
+          await messages.close();
+          relay.close();
+        }
+      }
+    }();
+
+    await RustLibraryTasks.start(RustTaskRequest(
+      command: 'extract_covers',
+      sendPort: relay.sendPort,
+      songs: songs,
+      coversDir: coversDir.path,
+    ));
+    await worker;
+    return [for (final song in songs) merged[song.filename] ?? song];
+  }
+
+  /// Native cover rebuild. Only resolved covers are reported.
+  static Future<Map<String, String>> _rebuildCoversOnCore(
+    List<Song> songs, {
+    required String coversDirPath,
+    void Function(double progress)? onProgress,
+    required bool force,
+  }) async {
+    final relay = ReceivePort();
+    final messages = StreamController<dynamic>();
+    relay.listen(messages.add, onError: messages.addError);
+    final results = <String, String>{};
+
+    final worker = () async {
+      await for (final message in messages.stream) {
+        if (message is Map<String, String>) {
+          results.addAll(message);
+        } else if (message is double) {
+          onProgress?.call(message);
+        } else if (message is RustTaskDone || message is RustTaskError) {
+          if (message is RustTaskError) {
+            debugPrint('Rust cover rebuild failed: ${message.message}');
+          }
+          await messages.close();
+          relay.close();
+        }
+      }
+    }();
+
+    await RustLibraryTasks.start(RustTaskRequest(
+      command: 'rebuild_covers',
+      sendPort: relay.sendPort,
+      songs: songs,
+      coversDir: coversDirPath,
+      force: force,
+    ));
+    await worker;
+    return results;
   }
 }
