@@ -328,33 +328,32 @@ class _CoverStage extends ConsumerWidget {
         child: ClipRRect(
           borderRadius: PlayerTokens.brLg,
           // The panel carries the artwork while the shuttle owns it, and fades
-          // this one back in on the landed rect. Rebuilding on the panel's
-          // progress instead would rasterise this cover on every frame of the
-          // flight, next to the shuttle already drawing the same image; the
-          // opacity is the only thing that changes, and it notifies on its own.
-          child: Builder(
-            builder: (context) {
-              final double coverOpacity =
-                  PlayerCoverOpacity.coverOpacityOf(context);
-              return Opacity(
-                opacity: coverOpacity,
-                child: AlbumArtImage(
-                  url: song.coverUrl ?? '',
-                  filename: song.filename,
-                  cacheVersion: song.mtime,
-                  width: size,
-                  height: size,
-                  fadeDuration: Duration.zero,
-                  filterQuality: coverOpacity < 0.99
-                      ? FilterQuality.low
-                      : FilterQuality.high,
-                  // Decoded at the size it is actually drawn at.
-                  memCacheWidth:
-                      (size * MediaQuery.devicePixelRatioOf(context)).round(),
-                  fit: coverFitFor(coverSizing),
-                ),
-              );
-            },
+          // this one back in on the landed rect. The image is its own cached
+          // layer and only the opacity above it changes, so a frame of the
+          // flight blends one texture instead of repainting the screen behind
+          // it. The child is hoisted for the same reason.
+          child: ValueListenableBuilder<double>(
+            valueListenable: PlayerCoverOpacity.notifierOf(context),
+            child: RepaintBoundary(
+              child: AlbumArtImage(
+                url: song.coverUrl ?? '',
+                filename: song.filename,
+                cacheVersion: song.mtime,
+                width: size,
+                height: size,
+                fadeDuration: Duration.zero,
+                filterQuality: FilterQuality.high,
+                // Decoded at the size it is actually drawn at.
+                memCacheWidth:
+                    (size * MediaQuery.devicePixelRatioOf(context)).round(),
+                fit: coverFitFor(coverSizing),
+              ),
+            ),
+            // The boundary keeps the per-frame fade inside the cover's own
+            // box instead of dirtying the whole player's paint.
+            builder: (context, coverOpacity, child) => RepaintBoundary(
+              child: Opacity(opacity: coverOpacity, child: child),
+            ),
           ),
         ),
       ),

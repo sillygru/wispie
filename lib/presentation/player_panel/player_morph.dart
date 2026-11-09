@@ -82,9 +82,13 @@ class PlayerMorphAnchorState extends State<PlayerMorphAnchor> {
         final double faded = PlayerMorph.flying.value.contains(widget.slot)
             ? PlayerMorph.strength.value.clamp(0.0, 1.0)
             : 0.0;
-        return IgnorePointer(
-          ignoring: faded > 0.5,
-          child: Opacity(opacity: 1 - faded, child: child),
+        // The fade changes every frame of a flight; its own boundary keeps
+        // that repaint on this glyph instead of the whole player page.
+        return RepaintBoundary(
+          child: IgnorePointer(
+            ignoring: faded > 0.5,
+            child: Opacity(opacity: 1 - faded, child: child),
+          ),
         );
       },
     );

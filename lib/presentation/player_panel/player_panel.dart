@@ -156,10 +156,12 @@ class PlayerPanelController {
   /// down rather than the controller reaching up for it.
   bool Function()? prefersInstant;
 
+  bool _disposed = false;
+
   void open({double velocity = 0}) {
     PlayerPanel.openState.value = true;
     DisplayRefreshService.instance.boost120();
-    _settleTo(1, velocity: velocity, closing: false);
+    _settleTo(1, velocity: velocity);
   }
 
   void close({double velocity = 0}) {
@@ -167,45 +169,85 @@ class PlayerPanelController {
     PlayerPanel.openState.value = false;
     onClosing?.call();
     DisplayRefreshService.instance.boost120();
-    _settleTo(0, velocity: velocity, closing: true);
+    unawaited(_settleClosed(velocity));
   }
 
-  /// The one way the panel comes to rest. The simulation starts from the frame
-  /// that is drawn and the speed the finger left behind, so a throw overshoots
-  /// and a nudge does not, and the spring that catches a grab mid-flight is the
-  /// same object rather than a new animation.
-  void _settleTo(
-    double target, {
-    required double velocity,
-    required bool closing,
-  }) {
+  /// A close is two springs, not one. The drop is aimed past the bar so the
+  /// surface dips below the dock, then it rides back up to rest. Aiming straight
+  /// at zero left a landing with no overshoot left in it, which read as the
+  /// sheet stopping dead instead of the little bounce home.
+  Future<void> _settleClosed(double velocity) async {
+    if (prefersInstant?.call() ?? false) {
+      snap.jumpTo(0);
+      onSettled?.call();
+      return;
+    }
+    if (velocity.abs() < PlayerTokens.panelThrowSpeed) {
+      // A gentle release keeps its own pace: it eases home over a duration
+      // taken from the distance it still has to cover. A spring pulls away
+      // from rest at an acceleration its stiffness sets, and that is what read
+      // as a snap no matter how slowly the finger had been moving.
+      snap.snapTo(
+        0,
+        duration: PlayerTokens.panelReleaseDuration(value.abs()),
+        curve: PlayerTokens.cStandard,
+        onSettled: () => _pinRest(0),
+      );
+      return;
+    }
+    await snap.drive(
+      CrossingSimulation(
+        PlayerTokens.panelDropSpring(velocity),
+        value,
+        -PlayerTokens.panelCloseDip,
+        velocity,
+      ),
+    );
+    if (_disposed || _dragging) return;
+    // A grab or a re-open replaces the move; its settle owns the surface now.
+    snap.springTo(
+      0,
+      spring: PlayerTokens.panelHomeSpring,
+      velocity: 0,
+      onSettled: () => _pinRest(0),
+    );
+  }
+
+  /// The way open. The simulation starts from the frame that is drawn and the
+  /// speed the finger left behind, so a throw overshoots and a nudge does not,
+  /// and the spring that catches a grab mid-flight is the same object rather
+  /// than a new animation.
+  void _settleTo(double target, {required double velocity}) {
     if (prefersInstant?.call() ?? false) {
       snap.jumpTo(target);
       onSettled?.call();
       return;
     }
-    // A close carrying real speed gets the throw spring: replaying the soft home
-    // spring made a hard flick finish as slowly as a nudge, which is the lag the
-    // finger reads as the surface not following it.
-    final bool thrown =
-        closing && velocity.abs() >= PlayerTokens.panelThrowSpeed;
+    if (velocity.abs() < PlayerTokens.panelThrowSpeed) {
+      // Same rule as the close: a gentle release eases instead of being pulled.
+      snap.snapTo(
+        target,
+        duration: PlayerTokens.panelReleaseDuration((target - value).abs()),
+        curve: PlayerTokens.cStandard,
+        onSettled: () => _pinRest(target),
+      );
+      return;
+    }
     snap.springTo(
       target,
-      spring: closing
-          ? (thrown
-              ? PlayerTokens.panelCloseThrowSpring
-              : PlayerTokens.panelCloseSpring)
-          : PlayerTokens.panelOpenSpring,
+      spring: PlayerTokens.panelOpenSpring,
       velocity: velocity,
-      onSettled: () {
-        // A spring stops once it is close enough, which can leave something
-        // like 0.0009 on the value. The chrome outside the panel reads that as
-        // "still visible", so the closed player would stay mounted and ticking
-        // behind the screen. Pin the rest state exactly.
-        if (progress.value != target) progress.value = target;
-        onSettled?.call();
-      },
+      onSettled: () => _pinRest(target),
     );
+  }
+
+  /// A spring stops once it is close enough, which can leave something like
+  /// 0.0009 on the value. The chrome outside the panel reads that as "still
+  /// visible", so the closed player would stay mounted and ticking behind the
+  /// screen. Pin the rest state exactly.
+  void _pinRest(double target) {
+    if (progress.value != target) progress.value = target;
+    onSettled?.call();
   }
 
   void jumpOpen() {
@@ -292,6 +334,7 @@ class PlayerPanelController {
   }
 
   void dispose() {
+    _disposed = true;
     progress.dispose();
   }
 }
@@ -306,12 +349,15 @@ class PlayerCoverOpacity extends InheritedNotifier<ValueNotifier<double>> {
     required super.child,
   }) : super(notifier: opacity);
 
-  static double coverOpacityOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<PlayerCoverOpacity>()
-          ?.notifier
-          ?.value ??
-      1;
+  /// A pane drawn outside the panel keeps its artwork at full strength.
+  static final ValueNotifier<double> _visible = ValueNotifier<double>(1);
+
+  /// Read without depending on it: the cover listens to the notifier itself, so
+  /// a frame of the flight repaints one cached texture instead of every widget
+  /// that happens to sit under the panel.
+  static ValueNotifier<double> notifierOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<PlayerCoverOpacity>()?.notifier ??
+      _visible;
 }
 
 /// Boxes the panel measures to fly the cover. Widgets draw with these keys;
@@ -346,6 +392,10 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   /// Live only inside the window after a close lands, while an upward swipe can
   /// still pick the surface back up.
   Timer? _graceTimer;
+
+  /// A pointer that is on the screen keeps the catch window open, even before
+  /// the drag crosses its slop.
+  bool _pointerDown = false;
 
   bool get _inGrace => _graceTimer != null;
 
@@ -409,7 +459,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
       if (!mounted) return;
       // A finger that picked the surface up owns it; the window closes once the
       // gesture is over, not under it.
-      if (_panel.isDragging) {
+      if (_panel.isDragging || _pointerDown) {
         _startGrace();
         return;
       }
@@ -421,6 +471,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   void _endGrace() {
     if (_graceTimer == null) return;
     _graceTimer?.cancel();
+    _pointerDown = false;
     setState(() => _graceTimer = null);
   }
 
@@ -586,7 +637,6 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           key: ValueKey<int>(_pane.index * 2 + (_queueHistory ? 1 : 0)),
           initialPane: _pane,
           queueShowsHistory: _queueHistory,
-          transitionAnimation: _panel.progress,
         ),
       ),
     );
@@ -762,15 +812,25 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
                       right: 0,
                       bottom: 0,
                       height: size.height * PlayerTokens.panelGraceZone,
-                      child: IgnorePointer(
-                        ignoring: _panel.isDragging,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          dragStartBehavior: DragStartBehavior.down,
-                          onVerticalDragStart: _onDismissDragStart,
-                          onVerticalDragUpdate: _onDismissDragUpdate,
-                          onVerticalDragEnd: _onDismissDragEnd,
-                          onVerticalDragCancel: _onDismissDragCancel,
+                      // The listener sits outside the drag surface so a press
+                      // that lands before the slop resolves still holds the
+                      // window open, instead of losing the gesture when it
+                      // expires under the finger.
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: (_) => _pointerDown = true,
+                        onPointerUp: (_) => _pointerDown = false,
+                        onPointerCancel: (_) => _pointerDown = false,
+                        child: IgnorePointer(
+                          ignoring: _panel.isDragging,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            dragStartBehavior: DragStartBehavior.down,
+                            onVerticalDragStart: _onDismissDragStart,
+                            onVerticalDragUpdate: _onDismissDragUpdate,
+                            onVerticalDragEnd: _onDismissDragEnd,
+                            onVerticalDragCancel: _onDismissDragCancel,
+                          ),
                         ),
                       ),
                     ),
@@ -778,13 +838,15 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
                   if (shuttle != null && song != null && shuttleSize != null)
                     Positioned.fromRect(
                       rect: shuttle,
-                      child: Opacity(
-                        opacity: strength,
-                        child: IgnorePointer(
-                          child: _CoverShuttle(
-                            song: song,
-                            progress: clamped,
-                            settled: shuttleSize,
+                      child: RepaintBoundary(
+                        child: Opacity(
+                          opacity: strength,
+                          child: IgnorePointer(
+                            child: _CoverShuttle(
+                              song: song,
+                              progress: clamped,
+                              settled: shuttleSize,
+                            ),
                           ),
                         ),
                       ),
@@ -878,9 +940,9 @@ class _CoverShuttle extends StatelessWidget {
               height: settled.height,
               fit: BoxFit.cover,
               fadeDuration: Duration.zero,
-              // Matches the pane's settled quality, so the hand-off does not
-              // sharpen on one frame either.
-              filterQuality: FilterQuality.high,
+              // The flying copy is scaled every frame, so it is resampled at
+              // medium quality; it lands on the pane's own crisp cover.
+              filterQuality: FilterQuality.medium,
             ),
           ),
         ),

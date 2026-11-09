@@ -52,7 +52,6 @@ enum PlayerPane { lyrics, player, queue }
 /// they no longer own the pieces that would let them.
 class UnifiedPlayerScreen extends ConsumerStatefulWidget {
   final PlayerPane initialPane;
-  final Animation<double>? transitionAnimation;
 
   /// Opens the Queue pane directly on its History segment.
   final bool queueShowsHistory;
@@ -61,7 +60,6 @@ class UnifiedPlayerScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialPane = PlayerPane.player,
     this.queueShowsHistory = false,
-    this.transitionAnimation,
   });
 
   @override
@@ -444,7 +442,6 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
       return FullBleedPlayerScreen(
         initialPane: widget.initialPane,
         queueShowsHistory: widget.queueShowsHistory,
-        transitionAnimation: widget.transitionAnimation,
       );
     }
     final themeState = ref.watch(themeProvider);

@@ -38,6 +38,40 @@ class CurveSimulation extends Simulation {
   bool isDone(double time) => time >= _seconds;
 }
 
+/// A spring that ends the moment it crosses [target] instead of creeping
+/// through its tail. For moves aimed past a rest point: the dip has to bottom
+/// out under the release momentum, not hover a fifth of a percent away and then
+/// start the bounce half a second late.
+class CrossingSimulation extends Simulation {
+  CrossingSimulation(
+    SpringDescription spring,
+    double from,
+    this.target,
+    double velocity,
+  ) : _spring = SpringSimulation(
+          spring,
+          from,
+          target,
+          velocity,
+          tolerance: const Tolerance(distance: 0.0005, velocity: 0.01),
+        );
+
+  final double target;
+  final SpringSimulation _spring;
+
+  @override
+  double x(double time) => _spring.x(time);
+
+  @override
+  double dx(double time) => _spring.dx(time);
+
+  @override
+  bool isDone(double time) {
+    final double x = _spring.x(time);
+    return _spring.isDone(time) || (target < 0 ? x <= target : x >= target);
+  }
+}
+
 /// A no-bounce landing that ends the instant it reaches the target, instead of
 /// creeping through the spring's long tail.
 ///

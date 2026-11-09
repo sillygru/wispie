@@ -43,16 +43,32 @@ abstract final class MotionSprings {
     damping: 32,
   );
 
-  /// The way home. Softer than the open, so a slow release is a move rather
-  /// than a cut and there is time to catch it; lightly damped, so it still dips.
-  static final SpringDescription panelClose =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 205, ratio: 0.86);
+  /// The way home. Firm enough to leave at the speed the finger gave it: the
+  /// release momentum seeds the simulation, so a flick and a nudge are the same
+  /// spring entered at different speeds.
+  static const SpringDescription panelClose = SpringDescription(
+    mass: 1,
+    stiffness: 420,
+    damping: 34,
+  );
 
-  /// The way home after a throw. Stiff enough that the surface leaves at the
-  /// speed the finger gave it: the soft spring above made every flick finish at
-  /// the same crawl, which reads as the surface not following the finger.
-  static final SpringDescription panelCloseThrow =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 900, ratio: 0.94);
+  /// The way down, paced by the finger that let go. A fixed stiffness made a
+  /// slow drag and a flick finish on the spring's own schedule, so a gentle
+  /// release still snapped; scaling the stiffness with the release speed keeps
+  /// a gentle drag gentle and lets a flick stay quick.
+  static SpringDescription panelDropAt(double speed) {
+    final double t = (speed.abs() / 1.2).clamp(0.0, 1.0);
+    return SpringDescription.withDampingRatio(
+      mass: 1,
+      stiffness: 130 + (panelClose.stiffness - 130) * t,
+      ratio: 0.95,
+    );
+  }
+
+  /// Out of the dip and back up to the bar: critically damped, so the dip is a
+  /// soft landing instead of a bounce past the seat.
+  static final SpringDescription panelHome =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 260, ratio: 1);
 
   /// A panel arriving where it still has room past its seat — the slide-in
   /// drawer, which is allowed to swell beyond its resting width. Lightly damped

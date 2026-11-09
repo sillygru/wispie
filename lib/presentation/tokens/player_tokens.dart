@@ -134,7 +134,11 @@ class PlayerTokens {
   /// simulation, and a grab mid-flight retargets the same motion. A duration
   /// here would be exactly the preset animation the panel must not be.
   static const SpringDescription panelOpenSpring = MotionSprings.panel;
-  static final SpringDescription panelCloseSpring = MotionSprings.panelClose;
+
+  /// The drop, paced by how fast the finger was moving when it let go: a slow
+  /// drag keeps its slow travel instead of snapping on the spring's schedule.
+  static SpringDescription panelDropSpring(double speed) =>
+      MotionSprings.panelDropAt(speed);
 
   /// Headroom past the bar and past full screen, so the springs can overshoot
   /// and the dock can dip instead of the surface stopping dead.
@@ -151,26 +155,38 @@ class PlayerTokens {
   /// flattened into the same close as a nudge.
   static const double panelMomentumLimit = 3.0;
 
-  /// Release speed at which a close reads as a throw and gets the stiff spring,
-  /// in progress per second. Matches the fling ratio the release decision uses,
-  /// so every release the panel treats as a flick also leaves like one.
+  /// The second half of a close: back up out of the dip to the bar.
+  static final SpringDescription panelHomeSpring = MotionSprings.panelHome;
+
+  /// How far past the bar a thrown close is aimed. Only a flick takes the dip:
+  /// a gentle release lands straight on the bar, with no bounce.
+  static const double panelCloseDip = 0.05;
+
+  /// Release speed, in progress per second, at which a release counts as a
+  /// throw: it keeps its momentum, takes the dip and lands on a spring. Below
+  /// it the surface eases home at the pace the finger left it.
   static const double panelThrowSpeed = 0.6;
 
-  /// The close that keeps up with a throw, instead of the soft way home.
-  static final SpringDescription panelCloseThrowSpring =
-      MotionSprings.panelCloseThrow;
+  /// How long a release that was not a flick takes, from the distance still to
+  /// cover. A spring pulls away from rest at a speed its stiffness decides,
+  /// which is what made a gentle let-go snap; a timed ease starts and ends at
+  /// zero speed, so the surface leaves at the speed of the finger.
+  static Duration panelReleaseDuration(double distance) =>
+      Duration(milliseconds: (170 + 300 * distance.clamp(0.0, 1.0)).round());
 
   /// How long a panel that landed closed stays catchable, so a swipe down
-  /// followed straight away by a swipe back up re-opens it. The window used to
-  /// be the close itself: a fifth of a second on a hard flick.
-  static const Duration panelCloseGrace = Duration(milliseconds: 300);
+  /// followed straight away by a swipe back up re-opens it. Measured from the
+  /// end of the settle, so the window is still open once the eye says the
+  /// animation is over.
+  static const Duration panelCloseGrace = Duration(milliseconds: 700);
 
   /// Share of the screen height, measured from the bottom, where the grace
-  /// window listens. Higher up is a scroll on the screen underneath.
-  static const double panelGraceZone = 0.3;
+  /// window listens. An upward swipe starts where the thumb ended the close, so
+  /// the window has to reach well past the dock.
+  static const double panelGraceZone = 0.65;
 
   /// How far the dock sinks per unit of close overshoot.
-  static const double dockDip = 46;
+  static const double dockDip = 70;
 
   /// Artwork slot inside the dock bar and the collapsed ball, so the cover
   /// flight can start on exactly the pixels the bar draws.

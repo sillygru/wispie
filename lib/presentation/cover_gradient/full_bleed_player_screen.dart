@@ -58,13 +58,11 @@ const bool kFullBleedParticlesEnabled = true;
 class FullBleedPlayerScreen extends ConsumerStatefulWidget {
   final PlayerPane initialPane;
   final bool queueShowsHistory;
-  final Animation<double>? transitionAnimation;
 
   const FullBleedPlayerScreen({
     super.key,
     this.initialPane = PlayerPane.player,
     this.queueShowsHistory = false,
-    this.transitionAnimation,
   });
 
   @override
@@ -552,7 +550,6 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                           paneVisible: _nowPlayingVisible,
                           audioManager: _manager,
                           pagePosition: _pagePosition,
-                          transitionAnimation: widget.transitionAnimation,
                         ),
                       ),
                     ),
@@ -661,7 +658,6 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
                             coverKey: _coverKey,
                             paneVisible: _nowPlayingVisible,
                             audioManager: _manager,
-                            transitionAnimation: widget.transitionAnimation,
                           ),
                         ),
                       ),
@@ -845,7 +841,6 @@ class _FullBleedPlayerPane extends ConsumerWidget {
   final GlobalKey coverKey;
   final ValueListenable<bool> paneVisible;
   final AudioPlayerManager audioManager;
-  final Animation<double>? transitionAnimation;
 
   /// Page position in pane units (1.0 = this pane). When given, the cover
   /// dissolves into the shell's blurred backdrop while swiping away instead
@@ -859,7 +854,6 @@ class _FullBleedPlayerPane extends ConsumerWidget {
     required this.coverKey,
     required this.paneVisible,
     required this.audioManager,
-    this.transitionAnimation,
     this.pagePosition,
   });
 
@@ -1032,40 +1026,34 @@ class _FullBleedPlayerPane extends ConsumerWidget {
         // behind shows through with no edge to color-match.
         // The panel flies the artwork in from the dock's bar, so this one is
         // hidden for the duration of that flight rather than flown itself.
-        final Widget art = AnimatedBuilder(
-          animation: transitionAnimation ?? kAlwaysCompleteAnimation,
-          builder: (context, child) => Opacity(
-            opacity: PlayerCoverOpacity.coverOpacityOf(context),
-            child: child,
-          ),
-          child: Container(
-            key: current ? coverKey : null,
-            width: double.infinity,
-            height: height,
-            color: Colors.black,
-            child: AnimatedBuilder(
-              animation: transitionAnimation ?? kAlwaysCompleteAnimation,
-              builder: (context, _) {
-                final animation = transitionAnimation;
-                final moving = animation != null &&
-                    animation.value > 0 &&
-                    animation.value < 1;
-                return AlbumArtImage(
-                  url: song.coverUrl ?? '',
-                  filename: song.filename,
-                  cacheVersion: song.mtime,
-                  width: MediaQuery.sizeOf(context).width,
-                  height: height,
-                  fadeDuration: Duration.zero,
-                  filterQuality:
-                      moving ? FilterQuality.low : FilterQuality.high,
-                  memCacheWidth: (MediaQuery.sizeOf(context).width *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round(),
-                  fit: BoxFit.cover,
-                );
-              },
+        // The artwork is its own cached layer and only the opacity above it
+        // changes during the flight, so the fade blends one texture instead of
+        // rebuilding the image and re-running its shader mask each frame.
+        final Widget art = ValueListenableBuilder<double>(
+          valueListenable: PlayerCoverOpacity.notifierOf(context),
+          child: RepaintBoundary(
+            child: Container(
+              key: current ? coverKey : null,
+              width: double.infinity,
+              height: height,
+              color: Colors.black,
+              child: AlbumArtImage(
+                url: song.coverUrl ?? '',
+                filename: song.filename,
+                cacheVersion: song.mtime,
+                width: MediaQuery.sizeOf(context).width,
+                height: height,
+                fadeDuration: Duration.zero,
+                filterQuality: FilterQuality.high,
+                memCacheWidth: (MediaQuery.sizeOf(context).width *
+                        MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+                fit: BoxFit.cover,
+              ),
             ),
+          ),
+          builder: (context, coverOpacity, child) => RepaintBoundary(
+            child: Opacity(opacity: coverOpacity, child: child),
           ),
         );
         return SizedBox(
@@ -1276,32 +1264,33 @@ class _LyricsBackdrop extends StatelessWidget {
     return IgnorePointer(
       child: ValueListenableBuilder<double>(
         valueListenable: position,
-        builder: (context, pos, _) {
-          final double opacity = (1.0 - pos).clamp(0.0, 1.0);
-          // Stays mounted while hidden so the blurred file is generated ahead
-          // of the first swipe; until it exists only an 80px fallback shows.
-          return Opacity(
-            opacity: Curves.easeOut.transform(opacity),
-            child: SmoothColorBuilder(
-              targetColor: accent,
-              builder: (context, color) => ValueListenableBuilder<bool>(
-                valueListenable: playing,
-                builder: (context, isPlaying, _) => BlurredBackground(
-                  url: song.coverUrl ?? '',
-                  filename: song.filename,
-                  slowSpin: isPlaying && allowSpin && opacity > 0,
-                  gradientColors: [
-                    Color.alphaBlend(
-                      color.withValues(alpha: 0.18),
-                      Colors.black.withValues(alpha: 0.68),
-                    ),
-                    Colors.black.withValues(alpha: 0.94),
-                  ],
+        // The blur stack is the expensive half and nothing in it changes while
+        // a pane moves; only the fade does, and its own boundary keeps that
+        // repaint off the rest of the screen.
+        child: ValueListenableBuilder<bool>(
+          valueListenable: playing,
+          builder: (context, isPlaying, _) => SmoothColorBuilder(
+            targetColor: accent,
+            builder: (context, color) => BlurredBackground(
+              url: song.coverUrl ?? '',
+              filename: song.filename,
+              slowSpin: isPlaying && allowSpin,
+              gradientColors: [
+                Color.alphaBlend(
+                  color.withValues(alpha: 0.18),
+                  Colors.black.withValues(alpha: 0.68),
                 ),
-              ),
+                Colors.black.withValues(alpha: 0.94),
+              ],
             ),
-          );
-        },
+          ),
+        ),
+        builder: (context, pos, child) => RepaintBoundary(
+          child: Opacity(
+            opacity: Curves.easeOut.transform((1.0 - pos).clamp(0.0, 1.0)),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -1337,7 +1326,10 @@ class _PaneTransition extends StatelessWidget {
             translation: Offset(signed * 0.2, 0),
             child: Transform.scale(
               scale: 1.0 - 0.04 * Curves.easeOut.transform(d),
-              child: child,
+              // The pane rasterises once and the switch only transforms that
+              // texture; without the boundary the fade and the recede repainted
+              // the whole page on every frame of the move.
+              child: RepaintBoundary(child: child),
             ),
           ),
         );
