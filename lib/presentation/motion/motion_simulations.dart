@@ -1,6 +1,7 @@
 import 'package:flutter/animation.dart';
 import 'package:flutter/physics.dart';
 
+import '../../domain/services/panel_release.dart';
 import 'motion_springs.dart';
 
 /// Plays a fixed [curve] over [duration] as a [Simulation].
@@ -38,38 +39,20 @@ class CurveSimulation extends Simulation {
   bool isDone(double time) => time >= _seconds;
 }
 
-/// A spring that ends the moment it crosses [target] instead of creeping
-/// through its tail. For moves aimed past a rest point: the dip has to bottom
-/// out under the release momentum, not hover a fifth of a percent away and then
-/// start the bounce half a second late.
-class CrossingSimulation extends Simulation {
-  CrossingSimulation(
-    SpringDescription spring,
-    double from,
-    this.target,
-    double velocity,
-  ) : _spring = SpringSimulation(
-          spring,
-          from,
-          target,
-          velocity,
-          tolerance: const Tolerance(distance: 0.0005, velocity: 0.01),
-        );
+/// Runs the player's release model on Flutter's animation clock.
+class PanelSpringSimulation extends Simulation {
+  PanelSpringSimulation(this.spring);
 
-  final double target;
-  final SpringSimulation _spring;
+  final PanelSpring spring;
 
   @override
-  double x(double time) => _spring.x(time);
+  double x(double time) => spring.positionAt(time);
 
   @override
-  double dx(double time) => _spring.dx(time);
+  double dx(double time) => spring.velocityAt(time);
 
   @override
-  bool isDone(double time) {
-    final double x = _spring.x(time);
-    return _spring.isDone(time) || (target < 0 ? x <= target : x >= target);
-  }
+  bool isDone(double time) => spring.isDone(time);
 }
 
 /// A no-bounce landing that ends the instant it reaches the target, instead of

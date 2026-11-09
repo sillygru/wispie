@@ -46,13 +46,13 @@ class FloatingDock extends StatefulWidget {
 
   static const double pillHeight = 60;
 
-  static const double miniHeight = 64;
+  static const double miniHeight = PlayerTokens.dockBarHeight;
 
   /// Where the compact bar draws its artwork, so the travelling cover can
   /// start exactly on top of it.
-  static const double barArtInset = 10;
-  static const double barArtSize = 44;
-  static const double ballArtInset = 4;
+  static const double barArtInset = PlayerTokens.dockArtInset;
+  static const double barArtSize = PlayerTokens.dockArtSize;
+  static const double ballArtInset = PlayerTokens.dockBallInset;
 
   /// Scroll distance that commits the morph. Scrolling is measured first and the
   /// dock only moves once this much travel has built up in one direction, then
@@ -306,9 +306,7 @@ class _DockBody extends ConsumerWidget {
                       child: ValueListenableBuilder<double>(
                         valueListenable: PlayerPanel.progress,
                         builder: (context, panelValue, child) {
-                          // Below zero the panel has overshot its way home, so
-                          // the bar takes the hit and sinks with it instead of
-                          // sitting still while the artwork lands on it.
+                          // Let the dock give when the finger pulls past its seat.
                           final double dip = panelValue < 0
                               ? -panelValue * PlayerTokens.dockDip
                               : 0.0;
@@ -325,8 +323,6 @@ class _DockBody extends ConsumerWidget {
                         },
                         child: PlayerSheetOrigin(
                           radius: radius,
-                          artInset: PlayerTokens.dockArtInset,
-                          artSize: PlayerTokens.dockArtSize,
                           child: _MorphingMini(
                             song: song,
                             collapse: c,
@@ -540,6 +536,7 @@ class _MorphingMini extends ConsumerWidget {
     // make sense on the ball (progress ring, bars, spin) come up here rather
     // than appearing on the bar and travelling with it.
     final double ballOpacity = ((collapse - 0.7) / 0.3).clamp(0.0, 1.0);
+    final bool barInteractive = collapse <= 0.05;
     final BorderRadius br = BorderRadius.circular(radius);
 
     return LayoutBuilder(
@@ -568,7 +565,7 @@ class _MorphingMini extends ConsumerWidget {
             PlayerTokens.rSm + (circleRadius - PlayerTokens.rSm) * t;
 
         return Pressable(
-          onTap: collapse > 0.5 ? PlayerPanel.open : null,
+          onTap: barInteractive ? null : PlayerPanel.open,
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: br,
@@ -583,7 +580,7 @@ class _MorphingMini extends ConsumerWidget {
                   children: [
                     if (barOpacity > 0)
                       IgnorePointer(
-                        ignoring: collapse > 0.05,
+                        ignoring: !barInteractive,
                         child: Opacity(
                           opacity: barOpacity,
                           child: OverflowBox(
@@ -610,8 +607,9 @@ class _MorphingMini extends ConsumerWidget {
                           builder: (context, playing, _) => Opacity(
                             // Paused reads as a dimmed cover, not a new icon.
                             opacity: playing || collapse < 0.7 ? 1 : 0.55,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(artRadius),
+                            child: PlayerCoverAnchor(
+                              key: PlayerCoverAnchor.barKey,
+                              radius: artRadius,
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
@@ -803,18 +801,13 @@ class _DockMiniBarState extends ConsumerState<_DockMiniBar>
                     child: Row(
                       children: [
                         const SizedBox(width: inset),
-                        // Hide under the panel's travelling cover so close does
-                        // not land one image on top of another in the same slot.
-                        ValueListenableBuilder<double>(
-                          valueListenable: PlayerMorph.strength,
-                          builder: (context, strength, child) {
-                            final double visible = widget.coverVisible
-                                ? (1 - strength).clamp(0.0, 1.0)
-                                : 0.0;
-                            return Opacity(opacity: visible, child: child);
-                          },
-                          child: ClipRRect(
-                            borderRadius: AppTokens.brSm,
+                        Opacity(
+                          opacity: widget.coverVisible ? 1 : 0,
+                          child: PlayerCoverAnchor(
+                            key: widget.coverVisible
+                                ? PlayerCoverAnchor.barKey
+                                : null,
+                            radius: AppTokens.rSm,
                             child: SizedBox(
                               width: art,
                               height: art,

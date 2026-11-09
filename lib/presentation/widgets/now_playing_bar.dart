@@ -372,48 +372,42 @@ class _NowPlayingContent extends ConsumerWidget {
                         audioManager: ref.read(audioPlayerManagerProvider),
                         travel: 0.6,
                         fade: 1,
-                        builder: (context, m, _) => Row(
+                        builder: (context, m, current) => Row(
                           children: [
                             SizedBox(
                               width: imageSize,
                               height: imageSize,
-                              child: ValueListenableBuilder<double>(
-                                valueListenable: PlayerMorph.strength,
-                                builder: (context, strength, child) => Opacity(
-                                  opacity: (1 - strength).clamp(0.0, 1.0),
-                                  child: child,
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: AppTokens.brSm,
-                                  child: Stack(
-                                    children: [
-                                      AlbumArtImage(
-                                        url: m.$1.artUri?.toString() ?? '',
-                                        filename: m.$1.id,
-                                        cacheVersion: m.$2,
-                                        width: imageSize,
-                                        height: imageSize,
-                                        fit: BoxFit.cover,
-                                      ),
-                                      StreamBuilder<PlayerState>(
-                                        stream: player.playerStateStream,
-                                        builder: (context, snapshot) {
-                                          final playing =
-                                              snapshot.data?.playing ?? false;
+                              child: PlayerCoverAnchor(
+                                key: current ? PlayerCoverAnchor.barKey : null,
+                                radius: AppTokens.rSm,
+                                child: Stack(
+                                  children: [
+                                    AlbumArtImage(
+                                      url: m.$1.artUri?.toString() ?? '',
+                                      filename: m.$1.id,
+                                      cacheVersion: m.$2,
+                                      width: imageSize,
+                                      height: imageSize,
+                                      fit: BoxFit.cover,
+                                    ),
+                                    StreamBuilder<PlayerState>(
+                                      stream: player.playerStateStream,
+                                      builder: (context, snapshot) {
+                                        final playing =
+                                            snapshot.data?.playing ?? false;
 
-                                          return Positioned.fill(
-                                            child: PlayingVisualizerOverlay(
-                                              playing: playing && isBarVisible,
-                                              mode: visualizerMode,
-                                              size: compact ? 18 : 22,
-                                              scrim: Colors.black
-                                                  .withValues(alpha: 0.28),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
+                                        return Positioned.fill(
+                                          child: PlayingVisualizerOverlay(
+                                            playing: playing && isBarVisible,
+                                            mode: visualizerMode,
+                                            size: compact ? 18 : 22,
+                                            scrim: Colors.black
+                                                .withValues(alpha: 0.28),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -517,13 +511,9 @@ class _NowPlayingContent extends ConsumerWidget {
       ),
     );
 
-    final double artInset = compact ? 12 : 14;
-
     if (embedded) {
       return PlayerSheetOrigin(
         radius: borderRadius.topLeft.x,
-        artInset: artInset,
-        artSize: imageSize,
         child: ClipRRect(
           borderRadius: borderRadius,
           child: content,
@@ -546,8 +536,6 @@ class _NowPlayingContent extends ConsumerWidget {
     if (docked) {
       return PlayerSheetOrigin(
         radius: 0,
-        artInset: artInset,
-        artSize: imageSize,
         child: DecoratedBox(
           decoration: BoxDecoration(color: fill),
           child: content,
@@ -569,8 +557,6 @@ class _NowPlayingContent extends ConsumerWidget {
     // Shadow lives outside the clip so it is not cropped to the bar's corners.
     return PlayerSheetOrigin(
       radius: borderRadius.topLeft.x,
-      artInset: artInset,
-      artSize: imageSize,
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: borderRadius,

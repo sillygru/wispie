@@ -1,5 +1,12 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+
+import '../../domain/services/panel_release.dart';
+import '../../models/song.dart';
+import '../tokens/player_tokens.dart';
+import '../widgets/album_art_image.dart';
 
 /// The pieces of the player that travel between the dock's bar and the full
 /// player. Each one is drawn by both surfaces and flown by the panel.
@@ -20,6 +27,168 @@ enum PlayerMorphSurface {
 
   /// The player panel's own chrome.
   panel,
+}
+
+typedef PlayerCoverGeometry = ({Rect rect, PlayerCoverAnchor style, Size size});
+
+/// The artwork's actual paint bounds and treatment at either end of a flight.
+class PlayerCoverAnchor extends StatelessWidget {
+  const PlayerCoverAnchor({
+    super.key,
+    required this.child,
+    this.radius = 0,
+    this.fit = BoxFit.cover,
+    this.shadow = false,
+    this.effect,
+  });
+
+  static final GlobalKey barKey = GlobalKey(debugLabel: 'mini player cover');
+  static final GlobalKey panelKey = GlobalKey(debugLabel: 'full player cover');
+
+  final Widget child;
+  final double radius;
+  final BoxFit fit;
+  final bool shadow;
+  final Widget Function(Widget child, double strength)? effect;
+
+  static PlayerCoverGeometry? measure(GlobalKey key, RenderBox? ancestor) {
+    final widget = key.currentWidget;
+    final box = key.currentContext?.findRenderObject();
+    if (widget is! PlayerCoverAnchor ||
+        box is! RenderBox ||
+        !box.attached ||
+        !box.hasSize ||
+        box.size.isEmpty ||
+        ancestor == null ||
+        !ancestor.attached) {
+      return null;
+    }
+    final rect = MatrixUtils.transformRect(
+      box.getTransformTo(ancestor),
+      Offset.zero & box.size,
+    );
+    if (!rect.isFinite || rect.isEmpty) return null;
+    return (rect: rect, style: widget, size: box.size);
+  }
+
+  Widget decorate(
+    Widget child, {
+    required BorderRadius corners,
+    double strength = 1,
+  }) {
+    final Widget clipped = corners == BorderRadius.zero
+        ? child
+        : ClipRRect(borderRadius: corners, child: child);
+    final Widget artwork = effect?.call(clipped, strength) ?? clipped;
+    if (!shadow) return artwork;
+    const token = PlayerTokens.playerCoverShadow;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: corners,
+        boxShadow: [
+          token.copyWith(
+              color: token.color.withValues(alpha: token.color.a * strength)),
+        ],
+      ),
+      child: artwork,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<double>(
+        valueListenable: PlayerMorph.coverStrength,
+        child: RepaintBoundary(
+          child: decorate(child, corners: BorderRadius.circular(radius)),
+        ),
+        builder: (context, strength, child) => RepaintBoundary(
+          child: Opacity(opacity: 1 - strength, child: child),
+        ),
+      );
+}
+
+/// Reshapes the artwork's crop without stretching the image pixels.
+class PlayerCoverFlight extends StatelessWidget {
+  const PlayerCoverFlight({
+    super.key,
+    required this.song,
+    required this.from,
+    required this.to,
+    required this.progress,
+    required this.speed,
+    required this.travel,
+    required this.opacity,
+  });
+
+  final Song song;
+  final PlayerCoverGeometry from;
+  final PlayerCoverGeometry to;
+  final double progress;
+  final double speed;
+  final double travel;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final double barInset = from.rect.center.dy - travel;
+    final pose = PanelCoverMotion.pose(
+      progress: progress,
+      speed: speed,
+      travel: travel,
+      insetChange: to.rect.center.dy - barInset,
+    );
+    final double pull = pose.tension.abs();
+    final double width =
+        lerpDouble(from.rect.width, to.rect.width, pose.width)! *
+            (1 - PlayerTokens.coverPullWidth * pull);
+    final double height =
+        lerpDouble(from.rect.height, to.rect.height, pose.height)! *
+            (1 + PlayerTokens.coverPullHeight * pull);
+    final double centerY = (1 - progress) * travel +
+        lerpDouble(barInset, to.rect.center.dy, pose.inset)! -
+        height * PlayerTokens.coverPullLead * pose.tension;
+    final double radius = lerpDouble(
+      from.style.radius * from.rect.shortestSide / from.size.shortestSide,
+      to.style.radius * to.rect.shortestSide / to.size.shortestSide,
+      pose.sideways,
+    )!;
+    final double cornerPull = PlayerTokens.coverPullCorners * pose.tension;
+    return Positioned.fromRect(
+      rect: Rect.fromCenter(
+        center: Offset(
+          lerpDouble(from.rect.center.dx, to.rect.center.dx, pose.sideways)!,
+          centerY,
+        ),
+        width: width,
+        height: height,
+      ),
+      child: IgnorePointer(
+        child: Opacity(
+          opacity: opacity,
+          child: RepaintBoundary(
+            child: to.style.decorate(
+              AlbumArtImage(
+                url: song.coverUrl ?? '',
+                filename: song.filename,
+                cacheVersion: song.mtime,
+                width: to.size.width,
+                height: to.size.height,
+                memCacheWidth:
+                    (to.size.width * MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+                fit: to.style.fit,
+                fadeDuration: Duration.zero,
+              ),
+              corners: BorderRadius.vertical(
+                top: Radius.circular(radius * (1 - cornerPull)),
+                bottom: Radius.circular(radius * (1 + cornerPull)),
+              ),
+              strength: pose.sideways,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Marks a widget as one end of a morph and hides it while it is in flight.
@@ -107,6 +276,7 @@ abstract final class PlayerMorph {
   /// this much, so the hand-off on the first and last frame is a crossfade on
   /// aligned boxes rather than a swap.
   static final ValueNotifier<double> strength = ValueNotifier<double>(0);
+  static final ValueNotifier<double> coverStrength = ValueNotifier<double>(0);
 
   /// One listenable for "is this slot faded, and how far" so an anchor can
   /// rebuild for either signal without nesting builders.

@@ -21,7 +21,7 @@ import '../../components/favorite_heart_button.dart';
 import '../../components/pressable.dart';
 import '../../components/song_actions.dart';
 import '../../components/track_swipe_switcher.dart';
-import '../../player_panel/player_panel.dart';
+import '../../player_panel/player_morph.dart';
 import '../../tokens/player_tokens.dart';
 import '../../widgets/album_art_image.dart';
 import '../../widgets/beat_reactive_cover.dart';
@@ -303,58 +303,26 @@ class _CoverStage extends ConsumerWidget {
     required Song forSong,
     required bool current,
   }) {
-    final Song song = forSong;
-    // The pulse wraps the artwork itself, and the panel's own shuttle is the
-    // copy that flies out of the bar. This one simply steps aside while that
-    // flight is running, so the artwork is never on screen twice.
+    final BoxFit fit = coverFitFor(coverSizing);
     return BeatReactiveCover(
       controller: motion,
       enabled: beatReactive && current,
-      child: Container(
-        // The shell's glow layer reads this box's on-screen rect every frame.
-        // It sits inside the beat transform on purpose, so the glow tracks the
-        // pulse — and the page swipe — without being told about either.
+      child: PlayerCoverAnchor(
         key: current ? coverKey : null,
-        decoration: BoxDecoration(
-          borderRadius: PlayerTokens.brLg,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 34,
-              offset: const Offset(0, 14),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: PlayerTokens.brLg,
-          // The panel carries the artwork while the shuttle owns it, and fades
-          // this one back in on the landed rect. The image is its own cached
-          // layer and only the opacity above it changes, so a frame of the
-          // flight blends one texture instead of repainting the screen behind
-          // it. The child is hoisted for the same reason.
-          child: ValueListenableBuilder<double>(
-            valueListenable: PlayerCoverOpacity.notifierOf(context),
-            child: RepaintBoundary(
-              child: AlbumArtImage(
-                url: song.coverUrl ?? '',
-                filename: song.filename,
-                cacheVersion: song.mtime,
-                width: size,
-                height: size,
-                fadeDuration: Duration.zero,
-                filterQuality: FilterQuality.high,
-                // Decoded at the size it is actually drawn at.
-                memCacheWidth:
-                    (size * MediaQuery.devicePixelRatioOf(context)).round(),
-                fit: coverFitFor(coverSizing),
-              ),
-            ),
-            // The boundary keeps the per-frame fade inside the cover's own
-            // box instead of dirtying the whole player's paint.
-            builder: (context, coverOpacity, child) => RepaintBoundary(
-              child: Opacity(opacity: coverOpacity, child: child),
-            ),
-          ),
+        radius: PlayerTokens.rLg,
+        shadow: true,
+        fit: fit,
+        child: AlbumArtImage(
+          url: forSong.coverUrl ?? '',
+          filename: forSong.filename,
+          cacheVersion: forSong.mtime,
+          width: size,
+          height: size,
+          fadeDuration: Duration.zero,
+          filterQuality: FilterQuality.high,
+          memCacheWidth:
+              (size * MediaQuery.devicePixelRatioOf(context)).round(),
+          fit: fit,
         ),
       ),
     );

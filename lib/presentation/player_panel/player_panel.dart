@@ -13,11 +13,10 @@ import '../../services/display_refresh_service.dart';
 import '../../theme/app_theme.dart';
 import '../motion/motion.dart';
 import '../routes/player_sheet_origin.dart';
-import 'player_morph.dart';
 import '../screens/unified_player_screen.dart';
 import '../tokens/player_tokens.dart';
-import '../widgets/album_art_image.dart';
 import '../widgets/collection_accent_scope.dart';
+import 'player_morph.dart';
 
 /// The player panel: a shell that owns exactly one value, running from 0 (the
 /// dock's bar) to 1 (the full player).
@@ -31,8 +30,7 @@ abstract final class PlayerPanel {
   static _PlayerPanelHostState? _host;
   static PlayerPanelController? _controller;
 
-  /// Where the panel is, for chrome that lives outside it. The dock reads this
-  /// to dip as the panel overshoots its way home.
+  /// Rubber-band travel below the seat, which the dock mirrors as a dip.
   static final ValueNotifier<double> progress = ValueNotifier<double>(0);
 
   /// Whether the panel is meant to be open. One notifier shared by the
@@ -68,7 +66,7 @@ abstract final class PlayerPanel {
         initialPane: initialPane, queueShowsHistory: queueShowsHistory);
   }
 
-  static void close() => _controller?.close();
+  static void close() => _host?._close();
 
   static void toggle() {
     if (isOpen) {
@@ -100,15 +98,15 @@ class PlayerPanelController {
   PlayerPanelController({required TickerProvider vsync}) {
     progress = AnimationController(
       vsync: vsync,
-      lowerBound: -(PlayerTokens.panelDip + PlayerTokens.panelRubberRoom),
-      upperBound:
-          1 + PlayerTokens.panelOvershoot + PlayerTokens.panelRubberRoom,
+      value: 0,
+      lowerBound: -PlayerTokens.panelRubberRoom,
+      upperBound: 1 + PlayerTokens.panelRubberRoom,
     );
-    snap = SnapEngine(progress);
+    _snap = SnapEngine(progress);
   }
 
   late final AnimationController progress;
-  late final SnapEngine snap;
+  late final SnapEngine _snap;
 
   /// Measured by the host: the distance the top edge travels from the dock's
   /// bar to the top of the screen.
@@ -129,6 +127,7 @@ class PlayerPanelController {
   bool get isOpen => PlayerPanel.openState.value;
 
   double get value => progress.value;
+  double get coverSpeed => _dragging ? _dragVelocity : progress.velocity;
 
   /// True while a finger owns the surface.
   bool get isDragging => _dragging;
@@ -150,153 +149,99 @@ class PlayerPanelController {
   /// Where the finger picked the surface up, kept only to tell a deliberate
   /// drag from a hold that went nowhere.
   double _dragAnchor = 0;
-  double _lastDragY = 0;
+  double _rawDragAnchor = 0;
+  double _pointerOriginY = 0;
+  Duration? _lastDragTime;
+  double _dragVelocity = 0;
 
   /// The accessibility policy lives above this controller, so the host hands it
   /// down rather than the controller reaching up for it.
   bool Function()? prefersInstant;
 
-  bool _disposed = false;
+  void open() => _settleTo(1);
 
-  void open({double velocity = 0}) {
-    PlayerPanel.openState.value = true;
+  void close() => _settleTo(0);
+
+  void _settleTo(double target, {double? releaseVelocity}) {
+    final bool open = target == 1;
+    if (releaseVelocity == null &&
+        !_dragging &&
+        open == isOpen &&
+        (progress.isAnimating || value == target)) {
+      return;
+    }
+    _dragging = false;
+    final double momentum = releaseVelocity ?? progress.velocity;
+    PlayerPanel.openState.value = open;
+    if (!open) onClosing?.call();
     DisplayRefreshService.instance.boost120();
-    _settleTo(1, velocity: velocity);
-  }
-
-  void close({double velocity = 0}) {
-    if (!isOpen && !progress.isAnimating && value <= 0) return;
-    PlayerPanel.openState.value = false;
-    onClosing?.call();
-    DisplayRefreshService.instance.boost120();
-    unawaited(_settleClosed(velocity));
-  }
-
-  /// A close is two springs, not one. The drop is aimed past the bar so the
-  /// surface dips below the dock, then it rides back up to rest. Aiming straight
-  /// at zero left a landing with no overshoot left in it, which read as the
-  /// sheet stopping dead instead of the little bounce home.
-  Future<void> _settleClosed(double velocity) async {
-    if (prefersInstant?.call() ?? false) {
-      snap.jumpTo(0);
+    if (value == target || (prefersInstant?.call() ?? false)) {
+      _snap.jumpTo(target);
       onSettled?.call();
       return;
     }
-    if (velocity.abs() < PlayerTokens.panelThrowSpeed) {
-      // A gentle release keeps its own pace: it eases home over a duration
-      // taken from the distance it still has to cover. A spring pulls away
-      // from rest at an acceleration its stiffness sets, and that is what read
-      // as a snap no matter how slowly the finger had been moving.
-      snap.snapTo(
-        0,
-        duration: PlayerTokens.panelReleaseDuration(value.abs()),
-        curve: PlayerTokens.cStandard,
-        onSettled: () => _pinRest(0),
-      );
-      return;
-    }
-    await snap.drive(
-      CrossingSimulation(
-        PlayerTokens.panelDropSpring(velocity),
-        value,
-        -PlayerTokens.panelCloseDip,
-        velocity,
+    final spring = PanelSpring(
+      from: value,
+      to: target,
+      velocity: momentum.clamp(
+        -PlayerTokens.panelMomentumLimit,
+        PlayerTokens.panelMomentumLimit,
       ),
+      released: releaseVelocity != null,
+      reboundRoom: open ? 0 : PlayerTokens.panelRubberRoom,
     );
-    if (_disposed || _dragging) return;
-    // A grab or a re-open replaces the move; its settle owns the surface now.
-    snap.springTo(
-      0,
-      spring: PlayerTokens.panelHomeSpring,
-      velocity: 0,
-      onSettled: () => _pinRest(0),
-    );
+    unawaited(_snap.drive(PanelSpringSimulation(spring), onSettled: onSettled));
   }
 
-  /// The way open. The simulation starts from the frame that is drawn and the
-  /// speed the finger left behind, so a throw overshoots and a nudge does not,
-  /// and the spring that catches a grab mid-flight is the same object rather
-  /// than a new animation.
-  void _settleTo(double target, {required double velocity}) {
-    if (prefersInstant?.call() ?? false) {
-      snap.jumpTo(target);
-      onSettled?.call();
-      return;
-    }
-    if (velocity.abs() < PlayerTokens.panelThrowSpeed) {
-      // Same rule as the close: a gentle release eases instead of being pulled.
-      snap.snapTo(
-        target,
-        duration: PlayerTokens.panelReleaseDuration((target - value).abs()),
-        curve: PlayerTokens.cStandard,
-        onSettled: () => _pinRest(target),
-      );
-      return;
-    }
-    snap.springTo(
-      target,
-      spring: PlayerTokens.panelOpenSpring,
-      velocity: velocity,
-      onSettled: () => _pinRest(target),
-    );
-  }
-
-  /// A spring stops once it is close enough, which can leave something like
-  /// 0.0009 on the value. The chrome outside the panel reads that as "still
-  /// visible", so the closed player would stay mounted and ticking behind the
-  /// screen. Pin the rest state exactly.
-  void _pinRest(double target) {
-    if (progress.value != target) progress.value = target;
-    onSettled?.call();
-  }
-
-  void jumpOpen() {
-    PlayerPanel.openState.value = true;
-    snap.jumpTo(1);
-  }
-
-  void jumpClosed() {
-    PlayerPanel.openState.value = false;
-    snap.jumpTo(0);
-  }
-
-  void dragStart(double globalY) {
+  void dragStart(DragStartDetails details) {
     if (_dragging) return;
     _dragging = true;
-    _lastDragY = globalY;
-    onGrabbed?.call();
-    // A grab always takes over from what is drawn, never from the target, so a
-    // panel caught mid-flight continues under the finger instead of jumping —
-    // including a panel already on its way down, which is how a fast upward
-    // swipe catches a closing player and brings it back.
+    _pointerOriginY = details.globalPosition.dy;
+    _lastDragTime = details.sourceTimeStamp;
+    _dragVelocity = progress.velocity;
     _dragAnchor = value;
-    snap.cancel();
+    _rawDragAnchor = PanelRelease.unresist(
+      value,
+      low: 0,
+      high: 1,
+      room: PlayerTokens.panelRubberRoom,
+    );
+    _snap.cancel();
     _travel = math.max(travelOf?.call() ?? 0, 1);
-    PlayerPanel.openState.value = true;
+    onGrabbed?.call();
     DisplayRefreshService.instance.boost120();
   }
 
   /// Screen coordinates stay stable as the panel moves under the finger.
-  void dragUpdate(double globalY) {
+  void dragUpdate(DragUpdateDetails details) {
     if (!_dragging) return;
-    final double dy = globalY - _lastDragY;
-    _lastDragY = globalY;
-    progress.value = PanelRelease.resist(
-      value - dy / _travel,
-      low: -PlayerTokens.panelDip,
-      high: 1 + PlayerTokens.panelOvershoot,
+    final double next = PanelRelease.resist(
+      _rawDragAnchor - (details.globalPosition.dy - _pointerOriginY) / _travel,
+      low: 0,
+      high: 1,
       room: PlayerTokens.panelRubberRoom,
     );
+    final Duration? now = details.sourceTimeStamp;
+    final Duration? before = _lastDragTime;
+    if (now != null && before != null && now > before) {
+      final int elapsed = (now - before).inMicroseconds;
+      final double sampled =
+          (next - value) * Duration.microsecondsPerSecond / elapsed;
+      final double weight = elapsed /
+          (elapsed + PlayerTokens.dCoverVelocityFilter.inMicroseconds);
+      _dragVelocity += (sampled - _dragVelocity) * weight;
+    }
+    _lastDragTime = now;
+    progress.value = next;
   }
 
   /// [velocity] is px/s, positive downward.
   void dragEnd({required double velocity}) {
     if (!_dragging) return;
-    _dragging = false;
     final SnapTuning tuning = SnapTuning.forExtent(
       _travel,
-      flingRatio: 0.62,
-      commitRatio: 0.5,
+      actuationRatio: PlayerTokens.panelCommitRatio,
+      flingRatio: PlayerTokens.panelFlingRatio,
     );
     final bool close = PanelRelease.closes(
       anchor: _dragAnchor,
@@ -310,60 +255,26 @@ class PlayerPanelController {
         velocity.abs() > tuning.flingVelocity) {
       MotionHaptics.light();
     }
-    // The finger's speed goes into the spring, capped so a flick still reads.
-    final double momentum = PanelRelease.momentum(
-      velocity: velocity,
-      travel: _travel,
-    )
-        .clamp(
-          -PlayerTokens.panelMomentumLimit,
-          PlayerTokens.panelMomentumLimit,
-        )
-        .toDouble();
-    if (close) {
-      this.close(velocity: momentum);
-    } else {
-      open(velocity: momentum);
-    }
+    final double excess = (value - value.clamp(0.0, 1.0)).abs();
+    final double grip = 1 - excess / PlayerTokens.panelRubberRoom;
+    _settleTo(
+      close ? 0 : 1,
+      releaseVelocity: PanelRelease.momentum(
+            velocity: velocity,
+            travel: _travel,
+          ) *
+          grip.clamp(0.0, 1.0),
+    );
   }
 
   void dragCancel() {
     if (!_dragging) return;
-    _dragging = false;
-    open();
+    _settleTo(isOpen ? 1 : 0, releaseVelocity: 0);
   }
 
   void dispose() {
-    _disposed = true;
     progress.dispose();
   }
-}
-
-/// How opaque the player's own artwork should be while a flight runs: 0 while
-/// the shuttle carries the cover, 1 at both ends, so the hand-off is a crossfade
-/// on aligned rects instead of a swap on one frame.
-class PlayerCoverOpacity extends InheritedNotifier<ValueNotifier<double>> {
-  const PlayerCoverOpacity({
-    super.key,
-    required ValueNotifier<double> opacity,
-    required super.child,
-  }) : super(notifier: opacity);
-
-  /// A pane drawn outside the panel keeps its artwork at full strength.
-  static final ValueNotifier<double> _visible = ValueNotifier<double>(1);
-
-  /// Read without depending on it: the cover listens to the notifier itself, so
-  /// a frame of the flight repaints one cached texture instead of every widget
-  /// that happens to sit under the panel.
-  static ValueNotifier<double> notifierOf(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<PlayerCoverOpacity>()?.notifier ??
-      _visible;
-}
-
-/// Boxes the panel measures to fly the cover. Widgets draw with these keys;
-/// they carry no behaviour of their own.
-abstract final class PlayerMorphTargets {
-  static final GlobalKey cover = GlobalKey(debugLabel: 'player morph cover');
 }
 
 /// Mounts the player above the shell and animates it open and closed.
@@ -384,18 +295,16 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   late final PlayerPanelController _panel = PlayerPanelController(vsync: this);
   final GlobalKey _hostKey = GlobalKey(debugLabel: 'player panel');
   final GlobalKey _sheetKey = GlobalKey(debugLabel: 'player sheet');
-  final ValueNotifier<bool> _flying = ValueNotifier(false);
-  final ValueNotifier<double> _coverOpacity = ValueNotifier<double>(1);
-
   bool _mounted = false;
+  bool _flying = false;
+  int _openRequest = 0;
 
   /// Live only inside the window after a close lands, while an upward swipe can
   /// still pick the surface back up.
   Timer? _graceTimer;
 
-  /// A pointer that is on the screen keeps the catch window open, even before
-  /// the drag crosses its slop.
-  bool _pointerDown = false;
+  // A gesture that starts in time keeps its recognizer after the window ends.
+  int? _catchPointer;
 
   bool get _inGrace => _graceTimer != null;
 
@@ -407,9 +316,7 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   double _travel = 0;
 
   // Transport slots with both ends on screen. Rects are measured live on every
-  // tick instead of captured once: the bar dips on the close overshoot and the
-  // player's controls ride the sheet, so a rect captured at the start landed a
-  // few pixels off on the last frame.
+  // tick so the controls follow the sheet and the dock's own motion.
   final Set<PlayerMorphSlot> _morphSlots = <PlayerMorphSlot>{};
 
   @override
@@ -417,9 +324,9 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     super.initState();
     PlayerPanel._attach(this, _panel);
     _panel
-      ..travelOf = _measureTravel
+      ..travelOf = _travelForGrab
       ..onClosing = _startFlight
-      ..onGrabbed = _startFlight
+      ..onGrabbed = _onGrabbed
       ..onSettled = _onSettled
       ..prefersInstant = () => MotionPolicy.read(context).reduceMotion;
     _panel.progress.addListener(_onTick);
@@ -436,43 +343,37 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   }
 
   void _endFlight() {
-    if (_flying.value) _flying.value = false;
+    _flying = false;
     _morphSlots.clear();
     PlayerMorph.clear();
-    if (_coverOpacity.value != 1) _coverOpacity.value = 1;
+    if (PlayerMorph.coverStrength.value != 0) {
+      PlayerMorph.coverStrength.value = 0;
+    }
     if (PlayerMorph.strength.value != 0) PlayerMorph.strength.value = 0;
   }
 
   void _onSettled() {
     _endFlight();
     if (!mounted) return;
-    if (PlayerPanel.openState.value || _panel.isDragging) return;
-    if (_panel.value > 0.0005) return;
-    _startGrace();
-  }
-
-  /// Keeps a landed close catchable for a beat, so a swipe down followed by a
-  /// quick swipe back up brings the player straight back.
-  void _startGrace() {
-    _graceTimer?.cancel();
-    _graceTimer = Timer(PlayerTokens.panelCloseGrace, () {
-      if (!mounted) return;
-      // A finger that picked the surface up owns it; the window closes once the
-      // gesture is over, not under it.
-      if (_panel.isDragging || _pointerDown) {
-        _startGrace();
-        return;
-      }
-      setState(() => _graceTimer = null);
-    });
+    if (!PlayerPanel.openState.value) {
+      _graceTimer?.cancel();
+      _graceTimer = Timer(PlayerTokens.panelCloseGrace, () {
+        if (mounted) setState(() => _graceTimer = null);
+      });
+    }
     setState(() {});
   }
 
   void _endGrace() {
-    if (_graceTimer == null) return;
     _graceTimer?.cancel();
-    _pointerDown = false;
-    setState(() => _graceTimer = null);
+    _graceTimer = null;
+  }
+
+  void _onGrabbed() {
+    _openRequest++;
+    _endGrace();
+    _startFlight();
+    setState(() {});
   }
 
   /// How much of the flight the shuttles own. It ramps from 0 at either rest
@@ -489,7 +390,11 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   void dispose() {
     _panel.progress.removeListener(_onTick);
     _panel.progress.removeStatusListener(_onAnimationStatus);
-    _flying.dispose();
+    if (_flying) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!(PlayerPanel._host?._flying ?? false)) _endFlight();
+      });
+    }
     _graceTimer?.cancel();
     _graceTimer = null;
     PlayerPanel._detach(this);
@@ -499,16 +404,25 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
 
   void _onTick() {
     final double v = _panel.value;
-    final double strength = _strengthAt(v, _flying.value);
-    final double opacity = 1 - strength;
-    if (_coverOpacity.value != opacity) _coverOpacity.value = opacity;
+    final double strength = _strengthAt(v, _flying);
+    final double handoff = math
+        .min(
+          v / PlayerTokens.barCoverHandoff,
+          (1 - v) / PlayerTokens.panelCoverHandoff,
+        )
+        .clamp(0.0, 1.0);
+    final bool hasCover =
+        _flying && handoff > 0 && _barCover() != null && _panelCover() != null;
+    final double coverStrength =
+        hasCover ? handoff * handoff * (3 - 2 * handoff) : 0;
+    if (PlayerMorph.coverStrength.value != coverStrength) {
+      PlayerMorph.coverStrength.value = coverStrength;
+    }
     if (PlayerMorph.strength.value != strength) {
       PlayerMorph.strength.value = strength;
     }
-    // Chrome outside the panel only reacts to the end of the close, where the
-    // dock dips. Publishing every tick would rebuild the dock for the whole
-    // flight for no visible reason.
-    final double shared = v < 0.05 ? v : 0;
+    // The dock only reacts to rubber-band travel beyond its seat.
+    final double shared = math.min(v, 0);
     if (PlayerPanel.progress.value != shared) {
       PlayerPanel.progress.value = shared;
     }
@@ -522,8 +436,10 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     final Song? song =
         ref.read(audioPlayerManagerProvider).currentSongNotifier.value;
     if (song == null) return;
-    final bool relayout =
-        !_mounted || initialPane != _pane || queueShowsHistory != _queueHistory;
+    final bool relayout = _sheetKey.currentContext == null ||
+        initialPane != _pane ||
+        queueShowsHistory != _queueHistory;
+    final int request = ++_openRequest;
     _endGrace();
     setState(() {
       _mounted = true;
@@ -532,22 +448,32 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     });
     if (MotionPolicy.read(context).reduceMotion) {
       _endFlight();
-      _panel.jumpOpen();
+      _panel.open();
       return;
     }
     if (relayout) {
       // The player's cover has to be laid out before it can be flown to, so the
       // first frame mounts it and the motion starts on the next one.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _startFlight();
-        _panel.open();
+        if (!mounted || request != _openRequest) return;
+        _beginOpen();
       });
       return;
     }
-    _startFlight();
+    _beginOpen();
+  }
+
+  void _beginOpen() {
+    if (_panel.value < 1 || _panel.isMoving) _startFlight();
     _panel.open();
   }
+
+  void _close() {
+    _openRequest++;
+    _panel.close();
+  }
+
+  double _travelForGrab() => _flying ? _travel : _measureTravel();
 
   double _measureTravel() {
     _measureOrigin();
@@ -564,53 +490,56 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
     final RenderBox? host =
         _hostKey.currentContext?.findRenderObject() as RenderBox?;
     final resolved = PlayerSheetOrigin.resolveIn(host);
-    if (resolved == null) return;
-    _origin = resolved.rect;
-    _originRadius = resolved.radius;
+    _origin = resolved?.rect;
+    _originRadius = resolved?.radius ?? PlayerTokens.rSheetFlight;
   }
 
   // The grace window's own drag layer reports to the same controller the panes
   // use, so picking the surface back up after it lands and mid-flight are one
   // gesture as far as the panel is concerned.
   void _onDismissDragStart(DragStartDetails details) =>
-      _panel.dragStart(details.globalPosition.dy);
+      _panel.dragStart(details);
 
   void _onDismissDragUpdate(DragUpdateDetails details) =>
-      _panel.dragUpdate(details.globalPosition.dy);
+      _panel.dragUpdate(details);
 
   void _onDismissDragEnd(DragEndDetails details) =>
       _panel.dragEnd(velocity: details.primaryVelocity ?? 0);
 
   void _onDismissDragCancel() => _panel.dragCancel();
 
-  /// Marks both ends of the flight. Nothing is captured here: the rects are
-  /// read from the live render objects while it runs, so the flight lands
-  /// exactly on whatever the two surfaces are drawing on its last frame.
   void _startFlight() {
-    final RenderBox? host =
-        _hostKey.currentContext?.findRenderObject() as RenderBox?;
-    if (host == null) return;
+    if (_flying || MotionPolicy.read(context).reduceMotion) return;
     _measureTravel();
     _morphSlots
       ..clear()
       ..addAll(PlayerMorphSlot.values.where((slot) =>
           PlayerMorph.anchorOf(slot, PlayerMorphSurface.bar) != null &&
           PlayerMorph.anchorOf(slot, PlayerMorphSurface.panel) != null));
-    // With no drawer or cover measured, the surface still animates and both
-    // covers stay visible; hiding one without a shuttle would blank it.
-    _flying.value =
-        _liveCover(host) != null && PlayerSheetOrigin.artRectIn(host) != null;
+    _flying = true;
     PlayerMorph.setFlying(_morphSlots);
   }
 
-  /// The player's cover as drawn right now, plus the layout size its artwork is
-  /// decoded at (which the beat transform does not change).
-  ({Rect rect, Size size})? _liveCover(RenderBox host) {
-    final RenderBox? cover = PlayerMorphTargets.cover.currentContext
-        ?.findRenderObject() as RenderBox?;
-    if (cover == null || !cover.attached || !cover.hasSize) return null;
-    final Offset topLeft = host.globalToLocal(cover.localToGlobal(Offset.zero));
-    return (rect: topLeft & cover.size, size: cover.size);
+  PlayerCoverGeometry? _barCover() => PlayerCoverAnchor.measure(
+        PlayerCoverAnchor.barKey,
+        _hostKey.currentContext?.findRenderObject() as RenderBox?,
+      );
+
+  PlayerCoverGeometry? _panelCover() {
+    final sheet = _sheetKey.currentContext?.findRenderObject() as RenderBox?;
+    if (sheet == null || !sheet.hasSize) return null;
+    final cover = PlayerCoverAnchor.measure(PlayerCoverAnchor.panelKey, sheet);
+    if (cover == null ||
+        !(Offset.zero & sheet.size).contains(cover.rect.center)) {
+      return null;
+    }
+    return cover;
+  }
+
+  void _releaseCatchPointer(PointerEvent event) {
+    if (mounted && event.pointer == _catchPointer) {
+      setState(() => _catchPointer = null);
+    }
   }
 
   Widget _buildPlayer() {
@@ -631,13 +560,10 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           child: player,
         );
       },
-      child: PlayerCoverOpacity(
-        opacity: _coverOpacity,
-        child: UnifiedPlayerScreen(
-          key: ValueKey<int>(_pane.index * 2 + (_queueHistory ? 1 : 0)),
-          initialPane: _pane,
-          queueShowsHistory: _queueHistory,
-        ),
+      child: UnifiedPlayerScreen(
+        key: ValueKey<int>(_pane.index * 2 + (_queueHistory ? 1 : 0)),
+        initialPane: _pane,
+        queueShowsHistory: _queueHistory,
       ),
     );
   }
@@ -646,7 +572,8 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
   Widget build(BuildContext context) {
     if (!_mounted) return const SizedBox.shrink();
     final Widget player = RepaintBoundary(
-      child: KeyedSubtree(key: _sheetKey, child: _buildPlayer()),
+      key: _sheetKey,
+      child: _buildPlayer(),
     );
     return ValueListenableBuilder<bool>(
       valueListenable: PlayerPanel.openState,
@@ -669,13 +596,10 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
         builder: (context, child) {
           final double p = _panel.value;
           final double clamped = p.clamp(0.0, 1.0);
-          // Position, not isAnimating: the spring's tail below the screen kept a
-          // full-screen hit area over the dock. The grace window is the one case
-          // where a fully closed surface stays mounted on purpose.
-          final bool active = p > 0.0005 ||
-              _panel.isDragging ||
-              _inGrace ||
-              (!PlayerPanel.openState.value && _panel.isMoving);
+          final bool open = PlayerPanel.isOpen;
+          final bool catchDrag = _catchPointer != null ||
+              (!_panel.isDragging && (_inGrace || _panel.progress.isAnimating));
+          final bool active = p > 0.0005 || _panel.isDragging || catchDrag;
           if (_travel <= 0) _measureTravel();
           final Size size = MediaQuery.sizeOf(context);
           final Rect from =
@@ -683,33 +607,25 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
           // The surface starts as the bar and widens to the screen. Only the
           // first sliver is faded: the bar underneath stays visible as the
           // panel emerges from it, and comes back as the panel lands.
-          final double widen = PlayerTokens.coverFlight(clamped);
+          final double widen = PlayerTokens.cPanelWiden.transform(clamped);
           final double left = from.left.clamp(0.0, size.width) * (1 - widen);
           final double right =
               (size.width - from.right).clamp(0.0, size.width) * (1 - widen);
           final double radius = _originRadius * (1 - widen);
           // A fade over a wider slice of the travel, not a pop on frame two.
           final double shell = Curves.easeInOut.transform(
-            (clamped / 0.18).clamp(0.0, 1.0),
+            (clamped / PlayerTokens.panelShellHandoff).clamp(0.0, 1.0),
           );
           final double offset = (1 - clamped) * _travel;
-          final double strength = _strengthAt(clamped, _flying.value);
+          final double strength = _strengthAt(clamped, _flying);
           final RenderBox? host =
               _hostKey.currentContext?.findRenderObject() as RenderBox?;
 
-          // Every end is read from the live box while the flight runs, so the
-          // last frame lands on what the surfaces are actually drawing instead
-          // of on where they were when it started.
-          Rect? shuttle;
-          Size? shuttleSize;
-          if (strength > 0.001 && host != null) {
-            final live = _liveCover(host);
-            final Rect? barArt = PlayerSheetOrigin.artRectIn(host);
-            if (live != null && barArt != null) {
-              shuttle = Rect.lerp(barArt, live.rect, widen);
-              shuttleSize = live.size;
-            }
-          }
+          final double coverStrength = PlayerMorph.coverStrength.value;
+          final barCover = _flying ? _barCover() : null;
+          // Read the destination in sheet coordinates. Its screen position
+          // already includes the slide, which would pull the cover twice.
+          final panelCover = _flying ? _panelCover() : null;
 
           final List<Widget> transport = <Widget>[];
           if (strength > 0.001 && _morphSlots.isNotEmpty && host != null) {
@@ -782,74 +698,77 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
                         child: const SizedBox.expand(),
                       ),
                     ),
-                  Transform.translate(
-                    offset: Offset(0, offset),
-                    child: Opacity(
-                      opacity: shell,
-                      child: ClipRRect(
-                        clipBehavior: clamped >= 1 ? Clip.none : Clip.antiAlias,
-                        clipper: _PanelClipper(
-                          left: left,
-                          right: right,
-                          radius: radius,
-                        ),
-                        // Swallows anything the player itself leaves
-                        // transparent, so a tap never lands on the page below.
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          child: child,
+                  IgnorePointer(
+                    // Opacity doesn't affect hit testing. Give taps back
+                    // as soon as the mini player starts to show through.
+                    ignoring: (!open && shell < 1) || clamped == 0,
+                    child: Transform.translate(
+                      offset: Offset(0, offset),
+                      child: Opacity(
+                        opacity: shell,
+                        child: ClipRRect(
+                          clipBehavior:
+                              clamped >= 1 ? Clip.none : Clip.antiAlias,
+                          clipper: _PanelClipper(
+                            left: left,
+                            right: right,
+                            radius: radius,
+                          ),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            child: child,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                  // Keep the exit zone catchable during the close and briefly
-                  // after it lands, without claiming taps.
-                  if (_panel.isDragging ||
-                      (!PlayerPanel.openState.value &&
-                          (_inGrace || _panel.isMoving)))
+                  if (catchDrag)
                     Positioned(
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      height: size.height * PlayerTokens.panelGraceZone,
-                      // The listener sits outside the drag surface so a press
-                      // that lands before the slop resolves still holds the
-                      // window open, instead of losing the gesture when it
-                      // expires under the finger.
-                      child: Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: (_) => _pointerDown = true,
-                        onPointerUp: (_) => _pointerDown = false,
-                        onPointerCancel: (_) => _pointerDown = false,
-                        child: IgnorePointer(
-                          ignoring: _panel.isDragging,
-                          child: GestureDetector(
+                      top: math.min(
+                        offset,
+                        size.height * (1 - PlayerTokens.panelGraceZone),
+                      ),
+                      // Translucent and drag-only so the mini bar still gets taps.
+                      child: IgnorePointer(
+                        ignoring: _panel.isDragging,
+                        child: Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerDown: (event) =>
+                              _catchPointer ??= event.pointer,
+                          onPointerUp: _releaseCatchPointer,
+                          onPointerCancel: _releaseCatchPointer,
+                          child: RawGestureDetector(
                             behavior: HitTestBehavior.translucent,
-                            dragStartBehavior: DragStartBehavior.down,
-                            onVerticalDragStart: _onDismissDragStart,
-                            onVerticalDragUpdate: _onDismissDragUpdate,
-                            onVerticalDragEnd: _onDismissDragEnd,
-                            onVerticalDragCancel: _onDismissDragCancel,
+                            gestures: {
+                              _PanelCatchRecognizer:
+                                  GestureRecognizerFactoryWithHandlers<
+                                      _PanelCatchRecognizer>(
+                                _PanelCatchRecognizer.new,
+                                (recognizer) => recognizer
+                                  ..onlyUp = !open && p <= 0
+                                  ..onStart = _onDismissDragStart
+                                  ..onUpdate = _onDismissDragUpdate
+                                  ..onEnd = _onDismissDragEnd
+                                  ..onCancel = _onDismissDragCancel,
+                              ),
+                            },
                           ),
                         ),
                       ),
                     ),
                   ...transport,
-                  if (shuttle != null && song != null && shuttleSize != null)
-                    Positioned.fromRect(
-                      rect: shuttle,
-                      child: RepaintBoundary(
-                        child: Opacity(
-                          opacity: strength,
-                          child: IgnorePointer(
-                            child: _CoverShuttle(
-                              song: song,
-                              progress: clamped,
-                              settled: shuttleSize,
-                            ),
-                          ),
-                        ),
-                      ),
+                  if (barCover != null && panelCover != null && song != null)
+                    PlayerCoverFlight(
+                      song: song,
+                      from: barCover,
+                      to: panelCover,
+                      progress: clamped,
+                      speed: _panel.coverSpeed,
+                      travel: _travel,
+                      opacity: coverStrength,
                     ),
                 ],
               ),
@@ -858,6 +777,39 @@ class _PlayerPanelHostState extends ConsumerState<PlayerPanelHost>
         },
       ),
     );
+  }
+}
+
+/// After landing, downward swipes belong to the page under the catch zone.
+class _PanelCatchRecognizer extends VerticalDragGestureRecognizer {
+  _PanelCatchRecognizer() {
+    dragStartBehavior = DragStartBehavior.down;
+    onlyAcceptDragOnThreshold = true;
+  }
+
+  bool onlyUp = false;
+  double? _upwardStartY;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _upwardStartY = onlyUp ? event.position.dy : null;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    final double? start = _upwardStartY;
+    if (start != null && event is PointerMoveEvent) {
+      final double dy = event.position.dy - start;
+      final double slop = computeHitSlop(event.kind, gestureSettings);
+      if (dy > slop) {
+        resolve(GestureDisposition.rejected);
+        stopTrackingPointer(event.pointer);
+        return;
+      }
+      if (dy < -slop) _upwardStartY = null;
+    }
+    super.handleEvent(event);
   }
 }
 
@@ -884,69 +836,4 @@ class _PanelClipper extends CustomClipper<RRect> {
   @override
   bool shouldReclip(_PanelClipper old) =>
       old.left != left || old.right != right || old.radius != radius;
-}
-
-/// The artwork growing out of the bar's slot into the player's cover.
-class _CoverShuttle extends StatelessWidget {
-  const _CoverShuttle({
-    required this.song,
-    required this.progress,
-    required this.settled,
-  });
-
-  final Song song;
-
-  /// Panel progress: the corner radius follows it so the shuttle is the bar's
-  /// rounded square at one end and the cover's large radius at the other.
-  final double progress;
-
-  /// The landed cover's size. The artwork is laid out at exactly this size and
-  /// scaled into the flight, never re-laid out per frame: `AlbumArtImage`
-  /// derives its decode size from the box it is given, so a box that changes
-  /// every tick re-decodes the image every tick, which is the flicker.
-  final Size settled;
-
-  @override
-  Widget build(BuildContext context) {
-    final double k = PlayerTokens.coverFlight(progress);
-    final double radius =
-        PlayerTokens.rSm + (PlayerTokens.rLg - PlayerTokens.rSm) * k;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        // The landed cover carries this shadow. Fading it in with the flight
-        // keeps it from popping on at the hand-off, which is the twitch that
-        // was visible on the last frame.
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45 * k),
-            blurRadius: 34,
-            offset: const Offset(0, 14),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(
-            width: settled.width,
-            height: settled.height,
-            child: AlbumArtImage(
-              url: song.coverUrl ?? '',
-              filename: song.filename,
-              cacheVersion: song.mtime,
-              width: settled.width,
-              height: settled.height,
-              fit: BoxFit.cover,
-              fadeDuration: Duration.zero,
-              // The flying copy is scaled every frame, so it is resampled at
-              // medium quality; it lands on the pane's own crisp cover.
-              filterQuality: FilterQuality.medium,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }

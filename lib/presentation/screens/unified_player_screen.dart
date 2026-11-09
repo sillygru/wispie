@@ -22,6 +22,7 @@ import '../components/player_segmented_pill.dart';
 import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/full_bleed_player_screen.dart';
+import '../player_panel/player_morph.dart';
 import '../player_panel/player_panel.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_icons.dart';
@@ -105,7 +106,7 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   /// the shell's coordinates. The glow is painted up here so it can spill past
   /// the pane, which clips.
   // Shared with the panel, which flies the artwork in from the dock's bar.
-  final GlobalKey _coverKey = PlayerMorphTargets.cover;
+  final GlobalKey _coverKey = PlayerCoverAnchor.panelKey;
   final GlobalKey _shellKey = GlobalKey(debugLabel: 'player shell');
 
   late int _pane;
@@ -422,10 +423,10 @@ class _UnifiedPlayerScreenState extends ConsumerState<UnifiedPlayerScreen>
   PlayerPanelController? get _panel => PlayerPanel.controller;
 
   void _onDismissDragStart(DragStartDetails details) =>
-      _panel?.dragStart(details.globalPosition.dy);
+      _panel?.dragStart(details);
 
   void _onDismissDragUpdate(DragUpdateDetails details) =>
-      _panel?.dragUpdate(details.globalPosition.dy);
+      _panel?.dragUpdate(details);
 
   void _onDismissDragEnd(DragEndDetails details) =>
       _panel?.dragEnd(velocity: details.primaryVelocity ?? 0);

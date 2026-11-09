@@ -34,13 +34,13 @@ void check(String name, bool condition, {Object? detail}) {
 
 /// A typical phone: the panel travels most of the screen height.
 const double _travel = 800;
-const double _low = -0.14;
-const double _high = 1.02;
+const double _low = 0;
+const double _high = 1;
 const double _room = 0.05;
 
 /// Thresholds the panel actually derives from its travel.
-const double _fling = 700;
-const double _actuation = 96;
+const double _fling = 440;
+const double _actuation = 68;
 
 bool _closes({
   required double anchor,
@@ -149,6 +149,133 @@ void main() {
     PanelRelease.momentum(velocity: 2400, travel: _travel) == -3.0,
   );
 
+  stdout.writeln('\nInterruptible spring');
+  final slow = PanelSpring(from: 0.8, to: 0, velocity: -0.3);
+  final fast = PanelSpring(from: 0.8, to: 0, velocity: -4);
+  final slowLanding = _landingTime(slow);
+  final fastLanding = _landingTime(fast);
+  check(
+    'a slow release leaves at finger speed',
+    (slow.velocityAt(0) + 0.3).abs() < 1e-9 &&
+        ((slow.positionAt(0.001) - 0.8) / 0.001 + 0.3).abs() < 0.1,
+  );
+  check(
+    'a quick flick lands meaningfully sooner than a gentle release',
+    fastLanding < 0.24 && slowLanding - fastLanding > 0.09,
+    detail: {'slowSeconds': slowLanding, 'fastSeconds': fastLanding},
+  );
+  check(
+    'an unpadded spring reaches a stable endpoint',
+    fast.positionAt(fastLanding) == 0 &&
+        fast.positionAt(fastLanding + 0.1) == 0 &&
+        fast.velocityAt(fastLanding) == 0,
+  );
+  final double caught = fast.positionAt(0.06);
+  final double caughtVelocity = fast.velocityAt(0.06);
+  final reverse = PanelSpring(
+    from: caught,
+    to: 1,
+    velocity: caughtVelocity,
+    released: false,
+  );
+  check(
+    'reopening takes over at the current position and speed',
+    reverse.positionAt(0) == caught &&
+        (reverse.velocityAt(0) - caughtVelocity).abs() < 1e-9 &&
+        reverse.velocityAt(0.05) > 0 &&
+        reverse.positionAt(_landingTime(reverse)) == 1,
+  );
+  final rebound = PanelSpring(
+    from: 0.8,
+    to: 0,
+    velocity: -4,
+    reboundRoom: _room,
+  );
+  final double dockContact = _contactTime(rebound);
+  final double bounceEnd = _landingTime(rebound);
+  check(
+    'the spring carries its speed through contact with the dock',
+    dockContact < 0.24 &&
+        (rebound.velocityAt(dockContact) -
+                    rebound.velocityAt(dockContact - 0.001))
+                .abs() <
+            0.15,
+  );
+  check(
+    'the dock dips once and returns to rest quickly',
+    rebound.positionAt(dockContact + 0.04) < -0.02 &&
+        rebound.positionAt(dockContact + 0.04) > -_room &&
+        rebound.velocityAt(dockContact + 0.09) > 0 &&
+        bounceEnd - dockContact < 0.15 &&
+        rebound.positionAt(bounceEnd) == 0 &&
+        rebound.positionAt(bounceEnd + 0.1) == 0,
+  );
+  final double overpull = PanelRelease.resist(
+    1.08,
+    low: 0,
+    high: 1,
+    room: _room,
+  );
+  check(
+    'grabbing a rubber-banded panel preserves its drag position',
+    (PanelRelease.unresist(overpull, low: 0, high: 1, room: _room) - 1.08)
+            .abs() <
+        1e-9,
+  );
+
+  stdout.writeln('\nCover motion');
+  final nearOpen = PanelCoverMotion.pose(
+    progress: 0.98,
+    speed: -1,
+    travel: _travel,
+    insetChange: 350,
+  );
+  final double fingerTravel = _travel * 0.02;
+  final double coverTravel = fingerTravel - 350 * (1 - nearOpen.inset);
+  check(
+    'the cover rides the sheet as the finger first pulls it down',
+    coverTravel > 0.9 * fingerTravel,
+    detail: {'finger': fingerTravel, 'cover': coverTravel},
+  );
+  final pullingUp = PanelCoverMotion.pose(
+    progress: 0.5,
+    speed: 3,
+    travel: _travel,
+    insetChange: 350,
+  );
+  final pullingDown = PanelCoverMotion.pose(
+    progress: 0.5,
+    speed: -3,
+    travel: _travel,
+    insetChange: 350,
+  );
+  check(
+    'the artwork frame unfolds on each axis independently',
+    pullingUp.height > pullingUp.width + 0.08,
+  );
+  check(
+    'pull tension changes direction without moving the base geometry',
+    pullingUp.tension == -pullingDown.tension &&
+        pullingUp.tension > 0 &&
+        pullingUp.inset == pullingDown.inset,
+  );
+  for (final double endpoint in [0.0, 1.0]) {
+    final pose = PanelCoverMotion.pose(
+      progress: endpoint,
+      speed: 10,
+      travel: _travel,
+      insetChange: 350,
+    );
+    check(
+      'the artwork is undistorted at progress $endpoint',
+      pose.inset == endpoint &&
+          pose.sideways == endpoint &&
+          pose.width == endpoint &&
+          pose.height == endpoint &&
+          pose.tension == 0,
+    );
+  }
+
   final artifact = File('build/panel_probe.json');
   artifact.parent.createSync(recursive: true);
   artifact.writeAsStringSync(
@@ -163,4 +290,18 @@ void main() {
   stdout.writeln('\n$_passed passed, $_failed failed');
   stdout.writeln('artifact: ${artifact.path}');
   if (_failed > 0) exitCode = 1;
+}
+
+double _landingTime(PanelSpring spring) {
+  for (int ms = 0; ms <= 1000; ms++) {
+    if (spring.isDone(ms / 1000)) return ms / 1000;
+  }
+  return double.infinity;
+}
+
+double _contactTime(PanelSpring spring) {
+  for (int ms = 0; ms <= 1000; ms++) {
+    if (spring.positionAt(ms / 1000) <= 0) return ms / 1000;
+  }
+  return double.infinity;
 }

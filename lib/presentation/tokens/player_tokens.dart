@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/theme_provider.dart';
-import '../motion/motion_springs.dart';
 import '../motion/motion_tokens.dart';
 import '../widgets/collection_accent_scope.dart';
 
@@ -29,16 +28,18 @@ class PlayerTokens {
   static const double rLg = 26;
   static const double rSheetFlight = 24;
 
-  /// Cover progress for a sheet progress [p]. The cover leads the sheet a
-  /// little so it is already near full size while the sheet is still landing,
-  /// yet stays inside the rising sheet the whole way.
-  static double coverFlight(double p) => Curves.easeOutCubic.transform(p);
-
-  /// Cover corner radius during the open/close flight. A straight blend from
-  /// the mini art's radius to [landed]: any swell in between reads as the
-  /// artwork turning into a blob mid-flight.
-  static double flightRadius(double p, double landed) =>
-      rSm + (landed - rSm) * coverFlight(p.clamp(0.0, 1.0));
+  static const double barCoverHandoff = 0.024;
+  static const double panelCoverHandoff = 0.08;
+  static const double coverPullWidth = 0.05;
+  static const double coverPullHeight = 0.11;
+  static const double coverPullLead = 0.045;
+  static const double coverPullCorners = 0.34;
+  static const Duration dCoverVelocityFilter = Duration(milliseconds: 18);
+  static const BoxShadow playerCoverShadow = BoxShadow(
+    color: Color(0x73000000),
+    blurRadius: 34,
+    offset: Offset(0, 14),
+  );
 
   static const double rPill = 999;
 
@@ -129,64 +130,23 @@ class PlayerTokens {
   static const Curve cEmphasizedDecel = MotionTokens.emphasizedDecel;
   static const Curve cEmphasizedAccel = MotionTokens.emphasizedAccel;
 
-  /// The player panel is a spring, not a timed curve: one controller carries
-  /// the whole transition, the release velocity of a flick is poured into the
-  /// simulation, and a grab mid-flight retargets the same motion. A duration
-  /// here would be exactly the preset animation the panel must not be.
-  static const SpringDescription panelOpenSpring = MotionSprings.panel;
-
-  /// The drop, paced by how fast the finger was moving when it let go: a slow
-  /// drag keeps its slow travel instead of snapping on the spring's schedule.
-  static SpringDescription panelDropSpring(double speed) =>
-      MotionSprings.panelDropAt(speed);
-
-  /// Headroom past the bar and past full screen, so the springs can overshoot
-  /// and the dock can dip instead of the surface stopping dead.
-  static const double panelDip = 0.14;
-  static const double panelOvershoot = 0.02;
-
-  /// How far past either end the surface keeps travelling under a finger, on
-  /// top of [panelDip] / [panelOvershoot]. Travel there is damped, never free:
-  /// the surface eases into its limit instead of hitting a wall.
+  /// Maximum rubber-band travel on either side of the panel's seats.
   static const double panelRubberRoom = 0.05;
+  static const double panelMomentumLimit = 10;
+  static const double panelCommitRatio = 0.085;
+  static const double panelFlingRatio = 0.55;
 
-  /// Ceiling on release speed handed to the settle spring, in progress per
-  /// second. High enough that a hard flick keeps its own speed instead of being
-  /// flattened into the same close as a nudge.
-  static const double panelMomentumLimit = 3.0;
-
-  /// The second half of a close: back up out of the dip to the bar.
-  static final SpringDescription panelHomeSpring = MotionSprings.panelHome;
-
-  /// How far past the bar a thrown close is aimed. Only a flick takes the dip:
-  /// a gentle release lands straight on the bar, with no bounce.
-  static const double panelCloseDip = 0.05;
-
-  /// Release speed, in progress per second, at which a release counts as a
-  /// throw: it keeps its momentum, takes the dip and lands on a spring. Below
-  /// it the surface eases home at the pace the finger left it.
-  static const double panelThrowSpeed = 0.6;
-
-  /// How long a release that was not a flick takes, from the distance still to
-  /// cover. A spring pulls away from rest at a speed its stiffness decides,
-  /// which is what made a gentle let-go snap; a timed ease starts and ends at
-  /// zero speed, so the surface leaves at the speed of the finger.
-  static Duration panelReleaseDuration(double distance) =>
-      Duration(milliseconds: (170 + 300 * distance.clamp(0.0, 1.0)).round());
-
-  /// How long a panel that landed closed stays catchable, so a swipe down
-  /// followed straight away by a swipe back up re-opens it. Measured from the
-  /// end of the settle, so the window is still open once the eye says the
-  /// animation is over.
-  static const Duration panelCloseGrace = Duration(milliseconds: 700);
+  static const Curve cPanelWiden = Curves.easeOutCubic;
+  static const double panelShellHandoff = 0.18;
+  static const Duration panelCloseGrace = Duration(milliseconds: 150);
 
   /// Share of the screen height, measured from the bottom, where the grace
   /// window listens. An upward swipe starts where the thumb ended the close, so
   /// the window has to reach well past the dock.
   static const double panelGraceZone = 0.65;
 
-  /// How far the dock sinks per unit of close overshoot.
-  static const double dockDip = 70;
+  /// How far the dock sinks per unit of rebound compression.
+  static const double dockDip = 115;
 
   /// Artwork slot inside the dock bar and the collapsed ball, so the cover
   /// flight can start on exactly the pixels the bar draws.

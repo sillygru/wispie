@@ -28,6 +28,7 @@ import '../components/song_actions.dart';
 import '../components/track_swipe_switcher.dart';
 import '../components/transport_controls.dart';
 import '../motion/motion.dart';
+import '../player_panel/player_morph.dart';
 import '../player_panel/player_panel.dart';
 import '../tokens/player_tokens.dart';
 import '../../l10n/l10n.dart';
@@ -87,7 +88,7 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   final ValueNotifier<bool> _lyricsVisible = ValueNotifier(false);
 
   // Shared with the panel, which flies the artwork in from the dock's bar.
-  final GlobalKey _coverKey = PlayerMorphTargets.cover;
+  final GlobalKey _coverKey = PlayerCoverAnchor.panelKey;
   final GlobalKey _shellKey = GlobalKey(debugLabel: 'fullbleed shell');
 
   late int _pane;
@@ -335,10 +336,10 @@ class _FullBleedPlayerScreenState extends ConsumerState<FullBleedPlayerScreen>
   PlayerPanelController? get _panel => PlayerPanel.controller;
 
   void _onDismissDragStart(DragStartDetails details) =>
-      _panel?.dragStart(details.globalPosition.dy);
+      _panel?.dragStart(details);
 
   void _onDismissDragUpdate(DragUpdateDetails details) =>
-      _panel?.dragUpdate(details.globalPosition.dy);
+      _panel?.dragUpdate(details);
 
   void _onDismissDragEnd(DragEndDetails details) =>
       _panel?.dragEnd(velocity: details.primaryVelocity ?? 0);
@@ -1018,54 +1019,33 @@ class _FullBleedPlayerPane extends ConsumerWidget {
             ),
           );
         }
-        // Static cover: no beat transform on purpose in this design. The
-        // artwork is edge-to-edge here, so a scale has nowhere to go but under
-        // the bottom fade, where it opens a gap above the transport dock.
-        //
-        // ShaderMask fades the lower third into transparency so the blur
-        // behind shows through with no edge to color-match.
-        // The panel flies the artwork in from the dock's bar, so this one is
-        // hidden for the duration of that flight rather than flown itself.
-        // The artwork is its own cached layer and only the opacity above it
-        // changes during the flight, so the fade blends one texture instead of
-        // rebuilding the image and re-running its shader mask each frame.
-        final Widget art = ValueListenableBuilder<double>(
-          valueListenable: PlayerCoverOpacity.notifierOf(context),
-          child: RepaintBoundary(
-            child: Container(
-              key: current ? coverKey : null,
-              width: double.infinity,
-              height: height,
-              color: Colors.black,
-              child: AlbumArtImage(
-                url: song.coverUrl ?? '',
-                filename: song.filename,
-                cacheVersion: song.mtime,
-                width: MediaQuery.sizeOf(context).width,
-                height: height,
-                fadeDuration: Duration.zero,
-                filterQuality: FilterQuality.high,
-                memCacheWidth: (MediaQuery.sizeOf(context).width *
-                        MediaQuery.devicePixelRatioOf(context))
-                    .round(),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          builder: (context, coverOpacity, child) => RepaintBoundary(
-            child: Opacity(opacity: coverOpacity, child: child),
-          ),
-        );
+        final bool fadeSide = WideLayout.isWide(context);
+        final double width = MediaQuery.sizeOf(context).width;
         return SizedBox(
           width: double.infinity,
           height: height,
-          child: _SideFade(
-            enabled: WideLayout.isWide(context),
-            child: ShaderMask(
-              shaderCallback: (Rect bounds) =>
-                  _coverFadeShader(bounds, fadeTop, 1),
-              blendMode: BlendMode.dstIn,
-              child: art,
+          child: PlayerCoverAnchor(
+            key: current ? coverKey : null,
+            effect: (child, strength) => _SideFade(
+              enabled: fadeSide,
+              strength: strength,
+              child: ShaderMask(
+                shaderCallback: (bounds) =>
+                    _coverFadeShader(bounds, fadeTop, strength),
+                blendMode: BlendMode.dstIn,
+                child: ColoredBox(color: Colors.black, child: child),
+              ),
+            ),
+            child: AlbumArtImage(
+              url: song.coverUrl ?? '',
+              filename: song.filename,
+              cacheVersion: song.mtime,
+              width: width,
+              height: height,
+              fadeDuration: Duration.zero,
+              filterQuality: FilterQuality.high,
+              memCacheWidth:
+                  (width * MediaQuery.devicePixelRatioOf(context)).round(),
             ),
           ),
         );
@@ -1115,10 +1095,12 @@ class _FullBleedPlayerPane extends ConsumerWidget {
 /// where the cover column sits beside the lyrics instead of spanning the screen.
 class _SideFade extends StatelessWidget {
   final bool enabled;
+  final double strength;
   final Widget child;
 
   const _SideFade({
     required this.enabled,
+    required this.strength,
     required this.child,
   });
 
@@ -1132,7 +1114,8 @@ class _SideFade extends StatelessWidget {
       shaderCallback: (bounds) => LinearGradient(
         colors: <Color>[
           for (var i = 0; i <= 12; i++)
-            Colors.white.withValues(alpha: 1 - _smootherstep(i / 12)),
+            Colors.white
+                .withValues(alpha: 1 - strength * _smootherstep(i / 12)),
         ],
         stops: <double>[
           for (var i = 0; i <= 12; i++) 0.3 + 0.7 * (i / 12),
