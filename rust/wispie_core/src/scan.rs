@@ -206,6 +206,54 @@ fn now_epoch_sec() -> f64 {
         .unwrap_or(0.0)
 }
 
+fn mtime_secs(metadata: &fs::Metadata) -> Option<f64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs_f64())
+}
+
+/// Everything one file says about itself, for a row that reached the library
+/// outside a scan (an import, a file opened from the OS).
+pub fn hydrate(existing: &SongJson, covers_dir: &Path) -> Option<SongJson> {
+    let path = Path::new(&existing.url);
+    if !path.exists() {
+        return None;
+    }
+    let metadata = fs::metadata(path).ok()?;
+    let play_counts = HashMap::new();
+    let context = Context {
+        covers_dir: covers_dir.to_path_buf(),
+        play_counts: &play_counts,
+        fast_mode: false,
+        min_file_size: 0,
+        by_url: HashMap::new(),
+        by_filename: HashMap::new(),
+        folder_covers: Mutex::new(HashMap::new()),
+    };
+
+    let mut song = build_song(
+        path,
+        existing.url.clone(),
+        existing.filename.clone(),
+        mtime_secs(&metadata),
+        Some(existing),
+        &context,
+    )?;
+    // Video rows carry metadata from the FFmpeg pass, which is not re-read here.
+    if formats::is_video_path(path) {
+        song.title = existing.title.clone();
+        song.artist = existing.artist.clone();
+        song.album = existing.album.clone();
+        song.duration = existing.duration;
+        song.has_lyrics = existing.has_lyrics;
+        song.song_date_epoch_sec = existing.song_date_epoch_sec;
+        song.cover_url = existing.cover_url.clone();
+    }
+    Some(song)
+}
+
 fn process_file(path: &Path, context: &Context) -> Piece {
     let metadata = match fs::metadata(path) {
         Ok(m) => m,
@@ -216,11 +264,7 @@ fn process_file(path: &Path, context: &Context) -> Piece {
         return Piece::Skip;
     }
 
-    let mtime = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs_f64());
+    let mtime = mtime_secs(&metadata);
 
     let url = path.to_string_lossy().to_string();
     let filename = match path.file_name().and_then(|s| s.to_str()) {

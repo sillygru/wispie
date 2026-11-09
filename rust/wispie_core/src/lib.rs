@@ -22,7 +22,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -116,6 +116,7 @@ fn dispatch(payload: serde_json::Value, emitter: &Emitter) -> Result<(), String>
         "extract_covers" => tasks::extract_covers(parse(payload)?, emitter),
         "rebuild_covers" => tasks::rebuild_covers(parse(payload)?, emitter),
         "read_facts" => tasks::read_facts(parse(payload)?, emitter),
+        "read_song" => tasks::read_song(parse(payload)?, emitter),
         "list_media" => tasks::list_media(parse(payload)?, emitter),
         "compact_covers" => tasks::compact_covers(parse(payload)?, emitter),
         "prosody" => prosody::run(parse::<ProsodyRequest>(payload)?.lines, emitter),

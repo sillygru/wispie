@@ -143,6 +143,46 @@ class RustLibraryTasks {
     return Map<String, String>.from(
         result['compacted'] as Map? ?? const <String, String>{});
   }
+
+  /// The cached cover for one file, extracting it when needed.
+  ///
+  /// Lazy tiles use this so a cover found on demand is produced by the same
+  /// reader the scan uses, instead of a second implementation that can write
+  /// bytes the scan would reject.
+  static Future<String?> coverFor(
+    String url,
+    String filename, {
+    required String coversDir,
+    bool force = false,
+  }) async {
+    final result = await _collectOnce({
+      'command': 'rebuild_covers',
+      'coversDir': coversDir,
+      'force': force,
+      'songs': [
+        {
+          'title': '',
+          'artist': '',
+          'album': '',
+          'filename': filename,
+          'url': url,
+        },
+      ],
+    });
+    return (result['covers'] as Map?)?[url] as String?;
+  }
+
+  /// Reads a whole row for one file: tags, duration, year, lyrics and cover.
+  static Future<Song?> readSong(Song song, {required String coversDir}) async {
+    final result = await _collectOnce({
+      'command': 'read_song',
+      'coversDir': coversDir,
+      'songs': [song.toJson()],
+    });
+    final rows = result['songs'] as List<dynamic>? ?? const [];
+    if (rows.isEmpty) return null;
+    return Song.fromJson(rows.first as Map<String, dynamic>);
+  }
 }
 
 void _run(RustTaskRequest request) {
@@ -220,6 +260,8 @@ void _collect(_CollectJob job) {
   final paths = <String>[];
   final facts = <Map<String, dynamic>>[];
   final compacted = <String, String>{};
+  final songs = <Map<String, dynamic>>[];
+  final covers = <String, String>{};
 
   try {
     WispieCore.run(job.request, onEvent: (kind, payload) {
@@ -232,6 +274,10 @@ void _collect(_CollectJob job) {
             facts.addAll(list.cast<Map<String, dynamic>>());
           } else if (decoded['compacted'] case final Map<String, dynamic> map) {
             compacted.addAll(Map<String, String>.from(map));
+          } else if (decoded['songs'] case final List<dynamic> list) {
+            songs.addAll(list.cast<Map<String, dynamic>>());
+          } else if (decoded['covers'] case final Map<String, dynamic> map) {
+            covers.addAll(Map<String, String>.from(map));
           }
         case WispieCore.eventProgress:
           final total = (decoded['total'] as num?)?.toInt() ?? 0;
@@ -246,6 +292,8 @@ void _collect(_CollectJob job) {
       'paths': paths,
       'facts': facts,
       'compacted': compacted,
+      'songs': songs,
+      'covers': covers,
     });
   } catch (error) {
     job.port.send(RustTaskError('$error'));

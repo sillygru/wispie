@@ -3,8 +3,10 @@
 use crate::cover;
 use crate::emitter::{Emit, Emitter};
 use crate::formats;
+use crate::image_sig::recover_embedded_cover;
 use crate::meta;
 use crate::model::{CompactRequest, FactsRequest, FolderFact, ListRequest, SongJson, SongsRequest};
+use crate::scan;
 use crate::CANCEL;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -45,18 +47,21 @@ fn done_event(scanned: u64, cancelled: bool) -> Emit {
 }
 
 pub fn enrich(request: SongsRequest, emitter: &Emitter) -> Result<(), String> {
+    let covers_dir = PathBuf::from(&request.covers_dir);
     let total = request.songs.len() as u64;
     let chunk = (threads(request.concurrency) * 8).max(1);
     let mut batch: Vec<SongJson> = Vec::new();
     let mut processed = 0u64;
+    let mut cancelled = false;
 
     for slice in request.songs.chunks(chunk) {
         if CANCEL.load(Ordering::Relaxed) {
+            cancelled = true;
             break;
         }
         let enriched: Vec<Option<SongJson>> = slice
             .par_iter()
-            .map(|song| safely(|| enrich_one(song)))
+            .map(|song| safely(|| enrich_one(song, &covers_dir)))
             .collect();
         batch.extend(enriched.into_iter().flatten());
         processed += slice.len() as u64;
@@ -72,57 +77,102 @@ pub fn enrich(request: SongsRequest, emitter: &Emitter) -> Result<(), String> {
     if !batch.is_empty() {
         emitter.emit(Emit::Songs(batch));
     }
-    emitter.emit(done_event(processed, false));
+    emitter.emit(done_event(processed, cancelled));
     Ok(())
 }
 
+/// Tags and, when the row has no art, the cover — from one open of the file.
 /// Returns a row only when the read actually changed it.
-fn enrich_one(song: &SongJson) -> Option<SongJson> {
+fn enrich_one(song: &SongJson, covers_dir: &Path) -> Option<SongJson> {
     let path = Path::new(&song.url);
     if !path.exists() || formats::is_video_path(path) {
         return None;
     }
 
-    // Only records the fast scan left untouched are worth re-reading.
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    if !(song.title == stem && song.artist == "Unknown Artist" && song.album == "Unknown Album") {
+    let needs_cover = song.cover_url.as_deref().map(str::is_empty).unwrap_or(true);
+    let placeholder = song.is_placeholder();
+    if !placeholder && !needs_cover {
         return None;
     }
 
-    let tags = meta::read_tags(path, false).ok()?;
+    let tags = meta::read_tags(path, needs_cover).ok()?;
     let mut updated = song.clone();
-    if let Some(value) = tags.title {
-        updated.title = value;
+    let mut changed = false;
+
+    // An untagged file keeps its filename title, so only real values replace.
+    if placeholder {
+        if let Some(value) = tags.title {
+            updated.title = value;
+            changed = true;
+        }
+        if let Some(value) = tags.artist {
+            updated.artist = value;
+            changed = true;
+        }
+        if let Some(value) = tags.album {
+            updated.album = value;
+            changed = true;
+        }
+        if let Some(year) = tags.year.and_then(meta::year_start_epoch_sec) {
+            updated.song_date_epoch_sec = Some(year);
+            changed = true;
+        }
+        if tags.has_lyrics {
+            updated.has_lyrics = true;
+            changed = true;
+        }
     }
-    if let Some(value) = tags.artist {
-        updated.artist = value;
+    if updated.duration.is_none() {
+        if let Some(duration) = tags.duration_secs {
+            updated.duration = Some(duration);
+            changed = true;
+        }
     }
-    if let Some(value) = tags.album {
-        updated.album = value;
+
+    if needs_cover && !covers_dir.as_os_str().is_empty() {
+        if let Some(found) = cover_for(path, tags.picture.as_deref(), covers_dir) {
+            updated.cover_url = Some(found);
+            changed = true;
+        }
     }
-    updated.duration = tags.duration_secs;
-    updated.has_lyrics = updated.has_lyrics || tags.has_lyrics;
-    if let Some(year) = tags.year.and_then(meta::year_start_epoch_sec) {
-        updated.song_date_epoch_sec = Some(year);
+
+    if changed {
+        Some(updated)
+    } else {
+        None
     }
-    Some(updated)
+}
+
+/// Embedded art, then a folder cover, then the byte scan.
+fn cover_for(path: &Path, picture: Option<&[u8]>, covers_dir: &Path) -> Option<String> {
+    if let Some(picture) = picture {
+        if let Some((offset, kind)) = recover_embedded_cover(picture) {
+            if let Ok(saved) =
+                cover::save_optimized_cover(&picture[offset..], covers_dir, Some(kind.extension()))
+            {
+                return Some(saved);
+            }
+        }
+    }
+    if let Some(folder) = path.parent() {
+        if let Some(found) = cover::find_cover_in_folder(folder) {
+            return Some(found);
+        }
+    }
+    cover::manual_extract(path, covers_dir)
 }
 
 pub fn extract_covers(request: SongsRequest, emitter: &Emitter) -> Result<(), String> {
     let covers_dir = PathBuf::from(&request.covers_dir);
-    let targets: Vec<SongJson> = request
-        .songs
-        .into_iter()
-        .filter(|song| song.cover_url.as_deref().map(str::is_empty).unwrap_or(true))
-        .collect();
-
-    let total = targets.len() as u64;
+    let total = request.songs.len() as u64;
     let chunk = (threads(request.concurrency) * 2).max(1);
     let mut batch: Vec<SongJson> = Vec::new();
     let mut processed = 0u64;
+    let mut cancelled = false;
 
-    for slice in targets.chunks(chunk) {
+    for slice in request.songs.chunks(chunk) {
         if CANCEL.load(Ordering::Relaxed) {
+            cancelled = true;
             break;
         }
         let extracted: Vec<Option<SongJson>> = slice
@@ -143,15 +193,37 @@ pub fn extract_covers(request: SongsRequest, emitter: &Emitter) -> Result<(), St
     if !batch.is_empty() {
         emitter.emit(Emit::Songs(batch));
     }
-    emitter.emit(done_event(processed, false));
+    emitter.emit(done_event(processed, cancelled));
     Ok(())
 }
 
 fn extract_one(song: &SongJson, covers_dir: &Path) -> Option<SongJson> {
+    // A row can carry a cover path whose file was wiped or truncated; those are
+    // re-extracted instead of being trusted for another launch.
+    if let Some(cover) = song.cover_url.as_deref().filter(|cover| !cover.is_empty()) {
+        if cover::is_valid_cover_file(Path::new(cover), false) {
+            return None;
+        }
+    }
     let found = cover::extract_cover_without_ffmpeg(Path::new(&song.url), covers_dir, false)?;
     let mut updated = song.clone();
     updated.cover_url = Some(found);
     Some(updated)
+}
+
+/// Whole rows for files that reached the library outside a scan (imports, a
+/// file opened from the OS). Same reader the scan uses, so they cannot disagree.
+pub fn read_song(request: SongsRequest, emitter: &Emitter) -> Result<(), String> {
+    let covers_dir = PathBuf::from(&request.covers_dir);
+    let total = request.songs.len() as u64;
+    let songs: Vec<SongJson> = request
+        .songs
+        .par_iter()
+        .map(|song| safely(|| scan::hydrate(song, &covers_dir)).unwrap_or_else(|| song.clone()))
+        .collect();
+    emitter.emit(Emit::Songs(songs));
+    emitter.emit(done_event(total, false));
+    Ok(())
 }
 
 pub fn rebuild_covers(request: SongsRequest, emitter: &Emitter) -> Result<(), String> {
@@ -193,7 +265,14 @@ fn resolve_cover(song: &SongJson, covers_dir: &Path, force: bool) -> Option<(Str
     let cached = if force {
         None
     } else {
-        cover::find_cached_cover(covers_dir, &song.filename, false)
+        // The row's own cover is the cheapest truth: it may be content-addressed
+        // or a folder cover, neither of which a filename hash could find.
+        song.cover_url
+            .as_deref()
+            .map(Path::new)
+            .filter(|cover| cover::is_valid_cover_file(cover, false))
+            .map(|cover| cover.to_string_lossy().to_string())
+            .or_else(|| cover::find_cached_cover(covers_dir, &song.filename, false))
     };
     let resolved =
         cached.or_else(|| cover::extract_cover_without_ffmpeg(path, covers_dir, false))?;
@@ -204,9 +283,11 @@ pub fn read_facts(request: FactsRequest, emitter: &Emitter) -> Result<(), String
     let total = request.paths.len() as u64;
     let chunk = (threads(request.concurrency) * 8).max(1);
     let mut processed = 0u64;
+    let mut cancelled = false;
 
     for slice in request.paths.chunks(chunk) {
         if CANCEL.load(Ordering::Relaxed) {
+            cancelled = true;
             break;
         }
         let facts: Vec<FolderFact> = slice
@@ -222,7 +303,7 @@ pub fn read_facts(request: FactsRequest, emitter: &Emitter) -> Result<(), String
         });
     }
 
-    emitter.emit(done_event(processed, false));
+    emitter.emit(done_event(processed, cancelled));
     Ok(())
 }
 
@@ -292,9 +373,11 @@ pub fn compact_covers(request: CompactRequest, emitter: &Emitter) -> Result<(), 
     let chunk = (threads(request.concurrency) * 4).max(1);
     let mut compacted: HashMap<String, String> = HashMap::new();
     let mut processed = 0u64;
+    let mut cancelled = false;
 
     for slice in request.paths.chunks(chunk) {
         if CANCEL.load(Ordering::Relaxed) {
+            cancelled = true;
             break;
         }
         let rewritten: Vec<(String, String)> = slice
@@ -310,7 +393,7 @@ pub fn compact_covers(request: CompactRequest, emitter: &Emitter) -> Result<(), 
     }
 
     emitter.emit(Emit::Compacted(compacted));
-    emitter.emit(done_event(processed, false));
+    emitter.emit(done_event(processed, cancelled));
     Ok(())
 }
 

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import '../data/rust/rust_library_tasks.dart';
 import '../domain/services/embedded_cover_bytes.dart';
 import '../models/song.dart';
 import 'database_service.dart';
@@ -111,15 +111,50 @@ class CoverRefreshService {
     RandomAccessFile? handle;
     try {
       if (!await file.exists()) return false;
-      if (await file.length() <= 0) return false;
+      final length = await file.length();
+      if (length <= 0) return false;
       handle = await file.open();
       final head = await handle.read(imageSignatureProbeLength);
-      return hasImageSignature(head);
+      if (!hasImageSignature(head)) return false;
+      // A truncated image starts with a real signature and has no end marker;
+      // trusting it would keep a green smear on screen forever.
+      final tailLength = length < 256 ? length : 256;
+      await handle.setPosition(length - tailLength);
+      final tail = await handle.read(tailLength);
+      return _hasImageEnd(head, tail);
     } catch (_) {
       return false;
     } finally {
       await handle?.close();
     }
+  }
+
+  static bool _hasImageEnd(List<int> head, List<int> tail) {
+    bool contains(List<int> needle) {
+      for (var i = 0; i + needle.length <= tail.length; i++) {
+        var match = true;
+        for (var j = 0; j < needle.length; j++) {
+          if (tail[i + j] != needle[j]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) return true;
+      }
+      return false;
+    }
+
+    final jpeg = head.length >= 3 &&
+        head[0] == 0xFF &&
+        head[1] == 0xD8 &&
+        head[2] == 0xFF;
+    final png = head.length >= 4 &&
+        head[0] == 0x89 &&
+        head[1] == 0x50 &&
+        head[2] == 0x4E;
+    if (jpeg) return contains(const [0xFF, 0xD9]);
+    if (png) return contains(const [0x49, 0x45, 0x4E, 0x44]);
+    return true;
   }
 
   Future<void> _acquireSlot() async {
@@ -196,18 +231,12 @@ class CoverRefreshService {
     try {
       final coversDir = await ScannerService.coversDirectory();
 
-      final audioPath = song.url;
-      final coversPath = coversDir.path;
-
-      // The metadata read and byte scan can touch the whole file, so they run
-      // off the UI thread. The FFmpeg fallback can't — it uses platform
-      // channels — but it is now a genuine last resort.
-      String? coverPath = await Isolate.run(
-        () => ScannerService.extractCoverWithoutFFmpeg(
-          audioPath,
-          coversPath,
-          songFilename,
-        ),
+      // The native reader runs on its own isolate. The FFmpeg fallback cannot —
+      // it uses platform channels — but it is a genuine last resort.
+      String? coverPath = await RustLibraryTasks.coverFor(
+        song.url,
+        songFilename,
+        coversDir: coversDir.path,
       );
 
       coverPath ??= await ScannerService.extractCoverWithFFmpeg(

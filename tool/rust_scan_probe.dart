@@ -193,17 +193,6 @@ void main() {
         'cover sweep finds embedded art',
         sweptCover != null && p.basename(sweptCover).startsWith('c_'),
         '$sweptCover');
-
-    final enriched = _task({
-      'command': 'enrich',
-      'coversDir': freshCovers.path,
-      'songs': covered.songs,
-    });
-    check('enrich fills tags in', enriched.songs.single['title'] == 'Epsilon',
-        '${enriched.songs.single['title']}');
-    check('enrich keeps the cover',
-        enriched.songs.single['cover_url'] == sweptCover);
-
     final facts = _task({
       'command': 'read_facts',
       'paths': [p.join(fresh.path, 'e.mp3')],
@@ -211,14 +200,129 @@ void main() {
     check('folder facts read tags', facts.facts.single['title'] == 'Epsilon',
         '${facts.facts.single['title']}');
 
+    // Hydration fills tags and art from one task, so a first scan does not
+    // need a separate cover pass over the same files.
+    final hydrated = _task({
+      'command': 'enrich',
+      'coversDir': freshCovers.path,
+      'songs': fast.songs,
+    });
+    check(
+        'hydrate fills tags in one pass',
+        hydrated.songs.single['title'] == 'Epsilon',
+        '${hydrated.songs.single['title']}');
+    check(
+        'hydrate extracts the cover in the same pass',
+        hydrated.songs.single['cover_url'] == sweptCover,
+        '${hydrated.songs.single['cover_url']}');
+
     final rebuilt = _task({
       'command': 'rebuild_covers',
       'coversDir': freshCovers.path,
       'force': true,
-      'songs': enriched.songs,
+      'songs': hydrated.songs,
     });
     check('cover rebuild resolves audio art', rebuilt.covers.length == 1,
         '${rebuilt.covers.length}');
+
+    // One file that arrived outside a scan gets the same row a scan produces.
+    final single = _task({
+      'command': 'read_song',
+      'coversDir': freshCovers.path,
+      'songs': [
+        {
+          'title': '',
+          'artist': '',
+          'album': '',
+          'filename': 'e.mp3',
+          'url': p.join(fresh.path, 'e.mp3'),
+        },
+      ],
+    });
+    check('read_song returns tags', single.songs.single['title'] == 'Epsilon',
+        '${single.songs.single['title']}');
+    check(
+        'read_song resolves the cover',
+        single.songs.single['cover_url'] != null,
+        '${single.songs.single['cover_url']}');
+
+    // A row whose cover file disappeared is repaired by the next sweep.
+    File(sweptCover!).deleteSync();
+    final repaired = _task({
+      'command': 'extract_covers',
+      'coversDir': freshCovers.path,
+      'songs': [covered.songs.single],
+    });
+    check('sweep repairs a vanished cover file', repaired.songs.length == 1,
+        '${repaired.songs.length}');
+
+    // A truncated cached cover is not trusted as art.
+    final corrupt = File(p.join(freshCovers.path, 'c_truncated.jpg'))
+      ..writeAsBytesSync(_smallJpeg.sublist(0, 300));
+    final corruptRow = {...covered.songs.single, 'cover_url': corrupt.path};
+    final repairedCorrupt = _task({
+      'command': 'extract_covers',
+      'coversDir': freshCovers.path,
+      'songs': [corruptRow],
+    });
+    check(
+        'sweep replaces a truncated cached cover',
+        repairedCorrupt.songs.isNotEmpty &&
+            repairedCorrupt.songs.single['cover_url'] != corrupt.path,
+        '${repairedCorrupt.songs.isEmpty ? 'none' : repairedCorrupt.songs.single['cover_url']}');
+
+    // Junk that merely starts with image magic must never become a cover.
+    final junk = Directory(p.join(root.path, 'junk'))
+      ..createSync(recursive: true);
+    final junkCovers = Directory(p.join(root.path, 'junk_covers'))
+      ..createSync(recursive: true);
+    final falsePositive = File(p.join(junk.path, 'false_positive.mp3'));
+    _writeMp3(falsePositive,
+        title: 'No Art', artist: 'A', album: 'B', year: 2020);
+    falsePositive.writeAsBytesSync([
+      ...falsePositive.readAsBytesSync(),
+      0xFF,
+      0xD8,
+      0xFF,
+      0xE0,
+      0x00,
+      0x10,
+      ...List<int>.filled(2048, 0),
+      0xFF,
+      0xD9,
+    ]);
+    _writeMp3(
+      File(p.join(junk.path, 'truncated.mp3')),
+      title: 'Truncated',
+      artist: 'A',
+      album: 'B',
+      year: 2020,
+      picture: Uint8List.fromList(_smallJpeg.sublist(0, 512)),
+    );
+    final junkScan = _scan(
+      command: 'scan',
+      roots: [junk.path],
+      coversDir: junkCovers.path,
+      fastMode: true,
+    );
+    final junkSweep = _task({
+      'command': 'extract_covers',
+      'coversDir': junkCovers.path,
+      'songs': junkScan.songs,
+    });
+    final junkRows = {
+      for (final song in junkSweep.songs) song['filename'] as String: song
+    };
+    check(
+        'false image signature is not cached',
+        junkRows['false_positive.mp3']?['cover_url'] == null,
+        '${junkRows['false_positive.mp3']?['cover_url']}');
+    check(
+        'truncated embedded cover is not cached',
+        junkRows['truncated.mp3']?['cover_url'] == null,
+        '${junkRows['truncated.mp3']?['cover_url']}');
+    check('junk sweep wrote no cover files', junkCovers.listSync().isEmpty,
+        '${junkCovers.listSync().length}');
 
     // Folder listing keeps the Dart walk's guards: sorted, hidden skipped.
     final tree = Directory(p.join(root.path, 'tree'))

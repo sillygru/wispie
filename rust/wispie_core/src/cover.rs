@@ -2,7 +2,9 @@
 //! Writes are atomic and keyed by hash, so concurrent writers cannot disagree.
 
 use crate::formats;
-use crate::image_sig::{has_image_signature, recover_embedded_cover, SIGNATURE_PROBE_LEN};
+use crate::image_sig::{
+    has_complete_image, recover_embedded_cover, ImageKind, SIGNATURE_PROBE_LEN, TAIL_PROBE_LEN,
+};
 use crate::meta;
 use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
@@ -16,6 +18,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub const MAX_COVER_DIMENSION: u32 = 1024;
 pub const JPEG_QUALITY: u8 = 88;
 pub const FAST_PATH_BYTE_LIMIT: u64 = 250 * 1024;
+
+/// Below this a "cover" is a decoding accident, not artwork.
+const MIN_COVER_DIMENSION: u32 = 24;
+
+/// How many image candidates one file may offer before the byte scan gives up.
+/// Compressed audio is full of byte pairs that look like a JPEG start.
+const MAX_IMAGE_CANDIDATES: usize = 8;
 
 pub const COVER_EXTENSION_CANDIDATES: &[&str] =
     &[".jpg", ".jpeg", ".png", ".webp", ".bmp", "_ffmpeg.jpg"];
@@ -65,22 +74,35 @@ pub fn cover_candidate_paths(covers_dir: &Path, filename: &str) -> Vec<PathBuf> 
 }
 
 /// Whether `path` holds a cache-worthy cover.
-/// The signature check is the cheap half and catches pre-recovery covers.
+///
+/// The cheap half reads the first and last bytes: a cover that starts with a
+/// signature but has no end marker is a truncated grab (a green smear on
+/// screen), and one that starts mid-frame is the tail of a picture frame.
 pub fn is_valid_cover_file(path: &Path, require_decodable: bool) -> bool {
     let metadata = match fs::metadata(path) {
         Ok(m) => m,
         Err(_) => return false,
     };
-    if metadata.len() == 0 {
+    let length = metadata.len();
+    if length == 0 {
         return false;
     }
 
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
     let mut head = [0u8; SIGNATURE_PROBE_LEN];
-    let read = match File::open(path).and_then(|mut f| f.read(&mut head)) {
+    let read = match file.read(&mut head) {
         Ok(n) => n,
         Err(_) => return false,
     };
-    if !has_image_signature(&head[..read]) {
+    let tail_length = (length.min(TAIL_PROBE_LEN as u64)) as usize;
+    let tail = match read_at(&mut file, length - tail_length as u64, tail_length) {
+        Some(tail) => tail,
+        None => return false,
+    };
+    if !has_complete_image(&head[..read], &tail, length) {
         return false;
     }
     if !require_decodable {
@@ -89,7 +111,7 @@ pub fn is_valid_cover_file(path: &Path, require_decodable: bool) -> bool {
 
     match fs::read(path) {
         Ok(bytes) => image::load_from_memory(&bytes)
-            .map(|decoded| decoded.width() > 0 && decoded.height() > 0)
+            .map(|decoded| decoded.width() >= MIN_COVER_DIMENSION)
             .unwrap_or(false),
         Err(_) => false,
     }
@@ -132,14 +154,34 @@ fn find_existing_cover(covers_dir: &Path, content_key: &str) -> Option<String> {
     None
 }
 
-fn sniff_extension(raw: &[u8]) -> Option<&'static str> {
-    if raw.len() < 4 || !has_image_signature(raw) {
-        return None;
+fn detected_extension(raw: &[u8]) -> Option<&'static str> {
+    use image::ImageFormat;
+    match image::guess_format(raw).ok()? {
+        ImageFormat::Jpeg => Some(".jpg"),
+        ImageFormat::Png => Some(".png"),
+        ImageFormat::WebP => Some(".webp"),
+        ImageFormat::Bmp => Some(".bmp"),
+        ImageFormat::Gif => Some(".gif"),
+        _ => None,
     }
-    recover_embedded_cover(raw).map(|(_, kind)| kind.extension())
+}
+
+fn normalize_extension(extension: &str) -> &'static str {
+    match extension.to_ascii_lowercase().as_str() {
+        ".jpg" | ".jpeg" => ".jpg",
+        ".png" => ".png",
+        ".webp" => ".webp",
+        ".bmp" => ".bmp",
+        ".gif" => ".gif",
+        _ => ".jpg",
+    }
 }
 
 /// Optimises and writes `raw`, reusing an identical cached image.
+///
+/// Undecodable payloads are rejected rather than stored: a false image
+/// signature inside compressed audio must never become a cached cover, because
+/// every later pass would then trust it as real art.
 pub fn save_optimized_cover(
     raw: &[u8],
     covers_dir: &Path,
@@ -149,21 +191,24 @@ pub fn save_optimized_cover(
         return Err("empty cover payload".to_string());
     }
 
+    let decoded = image::load_from_memory(raw)
+        .map_err(|error| format!("cover payload does not decode: {error}"))?;
+    if decoded.width() < MIN_COVER_DIMENSION || decoded.height() < MIN_COVER_DIMENSION {
+        return Err(format!(
+            "cover payload too small: {}x{}",
+            decoded.width(),
+            decoded.height()
+        ));
+    }
+
     let key = compute_content_key(raw);
     if let Some(existing) = find_existing_cover(covers_dir, &key) {
         return Ok(existing);
     }
 
-    let ext = fallback_extension
-        .map(|e| e.to_string())
-        .or_else(|| sniff_extension(raw).map(|e| e.to_string()))
-        .unwrap_or_else(|| ".jpg".to_string());
-
-    let Ok(decoded) = image::load_from_memory(raw) else {
-        // Undecodable payloads are still cached: the file may be a format the
-        // decoder lacks, and dropping it would lose the only copy.
-        return Ok(write_raw(&covers_dir.join(format!("{key}{ext}")), raw));
-    };
+    let ext = detected_extension(raw)
+        .or_else(|| fallback_extension.map(normalize_extension))
+        .unwrap_or(".jpg");
 
     let oversized = decoded.width() > MAX_COVER_DIMENSION || decoded.height() > MAX_COVER_DIMENSION;
 
@@ -221,13 +266,6 @@ fn encode_jpeg(image: &DynamicImage) -> Result<Vec<u8>, String> {
         )
         .map_err(|e| e.to_string())?;
     Ok(buffer)
-}
-
-fn write_raw(target: &Path, bytes: &[u8]) -> String {
-    if let Err(e) = fs::write(target, bytes) {
-        log_note(&format!("cover write failed {}: {e}", target.display()));
-    }
-    target.to_string_lossy().to_string()
 }
 
 fn write_atomic(target: &Path, bytes: &[u8]) -> String {
@@ -311,7 +349,10 @@ fn read_at(file: &mut File, position: u64, length: usize) -> Option<Vec<u8>> {
 }
 
 /// Byte-level recovery for files whose tag parser gave up.
-/// Scans the head (or whole small file) for APIC, `covr` or a bare signature.
+///
+/// Every candidate is located and bounded in memory: scanning compressed audio
+/// for a bare signature finds plenty of false starts, and re-reading the file
+/// from each one turns one artless song into gigabytes of I/O.
 pub fn manual_extract(file_path: &Path, covers_dir: &Path) -> Option<String> {
     let mut file = File::open(file_path).ok()?;
     let length = file.metadata().ok()?.len();
@@ -326,18 +367,7 @@ pub fn manual_extract(file_path: &Path, covers_dir: &Path) -> Option<String> {
         FIRST_SCAN_LIMIT
     } as usize;
     let head = read_at(&mut file, 0, first_length)?;
-
-    if formats::extension(file_path).as_deref() == Some(".m4a") {
-        if let Some(found) = scan_for_covr(&head, &mut file, 0, covers_dir) {
-            return Some(found);
-        }
-    }
-
-    if let Some(found) = scan_for_apic(&head, &mut file, 0, covers_dir) {
-        return Some(found);
-    }
-
-    if let Some(found) = scan_buffer_for_signatures(&head, &mut file, 0, covers_dir) {
+    if let Some(found) = scan_for_image(&head, 0, &mut file, covers_dir) {
         return Some(found);
     }
 
@@ -345,9 +375,7 @@ pub fn manual_extract(file_path: &Path, covers_dir: &Path) -> Option<String> {
         let footer_length = FOOTER_SCAN_LIMIT.min(length - first_length as u64) as usize;
         let footer_start = length - footer_length as u64;
         let footer = read_at(&mut file, footer_start, footer_length)?;
-        if let Some(found) =
-            scan_buffer_for_signatures(&footer, &mut file, footer_start, covers_dir)
-        {
+        if let Some(found) = scan_for_image(&footer, footer_start, &mut file, covers_dir) {
             return Some(found);
         }
     }
@@ -355,156 +383,149 @@ pub fn manual_extract(file_path: &Path, covers_dir: &Path) -> Option<String> {
     None
 }
 
-fn scan_for_apic(
+fn scan_for_image(
     bytes: &[u8],
-    file: &mut File,
     base_offset: u64,
+    file: &mut File,
     covers_dir: &Path,
 ) -> Option<String> {
-    if bytes.len() < 20 {
-        return None;
-    }
-    for i in 0..=bytes.len() - 20 {
-        if &bytes[i..i + 4] != b"APIC" {
+    let mut from = 0usize;
+    let mut tried = 0usize;
+    while tried < MAX_IMAGE_CANDIDATES {
+        let (start, kind) = find_candidate(bytes, from)?;
+        tried += 1;
+
+        let Some((end, extension)) = image_end(bytes, start, kind) else {
+            from = start + 2;
+            continue;
+        };
+        if end - start > MAX_IMAGE_BYTES as usize {
+            from = start + 2;
             continue;
         }
-        let tag_size = ((bytes[i + 4] as u32) << 21)
-            | ((bytes[i + 5] as u32) << 14)
-            | ((bytes[i + 6] as u32) << 7)
-            | (bytes[i + 7] as u32);
-        if tag_size as u64 > 5000 && (tag_size as u64) < MAX_IMAGE_BYTES {
-            let end = (i as u64 + tag_size as u64 + 20).min(bytes.len() as u64) as usize;
-            let sub_chunk = &bytes[i..end];
-            if let Some(found) =
-                scan_buffer_for_signatures(sub_chunk, file, base_offset + i as u64, covers_dir)
-            {
-                return Some(found);
-            }
-        }
-    }
-    None
-}
 
-fn scan_for_covr(
-    bytes: &[u8],
-    file: &mut File,
-    base_offset: u64,
-    covers_dir: &Path,
-) -> Option<String> {
-    if bytes.len() < 24 {
-        return None;
-    }
-    for i in 0..=bytes.len() - 24 {
-        if &bytes[i..i + 4] != b"covr" {
-            continue;
-        }
-        let inner_end = (i + 128).min(bytes.len().saturating_sub(16));
-        for j in (i + 4)..inner_end {
-            if &bytes[j..j + 4] != b"data" {
-                continue;
-            }
-            let data_size = ((bytes[j - 4] as u32) << 24)
-                | ((bytes[j - 3] as u32) << 16)
-                | ((bytes[j - 2] as u32) << 8)
-                | (bytes[j - 1] as u32);
-            let image_size = data_size as i64 - 16;
-            if image_size > 1024 && (image_size as u64) < MAX_IMAGE_BYTES {
-                let start = base_offset + j as u64 + 12;
-                let image = read_at(file, start, image_size as usize)?;
-                let extension = match bytes[j + 11] {
-                    14 => ".png",
-                    27 => ".bmp",
-                    _ => ".jpg",
-                };
-                return save_optimized_cover(&image, covers_dir, Some(extension)).ok();
-            }
-        }
-    }
-    None
-}
-
-fn scan_buffer_for_signatures(
-    bytes: &[u8],
-    file: &mut File,
-    base_offset: u64,
-    covers_dir: &Path,
-) -> Option<String> {
-    if bytes.len() < 8 {
-        return None;
-    }
-    for i in 0..=bytes.len() - 8 {
-        let extension = if bytes[i] == 0xFF && bytes[i + 1] == 0xD8 {
-            Some(".jpg")
-        } else if bytes[i] == 0x89
-            && bytes[i + 1] == 0x50
-            && bytes[i + 2] == 0x4E
-            && bytes[i + 3] == 0x47
-        {
-            Some(".png")
-        } else if bytes[i] == 0x52
-            && bytes[i + 1] == 0x49
-            && bytes[i + 2] == 0x46
-            && bytes[i + 3] == 0x46
-            && bytes[i + 8] == 0x57
-            && bytes[i + 9] == 0x45
-            && bytes[i + 10] == 0x42
-            && bytes[i + 11] == 0x50
-        {
-            Some(".webp")
+        let owned;
+        let payload: &[u8] = if end <= bytes.len() {
+            &bytes[start..end]
         } else {
-            None
+            // The image runs past this buffer; read exactly it, not a window.
+            owned = read_at(file, base_offset + start as u64, end - start)?;
+            &owned
         };
 
-        if let Some(extension) = extension {
-            if let Some(found) =
-                extract_image_at(file, base_offset + i as u64, extension, covers_dir)
-            {
-                return Some(found);
-            }
+        if let Ok(saved) = save_optimized_cover(payload, covers_dir, Some(extension)) {
+            return Some(saved);
         }
+        from = end.min(bytes.len());
     }
     None
 }
 
-fn extract_image_at(
-    file: &mut File,
-    position: u64,
-    extension: &str,
-    covers_dir: &Path,
-) -> Option<String> {
-    let data = read_at(file, position, MAX_IMAGE_BYTES as usize)?;
-    let mut actual_end = data.len();
-
-    if extension == ".jpg" {
-        let mut last_eoi = None;
-        for k in 0..data.len().saturating_sub(1) {
-            if data[k] == 0xFF && data[k + 1] == 0xD9 {
-                last_eoi = Some(k + 2);
-                if k + 4 < data.len() && (data[k + 2] != 0xFF || data[k + 3] == 0x00) {
-                    actual_end = k + 2;
-                    break;
-                }
+/// The next offset whose bytes begin a real image container.
+fn find_candidate(bytes: &[u8], from: usize) -> Option<(usize, ImageKind)> {
+    let mut index = from;
+    while index + 12 <= bytes.len() {
+        if bytes[index] == 0xFF && bytes[index + 1] == 0xD8 && bytes[index + 2] == 0xFF {
+            // A real JPEG start is followed by an APP/DQT/SOF marker rather
+            // than by the next byte of an audio frame.
+            let marker = bytes[index + 3];
+            if (0xC0..=0xFE).contains(&marker) && marker != 0xD8 {
+                return Some((index, ImageKind::Jpeg));
             }
         }
-        if let Some(eoi) = last_eoi {
-            if actual_end == data.len() {
-                actual_end = eoi;
-            }
+        if &bytes[index..index + 8] == b"\x89PNG\r\n\x1a\n" {
+            return Some((index, ImageKind::Png));
         }
-        if actual_end == data.len() && data.len() < 50 * 1024 {
-            return None;
+        if &bytes[index..index + 4] == b"RIFF" && &bytes[index + 8..index + 12] == b"WEBP" {
+            return Some((index, ImageKind::Webp));
         }
-    } else if extension == ".png" {
-        const PNG_END: [u8; 8] = [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
-        if let Some(index) = data.windows(PNG_END.len()).position(|w| w == PNG_END) {
-            actual_end = index + PNG_END.len();
-        }
-    }
-
-    if actual_end > 1024 && actual_end <= data.len() {
-        return save_optimized_cover(&data[..actual_end], covers_dir, Some(extension)).ok();
+        index += 1;
     }
     None
+}
+
+fn image_end(bytes: &[u8], start: usize, kind: ImageKind) -> Option<(usize, &'static str)> {
+    match kind {
+        ImageKind::Jpeg => jpeg_end(bytes, start).map(|end| (end, ".jpg")),
+        ImageKind::Png => png_end(bytes, start).map(|end| (end, ".png")),
+        ImageKind::Webp => webp_end(bytes, start).map(|end| (end, ".webp")),
+        _ => None,
+    }
+}
+
+/// Walks JPEG segments up to the end marker, so the payload ends exactly where
+/// the image does. Inside the scan data `FF D9` can only be a real marker:
+/// literal `FF` bytes are stuffed as `FF 00`.
+fn jpeg_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut position = start + 2;
+    while position + 1 < bytes.len() {
+        if bytes[position] != 0xFF {
+            return None;
+        }
+        let marker = bytes[position + 1];
+        if marker == 0xD9 {
+            return Some(position + 2);
+        }
+        if marker == 0xDA {
+            return bytes[position + 2..]
+                .windows(2)
+                .position(|window| window == [0xFF, 0xD9])
+                .map(|offset| position + 4 + offset);
+        }
+        if marker == 0x01 || (0xD0..=0xD7).contains(&marker) {
+            position += 2;
+            continue;
+        }
+        if position + 4 > bytes.len() {
+            return None;
+        }
+        let length = u16::from_be_bytes([bytes[position + 2], bytes[position + 3]]) as usize;
+        if length < 2 {
+            return None;
+        }
+        position += 2 + length;
+    }
+    None
+}
+
+fn png_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut position = start + 8;
+    loop {
+        if position + 8 > bytes.len() {
+            return None;
+        }
+        let length = u32::from_be_bytes([
+            bytes[position],
+            bytes[position + 1],
+            bytes[position + 2],
+            bytes[position + 3],
+        ]) as usize;
+        let kind = &bytes[position + 4..position + 8];
+        let next = position + 12 + length;
+        if kind == b"IEND" {
+            return Some(next);
+        }
+        if next <= position || next > bytes.len() {
+            return None;
+        }
+        position = next;
+    }
+}
+
+fn webp_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if start + 12 > bytes.len() {
+        return None;
+    }
+    let size = u32::from_le_bytes([
+        bytes[start + 4],
+        bytes[start + 5],
+        bytes[start + 6],
+        bytes[start + 7],
+    ]) as usize;
+    if size == 0 {
+        return None;
+    }
+    Some(start + 8 + size)
 }
 
 fn log_note(message: &str) {

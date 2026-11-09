@@ -4,13 +4,11 @@ import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'dart:convert';
 import '../models/song.dart';
 import 'database_service.dart';
-import '../domain/services/cover_optimizer.dart';
 import '../domain/services/embedded_cover_bytes.dart';
 import '../domain/services/media_formats.dart';
 import '../domain/services/search_service.dart';
@@ -51,6 +49,16 @@ class ScanResult {
   const ScanResult.failed(this.status) : songs = const [];
 
   bool get trusted => status == ScanStatus.ok;
+}
+
+/// Outcome of a native cover sweep.
+class CoverSweepResult {
+  const CoverSweepResult(this.songs, {required this.completed});
+
+  final List<Song> songs;
+
+  /// False when the sweep stopped early; a caller must not record misses then.
+  final bool completed;
 }
 
 class _ScanParams {
@@ -616,11 +624,11 @@ class ScannerService {
     return completer.future;
   }
 
-  /// Enriches minimal song records with metadata (title, artist, album, duration).
+  /// Enriches minimal song records and fills in their missing cover art.
   ///
-  /// Tag parsing runs on the native core's workers; only the DB write and the
-  /// progress callback stay on this isolate, since sqflite is not usable from a
-  /// spawned one.
+  /// Both come from one open of each file on the native core's workers; only
+  /// the DB write and the progress callback stay on this isolate, since sqflite
+  /// is not usable from a spawned one.
   static Future<List<Song>> enrichAllMetadata(
     List<Song> songs, {
     void Function(double progress)? onProgress,
@@ -630,14 +638,51 @@ class ScannerService {
         onProgress: onProgress, onBatchEnriched: onBatchEnriched);
   }
 
-  /// Extracts cover art for songs missing covers, on the native core.
-  static Future<List<Song>> extractCoversInBackground(
+  /// Extracts or repairs cover art for [songs], on the native core.
+  ///
+  /// A row whose cover file is missing or unusable is re-extracted. The sweep's
+  /// [CoverSweepResult.completed] flag is false when it stopped early, so a
+  /// caller never records a miss it did not actually establish.
+  static Future<CoverSweepResult> extractCoversInBackground(
     List<Song> songs, {
     void Function(double progress)? onProgress,
     void Function(List<Song> updatedSongs)? onBatchExtracted,
   }) {
     return _extractCoversOnCore(songs,
         onProgress: onProgress, onBatchExtracted: onBatchExtracted);
+  }
+
+  /// Songs worth sending to a cover sweep: not a video, not a miss recorded for
+  /// this exact file version, and without a cover file on disk.
+  static Future<List<Song>> coverGaps(List<Song> songs) async {
+    Map<String, double> misses;
+    try {
+      misses = await DatabaseService.instance.getCoverMisses();
+    } catch (_) {
+      misses = const {};
+    }
+
+    Future<bool> present(String path) async {
+      try {
+        final file = File(path);
+        return await file.exists() && await file.length() > 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final gaps = <Song>[];
+    for (final song in songs) {
+      if (_isVideoFile(song.url)) continue;
+      final miss = misses[song.filename];
+      final mtime = song.mtime;
+      if (miss != null && mtime != null && (miss - mtime).abs() < 2.0) continue;
+      final cover = song.coverUrl;
+      if (cover == null || cover.isEmpty || !await present(cover)) {
+        gaps.add(song);
+      }
+    }
+    return gaps;
   }
 
   /// Extracts cover art for a single song on demand.
@@ -647,71 +692,20 @@ class ScannerService {
     final file = File(song.url);
     if (!await file.exists()) return null;
 
-    final isVideo = _isVideoFile(song.url);
-    final supportDir = await getSupportDirectory();
-    final coversDir = Directory(p.join(supportDir.path, 'extracted_covers'));
-    if (!await coversDir.exists()) {
-      await coversDir.create(recursive: true);
-    }
-
-    return await extractCoverForFile(
+    final coversDir = await coversDirectory();
+    return extractCoverForFile(
       file,
       coversDir,
       p.basename(file.path),
-      useFFmpegFallback: isVideo,
+      useFFmpegFallback: _isVideoFile(song.url),
     );
   }
 
-  /// The pure-Dart half of cover extraction: embedded picture → folder cover →
-  /// manual byte scan. Uses no platform channels, so it is safe to run inside
-  /// [Isolate.run] — the byte scan can read the whole audio file and must never
-  /// happen on the UI thread.
+  /// Extracts cover art from a single song file.
   ///
-  /// Returns null when only the FFmpeg fallback could still succeed.
-  static Future<String?> extractCoverWithoutFFmpeg(
-    String filePath,
-    String coversDirPath,
-    String filename, {
-    bool skipFolderCover = false,
-  }) async {
-    final file = File(filePath);
-    if (_isVideoFile(filePath)) return null;
-    if (!await file.exists()) return null;
-
-    final coversDir = Directory(coversDirPath);
-
-    try {
-      // getImage: true is required — the parser skips picture frames
-      // otherwise, and this whole cheap path silently never fires.
-      final metadata = amr.readMetadata(file, getImage: true);
-      if (metadata.pictures.isNotEmpty) {
-        final cover = recoverEmbeddedCover(metadata.pictures.first.bytes);
-        if (cover != null) {
-          return await CoverOptimizer.saveOptimizedCover(
-            cover.bytes,
-            coversDir.path,
-            fallbackExtension: cover.extension,
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('extractCoverWithoutFFmpeg: metadata read failed: $e');
-    }
-
-    // Folder cover before the manual byte scan — a handful of exists()
-    // checks is far cheaper than reading the whole audio file.
-    if (!skipFolderCover) {
-      final folderCover = await _findCoverInFolder(p.dirname(filePath));
-      if (folderCover != null) return folderCover;
-    }
-
-    return await _tryManualCoverExtraction(file, coversDir, filename);
-  }
-
-  /// Extracts cover art from a single song file using the same logic as the
-  /// scanner (metadata reader → folder cover → manual byte extraction →
-  /// FFmpeg). Returns the path to the cached cover file, or null if no cover
-  /// was found.
+  /// Audio goes through the native core — the same reader the scan uses, so a
+  /// cover found here is one the scan would accept. Videos need FFmpeg frame
+  /// grabs, which are platform-channel work and stay on this isolate.
   static Future<String?> extractCoverForFile(
     File file,
     Directory coversDir,
@@ -722,31 +716,28 @@ class ScannerService {
     if (!await file.exists()) return null;
     final isVideo = _isVideoFile(file.path);
 
-    final pureDart = await extractCoverWithoutFFmpeg(
-      file.path,
-      coversDir.path,
-      filename,
-      skipFolderCover: skipFolderCover,
-    );
-    if (pureDart != null) return pureDart;
-
-    if (useFFmpegFallback || isVideo) {
-      final viaFFmpeg = await extractCoverWithFFmpeg(file, coversDir, filename);
-      if (viaFFmpeg != null) return viaFFmpeg;
+    if (!isVideo) {
+      final native = await RustLibraryTasks.coverFor(
+        file.path,
+        filename,
+        coversDir: coversDir.path,
+      );
+      if (native != null) return native;
+      if (useFFmpegFallback) {
+        return extractCoverWithFFmpeg(file, coversDir, filename);
+      }
+      return null;
     }
 
-    // extractCoverWithoutFFmpeg bails out immediately on video files, so they
-    // still need a folder-cover fallback once FFmpeg has failed.
-    if (isVideo && !skipFolderCover) {
-      return _findCoverInFolder(p.dirname(file.path));
-    }
-
+    final viaFFmpeg = await extractCoverWithFFmpeg(file, coversDir, filename);
+    if (viaFFmpeg != null) return viaFFmpeg;
+    if (!skipFolderCover) return _findCoverInFolder(p.dirname(file.path));
     return null;
   }
 
-  /// The FFmpeg half of cover extraction. Uses platform channels, so it must
-  /// run on the main isolate. Call only after [extractCoverWithoutFFmpeg] has
-  /// come up empty — an FFmpeg invocation per song is expensive.
+  /// The FFmpeg fallback for cover extraction. Uses platform channels, so it
+  /// must run on the main isolate. Call only after the native reader comes up
+  /// empty — an FFmpeg invocation per song is expensive.
   ///
   /// Also goes through the shared [MediaDecodeGate]: a song missing its cover
   /// is usually a first-play too, and this must not decode while a waveform or
@@ -800,30 +791,10 @@ class ScannerService {
   }) async {
     final coversDir = await coversDirectory();
 
-    if (force) {
-      try {
-        final keepSet = <String>{};
-        try {
-          final artists = await DatabaseService.instance.getArtistArtMap();
-          final albums = await DatabaseService.instance.getAlbumArtMap();
-          keepSet.addAll(
-              artists.values.where((p) => p.isNotEmpty).map(p.normalize));
-          keepSet.addAll(
-              albums.values.where((p) => p.isNotEmpty).map(p.normalize));
-        } catch (_) {}
-        if (await coversDir.exists()) {
-          await for (final entity in coversDir.list(followLinks: false)) {
-            if (entity is File && !keepSet.contains(p.normalize(entity.path))) {
-              try {
-                await entity.delete();
-              } catch (_) {}
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('Error wiping cover cache before force rebuild: $e');
-      }
-    }
+    // A force rebuild deliberately does not wipe the directory first: rows
+    // still point at those files until their replacements are written, and a
+    // kill between the wipe and the write leaves the library with no art at
+    // all. `pruneOrphanedCovers` collects the leftovers afterwards.
 
     // Separate video files from audio files - video thumbnails must be extracted
     // on the main thread via FFmpeg (platform channels don't work in isolates).
@@ -890,6 +861,42 @@ class ScannerService {
     }
 
     return coverResults;
+  }
+
+  /// Deletes cached cover files no row points at any more.
+  ///
+  /// Run after a rebuild has written its replacing rows, never before: wiping
+  /// first leaves every row pointing at a file that no longer exists.
+  static Future<int> pruneOrphanedCovers() async {
+    final coversDir = await coversDirectory();
+    final keep = <String>{};
+    try {
+      for (final song in await DatabaseService.instance.getAllSongs()) {
+        final cover = song.coverUrl;
+        if (cover != null && cover.isNotEmpty) keep.add(p.normalize(cover));
+      }
+      final artists = await DatabaseService.instance.getArtistArtMap();
+      final albums = await DatabaseService.instance.getAlbumArtMap();
+      keep.addAll(
+          artists.values.where((value) => value.isNotEmpty).map(p.normalize));
+      keep.addAll(
+          albums.values.where((value) => value.isNotEmpty).map(p.normalize));
+    } catch (_) {
+      return 0;
+    }
+
+    var removed = 0;
+    try {
+      await for (final entity in coversDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        if (keep.contains(p.normalize(entity.path))) continue;
+        try {
+          await entity.delete();
+          removed++;
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return removed;
   }
 
   /// Compacts and deduplicates existing cached covers.
@@ -1010,310 +1017,32 @@ class ScannerService {
   /// replacing. Play counts are likewise absent — they belong to the caller.
   static Future<Song> readSongMetadata(File file, {Song? existingSong}) async {
     final coversDir = await coversDirectory();
-    return _processSingleFile(
-      file,
-      coversDir,
-      <String, String?>{},
-      <String, int>{},
-      existingSong: existingSong,
-    );
-  }
-
-  static Future<Song> _processSingleFile(File file, Directory coversDir,
-      Map<String, String?> folderCoverCache, Map<String, int> playCounts,
-      {double? mtime, Song? existingSong}) async {
-    final filename = p.basename(file.path);
-    final parentPath = file.parent.path;
-    p.extension(file.path).toLowerCase();
-
-    String title = p.basenameWithoutExtension(file.path);
-    String artist = 'Unknown Artist';
-    String album = 'Unknown Album';
-    Duration? duration;
-    String? coverUrl;
-    bool hasLyrics = false;
-    double? songDateEpochSec;
-    final fileStat = await file.stat();
-    final createdEpochSec = existingSong?.createdEpochSec ??
-        DateTime.now().millisecondsSinceEpoch / 1000.0;
-    final isVideo = _isVideoFile(file.path);
-
-    // Check for valid cache first
-    for (final cachedPath in coverCandidatePaths(coversDir.path, filename)) {
-      final cachedFile = File(cachedPath);
-      if (await _isValidCoverFile(cachedFile, requireDecodable: isVideo)) {
-        coverUrl = cachedFile.path;
-        break;
-      }
-    }
-
-    if (!isVideo) {
-      // Only use audio_metadata_reader for non-video files — it can crash or
-      // hang on large video containers (MKV, WebM, AVI, etc.).
-      try {
-        final metadata = amr.readMetadata(file, getImage: coverUrl == null);
-        if (metadata.title?.isNotEmpty == true) title = metadata.title!;
-        if (metadata.artist?.isNotEmpty == true) artist = metadata.artist!;
-        if (metadata.album?.isNotEmpty == true) album = metadata.album!;
-        if (metadata.year != null) {
-          songDateEpochSec =
-              metadata.year!.millisecondsSinceEpoch.toDouble() / 1000.0;
-        } else {
-          songDateEpochSec = existingSong?.songDateEpochSec;
-        }
-        duration = metadata.duration;
-
-        // Check for embedded lyrics using audio_metadata_reader
-        // Note: FFmpeg is used for actual lyrics reading in the main thread
-        if (metadata.lyrics?.isNotEmpty == true) {
-          hasLyrics = true;
-        }
-
-        if (coverUrl == null && metadata.pictures.isNotEmpty) {
-          final cover = recoverEmbeddedCover(metadata.pictures.first.bytes);
-          if (cover != null) {
-            coverUrl = await CoverOptimizer.saveOptimizedCover(
-              cover.bytes,
-              coversDir.path,
-              fallbackExtension: cover.extension,
-            );
-          }
-        }
-      } on FileSystemException catch (e) {
-        debugPrint('Scanner: unreadable file $filename: $e');
-      } catch (e) {
-        debugPrint('Scanner: metadata parse failed for $filename: $e');
-      }
-    }
-
-    // Folder cover before the manual byte scan — cheap exists() checks beat
-    // reading the whole audio file.
-    if (coverUrl == null) {
-      if (!folderCoverCache.containsKey(parentPath)) {
-        folderCoverCache[parentPath] = await _findCoverInFolder(parentPath);
-      }
-      coverUrl = folderCoverCache[parentPath];
-    }
-
-    // Manual byte-level extraction is only used for audio files.
-    // Video files are handled later by postProcessVideoThumbnails on the main
-    // thread via FFmpeg frame extraction to avoid false-positive embedded data.
-    if (!isVideo) {
-      coverUrl ??= await _tryManualCoverExtraction(file, coversDir, filename);
-    }
-
+    final base = existingSong ??
+        Song(
+          title: p.basenameWithoutExtension(file.path),
+          artist: 'Unknown Artist',
+          album: 'Unknown Album',
+          filename: p.basename(file.path),
+          url: file.path,
+        );
+    final row =
+        await RustLibraryTasks.readSong(base, coversDir: coversDir.path);
+    if (row == null) return base;
+    if (row.createdEpochSec != null) return row;
     return Song(
-      title: title,
-      artist: artist,
-      album: album,
-      filename: filename,
-      url: file.path,
-      coverUrl: coverUrl,
-      hasLyrics: hasLyrics,
-      playCount: playCounts[filename] ?? 0,
-      duration: duration,
-      mtime: mtime ?? fileStat.modified.millisecondsSinceEpoch / 1000.0,
-      createdEpochSec: createdEpochSec,
-      songDateEpochSec: songDateEpochSec,
+      title: row.title,
+      artist: row.artist,
+      album: row.album,
+      filename: row.filename,
+      url: row.url,
+      coverUrl: row.coverUrl,
+      hasLyrics: row.hasLyrics,
+      playCount: row.playCount,
+      duration: row.duration,
+      mtime: row.mtime,
+      createdEpochSec: DateTime.now().millisecondsSinceEpoch / 1000.0,
+      songDateEpochSec: row.songDateEpochSec,
     );
-  }
-
-  static Future<String?> _tryManualCoverExtraction(
-      File file, Directory coversDir, String filename) async {
-    RandomAccessFile? raf;
-    try {
-      raf = await file.open();
-      final length = await raf.length();
-      final ext = p.extension(file.path).toLowerCase();
-
-      final bool scanEverything = length < 50 * 1024 * 1024;
-      final firstScanSize = scanEverything ? length : 15 * 1024 * 1024;
-
-      await raf.setPosition(0);
-      final headerChunk = await raf.read(firstScanSize);
-
-      if (ext == '.m4a') {
-        final covrResult =
-            await _scanForCovrBox(headerChunk, raf, 0, coversDir, filename);
-        if (covrResult != null) return covrResult;
-      }
-
-      final apicResult =
-          await _scanForAPIC(headerChunk, raf, 0, coversDir, filename);
-      if (apicResult != null) return apicResult;
-
-      final sigResult = await _scanBufferForSignatures(
-          headerChunk, raf, 0, coversDir, filename);
-      if (sigResult != null) return sigResult;
-
-      if (!scanEverything && length > firstScanSize) {
-        final footerSize = (10 * 1024 * 1024).clamp(0, length - firstScanSize);
-        await raf.setPosition(length - footerSize);
-        final footerChunk = await raf.read(footerSize);
-
-        final sigFooterResult = await _scanBufferForSignatures(
-            footerChunk, raf, length - footerSize, coversDir, filename);
-        if (sigFooterResult != null) return sigFooterResult;
-      }
-
-      return null;
-    } catch (e) {
-      return null;
-    } finally {
-      await raf?.close();
-    }
-  }
-
-  static Future<String?> _scanForAPIC(List<int> bytes, RandomAccessFile raf,
-      int offset, Directory coversDir, String filename) async {
-    for (int i = 0; i < bytes.length - 20; i++) {
-      if (bytes[i] == 0x41 &&
-          bytes[i + 1] == 0x50 &&
-          bytes[i + 2] == 0x49 &&
-          bytes[i + 3] == 0x43) {
-        int tagSize = (bytes[i + 4] << 21) |
-            (bytes[i + 5] << 14) |
-            (bytes[i + 6] << 7) |
-            bytes[i + 7];
-        if (tagSize > 5000 && tagSize < 15 * 1024 * 1024) {
-          final subChunk =
-              bytes.sublist(i, (i + tagSize + 20).clamp(0, bytes.length));
-          return await _scanBufferForSignatures(
-              subChunk, raf, offset + i, coversDir, filename);
-        }
-      }
-    }
-    return null;
-  }
-
-  static Future<String?> _scanForCovrBox(List<int> bytes, RandomAccessFile raf,
-      int offset, Directory coversDir, String filename) async {
-    for (int i = 0; i < bytes.length - 24; i++) {
-      if (bytes[i] == 0x63 &&
-          bytes[i + 1] == 0x6F &&
-          bytes[i + 2] == 0x76 &&
-          bytes[i + 3] == 0x72) {
-        for (int j = i + 4; j < i + 128 && j < bytes.length - 16; j++) {
-          if (bytes[j] == 0x64 &&
-              bytes[j + 1] == 0x61 &&
-              bytes[j + 2] == 0x74 &&
-              bytes[j + 3] == 0x61) {
-            final dataSize = (bytes[j - 4] << 24) |
-                (bytes[j - 3] << 16) |
-                (bytes[j - 2] << 8) |
-                bytes[j - 1];
-            final imageSize = dataSize - 16;
-
-            if (imageSize > 1024 && imageSize < 15 * 1024 * 1024) {
-              final startPos = offset + j + 12;
-              await raf.setPosition(startPos);
-              final imgData = await raf.read(imageSize);
-
-              String type = 'jpg';
-              if (bytes[j + 11] == 14) {
-                type = 'png';
-              } else if (bytes[j + 11] == 27) {
-                type = 'bmp';
-              }
-
-              return await CoverOptimizer.saveOptimizedCover(
-                imgData,
-                coversDir.path,
-                fallbackExtension: '.$type',
-              );
-            }
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  static Future<String?> _scanBufferForSignatures(
-      List<int> bytes,
-      RandomAccessFile raf,
-      int offset,
-      Directory coversDir,
-      String filename) async {
-    for (int i = 0; i < bytes.length - 8; i++) {
-      if (bytes[i] == 0xFF && bytes[i + 1] == 0xD8) {
-        final res =
-            await _extractImageAt(raf, offset + i, 'jpg', coversDir, filename);
-        if (res != null) return res;
-      }
-      if (bytes[i] == 0x89 &&
-          bytes[i + 1] == 0x50 &&
-          bytes[i + 2] == 0x4E &&
-          bytes[i + 3] == 0x47) {
-        final res =
-            await _extractImageAt(raf, offset + i, 'png', coversDir, filename);
-        if (res != null) return res;
-      }
-      if (bytes[i] == 0x52 &&
-          bytes[i + 1] == 0x49 &&
-          bytes[i + 2] == 0x46 &&
-          bytes[i + 3] == 0x46) {
-        if (i + 12 <= bytes.length &&
-            bytes[i + 8] == 0x57 &&
-            bytes[i + 9] == 0x45 &&
-            bytes[i + 10] == 0x42 &&
-            bytes[i + 11] == 0x50) {
-          final res = await _extractImageAt(
-              raf, offset + i, 'webp', coversDir, filename);
-          if (res != null) return res;
-        }
-      }
-    }
-    return null;
-  }
-
-  static Future<String?> _extractImageAt(RandomAccessFile raf, int pos,
-      String type, Directory coversDir, String filename) async {
-    await raf.setPosition(pos);
-    final data = await raf.read(15 * 1024 * 1024);
-
-    int actualEnd = data.length;
-    if (type == 'jpg') {
-      int lastFFD9 = -1;
-      for (int k = 0; k < data.length - 1; k++) {
-        if (data[k] == 0xFF && data[k + 1] == 0xD9) {
-          lastFFD9 = k + 2;
-          if (k + 4 < data.length) {
-            if (data[k + 2] != 0xFF || data[k + 3] == 0x00) {
-              actualEnd = lastFFD9;
-              break;
-            }
-          }
-        }
-      }
-      if (lastFFD9 != -1) actualEnd = lastFFD9;
-      if (actualEnd == data.length && data.length < 50 * 1024) return null;
-    } else if (type == 'png') {
-      final pngEnd = [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
-      for (int k = 0; k < data.length - pngEnd.length; k++) {
-        bool match = true;
-        for (int l = 0; l < pngEnd.length; l++) {
-          if (data[k + l] != pngEnd[l]) {
-            match = false;
-            break;
-          }
-        }
-        if (match) {
-          actualEnd = k + pngEnd.length;
-          break;
-        }
-      }
-    }
-
-    if (actualEnd > 1024) {
-      final rawData = Uint8List.fromList(data.sublist(0, actualEnd));
-      return await CoverOptimizer.saveOptimizedCover(
-        rawData,
-        coversDir.path,
-        fallbackExtension: '.$type',
-      );
-    }
-    return null;
   }
 
   static String coverKeyForFilename(String filename) {
@@ -1342,6 +1071,7 @@ class ScannerService {
     void Function(double progress)? onProgress,
     void Function(List<Song> enrichedBatch)? onBatchEnriched,
   }) async {
+    final coversDir = await coversDirectory();
     final relay = ReceivePort();
     final messages = StreamController<dynamic>();
     relay.listen(messages.add, onError: messages.addError);
@@ -1371,14 +1101,18 @@ class ScannerService {
 
     await RustLibraryTasks.start(
       RustTaskRequest(
-          command: 'enrich', sendPort: relay.sendPort, songs: songs),
+        command: 'enrich',
+        sendPort: relay.sendPort,
+        songs: songs,
+        coversDir: coversDir.path,
+      ),
     );
     await worker;
     return [for (final song in songs) merged[song.filename] ?? song];
   }
 
-  /// Native cover sweep for songs that still have no art.
-  static Future<List<Song>> _extractCoversOnCore(
+  /// Native cover sweep for songs that still have no usable art.
+  static Future<CoverSweepResult> _extractCoversOnCore(
     List<Song> songs, {
     void Function(double progress)? onProgress,
     void Function(List<Song> updatedSongs)? onBatchExtracted,
@@ -1388,6 +1122,7 @@ class ScannerService {
     final messages = StreamController<dynamic>();
     relay.listen(messages.add, onError: messages.addError);
     final merged = <String, Song>{};
+    var completed = true;
 
     final worker = () async {
       await for (final message in messages.stream) {
@@ -1407,7 +1142,10 @@ class ScannerService {
           onProgress?.call(message);
         } else if (message is RustTaskDone || message is RustTaskError) {
           if (message is RustTaskError) {
+            completed = false;
             debugPrint('Rust cover sweep failed: ${message.message}');
+          } else if (message is RustTaskDone) {
+            completed = !message.cancelled;
           }
           await messages.close();
           relay.close();
@@ -1422,7 +1160,10 @@ class ScannerService {
       coversDir: coversDir.path,
     ));
     await worker;
-    return [for (final song in songs) merged[song.filename] ?? song];
+    return CoverSweepResult(
+      [for (final song in songs) merged[song.filename] ?? song],
+      completed: completed,
+    );
   }
 
   /// Native cover rebuild. Only resolved covers are reported.

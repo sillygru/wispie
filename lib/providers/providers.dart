@@ -490,6 +490,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   bool _isRefreshing = false;
   DateTime? _lastRefreshTime;
   Timer? _debounceTimer;
+  Timer? _coverSweepTimer;
 
   static const String _startupMaintenancePendingKey =
       'startup_cache_maintenance_pending';
@@ -505,6 +506,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   Future<List<Song>> build() async {
     ref.onDispose(() {
       _debounceTimer?.cancel();
+      _coverSweepTimer?.cancel();
     });
 
     // Watch only the hidden list, not the whole user-data state. userData
@@ -535,6 +537,10 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       // cover re-extraction.
       if (await _shouldRunStartupScan()) {
         _scheduleBackgroundScanUpdate(cached, showIndicator: false);
+      } else {
+        // An interrupted run still leaves rows without covers; fill those in
+        // instead of waiting for a version bump to rescan the whole library.
+        _scheduleCoverGapSweep(filtered);
       }
       return filtered;
     }
@@ -567,6 +573,16 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       await prefs.setString(
           'last_scan_version', '${info.version}+${info.buildNumber}');
       await prefs.setBool(_startupMaintenancePendingKey, false);
+    } catch (_) {}
+  }
+
+  /// Marks the library as mid-maintenance. A run killed between the fast pass
+  /// and the hydrate pass leaves this set, so the next launch resumes instead
+  /// of treating a half-built library as complete.
+  Future<void> _markStartupScanPending() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_startupMaintenancePendingKey, true);
     } catch (_) {}
   }
 
@@ -613,6 +629,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     List<Song>? existingSongs,
     bool showIndicator = false,
     bool fastMode = false,
+    double progressSpan = 1.0,
     void Function(List<Song> songs)? onSongsDiscovered,
   }) async {
     final storage = ref.read(storageServiceProvider);
@@ -647,8 +664,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
           existingSongs: existingSongs,
           lyricsPath: null,
           onProgress: (progress) {
-            // Overall progress across all folders
-            final overallProgress = (i + progress) / musicFolders.length;
+            // Overall progress across all folders, within this pass's slice.
+            final overallProgress =
+                (i + progress) / musicFolders.length * progressSpan;
             ref.read(scanProgressProvider.notifier).state = overallProgress;
           },
           onSongsDiscovered: onSongsDiscovered,
@@ -751,6 +769,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     NotificationCoverWarmer.instance.pushPause();
     try {
       _isRefreshing = true;
+      // Set before the first pass: a run killed half-way must not look finished
+      // on the next launch. Only a completed pipeline clears it.
+      await _markStartupScanPending();
       final userData = ref.read(userDataProvider);
 
       CoverRefreshService.instance.onCoverResolved = (song) {
@@ -762,14 +783,19 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         ref.read(isScanningProvider.notifier).state = true;
       }
 
+      void showProgress(double value) =>
+          ref.read(scanProgressProvider.notifier).state = value;
+
       // === Pass 0: Fast registration (filenames, paths, mtimes only) ===
-      // Stream songs live into the UI as they are discovered.
+      // Stream songs live into the UI as they are discovered. This pass owns
+      // the first sliver of the bar; the rest belongs to hydration.
       final accumulatedFast = <Song>[];
       final fastSongs = await _performFullScan(
         isBackground: true,
         existingSongs: existingSongs,
         showIndicator: false,
         fastMode: true,
+        progressSpan: 0.15,
         onSongsDiscovered: (chunk) {
           accumulatedFast.addAll(chunk);
           final filtered = accumulatedFast
@@ -789,25 +815,22 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         ref.read(audioPlayerManagerProvider).refreshSongs(filteredFast);
         state = AsyncValue.data(filteredFast);
       }
+      showProgress(0.15);
 
-      // === Pass 1: Metadata enrichment & Cover extraction ===
+      // === Pass 1: tags and missing covers from one read of each file ===
       List<Song> latestEnriched = fastSongs;
+      var complete = true;
       if (fastSongs.isNotEmpty) {
         try {
           latestEnriched = await ScannerService.enrichAllMetadata(
             fastSongs,
-            onProgress: (progress) {
-              ref.read(scanProgressProvider.notifier).state =
-                  0.2 + (progress * 0.3);
-            },
+            onProgress: (progress) => showProgress(0.15 + progress * 0.70),
             onBatchEnriched: (batch) {
               final currentList = state.value ?? [];
               if (currentList.isEmpty) return;
               final enrichedMap = {for (final s in batch) s.filename: s};
-              final updated = currentList.map((s) {
-                final match = enrichedMap[s.filename];
-                return match ?? s;
-              }).toList();
+              final updated =
+                  currentList.map((s) => enrichedMap[s.filename] ?? s).toList();
               ref.read(audioPlayerManagerProvider).refreshSongs(updated);
               state = AsyncValue.data(updated);
             },
@@ -820,81 +843,104 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
           ref.read(audioPlayerManagerProvider).refreshSongs(filteredEnriched);
           state = AsyncValue.data(filteredEnriched);
         } catch (e) {
+          complete = false;
           debugPrint('Metadata enrichment failed: $e');
         }
 
-        // === Pass 2: Fast Background Cover Extraction (non-freezing) ===
+        // === Pass 2: covers the hydrate pass could not resolve ===
         try {
-          final withCovers = await ScannerService.extractCoversInBackground(
-            latestEnriched,
-            onProgress: (progress) {
-              ref.read(scanProgressProvider.notifier).state =
-                  0.5 + (progress * 0.5);
-            },
-            onBatchExtracted: (updatedBatch) {
-              final currentList = state.value ?? [];
-              if (currentList.isEmpty) return;
-              final coverMap = {
-                for (final s in updatedBatch) s.filename: s.coverUrl
-              };
-              final updated = currentList.map((s) {
-                final newCover = coverMap[s.filename];
-                if (newCover != null) {
-                  return Song(
-                    title: s.title,
-                    artist: s.artist,
-                    album: s.album,
-                    filename: s.filename,
-                    url: s.url,
-                    coverUrl: newCover,
-                    hasLyrics: s.hasLyrics,
-                    playCount: s.playCount,
-                    duration: s.duration,
-                    mtime: s.mtime,
-                    createdEpochSec: s.createdEpochSec,
-                    songDateEpochSec: s.songDateEpochSec,
-                  );
-                }
-                return s;
-              }).toList();
-              ref.read(audioPlayerManagerProvider).refreshSongs(updated);
-              state = AsyncValue.data(updated);
-            },
-          );
-
-          // Covers resolved lazily by tiles during the scan live only in
-          // state; withCovers predates them.
-          final liveCovers = {
-            for (final s in state.value ?? const <Song>[])
-              if (s.coverUrl != null && s.coverUrl!.isNotEmpty)
-                s.filename: s.coverUrl!
-          };
-          final filteredWithCovers =
-              withCovers.where((s) => !userData.isHidden(s.filename)).map((s) {
-            final live = liveCovers[s.filename];
-            if (live == null ||
-                (s.coverUrl != null && s.coverUrl!.isNotEmpty)) {
-              return s;
-            }
-            return Song(
-              title: s.title,
-              artist: s.artist,
-              album: s.album,
-              filename: s.filename,
-              url: s.url,
-              coverUrl: live,
-              hasLyrics: s.hasLyrics,
-              playCount: s.playCount,
-              duration: s.duration,
-              mtime: s.mtime,
-              createdEpochSec: s.createdEpochSec,
-              songDateEpochSec: s.songDateEpochSec,
+          final gaps = await ScannerService.coverGaps(latestEnriched);
+          if (gaps.isNotEmpty) {
+            final sweep = await ScannerService.extractCoversInBackground(
+              gaps,
+              onProgress: (progress) => showProgress(0.85 + progress * 0.12),
+              onBatchExtracted: (updatedBatch) {
+                final currentList = state.value ?? [];
+                if (currentList.isEmpty) return;
+                final coverMap = {
+                  for (final s in updatedBatch) s.filename: s.coverUrl
+                };
+                final updated = currentList.map((s) {
+                  final newCover = coverMap[s.filename];
+                  return newCover == null ? s : s.copyWith(coverUrl: newCover);
+                }).toList();
+                ref.read(audioPlayerManagerProvider).refreshSongs(updated);
+                state = AsyncValue.data(updated);
+              },
             );
-          }).toList();
-          ref.read(audioPlayerManagerProvider).refreshSongs(filteredWithCovers);
-          state = AsyncValue.data(filteredWithCovers);
+
+            // The sweep only saw the gap songs; the rest of the library is
+            // untouched, so merge rather than replace.
+            final sweepMap = {
+              for (final song in sweep.songs) song.filename: song
+            };
+            latestEnriched = latestEnriched
+                .map((song) => sweepMap[song.filename] ?? song)
+                .toList();
+
+            if (sweep.completed) {
+              // A sweep that reached the end and found nothing establishes the
+              // miss, so the next launch does not re-probe the same file.
+              for (final song in sweep.songs) {
+                if (song.coverUrl == null || song.coverUrl!.isEmpty) {
+                  await DatabaseService.instance
+                      .markCoverMiss(song.filename, song.mtime ?? 0);
+                }
+              }
+            } else {
+              complete = false;
+            }
+
+            // Covers resolved lazily by tiles during the scan live only in
+            // state; the sweep result predates them.
+            final liveCovers = {
+              for (final s in state.value ?? const <Song>[])
+                if (s.coverUrl != null && s.coverUrl!.isNotEmpty)
+                  s.filename: s.coverUrl!
+            };
+            final filteredWithCovers = latestEnriched
+                .where((s) => !userData.isHidden(s.filename))
+                .map((s) {
+              final live = liveCovers[s.filename];
+              if (live == null ||
+                  (s.coverUrl != null && s.coverUrl!.isNotEmpty)) {
+                return s;
+              }
+              return s.copyWith(coverUrl: live);
+            }).toList();
+            ref
+                .read(audioPlayerManagerProvider)
+                .refreshSongs(filteredWithCovers);
+            state = AsyncValue.data(filteredWithCovers);
+          }
         } catch (e) {
+          complete = false;
           debugPrint('Background cover extraction failed: $e');
+        }
+
+        // === Pass 3: video thumbnails (FFmpeg, main isolate only) ===
+        try {
+          final withVideo = await ref
+              .read(scannerServiceProvider)
+              .postProcessVideoThumbnails(
+                latestEnriched,
+                onProgress: (progress) => showProgress(0.97 + progress * 0.03),
+              );
+          final updated = <Song>[
+            for (var i = 0; i < withVideo.length; i++)
+              if (withVideo[i].coverUrl != latestEnriched[i].coverUrl)
+                withVideo[i],
+          ];
+          if (updated.isNotEmpty) {
+            await DatabaseService.instance.insertSongsBatch(updated);
+            latestEnriched = withVideo;
+            final filteredVideo =
+                withVideo.where((s) => !userData.isHidden(s.filename)).toList();
+            ref.read(audioPlayerManagerProvider).refreshSongs(filteredVideo);
+            state = AsyncValue.data(filteredVideo);
+          }
+        } catch (e) {
+          debugPrint('Video thumbnail extraction failed: $e');
         }
 
         // Rebuild search index after enrichment.
@@ -917,7 +963,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         ref.read(userDataProvider.notifier).refresh();
       }
 
-      await _saveScanCheckpoint();
+      final folders = await ref.read(storageServiceProvider).getMusicFolders();
+      if (complete && (fastSongs.isNotEmpty || folders.isNotEmpty)) {
+        showProgress(1.0);
+        await _saveScanCheckpoint();
+      }
     } catch (e) {
       debugPrint('Background scan failed: $e');
     } finally {
@@ -926,6 +976,57 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       ref.read(scanProgressProvider.notifier).state = 0.0;
       NotificationCoverWarmer.instance.popPause();
     }
+  }
+
+  /// Fills covers an interrupted run never got to.
+  ///
+  /// Songs already probed at this file version (a recorded miss) are skipped,
+  /// so a library with genuinely artless files converges instead of re-reading
+  /// them on every launch.
+  void _scheduleCoverGapSweep(List<Song> songs) {
+    _coverSweepTimer?.cancel();
+    _coverSweepTimer = Timer(const Duration(seconds: 2), () async {
+      if (_isRefreshing) return;
+      try {
+        final gaps = await ScannerService.coverGaps(songs);
+        if (gaps.isEmpty) return;
+
+        _isRefreshing = true;
+        NotificationCoverWarmer.instance.pushPause();
+        try {
+          final sweep = await ScannerService.extractCoversInBackground(gaps);
+          if (!sweep.completed) return;
+
+          final resolved = {
+            for (final song in sweep.songs)
+              if (song.coverUrl != null && song.coverUrl!.isNotEmpty)
+                song.filename: song.coverUrl!
+          };
+          final current = state.value;
+          if (current != null && resolved.isNotEmpty) {
+            final updated = current.map((song) {
+              final cover = resolved[song.filename];
+              if (cover == null || cover == song.coverUrl) return song;
+              return song.copyWith(coverUrl: cover);
+            }).toList();
+            state = AsyncValue.data(updated);
+            ref.read(audioPlayerManagerProvider).refreshSongs(updated);
+          }
+
+          for (final song in sweep.songs) {
+            if (song.coverUrl == null || song.coverUrl!.isEmpty) {
+              await DatabaseService.instance
+                  .markCoverMiss(song.filename, song.mtime ?? 0);
+            }
+          }
+        } finally {
+          _isRefreshing = false;
+          NotificationCoverWarmer.instance.popPause();
+        }
+      } catch (e) {
+        debugPrint('Cover gap sweep failed: $e');
+      }
+    });
   }
 
   /// Persists a scan-complete marker so interrupted scans don't restart

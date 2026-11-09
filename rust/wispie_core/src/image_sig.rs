@@ -58,10 +58,41 @@ fn signature_at(bytes: &[u8], offset: usize) -> Option<ImageKind> {
     None
 }
 
-/// Whether `head` starts with magic bytes a decoder accepts.
-/// Catches covers cached before payload recovery: right size, decode as nothing.
-pub fn has_image_signature(head: &[u8]) -> bool {
-    signature_at(head, 0).is_some() || matches(head, 0, &[0x42, 0x4D])
+/// How many trailing bytes [has_complete_image] needs to judge an image.
+pub const TAIL_PROBE_LEN: usize = 256;
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
+/// Whether the bytes bracketed by `head` and `tail` describe a *finished* image.
+///
+/// A signature alone is not enough: a truncated frame grab starts with a real
+/// JPEG signature and decodes into a green smear. Requiring the matching end
+/// marker is what tells a cover from a false positive in compressed audio.
+pub fn has_complete_image(head: &[u8], tail: &[u8], length: u64) -> bool {
+    if length < 16 {
+        return false;
+    }
+    if matches(head, 0, &[0xFF, 0xD8, 0xFF]) {
+        return contains(tail, &[0xFF, 0xD9]);
+    }
+    if matches(head, 0, &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return contains(tail, b"IEND");
+    }
+    if matches(head, 0, &[0x47, 0x49, 0x46, 0x38]) {
+        return contains(tail, &[0x3B]);
+    }
+    if matches(head, 0, &[0x52, 0x49, 0x46, 0x46]) && matches(head, 8, &[0x57, 0x45, 0x42, 0x50]) {
+        if head.len() < 12 {
+            return false;
+        }
+        let riff = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as u64;
+        return riff != 0 && riff + 8 <= length;
+    }
+    matches(head, 0, &[0x42, 0x4D]) && length >= 54
 }
 
 /// The payload offset past any leading junk, plus its format.

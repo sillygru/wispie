@@ -694,9 +694,15 @@ class IndexerNotifier extends Notifier<IndexerState> {
       }
       if (updated.isNotEmpty) {
         await DatabaseService.instance.insertSongsBatch(updated);
+        // The blurred backdrop is keyed by filename, so a replaced cover would
+        // otherwise keep painting the old artwork behind the player.
+        for (final song in updated) {
+          unawaited(WispieCache.instance.invalidateBlurred(song.filename));
+        }
         touched = true;
       }
     }
+    if (force) await ScannerService.pruneOrphanedCovers();
     CoverRefreshService.instance.invalidateMisses();
     if (touched || force) _invalidateLibrary();
     return run.result();
