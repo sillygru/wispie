@@ -35,14 +35,13 @@ class PowerStateService {
   final ValueNotifier<bool> powerSave = ValueNotifier(false);
 
   StreamSubscription<dynamic>? _subscription;
-  bool _started = false;
+  Future<void>? _initialization;
 
   /// Reads the current state and subscribes to changes. Safe to call more than
   /// once; safe to never call at all.
-  Future<void> initialize() async {
-    if (_started) return;
-    _started = true;
+  Future<void> initialize() => _initialization ??= _initialize();
 
+  Future<void> _initialize() async {
     try {
       final primary = await _channel.invokeMethod<bool>('isPowerSaveMode');
       if (primary != null) {
@@ -111,6 +110,6 @@ class PowerStateService {
   void dispose() {
     _subscription?.cancel();
     _subscription = null;
-    _started = false;
+    _initialization = null;
   }
 }

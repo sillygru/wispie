@@ -22,7 +22,7 @@ class DisplayRefreshService {
   /// panel actually has, so a 90Hz panel gets 90.
   static const double _interactionRate = 120;
 
-  bool _initialized = false;
+  Future<void>? _initialization;
   double? _currentHint;
   Timer? _boostTimer;
   bool _inPlayer = false;
@@ -37,9 +37,9 @@ class DisplayRefreshService {
 
   bool get isVariableRefreshPanel => _variable;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     try {
       final modes =
           await _channel.invokeMethod<List<dynamic>>('getSupportedModes');
@@ -59,7 +59,7 @@ class DisplayRefreshService {
   void enterPlayer({required bool powerSave}) {
     _inPlayer = true;
     _powerSave = powerSave;
-    if (!_initialized) unawaited(initialize());
+    if (_initialization == null) unawaited(initialize());
     _applyForState();
   }
 
@@ -153,7 +153,7 @@ class DisplayRefreshService {
     _currentHint = null;
     _boostTimer?.cancel();
     _boostTimer = null;
-    _initialized = false;
+    _initialization = null;
     _variable = false;
   }
 }

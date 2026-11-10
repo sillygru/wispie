@@ -57,16 +57,16 @@ class BulkRenameJournal {
   static const String _fileName = 'bulk_rename_journal.json';
 
   final List<PendingRename> _entries = [];
-  bool _loaded = false;
+  Future<void>? _loading;
 
   List<PendingRename> get entries => List.unmodifiable(_entries);
 
   bool get isEmpty => _entries.isEmpty;
 
   /// Reads the journal off disk once per process.
-  Future<void> load() async {
-    if (_loaded) return;
-    _loaded = true;
+  Future<void> load() => _loading ??= _load();
+
+  Future<void> _load() async {
     try {
       final file = await _file();
       if (!await file.exists()) return;
@@ -90,6 +90,7 @@ class BulkRenameJournal {
 
   /// Notes a rename that is about to be attempted.
   Future<void> record(PendingRename entry) async {
+    await load();
     _entries.add(entry);
     await _flush();
   }
@@ -97,12 +98,14 @@ class BulkRenameJournal {
   /// Retracts an entry whose rename never happened, so a later recovery cannot
   /// act on a name that was never written.
   Future<void> discard(PendingRename entry) async {
+    await load();
     if (!_entries.remove(entry)) return;
     await _flush();
   }
 
   /// Forgets everything. Only correct once the rows have actually moved.
   Future<void> clear() async {
+    await load();
     if (_entries.isEmpty) return;
     _entries.clear();
     await _flush();

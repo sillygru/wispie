@@ -64,7 +64,7 @@ class OnlineAudioCache {
   Future<Directory>? _directory;
   Map<String, OnlineCacheEntry>? _index;
   Future<void>? _sweepInFlight;
-  bool _sweptThisSession = false;
+  Future<void>? _sessionSweep;
 
   final StreamController<String> _completed =
       StreamController<String>.broadcast();
@@ -152,10 +152,15 @@ class OnlineAudioCache {
   }
 
   /// Runs the TTL and size sweep once per app session, off the playback path.
-  Future<void> ensureSwept() async {
-    if (_sweptThisSession) return;
-    _sweptThisSession = true;
-    await sweep();
+  Future<void> ensureSwept() {
+    final existing = _sessionSweep;
+    if (existing != null) return existing;
+    final pending = sweep();
+    _sessionSweep = pending;
+    return pending.catchError((Object error, StackTrace stackTrace) {
+      if (identical(_sessionSweep, pending)) _sessionSweep = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
   }
 
   Future<void> sweep() {

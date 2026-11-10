@@ -29,7 +29,7 @@ class YouTubeResponseCache implements YouTubeResponseStore {
   static const String _prefix = 'youtube_';
 
   final Map<String, _Entry> _memory = {};
-  bool _swept = false;
+  Future<void>? _sweep;
 
   /// Responses older than this are useless: the client version they were made
   /// with has usually rotated by then.
@@ -114,9 +114,11 @@ class YouTubeResponseCache implements YouTubeResponseStore {
     }
   }
 
-  Future<void> _sweepOnce() async {
-    if (_swept) return;
-    _swept = true;
+  Future<void> _sweepOnce() {
+    return _sweep ??= _sweepDisk();
+  }
+
+  Future<void> _sweepDisk() async {
     try {
       final directory = await _directory();
       if (!await directory.exists()) return;

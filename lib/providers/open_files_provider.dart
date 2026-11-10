@@ -51,7 +51,9 @@ class OpenFilesState {
 
 class OpenFilesNotifier extends Notifier<OpenFilesState> {
   final OpenFileService _service = OpenFileService();
-  bool _initialized = false;
+  Future<void>? _initialization;
+  Future<void> _incomingChain = Future<void>.value();
+  final Set<String> _incomingUrls = {};
 
   @override
   OpenFilesState build() => const OpenFilesState();
@@ -59,15 +61,32 @@ class OpenFilesNotifier extends Notifier<OpenFilesState> {
   /// Starts listening for opened files. Safe to call more than once; only
   /// wired from [MainScreen], so intents wait in the native queue until setup
   /// is complete and the library UI exists to play into.
-  Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     _service.registerPushHandler(_handleIncoming);
     final initial = await _service.drainInitialFiles();
     if (initial.isNotEmpty) await _handleIncoming(initial);
   }
 
-  Future<void> _handleIncoming(List<OpenedAudioFile> files) async {
+  Future<void> _handleIncoming(List<OpenedAudioFile> files) {
+    final fresh = files
+        .where((file) =>
+            file.isPlayable && !_incomingUrls.contains(file.playableUrl))
+        .toList();
+    if (fresh.isEmpty) return Future<void>.value();
+
+    _incomingUrls.addAll(fresh.map((file) => file.playableUrl));
+    final next = _incomingChain.then((_) => _processIncoming(fresh));
+    _incomingChain = next.catchError((Object error, StackTrace stackTrace) {
+      debugPrint('OpenFiles: incoming file processing failed: $error');
+    }).whenComplete(() {
+      _incomingUrls.removeAll(fresh.map((file) => file.playableUrl));
+    });
+    return next;
+  }
+
+  Future<void> _processIncoming(List<OpenedAudioFile> files) async {
     final playable = files.where((f) => f.isPlayable).toList();
     if (playable.isEmpty) return;
 

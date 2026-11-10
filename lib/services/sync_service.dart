@@ -65,7 +65,7 @@ class SyncService extends ChangeNotifier {
   // A manual sync requested while another op ran must keep its manual intent
   // (it gates applying the cloud queue) when it is replayed.
   bool _syncAgainManual = false;
-  bool _initialized = false;
+  Future<void>? _initialization;
   bool _foreground = true;
   String? _lastError;
   Timer? _debounce;
@@ -134,9 +134,9 @@ class SyncService extends ChangeNotifier {
 
   bool get autoSyncEnabled => _kv?.get(_kAutoEnabled) != false;
 
-  Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> init() => _initialization ??= _init();
+
+  Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString('sync_device_id');
     if (_deviceId == null) {
