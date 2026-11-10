@@ -6,11 +6,14 @@
 
 mod affinity;
 mod beat;
+mod bulk_rename;
 mod cover;
 mod emitter;
 mod formats;
 mod image_sig;
+mod insights;
 mod match_plan;
+mod merge_finder;
 mod meta;
 mod model;
 mod palette;
@@ -210,6 +213,15 @@ fn dispatch(
         )
         .map(|result| emitter.emit(Emit::Json(result))),
         "match_plan" => match_plan::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "bulk_rename_plan" => bulk_rename::run(payload, emitter),
+        "merge_candidates" => {
+            merge_finder::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "insights" => insights::run(
+            payload,
+            bytes.ok_or_else(|| "insights requires a binary payload".to_string())?,
+        )
+        .map(|result| emitter.emit(Emit::Json(result))),
         "formats" => {
             emitter.emit(Emit::Done {
                 unreadable: 0,

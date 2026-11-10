@@ -1,6 +1,5 @@
-import 'package:path/path.dart' as p;
-
 import '../../models/song.dart';
+import 'native_accel.dart';
 
 /// The metadata fields a rename format can pull from.
 ///
@@ -157,155 +156,39 @@ class BulkRenamePlanner {
         for (final song in library) byPreviousFilename[song.filename] ?? song,
       ];
 
-  /// Characters no supported filesystem accepts in a name.
-  ///
-  /// `/` and `\` are path separators, the rest are rejected by Windows and by
-  /// SAF volumes that mirror it. Everything here becomes a space so that
-  /// "AC/DC" reads as "AC DC" rather than "ACDC".
-  static final RegExp _illegal = RegExp(r'[/\\:*?"<>|\x00-\x1F]');
-
-  /// A run of separators left behind when an optional token (album, artist)
-  /// renders empty, e.g. `Artist -  - Title`.
-  static final RegExp _collapsedSeparators =
-      RegExp(r'\s*[-–—]\s*(?:[-–—]\s*)+');
-
-  /// Windows silently drops trailing dots and spaces, so a name that ends in
-  /// one is a name that will not come back.
-  static final RegExp _trailingJunk = RegExp(r'[.\s]+$');
-
-  /// Makes [raw] safe to use as a filename.
-  ///
-  /// Applied to the whole rendered format rather than per token, so the
-  /// separators the user typed survive.
-  static String sanitize(String raw) {
-    var value =
-        raw.replaceAll(_illegal, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
-    while (_collapsedSeparators.hasMatch(value)) {
-      value = value.replaceAll(_collapsedSeparators, ' - ');
-    }
-    value = value.replaceAll(_trailingJunk, '').trim();
-    // A leading separator left by an empty first token.
-    return value.replaceFirst(RegExp(r'^[-–—]+\s*'), '');
-  }
-
-  /// The stem [segments] produce for [song]. [index] is the song's 0-based
-  /// position in the batch, which is what the `track` token numbers.
-  ///
-  /// Empty tokens render to nothing and drop their adjacent separator runs,
-  /// so a song with no album still gets `Artist - Title` rather than
-  /// `Artist -  - Title`.
-  static String renderStem(
-    List<BulkRenameSegment> segments,
-    Song song, {
-    required int index,
-  }) {
-    final parts = <String>[];
-    for (final segment in segments) {
-      final value = segment.isLiteral
-          ? segment.literal
-          : _renderToken(segment.token!, song, index);
-      if (value.trim().isEmpty) continue;
-      parts.add(value.trim());
-    }
-    return sanitize(parts.join(' '));
-  }
-
-  static String _renderToken(
-    BulkRenameToken token,
-    Song song,
-    int index,
-  ) {
-    switch (token) {
-      case BulkRenameToken.title:
-        return song.title;
-      case BulkRenameToken.artist:
-        return song.artist;
-      case BulkRenameToken.album:
-        return song.album;
-      case BulkRenameToken.stem:
-        return p.basenameWithoutExtension(song.filename);
-      case BulkRenameToken.track:
-        return '${index + 1}';
-      case BulkRenameToken.year:
-        final epoch = song.songDateEpochSec;
-        if (epoch == null || epoch <= 0) return '';
-        return DateTime.fromMillisecondsSinceEpoch((epoch * 1000).round())
-            .year
-            .toString();
-    }
-  }
-
-  /// Decides what to do with each song, without touching the filesystem.
-  ///
-  /// Only intra-batch conflicts are resolved here, because that is what a live
-  /// preview can show the instant a format changes. Two songs in different
-  /// folders may legitimately end up with the same name, so folder is part of
-  /// a target's identity.
-  ///
-  /// [onProgress] is called with the running count so an off-thread run can
-  /// report movement. It fires per song and is expected to be cheap.
+  /// Builds the filename proposals in the native core.
   static List<BulkRenamePlan> plan({
     required List<Song> songs,
     required List<BulkRenameSegment> segments,
     void Function(int done)? onProgress,
   }) {
-    final claimed = <String, String>{};
-    final results = <BulkRenamePlan>[];
-    onProgress?.call(0);
-
-    for (var index = 0; index < songs.length; index++) {
-      results.add(_planSong(songs[index], segments, index, claimed));
-      onProgress?.call(index + 1);
-    }
-
-    return results;
+    final response = NativeAccel.bulkRenamePlan(
+      songs: [for (final song in songs) song.toJson()],
+      segments: [
+        for (final segment in segments)
+          {'token': segment.token?.name, 'literal': segment.literal},
+      ],
+      onProgress: (done, _) => onProgress?.call(done),
+    );
+    return [
+      for (final row in response['plans'] as List<dynamic>)
+        _fromNative(songs[(row as Map<String, dynamic>)['index'] as int], row),
+    ];
   }
 
-  static BulkRenamePlan _planSong(
-    Song song,
-    List<BulkRenameSegment> segments,
-    int index,
-    Map<String, String> claimed,
-  ) {
-    final stem = renderStem(segments, song, index: index);
-    final extension = p.extension(song.url);
-    final newFilename = '$stem$extension';
-    final newUrl = p.join(p.dirname(song.url), newFilename);
-
-    final candidate = BulkRenamePlan(
+  static BulkRenamePlan _fromNative(Song song, Map<String, dynamic> row) {
+    final plan = BulkRenamePlan(
       song: song,
-      newStem: stem,
-      newFilename: newFilename,
-      newUrl: newUrl,
+      newStem: row['newStem'] as String,
+      newFilename: row['newFilename'] as String,
+      newUrl: row['newUrl'] as String,
     );
-
-    if (stem.isEmpty) {
-      return candidate._skipped(
-        const BulkRenameSkip(BulkRenameSkipReason.noTitleText),
-      );
-    }
-    if (newFilename == song.filename) {
-      return candidate._skipped(
-        const BulkRenameSkip(BulkRenameSkipReason.alreadyNamed),
-      );
-    }
-
-    // Android and iOS volumes are almost always case-insensitive, so
-    // `Song.mp3` and `song.mp3` cannot coexist even though SQLite would
-    // happily hold both.
-    final claim = _claimKey(song.url, newFilename);
-    final holder = claimed[claim];
-    if (holder != null) {
-      return candidate._skipped(
-        BulkRenameSkip(
-          BulkRenameSkipReason.sameNameAs,
-          conflictingFilename: holder,
-        ),
-      );
-    }
-
-    claimed[claim] = song.filename;
-    return candidate;
+    final reason = row['skipReason'] as String?;
+    if (reason == null) return plan;
+    return plan._skipped(BulkRenameSkip(
+      BulkRenameSkipReason.values.byName(reason),
+      conflictingFilename: row['conflictingFilename'] as String?,
+    ));
   }
 
   /// Adds the on-disk check [plan] cannot make: a target file that already
@@ -386,7 +269,4 @@ class BulkRenamePlanner {
     // nobody looked at has not been shown to be taken.
     return [for (var i = 0; i < plans.length; i++) result[i] ?? plans[i]];
   }
-
-  static String _claimKey(String siblingUrl, String newFilename) =>
-      '${p.dirname(siblingUrl)}\x00${newFilename.toLowerCase()}';
 }
