@@ -4,16 +4,21 @@
 //! events. Requests and events are additive-only, so an older Dart binding can
 //! talk to a newer library and simply ignore what it does not know.
 
+mod affinity;
+mod beat;
 mod cover;
 mod emitter;
 mod formats;
 mod image_sig;
+mod match_plan;
 mod meta;
 mod model;
+mod palette;
 mod prosody;
 mod scan;
 mod search;
 mod tasks;
+mod waveform;
 
 use emitter::{Emit, Emitter, RawCallback};
 use model::{CompactRequest, FactsRequest, ListRequest, ProsodyRequest, ScanRequest, SongsRequest};
@@ -22,7 +27,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 3;
+pub const ABI_VERSION: u32 = 4;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -85,10 +90,51 @@ pub unsafe extern "C" fn wispie_core_run(
         Err(_) => return 2,
     };
 
+    run_payload(payload, None, callback, user_data)
+}
+
+/// Runs a JSON request with a binary payload.
+///
+/// # Safety
+/// `request` must be NUL-terminated UTF-8, `bytes` must reference `length`
+/// readable bytes, and `callback` must remain valid for the call duration.
+#[no_mangle]
+pub unsafe extern "C" fn wispie_core_run_bytes(
+    request: *const c_char,
+    bytes: *const u8,
+    length: usize,
+    callback: RawCallback,
+    user_data: *mut c_void,
+) -> i32 {
+    if request.is_null() || (bytes.is_null() && length != 0) {
+        return 1;
+    }
+    let decoded = match CStr::from_ptr(request).to_str() {
+        Ok(value) => value,
+        Err(_) => return 1,
+    };
+    let payload: serde_json::Value = match serde_json::from_str(decoded) {
+        Ok(value) => value,
+        Err(_) => return 2,
+    };
+    let data = if length == 0 {
+        &[][..]
+    } else {
+        std::slice::from_raw_parts(bytes, length)
+    };
+    run_payload(payload, Some(data), callback, user_data)
+}
+
+fn run_payload(
+    payload: serde_json::Value,
+    bytes: Option<&[u8]>,
+    callback: RawCallback,
+    user_data: *mut c_void,
+) -> i32 {
     CANCEL.store(false, Ordering::SeqCst);
     let emitter = Emitter::new(callback, user_data);
 
-    match std::panic::catch_unwind(AssertUnwindSafe(|| dispatch(payload, &emitter))) {
+    match std::panic::catch_unwind(AssertUnwindSafe(|| dispatch(payload, bytes, &emitter))) {
         Ok(Ok(())) => 0,
         Ok(Err(message)) => {
             emitter.emit(Emit::Error { message });
@@ -103,7 +149,11 @@ pub unsafe extern "C" fn wispie_core_run(
     }
 }
 
-fn dispatch(payload: serde_json::Value, emitter: &Emitter) -> Result<(), String> {
+fn dispatch(
+    payload: serde_json::Value,
+    bytes: Option<&[u8]>,
+    emitter: &Emitter,
+) -> Result<(), String> {
     let command = payload
         .get("command")
         .and_then(|value| value.as_str())
@@ -123,6 +173,42 @@ fn dispatch(payload: serde_json::Value, emitter: &Emitter) -> Result<(), String>
         "rank_search" => search::rank(parse(payload)?, emitter),
         "search_prepare" => search::prepare(parse(payload)?, emitter),
         "fuzzy_search" => search::fuzzy(parse(payload)?, emitter),
+        "beat_analyze" => beat::run_file(
+            payload
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+            payload
+                .get("maxBytes")
+                .and_then(|value| value.as_u64())
+                .map(|v| v as usize),
+            emitter,
+        ),
+        "waveform" => waveform::run(
+            bytes.ok_or_else(|| "waveform requires a binary payload".to_string())?,
+            payload
+                .get("targetSamples")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(2000) as usize,
+            payload
+                .get("expectedBytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+        )
+        .map(|result| emitter.emit(Emit::Json(result))),
+        "affinity" => affinity::run(
+            &payload,
+            bytes.ok_or_else(|| "affinity requires a binary payload".to_string())?,
+        )
+        .map(|result| emitter.emit(Emit::Json(result))),
+        "palette" => palette::run(
+            payload
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+        )
+        .map(|result| emitter.emit(Emit::Json(result))),
+        "match_plan" => match_plan::run(payload).map(|result| emitter.emit(Emit::Json(result))),
         "formats" => {
             emitter.emit(Emit::Done {
                 unreadable: 0,

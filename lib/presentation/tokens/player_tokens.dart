@@ -231,9 +231,8 @@ class PlayerTokens {
   /// or album page tints itself from its own cover instead of the track that
   /// happens to be playing.
   ///
-  /// Used exactly as extracted. `selectAccent` has already lifted it
-  /// into a legible band; correcting it a second time here is what pushed the
-  /// player and the rest of the app onto two different colours.
+  /// Used exactly as extracted. The native palette processor already lifts it
+  /// into a legible band; correcting it again would make screens disagree.
   static Color accentOf(BuildContext context, WidgetRef ref) {
     final scoped = CollectionAccentScope.maybeOf(context)?.accent;
     if (scoped != null) return scoped;

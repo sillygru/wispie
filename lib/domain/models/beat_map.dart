@@ -20,9 +20,9 @@ enum BeatBand {
 
 /// The precomputed rhythmic description of one song.
 ///
-/// Produced offline by `analyzeBeats` and cached to disk, then replayed against
-/// the playhead at render time. Nothing here is computed during playback — that
-/// is the whole point of the format.
+/// Produced offline by the native beat analyzer and cached to disk, then
+/// replayed against the playhead at render time. Nothing here is computed during
+/// playback — that is the whole point of the format.
 class BeatMap {
   /// Bumped whenever the analysis algorithm changes in a way that makes old
   /// cached maps wrong. [fromJson] rejects anything that does not match, so a

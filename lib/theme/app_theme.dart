@@ -67,9 +67,8 @@ class AppTheme {
   /// route through it, which is what keeps them on the same colour — they used
   /// to apply their own separate corrections and end up two shades apart.
   ///
-  /// The accent arrives already corrected for legibility from
-  /// `selectAccent`, so it is used as the seed directly rather than being
-  /// dimmed into the surface again.
+  /// The accent arrives corrected for legibility by the native palette
+  /// processor, so it is used directly rather than dimmed again.
   static ThemeData _coverTheme(Color accent) {
     return _buildTheme(
       seed: accent,

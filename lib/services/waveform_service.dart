@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -11,6 +10,7 @@ import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/services/cache_policy.dart';
+import '../domain/services/native_accel.dart';
 import 'wispie_cache.dart';
 import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
@@ -317,10 +317,10 @@ class WaveformService {
             lastEmitTime = now;
             lastEmittedBytes = currentLen;
             final bytesSnapshot = builder.toBytes();
-            final peaks = progressiveWaveformPeaksFromS16Bytes(
+            final peaks = NativeAccel.waveformPeaks(
               bytesSnapshot,
-              targetSamples,
-              expected,
+              targetSamples: targetSamples,
+              expectedBytes: expected,
             );
             if (peaks.isNotEmpty) onPartial(peaks);
           }
@@ -349,7 +349,7 @@ class WaveformService {
       return _failedWaveform(targetSamples);
     }
 
-    return extractWaveformPeaksFromS16Bytes(fullBytes, targetSamples);
+    return NativeAccel.waveformPeaks(fullBytes, targetSamples: targetSamples);
   }
 
   /// Decodes via named pipe on mobile platforms (iOS/Android), or falls back to temp file.
@@ -408,10 +408,10 @@ class WaveformService {
               lastEmitTime = now;
               lastEmittedBytes = currentLen;
               final bytesSnapshot = builder.toBytes();
-              final peaks = progressiveWaveformPeaksFromS16Bytes(
+              final peaks = NativeAccel.waveformPeaks(
                 bytesSnapshot,
-                targetSamples,
-                expectedBytes,
+                targetSamples: targetSamples,
+                expectedBytes: expectedBytes,
               );
               if (peaks.isNotEmpty) onPartial(peaks);
             }
@@ -427,7 +427,8 @@ class WaveformService {
         if (fullBytes.length < 2) {
           return _failedWaveform(targetSamples);
         }
-        return extractWaveformPeaksFromS16Bytes(fullBytes, targetSamples);
+        return NativeAccel.waveformPeaks(fullBytes,
+            targetSamples: targetSamples);
       } catch (e) {
         debugPrint('Mobile pipe decode error: $e');
       } finally {
@@ -483,7 +484,7 @@ class WaveformService {
       }
 
       final bytes = await raw.readAsBytes();
-      return extractWaveformPeaksFromS16Bytes(bytes, targetSamples);
+      return NativeAccel.waveformPeaks(bytes, targetSamples: targetSamples);
     } catch (e) {
       debugPrint('Fallback waveform extraction failed: $e');
       return _failedWaveform(targetSamples);
@@ -537,96 +538,8 @@ class _ProgressiveWaveform {
   }
 }
 
-/// Buckets 16-bit mono PCM [bytes] into [targetSamples] loudness bars.
-///
-/// Shared by the full and the progressive paths; both run off the UI isolate
-/// and neither touches the file here — the caller provides the byte buffer.
-List<double> extractWaveformPeaksFromS16Bytes(
-  Uint8List bytes,
-  int targetSamples,
-) {
-  if (bytes.length < 2) {
-    return _failedWaveform(targetSamples);
-  }
-
-  final usable = bytes.length - (bytes.length % 2);
-  final Int16List pcm;
-  if (bytes.offsetInBytes % 2 == 0) {
-    pcm = Int16List.view(bytes.buffer, bytes.offsetInBytes, usable ~/ 2);
-  } else {
-    pcm = Int16List.view(
-      Uint8List.fromList(bytes.sublist(0, usable)).buffer,
-    );
-  }
-
-  if (pcm.isEmpty) {
-    return _failedWaveform(targetSamples);
-  }
-
-  return _loudnessBars(pcm, targetSamples);
-}
-
-/// Buckets below this RMS level are treated as silence.
-const double _silenceFloorDb = -60;
-
-/// Bounds on the dB span mapped onto the full bar height. The floor keeps a
-/// brickwalled master from having its last 2 dB of variation blown up into
-/// noise; the ceiling keeps a long quiet intro from flattening the rest.
-const double _minDynamicRangeDb = 9;
-const double _maxDynamicRangeDb = 30;
-
-/// Per-bucket RMS loudness, normalised against the track's own dynamic range.
-///
-/// Raw sample peaks are useless on modern masters: limiting pins nearly every
-/// bucket at full scale, so verses, choruses and breakdowns all read the same.
-/// RMS in dB follows perceived loudness, and stretching the track's own
-/// 5th..99th percentile span across the bar height makes sections distinct.
-List<double> _loudnessBars(Int16List pcm, int targetSamples) {
-  final db = Float64List(targetSamples);
-  final length = pcm.length;
-  for (var i = 0; i < targetSamples; i++) {
-    final start = (i * length) ~/ targetSamples;
-    var end = ((i + 1) * length) ~/ targetSamples;
-    if (end <= start) end = math.min(length, start + 1);
-    if (start >= length) {
-      db[i] = double.negativeInfinity;
-      continue;
-    }
-    var sumSquares = 0.0;
-    for (var j = start; j < end; j++) {
-      final v = pcm[j] / 32768.0;
-      sumSquares += v * v;
-    }
-    final meanSquare = sumSquares / (end - start);
-    db[i] = meanSquare <= 0
-        ? double.negativeInfinity
-        : 10 * math.log(meanSquare) / math.ln10;
-  }
-
-  final audible = <double>[
-    for (final v in db)
-      if (v > _silenceFloorDb) v,
-  ]..sort();
-  final samples = List<double>.filled(targetSamples, 0);
-  if (audible.isEmpty) return samples;
-
-  double at(double q) =>
-      audible[math.min(audible.length - 1, (audible.length * q).floor())];
-  final hi = at(0.99);
-  var lo = at(0.05);
-  final span = hi - lo;
-  if (span < _minDynamicRangeDb) lo = hi - _minDynamicRangeDb;
-  if (span > _maxDynamicRangeDb) lo = hi - _maxDynamicRangeDb;
-  final range = hi - lo;
-
-  for (var i = 0; i < targetSamples; i++) {
-    final v = db[i];
-    if (v <= _silenceFloorDb) continue;
-    final normalized = ((v - lo) / range).clamp(0.0, 1.0);
-    samples[i] = 0.04 + 0.96 * normalized;
-  }
-  return samples;
-}
+/// A failed decode yields no bars so it cannot be cached as this track's shape.
+List<double> _failedWaveform(int _) => const [];
 
 /// PCM byte count of an FFmpeg `Duration: hh:mm:ss.cc` log line.
 int? _pcmBytesForDurationText(String text) {
@@ -638,21 +551,3 @@ int? _pcmBytesForDurationText(String text) {
   if (seconds <= 0) return null;
   return seconds * WaveformService._pcmBytesPerSecond;
 }
-
-/// Buckets the decoded-so-far PCM into the first [targetSamples] * (bytes /
-/// [expectedBytes]) bars, so the waveform paints left-to-right as the file
-/// decodes instead of waiting for the whole read.
-List<double> progressiveWaveformPeaksFromS16Bytes(
-  Uint8List bytes,
-  int targetSamples,
-  int expectedBytes,
-) {
-  final fraction =
-      expectedBytes > 0 ? (bytes.length / expectedBytes).clamp(0.0, 1.0) : 1.0;
-  final filled = (fraction * targetSamples).round().clamp(1, targetSamples);
-  return extractWaveformPeaksFromS16Bytes(bytes, filled);
-}
-
-/// A failed decode yields no bars: synthetic peaks would be cached and drawn
-/// as if they were this track's waveform.
-List<double> _failedWaveform(int _) => const [];

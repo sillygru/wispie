@@ -2,22 +2,19 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:math';
+import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 
-import '../domain/services/cover_palette.dart';
 import '../domain/services/cover_path.dart';
+import '../domain/services/native_accel.dart';
 import 'shared_http_client.dart';
 import 'wispie_cache.dart';
 
 class ExtractedPalette {
   final Color? used;
 
-  /// The cover's accent, already corrected for legibility by
-  /// [selectAccent]. Consumers use it as-is — no second lightening,
-  /// saturating or blending pass.
+  /// The cover's accent, already corrected for legibility by the native core.
   final Color accent;
 
   /// The cover has no usable chroma, so the theme falls back to its OLED
@@ -72,54 +69,38 @@ class ExtractedPalette {
         mixedColor = color,
         palette = [color];
 
-  factory ExtractedPalette.create({
-    Color? used,
-    required List<Swatch> swatches,
-  }) {
-    final selected = selectAccent(swatches);
-    final mixed =
-        ExtractedPalette.mixColors(selected.swatches.take(10).toList());
+  factory ExtractedPalette.create(
+      {Color? used, required NativePalette source}) {
     return ExtractedPalette(
       used: used,
-      accent: selected.accent,
-      isNeutral: selected.isNeutral,
-      mixedColor: mixed,
-      palette: selected.swatches,
+      accent: Color.fromARGB(
+        255,
+        source.accent.red,
+        source.accent.green,
+        source.accent.blue,
+      ),
+      isNeutral: source.isNeutral,
+      mixedColor: Color.fromARGB(
+        255,
+        source.mixedColor.red,
+        source.mixedColor.green,
+        source.mixedColor.blue,
+      ),
+      palette: [
+        for (final swatch in source.swatches)
+          Color.fromARGB(255, swatch.red, swatch.green, swatch.blue),
+      ],
     );
-  }
-
-  static Color mixColors(List<Color> colors) {
-    if (colors.isEmpty) return Colors.transparent;
-    int red = 0;
-    int green = 0;
-    int blue = 0;
-
-    for (final color in colors) {
-      final intValue = color.toARGB32();
-      red += (intValue >> 16) & 0xFF;
-      green += (intValue >> 8) & 0xFF;
-      blue += intValue & 0xFF;
-    }
-
-    red ~/= colors.length;
-    green ~/= colors.length;
-    blue ~/= colors.length;
-
-    return Color.fromARGB(255, red, green, blue);
   }
 
   factory ExtractedPalette.fromJson(Map<String, dynamic> json) {
     final paletteList =
         (json['palette'] as List?)?.map((e) => Color(e as int)).toList() ?? [];
-    final mixedColor = json['mixedColor'] is int
-        ? Color(json['mixedColor'] as int)
-        : ExtractedPalette.mixColors(paletteList.take(10).toList());
+    final mixedColor = Color(json['mixedColor'] as int? ?? 0xFF000000);
     return ExtractedPalette(
       used: json['used'] != null ? Color(json['used'] as int) : null,
-      accent: json['accent'] is int
-          ? Color(json['accent'] as int)
-          : normalizeAccent(mixedColor),
-      isNeutral: json['isNeutral'] as bool? ?? false,
+      accent: Color(json['accent'] as int? ?? 0xFFE0E0E0),
+      isNeutral: json['isNeutral'] as bool? ?? true,
       mixedColor: mixedColor,
       palette: paletteList,
     );
@@ -176,7 +157,7 @@ class ColorExtractionService {
   /// discarded wholesale on a mismatch — without this, every already-scanned
   /// library keeps serving colours computed by the old algorithm forever, and
   /// no fix here would ever reach an existing install.
-  static const int _cacheVersion = 2;
+  static const int _cacheVersion = 4;
 
   // Insertion-ordered map: most recently accessed keys sit at the end. On
   // each cache hit we re-insert to mark it as fresh, so the head of the
@@ -235,10 +216,7 @@ class ColorExtractionService {
     }
   }
 
-  static Future<ExtractedPalette?> extractPalette(
-    String? imagePath, {
-    bool useIsolate = true,
-  }) async {
+  static Future<ExtractedPalette?> extractPalette(String? imagePath) async {
     if (imagePath == null || imagePath.isEmpty) return null;
 
     await init();
@@ -259,10 +237,7 @@ class ColorExtractionService {
       return pending;
     }
 
-    final extraction = _extractAndCachePalette(
-      imagePath,
-      useIsolate: useIsolate,
-    );
+    final extraction = _extractAndCachePalette(imagePath);
     _pendingPalettes[imagePath] = extraction;
     try {
       return await extraction;
@@ -346,16 +321,15 @@ class ColorExtractionService {
   }
 
   static Future<ExtractedPalette?> _extractAndCachePalette(
-    String imagePath, {
-    required bool useIsolate,
-  }) async {
+    String imagePath,
+  ) async {
     final file = File(imagePath);
     if (!await file.exists()) return null;
 
-    final swatches = await _extractSwatches(file, useIsolate: useIsolate);
-    if (swatches == null || swatches.isEmpty) return null;
+    final palette = await _extractNativePalette(file);
+    if (palette == null || palette.swatches.isEmpty) return null;
 
-    final extractedPalette = ExtractedPalette.create(swatches: swatches);
+    final extractedPalette = ExtractedPalette.create(source: palette);
 
     final stat = await file.stat();
     _paletteCache[imagePath] = _CacheEntry(
@@ -378,183 +352,18 @@ class ColorExtractionService {
     }
   }
 
-  static Future<List<Swatch>?> _extractSwatches(
-    File imageFile, {
-    bool useIsolate = true,
-  }) async {
+  static Future<NativePalette?> _extractNativePalette(File imageFile) async {
     try {
-      final bytes = await imageFile.readAsBytes();
-      if (useIsolate) {
-        return await compute(_extractKMeansSwatches, bytes);
-      } else {
-        return _extractKMeansSwatches(bytes);
-      }
+      return await Isolate.run(
+        () => NativeAccel.palette(imageFile.path),
+      );
     } catch (_) {
       return null;
     }
   }
 
-  static List<Swatch> _extractKMeansSwatches(Uint8List bytes) {
-    var image = img.decodeImage(bytes);
-    if (image == null) return [];
-
-    image = img.copyResize(image, height: 100);
-    image = img.gaussianBlur(image, radius: 2);
-
-    final pixels = _imageToPixelList(image);
-    if (pixels.isEmpty) return [];
-
-    final clusters = _kMeansClustering(pixels, k: 5, maxIterations: 20);
-
-    clusters.sort((a, b) => b.population.compareTo(a.population));
-
-    return clusters
-        .map((c) => Swatch(
-              color:
-                  Color.fromARGB(255, c.centroid.r, c.centroid.g, c.centroid.b),
-              population: c.population,
-            ))
-        .toList();
-  }
-
-  static List<_Pixel> _imageToPixelList(img.Image image) {
-    final pixels = <_Pixel>[];
-    for (var y = 0; y < image.height; y++) {
-      for (var x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        pixels.add(_Pixel(
-          r: pixel.r.toInt(),
-          g: pixel.g.toInt(),
-          b: pixel.b.toInt(),
-        ));
-      }
-    }
-    return pixels;
-  }
-
-  /// Seeds the clustering from the pixels themselves, so the same cover always
-  /// produces the same palette — across runs, and between the main-thread and
-  /// `compute()` paths. An unseeded `Random()` let one cover resolve to
-  /// different accents on different launches, and whichever result happened to
-  /// land in the cache was then frozen there.
-  static int _pixelSeed(List<_Pixel> pixels) {
-    var hash = pixels.length;
-    // Sampling ~256 pixels is plenty to fingerprint the image and keeps this
-    // off the hot path for large covers.
-    final step = max(1, pixels.length ~/ 256);
-    for (var i = 0; i < pixels.length; i += step) {
-      final p = pixels[i];
-      hash = 0x1fffffff & (hash * 31 + ((p.r << 16) | (p.g << 8) | p.b));
-    }
-    return hash;
-  }
-
-  static List<_Cluster> _kMeansClustering(
-    List<_Pixel> pixels, {
-    required int k,
-    required int maxIterations,
-  }) {
-    if (pixels.isEmpty || k <= 0) return [];
-    if (k > pixels.length) k = pixels.length;
-
-    final random = Random(_pixelSeed(pixels));
-    final clusters = <_Cluster>[];
-
-    // k-means++ seeding: the first centroid is random, each subsequent one is
-    // drawn with probability proportional to its squared distance from the
-    // nearest centroid already chosen. Spreading the seeds out this way stops
-    // several of them landing inside one large flat region — the failure mode
-    // that leaves a cover's only saturated area unrepresented.
-    clusters.add(_Cluster(centroid: pixels[random.nextInt(pixels.length)]));
-
-    final nearest = List<double>.filled(pixels.length, double.infinity);
-    while (clusters.length < k) {
-      var total = 0.0;
-      final last = clusters.last.centroid;
-      for (var i = 0; i < pixels.length; i++) {
-        final d = _colorDistance(pixels[i], last);
-        final dSquared = d * d;
-        if (dSquared < nearest[i]) nearest[i] = dSquared;
-        total += nearest[i];
-      }
-
-      if (total <= 0) break;
-
-      var target = random.nextDouble() * total;
-      var chosen = pixels.length - 1;
-      for (var i = 0; i < pixels.length; i++) {
-        target -= nearest[i];
-        if (target <= 0) {
-          chosen = i;
-          break;
-        }
-      }
-      clusters.add(_Cluster(centroid: pixels[chosen]));
-    }
-
-    for (var iteration = 0; iteration < maxIterations; iteration++) {
-      for (final cluster in clusters) {
-        cluster.pixels.clear();
-      }
-
-      for (final pixel in pixels) {
-        _Cluster? nearest;
-        var minDistance = double.infinity;
-
-        for (final cluster in clusters) {
-          final distance = _colorDistance(pixel, cluster.centroid);
-          if (distance < minDistance) {
-            minDistance = distance;
-            nearest = cluster;
-          }
-        }
-
-        nearest?.pixels.add(pixel);
-      }
-
-      var moved = false;
-      for (final cluster in clusters) {
-        if (cluster.pixels.isNotEmpty) {
-          final newCentroid = _calculateCentroid(cluster.pixels);
-          if (_colorDistance(cluster.centroid, newCentroid) > 1) {
-            cluster.centroid = newCentroid;
-            moved = true;
-          }
-        }
-      }
-
-      if (!moved) break;
-    }
-
-    return clusters.where((c) => c.pixels.isNotEmpty).toList();
-  }
-
-  static double _colorDistance(_Pixel a, _Pixel b) {
-    final dr = a.r - b.r;
-    final dg = a.g - b.g;
-    final db = a.b - b.b;
-    return sqrt(dr * dr + dg * dg + db * db);
-  }
-
-  static _Pixel _calculateCentroid(List<_Pixel> pixels) {
-    var r = 0, g = 0, b = 0;
-    for (final p in pixels) {
-      r += p.r;
-      g += p.g;
-      b += p.b;
-    }
-    return _Pixel(
-      r: r ~/ pixels.length,
-      g: g ~/ pixels.length,
-      b: b ~/ pixels.length,
-    );
-  }
-
-  static Future<Color?> extractColor(
-    String? imagePath, {
-    bool useIsolate = true,
-  }) async {
-    final palette = await extractPalette(imagePath, useIsolate: useIsolate);
+  static Future<Color?> extractColor(String? imagePath) async {
+    final palette = await extractPalette(imagePath);
     return palette?.color;
   }
 
@@ -619,7 +428,6 @@ class ColorExtractionService {
 
   static Future<void> extractAllPalettes(
     List<String> imagePaths, {
-    bool useIsolate = true,
     void Function(int progress, int total)? onProgress,
   }) async {
     await init();
@@ -632,7 +440,7 @@ class ColorExtractionService {
 
       final path = imagePaths[i];
       if (!_paletteCache.containsKey(path)) {
-        await extractPalette(path, useIsolate: useIsolate);
+        await extractPalette(path);
       }
 
       _batchProgress = i + 1;
@@ -656,21 +464,4 @@ Future<Map<String, dynamic>> _loadPaletteCacheSnapshot(String cachePath) async {
   final decoded = jsonDecode(jsonString);
   if (decoded is Map<String, dynamic>) return decoded;
   return {};
-}
-
-class _Pixel {
-  final int r;
-  final int g;
-  final int b;
-
-  _Pixel({required this.r, required this.g, required this.b});
-}
-
-class _Cluster {
-  _Pixel centroid;
-  final List<_Pixel> pixels = [];
-
-  _Cluster({required this.centroid});
-
-  int get population => pixels.length;
 }

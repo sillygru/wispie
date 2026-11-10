@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Clamped dominant color helpers for the cover-gradient screens.
 ///
-/// The accent arrives already legibility-corrected from `selectAccent`
+/// The accent arrives already legibility-corrected by the native palette core
 /// (lightness 0.62-0.78), which is right for buttons but far too bright for
 /// a full-page background behind white text. These helpers derive a dark,
 /// saturated variant for backgrounds while leaving the accent itself alone.

@@ -2,13 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/models/beat_map.dart';
-import '../domain/services/beat_analysis.dart';
+import '../domain/services/native_accel.dart';
 import '../domain/services/cache_policy.dart';
 import '../models/song.dart';
 import 'wispie_cache.dart';
@@ -18,9 +17,11 @@ import 'online_audio_cache.dart';
 
 /// Produces and caches the [BeatMap] for a song.
 ///
-/// Deliberately a sibling of `WaveformService`: decode with ffmpeg, crunch in an
-/// isolate, cache as JSON. So playback never does DSP.
+/// Decodes with FFmpeg, runs the Rust analyzer in an isolate, and caches the
+/// result so playback never does DSP.
 class BeatAnalysisService {
+  static const int _analysisSampleRate = 22050;
+
   final WispieCache _cacheService;
 
   BeatAnalysisService(this._cacheService);
@@ -222,9 +223,9 @@ class BeatAnalysisService {
       final rawPath = raw.path;
       final length = await raw.length();
       for (var seconds = 10;
-          seconds * analysisSampleRate * 2 < length;
+          seconds * _analysisSampleRate * 2 < length;
           seconds *= 3) {
-        final limit = seconds * analysisSampleRate * 2;
+        final limit = seconds * _analysisSampleRate * 2;
         final partial =
             await Isolate.run(() => _analyzeRawFile(rawPath, limit));
         if (partial != null && partial.hasBands) {
@@ -272,7 +273,7 @@ class BeatAnalysisService {
         try {
           if (!await file.exists()) return;
           final length = await file.length();
-          if (length - lastLength < analysisSampleRate * 2 * 5) return;
+          if (length - lastLength < _analysisSampleRate * 2 * 5) return;
           lastLength = length;
           final map = await _isolateAnalyzeRawFile(outputPath);
           if (active && map != null && map.hasBands) {
@@ -291,7 +292,7 @@ class BeatAnalysisService {
           '-i', path,
           '-vn', // ignore cover art and video streams
           '-ac', '1', // mono
-          '-ar', '$analysisSampleRate',
+          '-ar', '$_analysisSampleRate',
           '-f', _pcmFormat,
           '-y', outputPath,
         ]);
@@ -337,7 +338,7 @@ class BeatAnalysisService {
   void dispose() {}
 }
 
-/// Runs in a background isolate: reads the decoded PCM and analyses it.
+/// Runs the native analyzer in a background isolate against decoded PCM.
 ///
 /// The file is read here rather than in the caller so the main isolate never
 /// holds the ~10 MB sample buffer.
@@ -347,35 +348,7 @@ Future<BeatMap?> _isolateAnalyzeRawFile(String rawPath) {
 
 BeatMap? _analyzeRawFile(String rawPath, [int? maxBytes]) {
   try {
-    final file = File(rawPath).openSync();
-    final Uint8List bytes;
-    try {
-      final length = file.lengthSync();
-      bytes =
-          file.readSync(maxBytes == null ? length : length.clamp(0, maxBytes));
-    } finally {
-      file.closeSync();
-    }
-    if (bytes.length < 4) return null;
-
-    // Trim any trailing partial frame before viewing as 16-bit, and copy when
-    // the buffer is not 2-byte aligned — Int16List.view demands alignment.
-    final usable = bytes.length - (bytes.length % 2);
-    final Int16List pcm;
-    if (bytes.offsetInBytes % 2 == 0) {
-      pcm = Int16List.view(bytes.buffer, bytes.offsetInBytes, usable ~/ 2);
-    } else {
-      pcm = Int16List.view(
-        Uint8List.fromList(bytes.sublist(0, usable)).buffer,
-      );
-    }
-
-    final samples = Float32List(pcm.length);
-    for (var i = 0; i < pcm.length; i++) {
-      samples[i] = pcm[i] / 32768.0;
-    }
-
-    return analyzeBeats(samples);
+    return NativeAccel.analyzeBeatFile(rawPath, maxBytes: maxBytes);
   } catch (_) {
     return null;
   }

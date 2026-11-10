@@ -14,6 +14,9 @@
 library;
 
 import 'dart:math';
+import 'dart:typed_data';
+
+import 'native_accel.dart';
 
 /// One play event, as stored in the `playevent` table.
 class PlayEventRecord {
@@ -132,154 +135,70 @@ class AffinityParams {
   });
 }
 
-/// Evidence value of a single play, from how much of the song was heard.
-///
-/// Finishing is worth [AffinityParams.fullListenCredit]; between the partial
-/// and full thresholds credit ramps linearly from 0; below that the play is
-/// evidence *against* the song, most strongly when abandoned immediately.
-double playQuality(double playRatio, AffinityParams params) {
-  if (playRatio >= params.fullListenRatio) return params.fullListenCredit;
-  if (playRatio >= params.partialRatio) {
-    final span = params.fullListenRatio - params.partialRatio;
-    if (span <= 0) return params.fullListenCredit;
-    final t = (playRatio - params.partialRatio) / span;
-    return t * params.fullListenCredit;
-  }
-  if (playRatio >= params.skipRatio) return params.partialPenalty;
-  return params.skipPenalty;
-}
-
-/// Exponential decay factor for an event [ageDays] old.
+/// Exponential decay factor used by the taste model.
 double decayFactor(double ageDays, double halfLifeDays) {
-  if (halfLifeDays <= 0) return 1.0;
-  if (ageDays <= 0) return 1.0;
+  if (halfLifeDays <= 0 || ageDays <= 0) return 1.0;
   return pow(0.5, ageDays / halfLifeDays).toDouble();
 }
 
-/// Value at [percentile] (0..1) of [values], which need not be sorted.
-///
-/// Returns 0 for an empty input. Interpolates between neighbours so small
-/// libraries don't quantize hard onto a single sample.
-double percentileOf(List<double> values, double percentile) {
-  if (values.isEmpty) return 0.0;
-  final sorted = List<double>.from(values)..sort();
-  if (sorted.length == 1) return sorted.first;
-  final rank = (percentile.clamp(0.0, 1.0)) * (sorted.length - 1);
-  final lower = rank.floor();
-  final upper = rank.ceil();
-  if (lower == upper) return sorted[lower];
-  final t = rank - lower;
-  return sorted[lower] * (1 - t) + sorted[upper] * t;
-}
-
-/// Builds the affinity map for every song appearing in [events], plus every
-/// song in [favorites] (which get the favorite floor even with no history).
-///
-/// [now] is injected rather than read so decay is deterministic under test.
+/// Computes the affinity map in the native core.
 Map<String, SongAffinity> computeAffinities({
   required List<PlayEventRecord> events,
   required DateTime now,
   Set<String> favorites = const {},
   AffinityParams params = const AffinityParams(),
 }) {
-  final nowSeconds = now.millisecondsSinceEpoch / 1000.0;
-
-  final rawScore = <String, double>{};
-  final weightedCompletion = <String, double>{};
-  final weightedSkips = <String, double>{};
-  final decayWeightTotal = <String, double>{};
-  final saturation = <String, double>{};
-  final counts = <String, int>{};
-  final lastPlayed = <String, double>{};
-
+  final indices = <String, int>{};
+  final filenames = <String>[];
+  int indexFor(String filename) => indices.putIfAbsent(filename, () {
+        filenames.add(filename);
+        return filenames.length - 1;
+      });
   for (final event in events) {
-    final ageDays = (nowSeconds - event.timestamp) / 86400.0;
-    // Clock skew or imported data can put events slightly in the future;
-    // treat them as "now" rather than letting decay explode above 1.
-    final safeAgeDays = ageDays < 0 ? 0.0 : ageDays;
-
-    final decay = decayFactor(safeAgeDays, params.halfLifeDays);
-    final ratio = event.playRatio.clamp(0.0, 1.0);
-    final key = event.filename;
-
-    rawScore.update(
-      key,
-      (v) => v + playQuality(ratio, params) * decay,
-      ifAbsent: () => playQuality(ratio, params) * decay,
-    );
-
-    weightedCompletion.update(key, (v) => v + ratio * decay,
-        ifAbsent: () => ratio * decay);
-    decayWeightTotal.update(key, (v) => v + decay, ifAbsent: () => decay);
-
-    if (ratio < params.skipRatio) {
-      weightedSkips.update(key, (v) => v + decay, ifAbsent: () => decay);
-    }
-
-    saturation.update(
-      key,
-      (v) => v + decayFactor(safeAgeDays, params.saturationHalfLifeDays),
-      ifAbsent: () => decayFactor(safeAgeDays, params.saturationHalfLifeDays),
-    );
-
-    counts.update(key, (v) => v + 1, ifAbsent: () => 1);
-    lastPlayed.update(key, (v) => max(v, event.timestamp),
-        ifAbsent: () => event.timestamp);
+    indexFor(event.filename);
   }
-
-  // Normalize against a high percentile of the *positive* scores. Negative
-  // scores (songs the user keeps skipping) must not drag the reference down.
-  final positiveScores =
-      rawScore.values.where((v) => v > 0).toList(growable: false);
-  final reference =
-      percentileOf(positiveScores, params.normalizationPercentile);
-
-  final result = <String, SongAffinity>{};
-
-  for (final entry in rawScore.entries) {
-    final key = entry.key;
-    final weightTotal = decayWeightTotal[key] ?? 0.0;
-
-    double affinity;
-    if (reference > 0) {
-      affinity = (entry.value / reference).clamp(0.0, 1.0);
-    } else {
-      affinity = entry.value > 0 ? 1.0 : 0.0;
-    }
-
-    if (favorites.contains(key)) {
-      affinity = max(affinity, params.favoriteFloor);
-    }
-
-    result[key] = SongAffinity(
-      affinity: affinity,
-      recentSaturation: params.saturationTarget > 0 && saturation[key] != null
-          ? saturation[key]! / params.saturationTarget
-          : 0.0,
-      completionRate: weightTotal > 0
-          ? (weightedCompletion[key] ?? 0.0) / weightTotal
-          : 0.0,
-      skipRate:
-          weightTotal > 0 ? (weightedSkips[key] ?? 0.0) / weightTotal : 0.0,
-      playCount: counts[key] ?? 0,
-      lastPlayedAt: lastPlayed[key],
-    );
-  }
-
-  // Favorites the listener never got around to playing still carry intent.
   for (final favorite in favorites) {
-    result.putIfAbsent(
-      favorite,
-      () => SongAffinity(
-        affinity: params.favoriteFloor,
-        recentSaturation: 0.0,
-        completionRate: 0.0,
-        skipRate: 0.0,
-        playCount: 0,
-        lastPlayedAt: null,
-      ),
-    );
+    indexFor(favorite);
   }
 
-  return result;
+  final bytes = Uint8List(events.length * 20);
+  final data = ByteData.sublistView(bytes);
+  for (var i = 0; i < events.length; i++) {
+    final event = events[i];
+    final offset = i * 20;
+    data.setUint32(offset, indexFor(event.filename), Endian.little);
+    data.setFloat64(offset + 4, event.timestamp, Endian.little);
+    data.setFloat64(offset + 12, event.playRatio, Endian.little);
+  }
+
+  final decoded = NativeAccel.affinity(
+    filenames: filenames,
+    favorites: favorites.toList(growable: false),
+    nowSeconds: now.millisecondsSinceEpoch / 1000.0,
+    events: bytes,
+    params: {
+      'halfLifeDays': params.halfLifeDays,
+      'saturationHalfLifeDays': params.saturationHalfLifeDays,
+      'saturationTarget': params.saturationTarget,
+      'fullListenRatio': params.fullListenRatio,
+      'skipRatio': params.skipRatio,
+      'partialRatio': params.partialRatio,
+      'fullListenCredit': params.fullListenCredit,
+      'skipPenalty': params.skipPenalty,
+      'partialPenalty': params.partialPenalty,
+      'normalizationPercentile': params.normalizationPercentile,
+      'favoriteFloor': params.favoriteFloor,
+    },
+  );
+  return {
+    for (final row in decoded['rows'] as List<dynamic>)
+      (row as Map<String, dynamic>)['filename'] as String: SongAffinity(
+        affinity: (row['affinity'] as num).toDouble(),
+        recentSaturation: (row['recentSaturation'] as num).toDouble(),
+        completionRate: (row['completionRate'] as num).toDouble(),
+        skipRate: (row['skipRate'] as num).toDouble(),
+        playCount: (row['playCount'] as num).toInt(),
+        lastPlayedAt: (row['lastPlayedAt'] as num?)?.toDouble(),
+      ),
+  };
 }

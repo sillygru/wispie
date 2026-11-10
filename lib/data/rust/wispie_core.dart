@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 /// The native core: library scan, tag reads and the cover cache.
 ///
@@ -12,7 +13,7 @@ class WispieCore {
   WispieCore._();
 
   /// Must match `ABI_VERSION` in `rust/wispie_core/src/lib.rs`.
-  static const int abiVersion = 3;
+  static const int abiVersion = 4;
 
   /// Event kinds sent by the native core.
   static const int eventItems = 0;
@@ -95,6 +96,22 @@ class WispieCore {
   static int run(
     Map<String, Object?> request, {
     required void Function(int kind, String payload) onEvent,
+  }) =>
+      _run(request, Uint8List(0), binaryRequest: false, onEvent: onEvent);
+
+  /// Runs a request with a binary payload that must not be JSON-expanded.
+  static int runBytes(
+    Map<String, Object?> request,
+    Uint8List bytes, {
+    required void Function(int kind, String payload) onEvent,
+  }) =>
+      _run(request, bytes, binaryRequest: true, onEvent: onEvent);
+
+  static int _run(
+    Map<String, Object?> request,
+    Uint8List bytes, {
+    required bool binaryRequest,
+    required void Function(int kind, String payload) onEvent,
   }) {
     if (!_ensureLoaded()) {
       throw StateError('native core unavailable: $_reason');
@@ -106,11 +123,17 @@ class WispieCore {
     if (pointer.address == 0) {
       throw StateError('native core allocation failed');
     }
+    final binary = bytes.isEmpty ? nullptr : bindings.alloc(bytes.length);
+    if (bytes.isNotEmpty && binary.address == 0) {
+      bindings.free(pointer, length);
+      throw StateError('native core binary allocation failed');
+    }
 
     try {
       pointer.asTypedList(length)
         ..setAll(0, encoded)
         ..[encoded.length] = 0;
+      if (bytes.isNotEmpty) binary.asTypedList(bytes.length).setAll(0, bytes);
 
       final callable = NativeCallable<_EventNative>.isolateLocal(
         (Pointer<Void> _, int kind, Pointer<Uint8> json, int size) {
@@ -118,15 +141,20 @@ class WispieCore {
         },
       );
       try {
-        return bindings.run(
-          pointer.cast(),
-          callable.nativeFunction,
-          nullptr,
-        );
+        return !binaryRequest
+            ? bindings.run(pointer.cast(), callable.nativeFunction, nullptr)
+            : bindings.runBytes(
+                pointer.cast(),
+                binary,
+                bytes.length,
+                callable.nativeFunction,
+                nullptr,
+              );
       } finally {
         callable.close();
       }
     } finally {
+      if (bytes.isNotEmpty) bindings.free(binary, bytes.length);
       bindings.free(pointer, length);
     }
   }
@@ -146,6 +174,10 @@ typedef _RunNative = Int32 Function(
     Pointer<Int8>, Pointer<NativeFunction<_EventNative>>, Pointer<Void>);
 typedef _RunDart = int Function(
     Pointer<Int8>, Pointer<NativeFunction<_EventNative>>, Pointer<Void>);
+typedef _RunBytesNative = Int32 Function(Pointer<Int8>, Pointer<Uint8>, UintPtr,
+    Pointer<NativeFunction<_EventNative>>, Pointer<Void>);
+typedef _RunBytesDart = int Function(Pointer<Int8>, Pointer<Uint8>, int,
+    Pointer<NativeFunction<_EventNative>>, Pointer<Void>);
 
 typedef _AbiVersionNative = Uint32 Function();
 typedef _AbiVersionDart = int Function();
@@ -169,6 +201,8 @@ class _Bindings {
         version = library.lookupFunction<_VersionNative, _VersionDart>(
             'wispie_core_version'),
         run = library.lookupFunction<_RunNative, _RunDart>('wispie_core_run'),
+        runBytes = library.lookupFunction<_RunBytesNative, _RunBytesDart>(
+            'wispie_core_run_bytes'),
         cancel = library
             .lookupFunction<_VoidNative, _VoidDart>('wispie_core_cancel'),
         alloc = library
@@ -179,6 +213,7 @@ class _Bindings {
   final _AbiVersionDart abiVersion;
   final _VersionDart version;
   final _RunDart run;
+  final _RunBytesDart runBytes;
   final _VoidDart cancel;
   final _AllocDart alloc;
   final _FreeDart free;

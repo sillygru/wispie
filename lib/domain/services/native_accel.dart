@@ -1,8 +1,38 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../data/rust/wispie_core.dart';
+import '../models/beat_map.dart';
 import '../../models/song.dart';
 import 'search_taste.dart';
+
+class NativeRgb {
+  final int red;
+  final int green;
+  final int blue;
+
+  const NativeRgb(this.red, this.green, this.blue);
+}
+
+class NativeSwatch extends NativeRgb {
+  final int population;
+
+  const NativeSwatch(super.red, super.green, super.blue, this.population);
+}
+
+class NativePalette {
+  final List<NativeSwatch> swatches;
+  final NativeRgb accent;
+  final bool isNeutral;
+  final NativeRgb mixedColor;
+
+  const NativePalette({
+    required this.swatches,
+    required this.accent,
+    required this.isNeutral,
+    required this.mixedColor,
+  });
+}
 
 /// Synchronous access to the native hot paths.
 ///
@@ -59,6 +89,116 @@ class NativeAccel {
             ),
         ],
     ];
+  }
+
+  static BeatMap analyzeBeatFile(String path, {int? maxBytes}) {
+    return _beatMap(_ask({
+      'command': 'beat_analyze',
+      'path': path,
+      if (maxBytes != null) 'maxBytes': maxBytes,
+    }));
+  }
+
+  static BeatMap _beatMap(Map<String, dynamic> decoded) {
+    return BeatMap(
+      version: BeatMap.currentVersion,
+      durationMs: (decoded['durationMs'] as num).toInt(),
+      bpm: (decoded['bpm'] as num).toDouble(),
+      beatsMs: Int32List.fromList(
+        (decoded['beatsMs'] as List<dynamic>)
+            .map((value) => (value as num).toInt())
+            .toList(growable: false),
+      ),
+      beatStrength: Float32List.fromList(
+        (decoded['beatStrength'] as List<dynamic>)
+            .map((value) => (value as num).toDouble())
+            .toList(growable: false),
+      ),
+      downbeats: Uint8List.fromList(
+        (decoded['downbeats'] as List<dynamic>)
+            .map((value) => (value as num).toInt())
+            .toList(growable: false),
+      ),
+      bands: Uint8List.fromList(
+        (decoded['bands'] as List<dynamic>)
+            .map((value) => (value as num).toInt())
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  static List<double> waveformPeaks(
+    Uint8List pcm, {
+    required int targetSamples,
+    int expectedBytes = 0,
+  }) {
+    final decoded = _askBytes(
+      {
+        'command': 'waveform',
+        'targetSamples': targetSamples,
+        'expectedBytes': expectedBytes,
+      },
+      pcm,
+    );
+    return [
+      for (final value in decoded['bars'] as List<dynamic>)
+        (value as num).toDouble(),
+    ];
+  }
+
+  static Map<String, dynamic> matchPlan({
+    required List<Map<String, Object?>> library,
+    required List<Map<String, Object?>> candidates,
+  }) =>
+      _ask({
+        'command': 'match_plan',
+        'library': library,
+        'candidates': candidates,
+      });
+
+  static Map<String, dynamic> affinity({
+    required List<String> filenames,
+    required List<String> favorites,
+    required double nowSeconds,
+    required Uint8List events,
+    required Map<String, double> params,
+  }) =>
+      _askBytes(
+        {
+          'command': 'affinity',
+          'filenames': filenames,
+          'favorites': favorites,
+          'nowSeconds': nowSeconds,
+          'params': params,
+        },
+        events,
+      );
+
+  static NativePalette palette(String path) {
+    final decoded = _ask({'command': 'palette', 'path': path});
+    NativeRgb rgb(Object? value) {
+      final row = value as Map<String, dynamic>;
+      return NativeRgb(
+        (row['r'] as num).toInt(),
+        (row['g'] as num).toInt(),
+        (row['b'] as num).toInt(),
+      );
+    }
+
+    return NativePalette(
+      swatches: [
+        for (final value in decoded['swatches'] as List<dynamic>)
+          NativeSwatch(
+            ((value as Map<String, dynamic>)['r'] as num).toInt(),
+            (value['g'] as num).toInt(),
+            (value['b'] as num).toInt(),
+            (value['population'] as num).toInt(),
+          ),
+      ],
+      accent: rgb(decoded['accent']),
+      isNeutral: decoded['isNeutral'] as bool,
+      mixedColor: rgb(decoded['mixedColor']),
+    );
   }
 
   static List<int> rankSearch({
@@ -167,6 +307,26 @@ class NativeAccel {
           field: hit['field'] as String,
         ),
     ];
+  }
+
+  static Map<String, dynamic> _askBytes(
+    Map<String, Object?> request,
+    Uint8List bytes,
+  ) {
+    Map<String, dynamic>? items;
+    final code = WispieCore.runBytes(request, bytes, onEvent: (kind, payload) {
+      if (kind == WispieCore.eventItems) {
+        items = jsonDecode(payload) as Map<String, dynamic>;
+      }
+    });
+    if (code != 0) {
+      throw StateError('native ${request['command']} exited with $code');
+    }
+    final decoded = items;
+    if (decoded == null) {
+      throw StateError('native ${request['command']} sent no items');
+    }
+    return decoded;
   }
 }
 
