@@ -14,6 +14,7 @@ mod match_plan;
 mod meta;
 mod model;
 mod palette;
+mod palette_jpeg;
 mod prosody;
 mod scan;
 mod search;

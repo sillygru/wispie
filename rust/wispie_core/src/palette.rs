@@ -1,7 +1,8 @@
 //! Cover decoding, reduction, blur and deterministic colour clustering.
 
-use image::{Rgb, RgbImage};
+use image::{DynamicImage, ImageDecoder, ImageReader, Rgb, RgbImage};
 use serde_json::json;
+use std::io::Cursor;
 use std::path::Path;
 
 pub fn run(path: &str) -> Result<serde_json::Value, String> {
@@ -10,13 +11,24 @@ pub fn run(path: &str) -> Result<serde_json::Value, String> {
 }
 
 fn run_bytes(bytes: &[u8]) -> Result<serde_json::Value, String> {
-    let decoded =
-        image::load_from_memory(bytes).map_err(|error| format!("decode cover: {error}"))?;
-    let height = 100u32;
-    let width =
-        ((decoded.width() as f64 * height as f64 / decoded.height() as f64).round() as u32).max(1);
-    let source = decoded.to_rgb8();
-    let resized = resize_nearest(&source, width, height);
+    let resized = if let Some(jpeg) = crate::palette_jpeg::resize(bytes) {
+        jpeg
+    } else {
+        let mut decoder = ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|error| format!("detect cover format: {error}"))?
+            .into_decoder()
+            .map_err(|error| format!("decode cover: {error}"))?;
+        let orientation = decoder
+            .orientation()
+            .unwrap_or(image::metadata::Orientation::NoTransforms);
+        let mut decoded = DynamicImage::from_decoder(decoder)
+            .map_err(|error| format!("decode cover: {error}"))?;
+        decoded.apply_orientation(orientation);
+        let source = decoded.into_rgb8();
+        let (width, height) = thumbnail_size(source.width(), source.height());
+        resize_nearest(&source, width, height)
+    };
     let blurred = blur(&resized, 2);
     let pixels: Vec<[u8; 3]> = blurred.pixels().map(|p| p.0).collect();
     let mut clusters = kmeans(&pixels, 5, 20);
@@ -126,18 +138,22 @@ fn hue_to_rgb(m1: f64, m2: f64, mut hue: f64) -> u8 {
     (value * 255.0).round() as u8
 }
 
+pub(super) fn thumbnail_size(width: u32, height: u32) -> (u32, u32) {
+    const HEIGHT: u32 = 100;
+    let width = (HEIGHT as f64 * (width as f64 / height as f64)).round() as u32;
+    (width.max(1), HEIGHT)
+}
+
+pub(super) fn sample_coordinate(index: u32, source: u32, target: u32) -> u32 {
+    (u64::from(index) * u64::from(source) / u64::from(target)) as u32
+}
+
 fn resize_nearest(source: &RgbImage, width: u32, height: u32) -> RgbImage {
-    let mut out = RgbImage::new(width, height);
-    let dx = source.width() as f64 / width as f64;
-    let dy = source.height() as f64 / height as f64;
-    for y in 0..height {
-        let source_y = (y as f64 * dy) as u32;
-        for x in 0..width {
-            let source_x = (x as f64 * dx) as u32;
-            out.put_pixel(x, y, *source.get_pixel(source_x, source_y));
-        }
-    }
-    out
+    RgbImage::from_fn(width, height, |x, y| {
+        let sx = sample_coordinate(x, source.width(), width);
+        let sy = sample_coordinate(y, source.height(), height);
+        *source.get_pixel(sx, sy)
+    })
 }
 
 fn blur(source: &RgbImage, radius: i32) -> RgbImage {
@@ -147,19 +163,21 @@ fn blur(source: &RgbImage, radius: i32) -> RgbImage {
         .map(|x| (-(x * x) as f64 / denom).exp())
         .collect();
     let total: f64 = kernel.iter().sum();
+    let normalization = 1.0 / total;
     for v in &mut kernel {
-        *v /= total;
+        *v *= normalization;
     }
     let mut temp = source.clone();
     let mut output = source.clone();
     let reflect = |max: i32, x: i32| {
-        if x < 0 {
+        let reflected = if x < 0 {
             -x
         } else if x >= max {
             max - (x - max) - 1
         } else {
             x
-        }
+        };
+        reflected.clamp(0, max - 1)
     };
     for y in 0..source.height() as i32 {
         for x in 0..source.width() as i32 {
@@ -322,27 +340,17 @@ fn kmeans(pixels: &[[u8; 3]], k: usize, max_iterations: usize) -> Vec<([u8; 3], 
                 (sums[i][2] / counts[i] as u64) as u8,
             ];
             if distance(centroids[i], next) > 1.0 {
+                centroids[i] = next;
                 moved = true;
             }
-            centroids[i] = next;
         }
         if !moved {
             break;
         }
     }
-    let mut out = vec![([0, 0, 0], 0); centroids.len()];
-    for p in pixels {
-        let mut best = 0;
-        let mut min = f64::INFINITY;
-        for (i, c) in centroids.iter().enumerate() {
-            let d = distance(*p, *c);
-            if d < min {
-                min = d;
-                best = i;
-            }
-        }
-        out[best].0 = centroids[best];
-        out[best].1 += 1;
-    }
-    out.into_iter().filter(|(_, n)| *n > 0).collect()
+    centroids
+        .into_iter()
+        .zip(counts)
+        .filter(|(_, count)| *count > 0)
+        .collect()
 }

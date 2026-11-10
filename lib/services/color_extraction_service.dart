@@ -157,7 +157,7 @@ class ColorExtractionService {
   /// discarded wholesale on a mismatch — without this, every already-scanned
   /// library keeps serving colours computed by the old algorithm forever, and
   /// no fix here would ever reach an existing install.
-  static const int _cacheVersion = 4;
+  static const int _cacheVersion = 5;
 
   // Insertion-ordered map: most recently accessed keys sit at the end. On
   // each cache hit we re-insert to mark it as fresh, so the head of the

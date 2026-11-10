@@ -20,6 +20,7 @@ image = { version = "0.25", default-features = false, features = [
     "png",
     "webp",
 ] }
+libjpeg-turbo-rs = { version = "0.9", default-features = false, features = ["std"] }
 lofty = "0.25"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
