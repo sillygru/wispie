@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_json::json;
 use std::collections::HashSet;
 
-#[link(name = "m")]
+#[cfg_attr(not(target_env = "msvc"), link(name = "m"))]
 unsafe extern "C" {
     fn pow(base: f64, exponent: f64) -> f64;
 }

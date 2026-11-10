@@ -70,6 +70,27 @@ Future<void> _buildAppleOrHost(String root) async {
 }
 
 Future<void> _buildApple(String root, String platform) async {
+  if (platform == 'macos-host') {
+    final triple = Abi.current() == Abi.macosArm64
+        ? 'aarch64-apple-darwin'
+        : 'x86_64-apple-darwin';
+    await _cargo(root, ['build', '--release', '--target', triple]);
+    final target =
+        p.join(root, 'macos', 'Runner', 'Configs', 'libwispie_core.a');
+    await _lipo(
+      root,
+      [p.join(root, 'rust', 'target', triple, 'release', 'libwispie_core.a')],
+      target,
+    );
+    _writeXcconfig(
+      p.join(root, 'macos', 'Runner', 'Configs', 'RustCore.xcconfig'),
+      '-force_load \$(SRCROOT)/Runner/Configs/libwispie_core.a '
+      '-framework CoreFoundation -liconv',
+    );
+    _print(target);
+    return;
+  }
+
   if (platform == 'macos') {
     const triples = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
     for (final triple in triples) {
