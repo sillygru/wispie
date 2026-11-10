@@ -572,12 +572,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   List<String> _getMergedSiblings(String filename) {
-    for (final group in _mergedGroups.values) {
-      if (group.contains(filename)) {
-        return group.where((f) => f != filename).toList();
-      }
-    }
-    return [];
+    final groupId = _filenameToGroupId[filename];
+    final group = groupId == null ? null : _mergedGroups[groupId];
+    return group?.where((f) => f != filename).toList() ?? const <String>[];
   }
 
   Future<void> updateShuffleConfig(

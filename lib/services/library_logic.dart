@@ -419,9 +419,20 @@ class LibraryLogic {
     return parts;
   }
 
+  static bool looksLikeArtist(List<Song> songs, String title) {
+    if (songs.isEmpty) return false;
+    final lowerTitle = title.toLowerCase();
+    return songs.any((song) {
+      final lowerArtist = song.artist.toLowerCase();
+      return lowerArtist.contains(lowerTitle) ||
+          lowerTitle.contains(lowerArtist);
+    });
+  }
+
   static Map<String, List<Song>> groupByArtist(List<Song> songs) {
     final Map<String, List<Song>> artistMap = {};
     final Map<String, String> canonicalNames = {};
+    final Map<String, Set<Song>> songsByArtist = {};
 
     for (final song in songs) {
       final rawArtist = song.artist.trim();
@@ -436,7 +447,8 @@ class LibraryLogic {
             canonicalNames.putIfAbsent(lowerKey, () => cleanArtist);
 
         final list = artistMap.putIfAbsent(canonicalName, () => []);
-        if (!list.contains(song)) {
+        final seen = songsByArtist.putIfAbsent(canonicalName, () => <Song>{});
+        if (seen.add(song)) {
           list.add(song);
         }
       }
@@ -600,14 +612,41 @@ class LibraryLogic {
     List<Song> songs, {
     Map<String, int>? playCounts,
   }) {
-    final ordered = sortSongsByPlayCount(songs, playCounts: playCounts);
-    for (final song in ordered) {
-      if (CoverPath.isLocal(song.coverUrl)) return song;
+    Song? bestLocal;
+    Song? bestAny;
+    var bestLocalPlays = -1;
+    var bestAnyPlays = -1;
+    var bestLocalTitle = '';
+    var bestAnyTitle = '';
+
+    bool comesBefore(
+            int plays, String title, int currentPlays, String currentTitle) =>
+        plays > currentPlays ||
+        (plays == currentPlays && title.compareTo(currentTitle) < 0);
+
+    for (final song in songs) {
+      final cover = song.coverUrl;
+      final isLocal = CoverPath.isLocal(cover);
+      if (!isLocal && (cover == null || cover.isEmpty)) continue;
+
+      final plays = playCounts?[song.filename] ?? song.playCount;
+      final title = song.title.toLowerCase();
+      if (bestAny == null ||
+          comesBefore(plays, title, bestAnyPlays, bestAnyTitle)) {
+        bestAny = song;
+        bestAnyPlays = plays;
+        bestAnyTitle = title;
+      }
+      if (isLocal &&
+          (bestLocal == null ||
+              comesBefore(plays, title, bestLocalPlays, bestLocalTitle))) {
+        bestLocal = song;
+        bestLocalPlays = plays;
+        bestLocalTitle = title;
+      }
     }
-    // Streamed tracks have no file: their art is a URL, and it still counts.
-    for (final song in ordered) {
-      if ((song.coverUrl ?? '').isNotEmpty) return song;
-    }
-    return null;
+
+    // Streamed tracks have no file: their art URL is the fallback.
+    return bestLocal ?? bestAny;
   }
 }

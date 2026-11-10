@@ -49,10 +49,11 @@ class _PlaylistSelectorDialogState
       if (widget.songFilenames.length == 1) {
         final songFilename = widget.songFilenames[0];
         _isFavorite = userData.isFavorite(songFilename);
+        final selectedFilename = songFilename;
         _selectedPlaylistIds = userData.playlists
             .where((p) => !p.isRecommendation)
-            .where(
-                (pl) => pl.songs.any((ps) => ps.songFilename == songFilename))
+            .where((pl) =>
+                pl.songs.any((ps) => ps.songFilename == selectedFilename))
             .map((pl) => pl.id)
             .toSet();
       } else {
@@ -73,15 +74,10 @@ class _PlaylistSelectorDialogState
         // Actually, maybe it's better to show as selected if ANY song is in it, or use a tri-state.
         // Let's use ANY for simplicity in initialization, but maybe null for mixed.
         _selectedPlaylistIds = {};
+        final selectedFilenames = widget.songFilenames.toSet();
         for (final pl in userData.playlists.where((p) => !p.isRecommendation)) {
-          bool anyIn = false;
-          for (final f in widget.songFilenames) {
-            if (pl.songs.any((ps) => ps.songFilename == f)) {
-              anyIn = true;
-              break;
-            }
-          }
-          if (anyIn) {
+          if (pl.songs
+              .any((ps) => selectedFilenames.contains(ps.songFilename))) {
             _selectedPlaylistIds.add(pl.id);
           }
         }
@@ -95,6 +91,19 @@ class _PlaylistSelectorDialogState
     final userData = ref.watch(userDataProvider);
     final playlists =
         userData.playlists.where((p) => !p.isRecommendation).toList();
+    final selectedFilenames = widget.songFilenames.toSet();
+    final matchedFilenamesByPlaylist = <String, Set<String>>{};
+    if (widget.songFilenames.length > 1) {
+      for (final playlist in playlists) {
+        final matched = <String>{};
+        for (final playlistSong in playlist.songs) {
+          if (selectedFilenames.contains(playlistSong.songFilename)) {
+            matched.add(playlistSong.songFilename);
+          }
+        }
+        matchedFilenamesByPlaylist[playlist.id] = matched;
+      }
+    }
 
     return AlertDialog(
       title: Text(widget.songFilenames.length == 1
@@ -129,15 +138,10 @@ class _PlaylistSelectorDialogState
               ...playlists.map((playlist) {
                 final isSelected = _selectedPlaylistIds.contains(playlist.id);
                 // In bulk mode, we could also use tri-state for playlists
-                bool allIn = true;
-                bool anyIn = false;
-                for (final f in widget.songFilenames) {
-                  if (playlist.songs.any((ps) => ps.songFilename == f)) {
-                    anyIn = true;
-                  } else {
-                    allIn = false;
-                  }
-                }
+                final matchedCount =
+                    matchedFilenamesByPlaylist[playlist.id]?.length ?? 0;
+                final allIn = matchedCount == selectedFilenames.length;
+                final anyIn = matchedCount > 0;
 
                 return _PickRow(
                   title: playlist.name,
@@ -195,7 +199,8 @@ class _PlaylistSelectorDialogState
               if (widget.songFilenames.length == 1) {
                 final songFilename = widget.songFilenames[0];
                 final wasIn =
-                    pl.songs.any((ps) => ps.songFilename == songFilename);
+                    matchedFilenamesByPlaylist[pl.id]?.contains(songFilename) ??
+                        pl.songs.any((ps) => ps.songFilename == songFilename);
                 if (isSelected && !wasIn) {
                   await notifier.addSongToPlaylist(pl.id, songFilename,
                       sync: false);
@@ -207,16 +212,22 @@ class _PlaylistSelectorDialogState
                 // Bulk mode
                 // If isSelected is true, ensure ALL are in
                 if (isSelected) {
+                  final existingFilenames = {
+                    for (final song in pl.songs) song.songFilename,
+                  };
                   final songsToAdd = widget.songFilenames
-                      .where((f) => !pl.songs.any((ps) => ps.songFilename == f))
+                      .where((f) => !existingFilenames.contains(f))
                       .toList();
                   if (songsToAdd.isNotEmpty) {
                     await notifier.bulkAddSongsToPlaylist(pl.id, songsToAdd);
                   }
                 } else {
                   // If isSelected is false, ensure NONE are in
+                  final existingFilenames = {
+                    for (final song in pl.songs) song.songFilename,
+                  };
                   final songsToRemove = widget.songFilenames
-                      .where((f) => pl.songs.any((ps) => ps.songFilename == f))
+                      .where(existingFilenames.contains)
                       .toList();
                   if (songsToRemove.isNotEmpty) {
                     await notifier.bulkRemoveSongsFromPlaylist(

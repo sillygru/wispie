@@ -66,6 +66,8 @@ class SongListScreen extends ConsumerStatefulWidget {
 }
 
 class _SongListScreenState extends ConsumerState<SongListScreen> {
+  late bool _inferredLooksLikeArtist;
+
   /// Selected album filter in the grouped artist view; null means "All songs".
   String? _selectedAlbum;
 
@@ -83,8 +85,24 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
   String? get albumName => widget.albumName;
 
   @override
+  void initState() {
+    super.initState();
+    _refreshArtistHeuristic();
+  }
+
+  void _refreshArtistHeuristic() {
+    _inferredLooksLikeArtist = !widget.isArtist &&
+        LibraryLogic.looksLikeArtist(widget.songs, widget.title);
+  }
+
+  @override
   void didUpdateWidget(covariant SongListScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title ||
+        oldWidget.isArtist != widget.isArtist ||
+        !identical(oldWidget.songs, widget.songs)) {
+      _refreshArtistHeuristic();
+    }
     if (oldWidget.title != widget.title ||
         oldWidget.artistName != widget.artistName ||
         oldWidget.albumName != widget.albumName ||
@@ -92,18 +110,6 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       _selectedAlbum = null;
       _localSort = null;
     }
-  }
-
-  /// Mirrors the artist heuristic inside [build] so the pre-sort multi-album
-  /// gate agrees with the post-sort [effectiveIsArtist] decision.
-  static bool _looksLikeArtist(List<Song> songs, String title) {
-    if (songs.isEmpty) return false;
-    final lowerTitle = title.toLowerCase();
-    return songs.any(
-      (s) =>
-          s.artist.toLowerCase().contains(lowerTitle) ||
-          lowerTitle.contains(s.artist.toLowerCase()),
-    );
   }
 
   /// Wide-window pointer affordance: click cursor plus right-click menu.
@@ -143,8 +149,10 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     );
     // A streamed collection has no legacy layout that renders its art.
     final bool streamed = songs.isNotEmpty && songs.every((s) => s.isRemote);
+    final bool inferredLooksLikeArtist = _inferredLooksLikeArtist;
+    final bool looksLikeArtist = isArtist || inferredLooksLikeArtist;
     if (useFullBleed || streamed) {
-      final bool looksArtist = isArtist || _looksLikeArtist(songs, title);
+      final bool looksArtist = looksLikeArtist;
       final String lowerTitle = title.toLowerCase();
       final bool looksAlbum = isAlbum ||
           (!looksArtist &&
@@ -179,7 +187,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
     // The check runs on the raw set — order-independent — so it agrees with
     // the post-sort gate below.
     final bool multiAlbumArtist = playlistId == null &&
-        (isArtist || _looksLikeArtist(songs, title)) &&
+        looksLikeArtist &&
         !isAlbum &&
         LibraryLogic.hasMultipleAlbums(songs);
 
@@ -213,11 +221,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
         (playlistId == null &&
             !isAlbum &&
             sortedSongs.isNotEmpty &&
-            sortedSongs.any(
-              (s) =>
-                  s.artist.toLowerCase().contains(title.toLowerCase()) ||
-                  title.toLowerCase().contains(s.artist.toLowerCase()),
-            ));
+            inferredLooksLikeArtist);
 
     final bool effectiveIsAlbum = isAlbum ||
         (playlistId == null &&

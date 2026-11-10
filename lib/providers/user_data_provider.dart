@@ -70,6 +70,14 @@ class UserDataState {
     return query;
   }
 
+  static Map<String, String> _buildActualMatches(Iterable<String> candidates) {
+    final matches = <String, String>{};
+    for (final candidate in candidates) {
+      matches.putIfAbsent(Filename.normalize(candidate), () => candidate);
+    }
+    return matches;
+  }
+
   static Map<String, String> _buildFilenameToGroupId(
       Map<String, List<String>> groups) {
     if (groups.isEmpty) return const <String, String>{};
@@ -221,6 +229,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
     // listener with no local files still has a history worth mixing.
     final pool = [...library, ..._streamedPool];
     if (pool.isEmpty) return;
+    final poolFilenames = pool.map((song) => song.filename).toSet();
     DatabaseService.instance.validateRecommendationPlaylists().then((dbValid) {
       if (!dbValid) {
         updateRecommendationPlaylists(force: true, allSongs: pool);
@@ -228,8 +237,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
       }
       final anyResolve = state.playlists.any((p) {
         if (!p.isRecommendation || p.songs.isEmpty) return false;
-        return p.songs
-            .any((ps) => pool.any((s) => s.filename == ps.songFilename));
+        return p.songs.any((ps) => poolFilenames.contains(ps.songFilename));
       });
       if (!anyResolve) {
         updateRecommendationPlaylists(force: true, allSongs: pool);
@@ -607,6 +615,9 @@ class UserDataNotifier extends Notifier<UserDataState> {
   Future<void> bulkToggleFavorite(List<String> filenames, bool favorite) async {
     final newFavs = List<String>.from(state.favorites);
     final newSL = List<String>.from(state.suggestLess);
+    final favoriteMatches = UserDataState._buildActualMatches(state.favorites);
+    final suggestLessMatches =
+        UserDataState._buildActualMatches(state.suggestLess);
 
     for (final filename in filenames) {
       final isCurrentlyFav = state.isFavorite(filename);
@@ -618,13 +629,13 @@ class UserDataNotifier extends Notifier<UserDataState> {
         // Remove from suggestLess if present
         if (state.isSuggestLess(filename)) {
           final actualSLMatch =
-              UserDataState._actualMatch(filename, state.suggestLess);
+              suggestLessMatches[Filename.normalize(filename)] ?? filename;
           newSL.remove(actualSLMatch);
           await DatabaseService.instance.removeSuggestLess(actualSLMatch);
         }
       } else if (!favorite && isCurrentlyFav) {
         final actualFilename =
-            UserDataState._actualMatch(filename, state.favorites);
+            favoriteMatches[Filename.normalize(filename)] ?? filename;
         newFavs.remove(actualFilename);
         await DatabaseService.instance.removeFavorite(actualFilename);
       }
@@ -636,6 +647,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
   Future<void> bulkHide(List<String> filenames, bool hide) async {
     final newHidden = List<String>.from(state.hidden);
+    final hiddenMatches = UserDataState._buildActualMatches(state.hidden);
 
     for (final filename in filenames) {
       final isCurrentlyHidden = state.isHidden(filename);
@@ -645,7 +657,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
         await DatabaseService.instance.addHidden(filename);
       } else if (!hide && isCurrentlyHidden) {
         final actualFilename =
-            UserDataState._actualMatch(filename, state.hidden);
+            hiddenMatches[Filename.normalize(filename)] ?? filename;
         newHidden.remove(actualFilename);
         await DatabaseService.instance.removeHidden(actualFilename);
       }
@@ -658,6 +670,8 @@ class UserDataNotifier extends Notifier<UserDataState> {
   Future<void> bulkToggleSuggestLess(
       List<String> filenames, bool suggestLess) async {
     final newSL = List<String>.from(state.suggestLess);
+    final suggestLessMatches =
+        UserDataState._buildActualMatches(state.suggestLess);
 
     for (final filename in filenames) {
       final isCurrentlySL = state.isSuggestLess(filename);
@@ -667,7 +681,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
         await DatabaseService.instance.addSuggestLess(filename);
       } else if (!suggestLess && isCurrentlySL) {
         final actualSLMatch =
-            UserDataState._actualMatch(filename, state.suggestLess);
+            suggestLessMatches[Filename.normalize(filename)] ?? filename;
         newSL.remove(actualSLMatch);
         await DatabaseService.instance.removeSuggestLess(actualSLMatch);
       }
@@ -753,8 +767,11 @@ class UserDataNotifier extends Notifier<UserDataState> {
     final newPlaylists = state.playlists.map((pl) {
       if (pl.id == playlistId) {
         final updatedSongs = List<PlaylistSong>.from(pl.songs);
+        final existingFilenames = {
+          for (final song in updatedSongs) song.songFilename,
+        };
         for (final filename in filenames) {
-          if (!updatedSongs.any((s) => s.songFilename == filename)) {
+          if (existingFilenames.add(filename)) {
             updatedSongs
                 .add(PlaylistSong(songFilename: filename, addedAt: now));
           }

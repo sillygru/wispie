@@ -33,24 +33,23 @@ class BulkSelectionBar extends ConsumerWidget {
     final actionOrder = settings.quickActionConfig.actionOrder;
 
     final selectedCount = selectionState.selectedFilenames.length;
-    final allSongs = ref.watch(songsProvider).value ?? [];
-    // A selection can include streamed tracks, which have no library row.
-    final byFilename = <String, Song>{
-      for (final song in allSongs) song.filename: song,
-      ...ref.watch(userDataProvider).remoteSongs,
-    };
-    final selectedSongs = <Song>[
-      for (final filename in selectionState.selectedFilenames)
-        if (byFilename[filename] != null) byFilename[filename]!,
-    ];
+    final byFilename = ref.watch(songsByFilenameProvider);
+    final selectedSongs = <Song>[];
+    var hasRemoteSong = false;
+    for (final filename in selectionState.selectedFilenames) {
+      final song = byFilename[filename];
+      if (song == null) continue;
+      selectedSongs.add(song);
+      hasRemoteSong = hasRemoteSong || song.isRemote;
+    }
     // Anything without a file behind it can only take the catalogue actions.
-    final fileOnly = selectedCount != selectedSongs.length ||
-        selectedSongs.any((song) => song.isRemote);
+    final fileOnly = selectedCount != selectedSongs.length || hasRemoteSong;
 
     final currentSong =
         ref.read(audioPlayerManagerProvider).currentSongNotifier.value;
-    final isCurrentlyPlaying =
-        selectedSongs.any((s) => s.filename == currentSong?.filename);
+    final isCurrentlyPlaying = currentSong != null &&
+        byFilename.containsKey(currentSong.filename) &&
+        selectionState.selectedFilenames.contains(currentSong.filename);
 
     final buttons = <Widget>[];
     for (final action in actionOrder) {
@@ -152,8 +151,9 @@ class BulkSelectionBar extends ConsumerWidget {
                 if (!fileOnly)
                   TextButton(
                     onPressed: () {
-                      final allFilenames =
-                          allSongs.map((s) => s.filename).toList();
+                      final allFilenames = (ref.read(songsProvider).value ?? [])
+                          .map((song) => song.filename)
+                          .toList();
                       ref
                           .read(selectionProvider.notifier)
                           .selectAll(allFilenames);

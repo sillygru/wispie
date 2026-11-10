@@ -126,7 +126,7 @@ class SongDurationDisplay extends StatelessWidget {
 }
 
 /// Widget to display duration for a folder/playlist/album
-class CollectionDurationDisplay extends StatelessWidget {
+class CollectionDurationDisplay extends StatefulWidget {
   final List<Song> songs;
   final bool showSongCount;
   final TextStyle? style;
@@ -141,15 +141,38 @@ class CollectionDurationDisplay extends StatelessWidget {
   });
 
   @override
+  State<CollectionDurationDisplay> createState() =>
+      _CollectionDurationDisplayState();
+}
+
+class _CollectionDurationDisplayState extends State<CollectionDurationDisplay> {
+  late Duration _totalDuration;
+
+  @override
+  void initState() {
+    super.initState();
+    _totalDuration = DurationFormatter._calculateTotalDuration(widget.songs);
+  }
+
+  @override
+  void didUpdateWidget(covariant CollectionDurationDisplay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.songs, widget.songs) ||
+        oldWidget.songs.length != widget.songs.length) {
+      _totalDuration = DurationFormatter._calculateTotalDuration(widget.songs);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final durationText = compact
-        ? DurationFormatter.formatTotalCompact(songs)
-        : DurationFormatter.formatTotal(songs);
+    final durationText = widget.compact
+        ? DurationFormatter.formatCompact(_totalDuration)
+        : DurationFormatter.format(_totalDuration);
 
     String displayText;
-    if (showSongCount) {
-      final totalSongs = songs.length;
+    if (widget.showSongCount) {
+      final totalSongs = widget.songs.length;
 
       displayText =
           context.l10n.durationSongsWithTotal(totalSongs, durationText);
@@ -159,7 +182,7 @@ class CollectionDurationDisplay extends StatelessWidget {
 
     return Text(
       displayText,
-      style: style ??
+      style: widget.style ??
           TextStyle(
             fontSize: 13,
             color: theme.colorScheme.onSurfaceVariant,

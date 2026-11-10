@@ -55,17 +55,7 @@ class _CollectionAccentState extends State<CollectionAccent> {
   String? get _source {
     final custom = widget.artworkPath;
     if (custom != null && custom.isNotEmpty) return custom;
-    final local = LibraryLogic.pickCoverSong(widget.songs)?.coverUrl;
-    if (local != null && local.isNotEmpty) return local;
-    // Streamed collections only have URLs; the most-played song still defines
-    // the page's accent.
-    final songs = [...widget.songs]
-      ..sort((a, b) => b.playCount.compareTo(a.playCount));
-    for (final song in songs) {
-      final cover = song.coverUrl?.trim() ?? '';
-      if (cover.isNotEmpty) return cover;
-    }
-    return null;
+    return LibraryLogic.pickCoverSong(widget.songs)?.coverUrl;
   }
 
   @override

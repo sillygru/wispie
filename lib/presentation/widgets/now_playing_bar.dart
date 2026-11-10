@@ -109,12 +109,7 @@ class _NowPlayingBarState extends ConsumerState<NowPlayingBar>
           _lastSongId = metadata.id;
         }
 
-        final song = ref
-            .watch(songsProvider)
-            .asData
-            ?.value
-            .where((item) => item.filename == metadata.id)
-            .firstOrNull;
+        final song = ref.watch(songsByFilenameProvider)[metadata.id];
 
         return Padding(
           padding: widget.padding,

@@ -84,6 +84,7 @@ class GradientDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
+  late bool _inferredLooksLikeArtist;
   String? _selectedAlbum;
   SongSortOrder? _localSort;
   final ScrollController _scroll = ScrollController();
@@ -101,6 +102,12 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     super.initState();
     _scroll.addListener(_onScroll);
     _browsePalette = ref.read(browsePaletteProvider.notifier);
+    _refreshArtistHeuristic();
+  }
+
+  void _refreshArtistHeuristic() {
+    _inferredLooksLikeArtist = !widget.isArtist &&
+        LibraryLogic.looksLikeArtist(widget.songs, widget.title);
   }
 
   @override
@@ -122,22 +129,17 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   void didUpdateWidget(covariant GradientDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.title != widget.title ||
+        oldWidget.isArtist != widget.isArtist ||
+        !identical(oldWidget.songs, widget.songs)) {
+      _refreshArtistHeuristic();
+    }
+    if (oldWidget.title != widget.title ||
         oldWidget.artistName != widget.artistName ||
         oldWidget.albumName != widget.albumName ||
         oldWidget.playlistId != widget.playlistId) {
       _selectedAlbum = null;
       _localSort = null;
     }
-  }
-
-  static bool _looksLikeArtist(List<Song> songs, String title) {
-    if (songs.isEmpty) return false;
-    final String lowerTitle = title.toLowerCase();
-    return songs.any(
-      (s) =>
-          s.artist.toLowerCase().contains(lowerTitle) ||
-          lowerTitle.contains(s.artist.toLowerCase()),
-    );
   }
 
   Future<void> _ensurePalette(String? artworkPath, List<Song> songs) async {
@@ -176,9 +178,11 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     final playCounts = ref.watch(playCountsProvider);
     final lastPlayedAsync = ref.watch(lastPlayedTimestampsProvider);
     final lastPlayedTimestamps = lastPlayedAsync.asData?.value ?? const {};
+    final bool inferredLooksLikeArtist = _inferredLooksLikeArtist;
+    final bool looksLikeArtist = widget.isArtist || inferredLooksLikeArtist;
 
     final bool multiAlbumArtist = widget.playlistId == null &&
-        (widget.isArtist || _looksLikeArtist(widget.songs, widget.title)) &&
+        (widget.isArtist || looksLikeArtist) &&
         !widget.isAlbum &&
         LibraryLogic.hasMultipleAlbums(widget.songs);
 
@@ -208,11 +212,7 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
         (widget.playlistId == null &&
             !widget.isAlbum &&
             sortedSongs.isNotEmpty &&
-            sortedSongs.any(
-              (s) =>
-                  s.artist.toLowerCase().contains(widget.title.toLowerCase()) ||
-                  widget.title.toLowerCase().contains(s.artist.toLowerCase()),
-            ));
+            inferredLooksLikeArtist);
 
     final bool effectiveIsAlbum = widget.isAlbum ||
         (widget.playlistId == null &&

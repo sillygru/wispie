@@ -493,11 +493,8 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
       // 1. Handle Filename Rename if changed. The renamed song is carried
       //    forward: the metadata write below addresses the file by path, and
       //    the old one no longer exists.
-      final songsList = ref.read(songsProvider).asData?.value ?? [];
-      var song = songsList.firstWhere(
-        (s) => s.filename == _activeFilename,
-        orElse: () => widget.song,
-      );
+      var song =
+          ref.read(songsByFilenameProvider)[_activeFilename] ?? widget.song;
       if (newFilename != p.basenameWithoutExtension(song.filename)) {
         song = await ref.read(songsProvider.notifier).renameSong(
               song,
@@ -711,11 +708,8 @@ class _EditMetadataScreenState extends ConsumerState<EditMetadataScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     // Watch for updates to the song
-    final songs = ref.watch(songsProvider).asData?.value ?? [];
-    final currentSong = songs.firstWhere(
-      (s) => s.filename == _activeFilename,
-      orElse: () => widget.song,
-    );
+    final currentSong =
+        ref.watch(songsByFilenameProvider)[_activeFilename] ?? widget.song;
 
     return AmbientScaffold(
       appBar: AppBar(
@@ -963,11 +957,9 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
   Future<void> _loadLyrics() async {
     try {
       final repo = ref.read(songRepositoryProvider);
-      final songs = ref.read(songsProvider).asData?.value ?? const <Song>[];
-      final currentSong = songs.firstWhere(
-        (s) => s.filename == widget.song.filename,
-        orElse: () => widget.song,
-      );
+      final currentSong =
+          ref.read(songsByFilenameProvider)[widget.song.filename] ??
+              widget.song;
       final content = await repo.getLyrics(currentSong);
       if (mounted) {
         setState(() {
@@ -988,11 +980,9 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
     final l10n = AppLocalizations.of(context);
     setState(() => _isSaving = true);
     try {
-      final songs = ref.read(songsProvider).asData?.value ?? const <Song>[];
-      final currentSong = songs.firstWhere(
-        (s) => s.filename == widget.song.filename,
-        orElse: () => widget.song,
-      );
+      final currentSong =
+          ref.read(songsByFilenameProvider)[widget.song.filename] ??
+              widget.song;
       await ref
           .read(songsProvider.notifier)
           .updateLyrics(currentSong, _controller.text);

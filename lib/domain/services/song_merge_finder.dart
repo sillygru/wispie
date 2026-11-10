@@ -39,9 +39,16 @@ class SongMergeFinder {
   ) {
     if (songs.length < 2) return [];
 
-    final existingGroupSets = existingMergedGroups.values
-        .map((filenames) => filenames.toSet())
-        .toList();
+    final existingGroupIdsByFilename = <String, Set<int>>{};
+    var groupIndex = 0;
+    for (final filenames in existingMergedGroups.values) {
+      for (final filename in filenames) {
+        existingGroupIdsByFilename
+            .putIfAbsent(filename, () => <int>{})
+            .add(groupIndex);
+      }
+      groupIndex++;
+    }
 
     final Map<String, List<Song>> candidateMap = {};
     final Map<String, String> displayTitleMap = {};
@@ -65,9 +72,12 @@ class SongMergeFinder {
       if (groupSongs.length < 2) continue;
 
       final filenames = groupSongs.map((s) => s.filename).toSet();
-      final alreadyMergedTogether = existingGroupSets.any(
-        (groupSet) => filenames.every((f) => groupSet.contains(f)),
-      );
+      final firstFilename = filenames.first;
+      final firstGroupIds = existingGroupIdsByFilename[firstFilename];
+      final alreadyMergedTogether = firstGroupIds != null &&
+          firstGroupIds.any((groupId) => filenames.every((filename) =>
+              existingGroupIdsByFilename[filename]?.contains(groupId) ??
+              false));
 
       if (alreadyMergedTogether) continue;
 
