@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:wispie/data/repositories/song_library_repository.dart';
+import 'package:wispie/data/rust/rust_library_tasks.dart';
 import 'package:wispie/data/rust/wispie_core.dart';
 import 'package:wispie/domain/services/media_formats.dart';
 import 'package:wispie/models/song.dart';
@@ -13,7 +16,7 @@ import 'package:wispie/models/song.dart';
 ///
 /// Run: `dart run tool/rust_scan_probe.dart`
 /// Artifact: `build/rust_scan_probe/report.txt`
-void main() {
+Future<void> main() async {
   final checks = <String>[];
   final failures = <String>[];
   final root = Directory(p.join('build', 'rust_scan_probe'));
@@ -224,6 +227,83 @@ void main() {
     });
     check('cover rebuild resolves audio art', rebuilt.covers.length == 1,
         '${rebuilt.covers.length}');
+
+    for (final command in ['rebuild_covers', 'enrich', 'extract_covers']) {
+      final events = await RustLibraryTasks.events(RustTaskRequest(
+        command: command,
+        coversDir: freshCovers.path,
+        songs: [Song.fromJson(fast.songs.single)],
+      )).timeout(const Duration(seconds: 10)).toList();
+      final payload = command == 'rebuild_covers'
+          ? events.whereType<Map<String, String>>().single.values.single
+          : events.whereType<List<Song>>().single.single.coverUrl;
+      check('$command delivers results and closes its event stream',
+          payload == sweptCover && events.last is RustTaskDone);
+    }
+    final errors = await RustLibraryTasks.events(
+      const RustTaskRequest(command: 'invalid_probe_command'),
+    ).timeout(const Duration(seconds: 10)).toList();
+    check('native error closes the event stream',
+        errors.length == 1 && errors.single is RustTaskError);
+
+    final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    try {
+      await db.execute('''CREATE TABLE song (
+        filename TEXT PRIMARY KEY, url TEXT, title TEXT, artist TEXT, album TEXT,
+        cover_url TEXT, has_lyrics INTEGER, play_count INTEGER, duration_ms INTEGER,
+        mtime REAL, created_epoch_sec REAL, song_date_epoch_sec REAL
+      )''');
+      await db.execute('CREATE TABLE favorite (filename TEXT PRIMARY KEY)');
+      await db.insert('favorite', {'filename': 'a.mp3'});
+      const dateAdded = 1700000000.0;
+      final oldSongs = [
+        for (final row in first.songs)
+          Song.fromJson(row).copyWith(createdEpochSec: dateAdded),
+      ];
+      await SongLibraryRepository.writeBatch(db, oldSongs);
+      File(p.join(library.path, 'a.mp3')).copySync(p.join(fresh.path, 'a.mp3'));
+      final switched = await RustLibraryTasks.events(RustTaskRequest(
+        command: 'scan',
+        roots: [fresh.path],
+        coversDir: freshCovers.path,
+        existingSongs: oldSongs,
+        fastMode: true,
+      )).timeout(const Duration(seconds: 10)).toList();
+      final terminal = switched.last as RustTaskDone;
+      check('replacement folder scan completed',
+          !terminal.cancelled && terminal.unreachable.isEmpty);
+      await SongLibraryRepository.writeBatch(
+        db,
+        switched.whereType<List<Song>>().expand((batch) => batch).toList(),
+        replaceLibrary: true,
+      );
+      final rows = {
+        for (final row in await db.query('song')) row['filename']: row
+      };
+      check('folder switch adds new songs and removes old songs',
+          _sameSet(rows.keys.toList(), {'a.mp3', 'e.mp3'}));
+      check(
+          'same filename uses the new folder and keeps date added',
+          rows['a.mp3']?['url'] == p.join(fresh.path, 'a.mp3') &&
+              rows['a.mp3']?['created_epoch_sec'] == dateAdded);
+      check(
+          'stale cover updates cannot restore deleted or moved rows',
+          !await SongLibraryRepository.updateCover(
+                  db,
+                  oldSongs.firstWhere((song) => song.filename == 'a.mp3'),
+                  'stale') &&
+              !await SongLibraryRepository.updateCover(
+                  db,
+                  oldSongs.firstWhere((song) => song.filename == 'b.mp3'),
+                  'stale'));
+      await SongLibraryRepository.writeBatch(db, [], replaceLibrary: true);
+      check(
+          'empty library removes local rows and preserves favorites',
+          (await db.query('song')).isEmpty &&
+              (await db.query('favorite')).single['filename'] == 'a.mp3');
+    } finally {
+      await db.close();
+    }
 
     // One file that arrived outside a scan gets the same row a scan produces.
     final single = _task({

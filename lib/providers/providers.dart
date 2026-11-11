@@ -23,7 +23,6 @@ import '../services/notification_cover_warmer.dart';
 import '../services/update_service.dart';
 import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
-import '../domain/services/search_service.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
 import '../domain/services/taste_model.dart';
@@ -487,11 +486,12 @@ final audioPlayerManagerProvider = Provider<AudioPlayerManager>((ref) {
 
 // Data Providers
 class SongsNotifier extends AsyncNotifier<List<Song>> {
-  bool _isRefreshing = false;
+  Completer<void>? _activeRefresh;
   DateTime? _lastRefreshTime;
   Timer? _debounceTimer;
   Timer? _coverSweepTimer;
 
+  static const _scannedFoldersKey = 'last_scan_music_folders';
   static const String _startupMaintenancePendingKey =
       'startup_cache_maintenance_pending';
 
@@ -523,7 +523,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
     CoverRefreshService.instance.onCoverResolved = (song) {
       if (song.coverUrl != null && song.coverUrl!.isNotEmpty) {
-        updateSongCoverByFilename(song.filename, song.coverUrl!);
+        _updateSongCover(song);
       }
     };
 
@@ -536,7 +536,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       // rescans on every startup which can cause date-added reset and
       // cover re-extraction.
       if (await _shouldRunStartupScan()) {
-        _scheduleBackgroundScanUpdate(cached, showIndicator: false);
+        _scheduleBackgroundScanUpdate();
       } else {
         // An interrupted run still leaves rows without covers; fill those in
         // instead of waiting for a version bump to rescan the whole library.
@@ -547,7 +547,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
     // 3. If no cache, return empty immediately and scan in background.
     //    This avoids blocking the UI on first startup.
-    _scheduleBackgroundScanUpdate([], showIndicator: true);
+    _scheduleBackgroundScanUpdate(showIndicator: true);
     return [];
   }
 
@@ -556,6 +556,9 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       final prefs = await SharedPreferences.getInstance();
       final pending = prefs.getBool(_startupMaintenancePendingKey) ?? false;
       if (pending) return true;
+
+      final scannedFolders = prefs.getStringList(_scannedFoldersKey);
+      if (!listEquals(scannedFolders, await _musicFolderPaths())) return true;
 
       final lastVersion = prefs.getString('last_scan_version');
       final info = await PackageInfo.fromPlatform();
@@ -586,27 +589,17 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     } catch (_) {}
   }
 
-  void updateSongCoverByFilename(String filename, String coverUrl) {
+  void _updateSongCover(Song updated) {
     final current = state.value;
     if (current == null || current.isEmpty) return;
     bool updatedAny = false;
     final newList = current.map((s) {
-      if (s.filename == filename && s.coverUrl != coverUrl) {
+      if (s.filename == updated.filename &&
+          s.url == updated.url &&
+          s.mtime == updated.mtime &&
+          s.coverUrl != updated.coverUrl) {
         updatedAny = true;
-        return Song(
-          title: s.title,
-          artist: s.artist,
-          album: s.album,
-          filename: s.filename,
-          url: s.url,
-          coverUrl: coverUrl,
-          hasLyrics: s.hasLyrics,
-          playCount: s.playCount,
-          duration: s.duration,
-          mtime: s.mtime,
-          createdEpochSec: s.createdEpochSec,
-          songDateEpochSec: s.songDateEpochSec,
-        );
+        return s.copyWith(coverUrl: updated.coverUrl);
       }
       return s;
     }).toList();
@@ -616,34 +609,35 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     }
   }
 
-  void _scheduleBackgroundScanUpdate(List<Song> existingSongs,
-      {bool showIndicator = false}) {
+  void _scheduleBackgroundScanUpdate({bool showIndicator = false}) {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _backgroundScanUpdate(existingSongs, showIndicator: showIndicator);
+      _backgroundScanUpdate(showIndicator: showIndicator);
     });
+  }
+
+  Future<List<String>> _musicFolderPaths() async {
+    final folders = await ref.read(storageServiceProvider).getMusicFolders();
+    return [
+      for (final folder in folders)
+        if (folder['path'] case final path?)
+          if (path.isNotEmpty) path
+    ];
   }
 
   Future<List<Song>> _performFullScan({
     bool isBackground = false,
-    List<Song>? existingSongs,
-    bool showIndicator = false,
+    bool force = false,
     bool fastMode = false,
     double progressSpan = 1.0,
-    void Function(List<Song> songs)? onSongsDiscovered,
   }) async {
-    final storage = ref.read(storageServiceProvider);
     final scanner = ref.read(scannerServiceProvider);
-
-    final musicFolders = await storage.getMusicFolders();
-
-    if (musicFolders.isEmpty) {
-      debugPrint('No music folders configured. Cannot scan.');
-      return [];
-    }
+    final database = DatabaseService.instance;
+    final musicFolders = await _musicFolderPaths();
+    final existingSongs = await database.getAllSongs();
 
     // Only show scanning indicator for non-background scans or if explicitly requested
-    if (!isBackground || showIndicator) {
+    if (!isBackground) {
       ref.read(isScanningProvider.notifier).state = true;
     }
     ref.read(scanProgressProvider.notifier).state = 0.0;
@@ -655,26 +649,21 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
       // Scan each music folder
       for (int i = 0; i < musicFolders.length; i++) {
-        final folder = musicFolders[i];
-        final path = folder['path'];
-        if (path == null || path.isEmpty) continue;
-
         final scanResult = await scanner.scanDirectory(
-          path,
-          existingSongs: existingSongs,
-          lyricsPath: null,
+          musicFolders[i],
+          existingSongs: force ? null : existingSongs,
           onProgress: (progress) {
             // Overall progress across all folders, within this pass's slice.
             final overallProgress =
                 (i + progress) / musicFolders.length * progressSpan;
             ref.read(scanProgressProvider.notifier).state = overallProgress;
           },
-          onSongsDiscovered: onSongsDiscovered,
           includeVideos: settings.includeVideos,
           minimumFileSizeBytes: settings.minimumFileSizeBytes,
           fastMode: fastMode,
         );
 
+        if (!scanResult.trusted) throw scanResult.status;
         allSongs.addAll(scanResult.songs);
       }
 
@@ -708,7 +697,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       // any cover a previous pass extracted. Matched by filename as well as
       // path, since the row these will be written over is keyed by filename —
       // a file that moved folders would otherwise look brand new and lose both.
-      if (existingSongs != null) {
+      if (existingSongs.isNotEmpty) {
         final existingByUrl = <String, Song>{};
         final existingByFilename = <String, Song>{};
         for (final s in existingSongs) {
@@ -742,17 +731,19 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         }).toList();
       }
 
-      // In fast mode, songs are already batch-inserted by the scanner inner
-      // loop (incremental DB writes). In full mode the full scan also does
-      // incremental inserts, but we re-insert here to capture any post-
-      // processing changes like dedup/filtering.
-      if (!fastMode) {
-        await DatabaseService.instance.insertSongsBatch(uniqueSongs);
+      // A folder change during the scan invalidates the snapshot.
+      if (!listEquals(musicFolders, await _musicFolderPaths())) {
+        _scheduleBackgroundScanUpdate(showIndicator: !isBackground);
+        throw ScanStatus.folderUnavailable;
       }
+      await database.replaceLibrarySongs(uniqueSongs);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_scannedFoldersKey, musicFolders);
+      if (!fastMode) await _rebuildLibrarySearch(uniqueSongs);
 
       return uniqueSongs;
     } finally {
-      if (!isBackground || showIndicator) {
+      if (!isBackground) {
         ref.read(isScanningProvider.notifier).state = false;
       }
       ref.read(scanProgressProvider.notifier).state = 0.0;
@@ -760,22 +751,21 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     }
   }
 
-  Future<void> _backgroundScanUpdate(List<Song> existingSongs,
-      {bool showIndicator = false}) async {
-    if (_isRefreshing) return;
+  Future<void> _backgroundScanUpdate({bool showIndicator = false}) async {
+    if (_activeRefresh != null) return;
 
     // Scanning saturates the device with isolate work; passive cover warming
     // stays out of its way until it finishes.
     NotificationCoverWarmer.instance.pushPause();
+    final refresh = _activeRefresh = Completer<void>();
     try {
-      _isRefreshing = true;
       // Set before the first pass: a run killed half-way must not look finished
       // on the next launch. Only a completed pipeline clears it.
       await _markStartupScanPending();
       final userData = ref.read(userDataProvider);
 
       CoverRefreshService.instance.onCoverResolved = (song) {
-        updateSongCoverByFilename(song.filename, song.coverUrl!);
+        _updateSongCover(song);
       };
 
       // Show the scanning indicator for the full duration of all passes
@@ -786,35 +776,15 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       void showProgress(double value) =>
           ref.read(scanProgressProvider.notifier).state = value;
 
-      // === Pass 0: Fast registration (filenames, paths, mtimes only) ===
-      // Stream songs live into the UI as they are discovered. This pass owns
-      // the first sliver of the bar; the rest belongs to hydration.
-      final accumulatedFast = <Song>[];
       final fastSongs = await _performFullScan(
         isBackground: true,
-        existingSongs: existingSongs,
-        showIndicator: false,
         fastMode: true,
         progressSpan: 0.15,
-        onSongsDiscovered: (chunk) {
-          accumulatedFast.addAll(chunk);
-          final filtered = accumulatedFast
-              .where((s) => !userData.isHidden(s.filename))
-              .toList();
-          if (filtered.isNotEmpty) {
-            ref.read(audioPlayerManagerProvider).refreshSongs(filtered);
-            state = AsyncValue.data(filtered);
-          }
-        },
       );
-
       final filteredFast =
           fastSongs.where((s) => !userData.isHidden(s.filename)).toList();
-
-      if (filteredFast.isNotEmpty) {
-        ref.read(audioPlayerManagerProvider).refreshSongs(filteredFast);
-        state = AsyncValue.data(filteredFast);
-      }
+      ref.read(audioPlayerManagerProvider).refreshSongs(filteredFast);
+      state = AsyncValue.data(filteredFast);
       showProgress(0.15);
 
       // === Pass 1: tags and missing covers from one read of each file ===
@@ -942,19 +912,8 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         } catch (e) {
           debugPrint('Video thumbnail extraction failed: $e');
         }
-
-        // Rebuild search index after enrichment.
-        await Future.delayed(Duration.zero);
-        final searchService = SearchService();
-        try {
-          await searchService.init();
-          await searchService.rebuildIndex(latestEnriched);
-        } catch (e) {
-          debugPrint('Search index rebuild failed: $e');
-        } finally {
-          await searchService.dispose();
-        }
       }
+      await _rebuildLibrarySearch(latestEnriched);
 
       // After enrichment so the hashing I/O never delays what the user sees.
       final identity =
@@ -963,15 +922,15 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         ref.read(userDataProvider.notifier).refresh();
       }
 
-      final folders = await ref.read(storageServiceProvider).getMusicFolders();
-      if (complete && (fastSongs.isNotEmpty || folders.isNotEmpty)) {
+      if (complete) {
         showProgress(1.0);
         await _saveScanCheckpoint();
       }
     } catch (e) {
       debugPrint('Background scan failed: $e');
     } finally {
-      _isRefreshing = false;
+      _activeRefresh = null;
+      refresh.complete();
       ref.read(isScanningProvider.notifier).state = false;
       ref.read(scanProgressProvider.notifier).state = 0.0;
       NotificationCoverWarmer.instance.popPause();
@@ -986,12 +945,12 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   void _scheduleCoverGapSweep(List<Song> songs) {
     _coverSweepTimer?.cancel();
     _coverSweepTimer = Timer(const Duration(seconds: 2), () async {
-      if (_isRefreshing) return;
+      if (_activeRefresh != null) return;
+      final refresh = _activeRefresh = Completer<void>();
       try {
         final gaps = await ScannerService.coverGaps(songs);
         if (gaps.isEmpty) return;
 
-        _isRefreshing = true;
         NotificationCoverWarmer.instance.pushPause();
         try {
           final sweep = await ScannerService.extractCoversInBackground(gaps);
@@ -1020,11 +979,13 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
             }
           }
         } finally {
-          _isRefreshing = false;
           NotificationCoverWarmer.instance.popPause();
         }
       } catch (e) {
         debugPrint('Cover gap sweep failed: $e');
+      } finally {
+        _activeRefresh = null;
+        refresh.complete();
       }
     });
   }
@@ -1036,14 +997,34 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     await _markStartupScanComplete();
   }
 
-  Future<void> refresh({bool isBackground = false}) async {
-    final storage = ref.read(storageServiceProvider);
-    final pullEnabled = await storage.getPullToRefreshEnabled();
-    if (!pullEnabled && !isBackground) return;
+  Future<void> _rebuildLibrarySearch(List<Song> songs) async {
+    try {
+      await ref.read(searchServiceProvider).rebuildIndex(songs);
+    } catch (e) {
+      debugPrint('Search index rebuild failed: $e');
+    }
+  }
 
-    if (_isRefreshing) {
-      debugPrint('SongsNotifier: Refresh already in progress, skipping');
-      return;
+  Future<void> refresh({bool isBackground = false}) async {
+    await _refresh(isBackground: isBackground);
+  }
+
+  Future<bool> forceFullScan() => _refresh(force: true);
+
+  Future<bool> _refresh({bool isBackground = false, bool force = false}) async {
+    final storage = ref.read(storageServiceProvider);
+    if (!force && !isBackground && !await storage.getPullToRefreshEnabled()) {
+      return false;
+    }
+
+    if (force) {
+      var pending = _activeRefresh;
+      while (pending != null) {
+        await pending.future;
+        pending = _activeRefresh;
+      }
+    } else if (_activeRefresh != null) {
+      return false;
     }
 
     if (isBackground && _lastRefreshTime != null) {
@@ -1051,11 +1032,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       // A full rescan plus stats flush on every app switch was the resume
       // hitch; new files are rare enough that minutes is fine.
       if (diff.inMinutes < 10) {
-        return;
+        return true;
       }
     }
 
-    _isRefreshing = true;
+    final refresh = _activeRefresh = Completer<void>();
     _lastRefreshTime = DateTime.now();
 
     try {
@@ -1064,14 +1045,17 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
 
       final newState = await AsyncValue.guard<List<Song>>(() async {
         // Local-only refresh - just scan files
-        final songs = await _performFullScan(
-            isBackground: isBackground, existingSongs: state.value);
+        final songs =
+            await _performFullScan(isBackground: isBackground, force: force);
         ref.read(audioPlayerManagerProvider).refreshSongs(songs);
 
         final userData = ref.read(userDataProvider);
         return songs.where((s) => !userData.isHidden(s.filename)).toList();
       });
 
+      if (newState.hasError) {
+        debugPrint('Library rescan failed: ${newState.error}');
+      }
       if (isBackground) {
         // Only update if not null and actually has changes
         if (newState.hasValue) {
@@ -1094,18 +1078,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       } else {
         state = newState;
       }
+      return newState.hasValue;
     } finally {
-      _isRefreshing = false;
+      _activeRefresh = null;
+      refresh.complete();
     }
-  }
-
-  Future<void> forceFullScan() async {
-    state = await AsyncValue.guard<List<Song>>(() async {
-      final songs = await _performFullScan(); // No existingSongs = full scan
-      ref.read(audioPlayerManagerProvider).refreshSongs(songs);
-      final userData = ref.read(userDataProvider);
-      return songs.where((s) => !userData.isHidden(s.filename)).toList();
-    });
   }
 
   /// Refreshes ONLY the play counts of the current songs from the database

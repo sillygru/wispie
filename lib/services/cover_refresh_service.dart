@@ -255,23 +255,10 @@ class CoverRefreshService {
       // Extraction may have overwritten a path that is already on screen.
       await evictCoverFromImageCache(coverPath);
 
-      final updatedSong = Song(
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        filename: song.filename,
-        url: song.url,
-        coverUrl: coverPath,
-        hasLyrics: song.hasLyrics,
-        playCount: song.playCount,
-        duration: song.duration,
-        mtime: song.mtime,
-        createdEpochSec: song.createdEpochSec,
-        songDateEpochSec: song.songDateEpochSec,
-      );
-
-      await DatabaseService.instance.insertSongsBatch([updatedSong]);
-      onCoverResolved?.call(updatedSong);
+      if (!await DatabaseService.instance.updateSongCover(song, coverPath)) {
+        return null;
+      }
+      onCoverResolved?.call(song.copyWith(coverUrl: coverPath));
 
       return coverPath;
     } catch (e) {

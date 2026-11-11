@@ -1643,7 +1643,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
                 ));
         if (newPath != coverPath) {
           final updatedSong = song.copyWith(coverUrl: newPath);
-          await DatabaseService.instance.insertSongsBatch([updatedSong]);
+          if (!await DatabaseService.instance.updateSongCover(song, newPath)) {
+            return;
+          }
+          final current = _songMap[song.filename];
+          if (current?.url != song.url || current?.mtime != song.mtime) return;
           _songMap[song.filename] = updatedSong;
           if (_currentSongFilename == song.filename) {
             currentSongNotifier.value = updatedSong;

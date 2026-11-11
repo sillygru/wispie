@@ -283,8 +283,6 @@ class ScannerService {
     String? lyricsPath,
     Map<String, int>? playCounts,
     void Function(double progress)? onProgress,
-    void Function(List<Song>)? onComplete,
-    void Function(List<Song>)? onSongsDiscovered,
     bool includeVideos = true,
     int minimumFileSizeBytes = 0,
     bool fastMode = false,
@@ -337,103 +335,39 @@ class ScannerService {
       await coversDir.create(recursive: true);
     }
 
-    final receivePort = ReceivePort();
-    final params = _ScanParams(
-      paths: effectivePaths,
+    final songs = <Song>[];
+    final events = RustLibraryTasks.events(RustTaskRequest(
+      command: 'scan',
+      roots: effectivePaths,
       excludedFolders: excludedFolders,
-      existingSongs: existingSongs,
-      coversDirPath: coversDir.path,
+      existingSongs: existingSongs ?? const [],
+      coversDir: coversDir.path,
       playCounts: effectivePlayCounts,
-      sendPort: receivePort.sendPort,
       includeVideos: includeVideos,
-      minimumFileSizeBytes: minimumFileSizeBytes,
+      minFileSizeBytes: minimumFileSizeBytes,
       fastMode: fastMode,
-    );
+      batchSize: fastMode ? 20 : 200,
+    ));
 
-    await _startScan(params);
-
-    final completer = Completer<ScanResult>();
-    final List<Song> allScannedSongs = [];
-    // Set if the isolate reports a folder it could not list. A single
-    // unreachable folder taints the whole scan so its empty result can never
-    // clobber an existing library.
-    bool folderUnavailable = false;
-    int unreadableFiles = 0;
-
-    receivePort.listen((message) async {
-      if (message is double) {
-        onProgress?.call(message);
-      } else if (message is List<Song>) {
-        allScannedSongs.addAll(message);
-        // Incremental DB insert to save memory and keep UI responsive
-        await DatabaseService.instance.insertSongsBatch(message);
-        onSongsDiscovered?.call(message);
-      } else if (message is String && message.startsWith('unreachable:')) {
-        folderUnavailable = true;
-      } else if (message is String && message.startsWith('unreadable:')) {
-        unreadableFiles += int.tryParse(message.split(':').last) ?? 0;
-      } else if (message == 'done') {
-        // Every file listed but none parsed means reads are denied, not that
-        // the tags are empty. Report unavailable so the caller never swaps a
-        // good library for filename-only rows.
-        final allUnreadable = allScannedSongs.isNotEmpty &&
-            unreadableFiles >= allScannedSongs.length;
-        final status = (folderUnavailable || allUnreadable)
-            ? ScanStatus.folderUnavailable
-            : ScanStatus.ok;
-        if (unreadableFiles > 0) {
-          debugPrint(
-              'Scanner: $unreadableFiles/${allScannedSongs.length} files fell back to filename (unreadable or untagged)');
+    await for (final event in events) {
+      if (event is double) {
+        onProgress?.call(event);
+      } else if (event is List<Song>) {
+        songs.addAll(event);
+      } else if (event is RustTaskError) {
+        throw StateError(event.message);
+      } else if (event is RustTaskDone) {
+        if (event.cancelled ||
+            event.unreachable.isNotEmpty ||
+            (songs.isEmpty && event.unreadable > 0)) {
+          return const ScanResult.failed(ScanStatus.folderUnavailable);
         }
-        if (!fastMode) {
-          try {
-            final searchService = SearchService();
-            await searchService.init();
-            await searchService.rebuildIndex(allScannedSongs);
-            debugPrint(
-                'Search index rebuilt with ${allScannedSongs.length} songs');
-          } catch (e) {
-            debugPrint('Error rebuilding search index: $e');
-          }
-          // Extract thumbnails for video files on the main thread using FFmpeg.
-          // This must happen here (not in the isolate) because FFmpegService
-          // uses platform channels.
-          List<Song> finalSongs = allScannedSongs;
-          try {
-            finalSongs = await postProcessVideoThumbnails(allScannedSongs);
-            // Persist any newly-extracted cover URLs back to the DB.
-            final updated = <Song>[];
-            for (int i = 0; i < finalSongs.length; i++) {
-              if (finalSongs[i].coverUrl != allScannedSongs[i].coverUrl) {
-                updated.add(finalSongs[i]);
-              }
-            }
-            if (updated.isNotEmpty) {
-              await DatabaseService.instance.insertSongsBatch(updated);
-              debugPrint(
-                  'Video thumbnails extracted for ${updated.length} songs');
-            }
-          } catch (e) {
-            debugPrint('Error post-processing video thumbnails: $e');
-            finalSongs = allScannedSongs;
-          }
-          onComplete?.call(finalSongs);
-          completer.complete(ScanResult(finalSongs, status));
-        } else {
-          onComplete?.call(allScannedSongs);
-          completer.complete(ScanResult(allScannedSongs, status));
-        }
-        receivePort.close();
-      } else if (message is String && message.startsWith('error:')) {
-        receivePort.close();
-        completer.completeError(message);
+        return ScanResult.ok(
+          fastMode ? songs : await postProcessVideoThumbnails(songs),
+        );
       }
-    }, onError: (e) {
-      receivePort.close();
-      completer.completeError(e);
-    });
-
-    return completer.future;
+    }
+    return const ScanResult.failed(ScanStatus.folderUnavailable);
   }
 
   /// MediaStore fallback: distinct readable parent folders under [requestedPath].
@@ -561,7 +495,7 @@ class ScannerService {
       minimumFileSizeBytes: minimumFileSizeBytes,
     );
 
-    await _startScan(params);
+    _startScan(params);
 
     final completer = Completer<List<Song>>();
     final List<Song> allScannedSongs = [];
@@ -966,10 +900,20 @@ class ScannerService {
   }
 
   /// Runs the library scan on the native core.
-  static Future<void> _startScan(_ScanParams params) async {
+  static void _startScan(_ScanParams params) {
     // Relay keeps the message contract the scan listeners already speak.
-    final relay = ReceivePort();
-    relay.listen((message) {
+    RustLibraryTasks.events(RustTaskRequest(
+      command: 'scan',
+      roots: params.paths,
+      excludedFolders: params.excludedFolders,
+      coversDir: params.coversDirPath,
+      includeVideos: params.includeVideos,
+      minFileSizeBytes: params.minimumFileSizeBytes,
+      fastMode: params.fastMode,
+      existingSongs: params.existingSongs ?? const [],
+      playCounts: params.playCounts,
+      batchSize: params.fastMode ? 20 : 200,
+    )).listen((message) {
       if (message is double || message is List<Song>) {
         params.sendPort.send(message);
       } else if (message is RustTaskDone) {
@@ -980,26 +924,10 @@ class ScannerService {
           params.sendPort.send('unreadable:${message.unreadable}');
         }
         params.sendPort.send('done');
-        relay.close();
       } else if (message is RustTaskError) {
         params.sendPort.send('error: ${message.message}');
-        relay.close();
       }
-    });
-
-    await RustLibraryTasks.start(RustTaskRequest(
-      command: 'scan',
-      sendPort: relay.sendPort,
-      roots: params.paths,
-      excludedFolders: params.excludedFolders,
-      coversDir: params.coversDirPath,
-      includeVideos: params.includeVideos,
-      minFileSizeBytes: params.minimumFileSizeBytes,
-      fastMode: params.fastMode,
-      existingSongs: params.existingSongs ?? const [],
-      playCounts: params.playCounts,
-      batchSize: params.fastMode ? 20 : 200,
-    ));
+    }, onError: (Object error) => params.sendPort.send('error: $error'));
   }
 
   /// Reads everything a single file says about itself, the way a scan would:
@@ -1072,42 +1000,26 @@ class ScannerService {
     void Function(List<Song> enrichedBatch)? onBatchEnriched,
   }) async {
     final coversDir = await coversDirectory();
-    final relay = ReceivePort();
-    final messages = StreamController<dynamic>();
-    relay.listen(messages.add, onError: messages.addError);
     final merged = <String, Song>{};
+    final events = RustLibraryTasks.events(RustTaskRequest(
+      command: 'enrich',
+      songs: songs,
+      coversDir: coversDir.path,
+    ));
 
-    final worker = () async {
-      await for (final message in messages.stream) {
-        if (message is List<Song>) {
-          for (final song in message) {
-            merged[song.filename] = song;
-          }
-          if (message.isNotEmpty) {
-            await DatabaseService.instance.insertSongsBatch(message);
-            onBatchEnriched?.call(message);
-          }
-        } else if (message is double) {
-          onProgress?.call(message);
-        } else if (message is RustTaskDone || message is RustTaskError) {
-          if (message is RustTaskError) {
-            debugPrint('Rust enrich failed: ${message.message}');
-          }
-          await messages.close();
-          relay.close();
+    await for (final message in events) {
+      if (message is List<Song> && message.isNotEmpty) {
+        await DatabaseService.instance.insertSongsBatch(message);
+        for (final song in message) {
+          merged[song.filename] = song;
         }
+        onBatchEnriched?.call(message);
+      } else if (message is double) {
+        onProgress?.call(message);
+      } else if (message is RustTaskError) {
+        throw StateError(message.message);
       }
-    }();
-
-    await RustLibraryTasks.start(
-      RustTaskRequest(
-        command: 'enrich',
-        sendPort: relay.sendPort,
-        songs: songs,
-        coversDir: coversDir.path,
-      ),
-    );
-    await worker;
+    }
     return [for (final song in songs) merged[song.filename] ?? song];
   }
 
@@ -1118,48 +1030,33 @@ class ScannerService {
     void Function(List<Song> updatedSongs)? onBatchExtracted,
   }) async {
     final coversDir = await coversDirectory();
-    final relay = ReceivePort();
-    final messages = StreamController<dynamic>();
-    relay.listen(messages.add, onError: messages.addError);
     final merged = <String, Song>{};
-    var completed = true;
-
-    final worker = () async {
-      await for (final message in messages.stream) {
-        if (message is List<Song>) {
-          for (final song in message) {
-            merged[song.filename] = song;
-            final cover = song.coverUrl;
-            if (cover != null) {
-              unawaited(CoverRefreshService.evictCoverFromImageCache(cover));
-            }
-          }
-          if (message.isNotEmpty) {
-            await DatabaseService.instance.insertSongsBatch(message);
-            onBatchExtracted?.call(message);
-          }
-        } else if (message is double) {
-          onProgress?.call(message);
-        } else if (message is RustTaskDone || message is RustTaskError) {
-          if (message is RustTaskError) {
-            completed = false;
-            debugPrint('Rust cover sweep failed: ${message.message}');
-          } else if (message is RustTaskDone) {
-            completed = !message.cancelled;
-          }
-          await messages.close();
-          relay.close();
-        }
-      }
-    }();
-
-    await RustLibraryTasks.start(RustTaskRequest(
+    var completed = false;
+    final events = RustLibraryTasks.events(RustTaskRequest(
       command: 'extract_covers',
-      sendPort: relay.sendPort,
       songs: songs,
       coversDir: coversDir.path,
     ));
-    await worker;
+
+    await for (final message in events) {
+      if (message is List<Song> && message.isNotEmpty) {
+        await DatabaseService.instance.insertSongsBatch(message);
+        for (final song in message) {
+          merged[song.filename] = song;
+          final cover = song.coverUrl;
+          if (cover != null) {
+            unawaited(CoverRefreshService.evictCoverFromImageCache(cover));
+          }
+        }
+        onBatchExtracted?.call(message);
+      } else if (message is double) {
+        onProgress?.call(message);
+      } else if (message is RustTaskDone) {
+        completed = !message.cancelled;
+      } else if (message is RustTaskError) {
+        debugPrint('Rust cover sweep failed: ${message.message}');
+      }
+    }
     return CoverSweepResult(
       [for (final song in songs) merged[song.filename] ?? song],
       completed: completed,
@@ -1173,35 +1070,23 @@ class ScannerService {
     void Function(double progress)? onProgress,
     required bool force,
   }) async {
-    final relay = ReceivePort();
-    final messages = StreamController<dynamic>();
-    relay.listen(messages.add, onError: messages.addError);
     final results = <String, String>{};
-
-    final worker = () async {
-      await for (final message in messages.stream) {
-        if (message is Map<String, String>) {
-          results.addAll(message);
-        } else if (message is double) {
-          onProgress?.call(message);
-        } else if (message is RustTaskDone || message is RustTaskError) {
-          if (message is RustTaskError) {
-            debugPrint('Rust cover rebuild failed: ${message.message}');
-          }
-          await messages.close();
-          relay.close();
-        }
-      }
-    }();
-
-    await RustLibraryTasks.start(RustTaskRequest(
+    final events = RustLibraryTasks.events(RustTaskRequest(
       command: 'rebuild_covers',
-      sendPort: relay.sendPort,
       songs: songs,
       coversDir: coversDirPath,
       force: force,
     ));
-    await worker;
+
+    await for (final message in events) {
+      if (message is Map<String, String>) {
+        results.addAll(message);
+      } else if (message is double) {
+        onProgress?.call(message);
+      } else if (message is RustTaskError) {
+        throw StateError(message.message);
+      }
+    }
     return results;
   }
 }

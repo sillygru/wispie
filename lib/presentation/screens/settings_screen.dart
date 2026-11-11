@@ -548,7 +548,15 @@ class LibrarySettingsScreen extends ConsumerWidget {
               searchId: 'library.rescan',
               title: l10n.settingsSearchRescanTitle,
               subtitle: l10n.settingsSearchRescanSubtitle,
-              onTap: () => appSnack(context, l10n.settingsScanningLibrary),
+              onTap: () async {
+                appSnack(context, l10n.settingsScanningLibrary);
+                final success =
+                    await ref.read(songsProvider.notifier).forceFullScan();
+                if (context.mounted && !success) {
+                  appSnack(context, l10n.libraryLoadErrorTitle,
+                      tone: AppTone.danger);
+                }
+              },
             ),
             if (!WideLayout.isWide(context))
               StatefulBuilder(

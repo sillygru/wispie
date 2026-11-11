@@ -155,7 +155,11 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>) {
         }
 
         let mut root_failed = false;
-        for entry in WalkDir::new(path).follow_links(false).into_iter() {
+        let entries = WalkDir::new(path)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| !is_excluded(entry.path(), &request.excluded_folders));
+        for entry in entries {
             match entry {
                 Ok(entry) => {
                     if !entry.file_type().is_file() {
@@ -168,16 +172,11 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>) {
                     if !request.include_videos && formats::is_video_path(file_path) {
                         continue;
                     }
-                    if is_excluded(file_path, &request.excluded_folders) {
-                        continue;
-                    }
                     files.push(file_path.to_path_buf());
                 }
-                Err(error) => {
-                    if error.depth() == 0 {
-                        root_failed = true;
-                        break;
-                    }
+                Err(_) => {
+                    root_failed = true;
+                    break;
                 }
             }
         }

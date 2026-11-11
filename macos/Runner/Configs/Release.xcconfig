@@ -1,4 +1,7 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
 
-OTHER_LDFLAGS = $(inherited) -force_load $(SRCROOT)/Runner/Configs/libwispie_core.a -framework CoreFoundation -liconv
+// Dart resolves these at runtime, so release dead stripping needs explicit roots.
+OTHER_LDFLAGS = $(inherited) -force_load $(SRCROOT)/Runner/Configs/libwispie_core.a -framework CoreFoundation -liconv \
+  -Wl,-u,_wispie_core_abi_version,-u,_wispie_core_version,-u,_wispie_core_run,-u,_wispie_core_run_bytes \
+  -Wl,-u,_wispie_core_cancel,-u,_wispie_core_alloc,-u,_wispie_core_free

@@ -511,7 +511,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           tone: AppTone.danger,
           actionLabel: context.l10n.homeTryAgain,
           actionIcon: AppIcons.refresh,
-          onAction: () => ref.invalidate(songsProvider),
+          onAction: () => ref.read(songsProvider.notifier).forceFullScan(),
         ),
         data: (songs) {
           final userData = ref.watch(userDataProvider);

@@ -25,11 +25,10 @@ class RustTaskError {
   final String message;
 }
 
-/// One native task: what to run, and the port its results come back on.
+/// Parameters for one native task.
 class RustTaskRequest {
   const RustTaskRequest({
     required this.command,
-    required this.sendPort,
     this.roots = const [],
     this.excludedFolders = const [],
     this.coversDir = '',
@@ -45,7 +44,6 @@ class RustTaskRequest {
   });
 
   final String command;
-  final SendPort sendPort;
   final List<String> roots;
   final List<String> excludedFolders;
   final String coversDir;
@@ -96,8 +94,26 @@ class RustLibraryTasks {
 
   static bool get isAvailable => WispieCore.isAvailable;
 
-  static Future<void> start(RustTaskRequest request) =>
-      Isolate.spawn(_run, request);
+  static Stream<Object> events(RustTaskRequest request) async* {
+    final port = ReceivePort();
+    try {
+      await Isolate.spawn(
+        _run,
+        (request: request, port: port.sendPort),
+        onExit: port.sendPort,
+      );
+      await for (final message in port) {
+        if (message == null) {
+          yield const RustTaskError('Native library worker exited early');
+          return;
+        }
+        yield message;
+        if (message is RustTaskDone || message is RustTaskError) return;
+      }
+    } finally {
+      port.close();
+    }
+  }
 
   static void cancel() => WispieCore.cancel();
 
@@ -185,29 +201,29 @@ class RustLibraryTasks {
   }
 }
 
-void _run(RustTaskRequest request) {
+void _run(({RustTaskRequest request, SendPort port}) job) {
   try {
     WispieCore.run(
-      request.toJson(),
+      job.request.toJson(),
       onEvent: (kind, payload) {
         final decoded = jsonDecode(payload) as Map<String, dynamic>;
         switch (kind) {
           case WispieCore.eventItems:
-            _emitItems(decoded, request.sendPort);
+            _emitItems(decoded, job.port);
           case WispieCore.eventProgress:
             final total = (decoded['total'] as num?)?.toDouble() ?? 0;
             final done = (decoded['done'] as num?)?.toDouble() ?? 0;
-            request.sendPort.send(total <= 0 ? 1.0 : done / total);
+            job.port.send(total <= 0 ? 1.0 : done / total);
           case WispieCore.eventDone:
-            request.sendPort.send(_done(decoded));
+            job.port.send(_done(decoded));
           case WispieCore.eventError:
-            request.sendPort.send(RustTaskError(
+            job.port.send(RustTaskError(
                 decoded['message'] as String? ?? 'native core error'));
         }
       },
     );
   } catch (error) {
-    request.sendPort.send(RustTaskError('$error'));
+    job.port.send(RustTaskError('$error'));
   }
 }
 

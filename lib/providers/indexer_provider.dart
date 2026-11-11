@@ -658,16 +658,14 @@ class IndexerNotifier extends Notifier<IndexerState> {
     }
     final scanner = ScannerService();
     var touched = false;
-    // Small chunks so stop takes effect quickly and progress is real; the
-    // scanner's own callback only reports one pass over everything.
+    // Finish writing each batch before honoring Stop.
     const chunkSize = 24;
     for (var i = 0; i < targets.length; i += chunkSize) {
       if (run.cancelled) break;
       final chunk = targets.sublist(i, math.min(i + chunkSize, targets.length));
-      // force wipes the covers directory, which must only happen once.
       final coverMap = await scanner.rebuildCoverCache(
         chunk,
-        force: force && i == 0,
+        force: force,
       );
       final updated = <Song>[];
       final resolved = <String>[];
@@ -693,16 +691,18 @@ class IndexerNotifier extends Notifier<IndexerState> {
         await DatabaseService.instance.clearCoverMisses(resolved);
       }
       if (updated.isNotEmpty) {
-        await DatabaseService.instance.insertSongsBatch(updated);
         // The blurred backdrop is keyed by filename, so a replaced cover would
         // otherwise keep painting the old artwork behind the player.
         for (final song in updated) {
-          unawaited(WispieCache.instance.invalidateBlurred(song.filename));
+          if (await DatabaseService.instance
+              .updateSongCover(song, song.coverUrl!)) {
+            unawaited(WispieCache.instance.invalidateBlurred(song.filename));
+            touched = true;
+          }
         }
-        touched = true;
       }
     }
-    if (force) await ScannerService.pruneOrphanedCovers();
+    if (force && !run.cancelled) await ScannerService.pruneOrphanedCovers();
     CoverRefreshService.instance.invalidateMisses();
     if (touched || force) _invalidateLibrary();
     return run.result();
