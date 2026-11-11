@@ -348,6 +348,8 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(SRCROOT)/Runner/Configs/libwispie_core.a",
+				"$(SRCROOT)/Runner/Configs/RustCore.xcconfig",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

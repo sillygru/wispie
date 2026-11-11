@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -323,13 +324,20 @@ class _DockBody extends ConsumerWidget {
                         },
                         child: PlayerSheetOrigin(
                           radius: radius,
-                          child: _MorphingMini(
-                            song: song,
-                            collapse: c,
-                            radius: radius,
-                            expandedWidth: expanded.width,
-                            fill: fill,
-                            accent: accent,
+                          child: GestureDetector(
+                            dragStartBehavior: DragStartBehavior.down,
+                            onVerticalDragStart: PlayerPanel.startMiniDrag,
+                            onVerticalDragUpdate: PlayerPanel.updateDrag,
+                            onVerticalDragEnd: PlayerPanel.endDrag,
+                            onVerticalDragCancel: PlayerPanel.cancelDrag,
+                            child: _MorphingMini(
+                              song: song,
+                              collapse: c,
+                              radius: radius,
+                              expandedWidth: expanded.width,
+                              fill: fill,
+                              accent: accent,
+                            ),
                           ),
                         ),
                       ),

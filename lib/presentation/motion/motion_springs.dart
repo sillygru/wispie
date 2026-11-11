@@ -53,10 +53,6 @@ abstract final class MotionSprings {
     damping: 19,
   );
 
-  /// The drawer arriving at its seat: room for one visible crest, then still.
-  static final SpringDescription drawerOpen =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.72);
-
   /// A popup arriving from the top edge: one soft crest, then still.
   static const SpringDescription bannerIn = SpringDescription(
     mass: 1,

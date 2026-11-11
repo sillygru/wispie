@@ -1,7 +1,6 @@
 import 'package:flutter/animation.dart';
 import 'package:flutter/physics.dart';
 
-import '../../domain/services/panel_release.dart';
 import 'motion_springs.dart';
 
 /// Plays a fixed [curve] over [duration] as a [Simulation].
@@ -37,22 +36,6 @@ class CurveSimulation extends Simulation {
 
   @override
   bool isDone(double time) => time >= _seconds;
-}
-
-/// Runs the player's release model on Flutter's animation clock.
-class PanelSpringSimulation extends Simulation {
-  PanelSpringSimulation(this.spring);
-
-  final PanelSpring spring;
-
-  @override
-  double x(double time) => spring.positionAt(time);
-
-  @override
-  double dx(double time) => spring.velocityAt(time);
-
-  @override
-  bool isDone(double time) => spring.isDone(time);
 }
 
 /// A no-bounce landing that ends the instant it reaches the target, instead of

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -124,7 +125,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ];
   }
 
-  bool _isDrawerOpen = false;
+  bool _drawerTargetOpen = false;
 
   late AnimationController _drawerController;
   late final SnapEngine _drawerSnap;
@@ -147,47 +148,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   /// list the dock and rail drew.
   List<_ShellTab> _visibleTabs = const [];
 
-  /// True while the drawer is far enough open that chrome (scrim, panel) should
-  /// stay mounted. A tiny leftover spring value must not keep a GestureDetector
-  /// over the content — that is what killed vertical scroll after open/close.
-  bool get _drawerChromeVisible =>
-      _isDrawerOpen ||
-      _isDraggingDrawer ||
-      _drawerController.isAnimating ||
-      _drawerController.value.abs() > 0.002;
-
   late final List<ScrollController> _scrollControllers;
 
-  Future<void> _closeDrawer() async {
-    if (!_isDrawerOpen &&
-        !_isDraggingDrawer &&
-        !_drawerController.isAnimating &&
-        _drawerController.value <= 0.001) {
-      return;
-    }
-    if (_drawerController.value <= 0.001 ||
-        MotionPolicy.read(context).reduceMotion) {
-      _drawerSnap.jumpTo(0);
-      _markDrawerClosed();
-      return;
-    }
-    // State is marked closed only by the generation-guarded settle, so a drawer
-    // grabbed again mid-close is not marked closed behind the finger.
-    await _drawerSnap.springTo(
-      0,
-      spring: MotionSprings.settle,
-      onSettled: _markDrawerClosed,
-    );
-  }
-
-  void _markDrawerClosed() {
-    if (!mounted) return;
-    _drawerController.value = 0;
-    setState(() {
-      _isDrawerOpen = false;
-      _isDraggingDrawer = false;
-    });
-  }
+  Future<void> _closeDrawer() => _settleDrawer(open: false);
 
   void _onTabSelected(int index) {
     if (index < 0 || index >= _visibleTabs.length) return;
@@ -209,100 +172,43 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  void _onHorizontalDragStart(MotionDragStart start) {
-    setState(() {
-      _isDraggingDrawer = true;
-      if (_drawerController.value > 0.002) _isDrawerOpen = true;
-    });
-    // Freeze any settle where it is; the drag continues from the drawn value.
+  void _onHorizontalDragStart(MotionDragStart _) {
     _drawerSnap.cancel();
+    setState(() => _isDraggingDrawer = true);
   }
 
   void _onHorizontalDragUpdate(double delta) {
-    if (!_isDraggingDrawer) return;
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    var amount = delta / WideLayout.drawerWidth(screenWidth);
+    if (!_isDraggingDrawer || _drawerGeometry.restWidth <= 0) return;
     final value = _drawerController.value;
-    // Past open/closed the push gets progressively heavier, and pulling back
-    // stays full-speed so the sheet never feels stuck in the overshoot.
-    final scale = WideLayout.drawerOvershootDragScale(value);
-    final outward = value >= 1 ? amount > 0 : (value <= 0 ? amount < 0 : false);
-    if (outward) amount *= scale;
-    _drawerController.value = (value + amount).clamp(
-      -WideLayout.drawerOvershoot,
-      1 + WideLayout.drawerOvershoot,
-    );
+    final scale =
+        value >= 1 && delta > 0 ? WideLayout.drawerOverpullScale : 1.0;
+    _drawerController.value = value + delta * scale / _drawerGeometry.restWidth;
   }
 
   void _onHorizontalDragEnd(MotionDragEnd end) {
     if (!_isDraggingDrawer) return;
-    const tuning = SnapTuning(
-      actuation: 0,
-      flingVelocity: 250,
-      commitRatio: 0.30,
-    );
-    // Already past open (or flinging further open): ease back — a hint of
-    // spring, not a trampoline.
-    final bool pullPastOpen = _drawerController.value >= 1.0 ||
-        (_isDrawerOpen &&
-            _drawerController.value > 0.95 &&
-            end.velocity.dx > 120);
-    if (pullPastOpen) {
-      _settleDrawer(open: true, velocity: end.velocity.dx, bounceOpen: true);
-      return;
-    }
-    final bool open = tuning.advances(
-      progress: _drawerController.value.clamp(0.0, 1.0),
-      velocity: end.velocity.dx,
-      extent: MediaQuery.sizeOf(context).width,
-    );
-    _settleDrawer(open: open, velocity: end.velocity.dx);
+    final velocity = end.velocity.dx;
+    final bool open = velocity.abs() > WideLayout.drawerFlingVelocity
+        ? velocity > 0
+        : _drawerController.value > WideLayout.drawerCommitRatio;
+    unawaited(_settleDrawer(open: open));
   }
 
   void _onHorizontalDragCancel() {
-    if (!_isDraggingDrawer) return;
-    _settleDrawer(open: _drawerController.value >= 0.30);
+    if (!_isDraggingDrawer || !mounted) return;
+    unawaited(_settleDrawer(open: _drawerTargetOpen));
   }
 
-  void _settleDrawer({
-    required bool open,
-    double velocity = 0,
-    bool bounceOpen = false,
-  }) {
-    final width = WideLayout.drawerWidth(MediaQuery.sizeOf(context).width);
+  Future<void> _settleDrawer({required bool open}) {
     setState(() {
-      if (open) _isDrawerOpen = true;
+      _drawerTargetOpen = open;
+      _isDraggingDrawer = false;
     });
-    if (MotionPolicy.read(context).reduceMotion) {
-      _drawerSnap.jumpTo(open ? 1 : 0);
-      setState(() {
-        _isDrawerOpen = open;
-        _isDraggingDrawer = false;
-      });
-      return;
-    }
-    // Opening rides [drawerOpen]: the sheet has room to swell past its seat,
-    // so it crests into it and relaxes back instead of arriving at the
-    // boundary dead. Pull-past-open is only a snappy return into place, and a
-    // close is a settle. Release speed survives a flick, lightly damped so a
-    // thrown drawer cannot wind the spring into a wobble.
-    final spring = !open
-        ? MotionSprings.settle
-        : (bounceOpen ? MotionSprings.snappy : MotionSprings.drawerOpen);
-    _drawerSnap.springTo(
-      open ? 1 : 0,
-      spring: spring,
-      velocity: width > 0 ? (velocity / width).clamp(-6.0, 6.0) * 0.6 : 0,
-      onSettled: () {
-        if (!mounted) return;
-        // Pin exactly so a leftover 1e-4 cannot keep the scrim GestureDetector
-        // mounted over the content and kill vertical scroll.
-        _drawerController.value = open ? 1.0 : 0.0;
-        setState(() {
-          _isDraggingDrawer = false;
-          _isDrawerOpen = open;
-        });
-      },
+    final target = open ? 1.0 : 0.0;
+    return _drawerSnap.snapTo(
+      target,
+      duration: MotionPolicy.read(context).duration(MotionTokens.standard),
+      curve: MotionTokens.enterCurve,
     );
   }
 
@@ -311,8 +217,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     super.initState();
     _drawerController = AnimationController(
       vsync: this,
-      duration: MotionTokens.short,
-      lowerBound: -WideLayout.drawerOvershoot,
       upperBound: 1 + WideLayout.drawerOvershoot,
     );
     _drawerSnap = SnapEngine(_drawerController);
@@ -514,85 +418,106 @@ class _MainScreenState extends ConsumerState<MainScreen>
       );
     }
 
-    Widget buildDrawerSlider({required Widget child}) {
-      return AnimatedBuilder(
-        animation: _drawerGeometry,
-        builder: (context, child) {
-          // The dim deepens through the elastic swell, along with the push.
-          final scrimAlpha =
-              (0.45 * _drawerGeometry.scrimProgress.clamp(0.0, 1.0) +
-                      0.55 * _drawerGeometry.swellFraction)
-                  .clamp(0.0, 0.6);
-          final showScrim = _drawerChromeVisible && scrimAlpha > 0.001;
-          return Stack(
-            children: [
-              Transform.translate(
-                // The content rides out with the drawer, and follows its crest.
-                offset: Offset(_drawerGeometry.contentOffset, 0),
-                // Boundary under the transform: the slide moves a cached raster.
-                child: FreezeWhileMoving(
-                  animation: _drawerController,
-                  dragging: _isDraggingDrawer,
-                  child: RepaintBoundary(child: child!),
-                ),
-              ),
-              // Outside the translate: the dim covers the window, and a tap on
-              // it closes the drawer.
-              if (showScrim)
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: _closeDrawer,
-                    child: ColoredBox(
-                      color: Colors.black.withValues(alpha: scrimAlpha),
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-        child: child,
-      );
-    }
-
     Widget buildShellBody() {
-      // The player panel is a sibling above this. Without a boundary here, every
-      // frame of its flight repainted the whole shell along with it.
+      if (isWide) return RepaintBoundary(child: buildContentStack());
+      final Widget drawerContent = RepaintBoundary(
+        child: AppDrawer(
+          onClose: _closeDrawer,
+          width: _drawerGeometry.restWidth,
+        ),
+      );
       return RepaintBoundary(
         child: MotionDragArea(
           axis: Axis.horizontal,
-          // Desktop has the nav rail; a trackpad's sideways scroll would
-          // otherwise drag the whole shell, bottom bar included.
-          enabled: !isWide,
-          // Only matters while the drawer is shut; once it is open the strip
-          // would pull taps on its own buttons into a swipe.
-          edgePriorityWidth: _isDrawerOpen ? 0 : WideLayout.drawerEdgeWidth,
+          dragStartBehavior: DragStartBehavior.down,
+          edgePriorityWidth: _drawerTargetOpen ? 0 : WideLayout.drawerEdgeWidth,
           onStart: _onHorizontalDragStart,
           onUpdate: _onHorizontalDragUpdate,
           onEnd: _onHorizontalDragEnd,
           onCancel: _onHorizontalDragCancel,
-          // The surface wraps the drawer as well as the content: the panel is a
-          // sibling above it, so a drag started on the sheet never reached the
-          // content's own surface and the drawer could only be pushed open.
-          child: Stack(
-            children: [
-              // Content first, drawer above it: the content slides aside by the
-              // panel's resting width, so the drawer is uncovered either way.
-              buildDrawerSlider(child: buildContentStack()),
-              AnimatedBuilder(
-                animation: _drawerGeometry,
-                child: Positioned.fill(
-                  child: AppDrawer(
-                    onClose: _closeDrawer,
-                    drawerPosition: _drawerController,
-                    geometry: _drawerGeometry,
+          child: AnimatedBuilder(
+            animation: _drawerGeometry,
+            child: RepaintBoundary(child: buildContentStack()),
+            builder: (context, page) {
+              final drawer = _drawerGeometry;
+              final bool visible = drawer.progress > 0;
+              final Color drawerColor = Color.alphaBlend(
+                AppTokens.surface(1),
+                Theme.of(context).scaffoldBackgroundColor,
+              );
+              final Widget content = FreezeWhileMoving(
+                animation: _drawerController,
+                dragging: _isDraggingDrawer,
+                child: page!,
+              );
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: !visible,
+                    child: TickerMode(
+                      enabled: visible,
+                      child: ExcludeFocus(
+                        excluding: !visible,
+                        child: ColoredBox(
+                          color: drawerColor,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: SizedBox(
+                                  width: drawer.restWidth,
+                                  child: Transform.translate(
+                                    offset: Offset(drawer.drawerOffset, 0),
+                                    child: drawerContent,
+                                  ),
+                                ),
+                              ),
+                              if (drawer.drawerScrim > 0)
+                                IgnorePointer(
+                                  child: ColoredBox(
+                                    color: Colors.black.withValues(
+                                      alpha: drawer.drawerScrim,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                builder: (context, child) {
-                  if (!_drawerChromeVisible) return const SizedBox.shrink();
-                  return child!;
-                },
-              ),
-            ],
+                  Transform.translate(
+                    offset: Offset(drawer.contentOffset, 0),
+                    child: ClipRRect(
+                      clipBehavior: visible ? Clip.antiAlias : Clip.none,
+                      borderRadius: BorderRadius.horizontal(
+                        left: Radius.circular(
+                          AppTokens.rLg * drawer.progress.clamp(0.0, 1.0),
+                        ),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          content,
+                          if (visible)
+                            GestureDetector(
+                              onTap: _closeDrawer,
+                              child: ColoredBox(
+                                color: Colors.black.withValues(
+                                  alpha: drawer.contentScrim,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       );

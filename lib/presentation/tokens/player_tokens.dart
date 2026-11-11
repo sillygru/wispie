@@ -132,9 +132,8 @@ class PlayerTokens {
 
   /// Maximum rubber-band travel on either side of the panel's seats.
   static const double panelRubberRoom = 0.05;
-  static const double panelMomentumLimit = 10;
-  static const double panelCommitRatio = 0.085;
-  static const double panelFlingRatio = 0.55;
+  static const double panelActuation = 100;
+  static const double panelFlingVelocity = 500;
 
   static const Curve cPanelWiden = Curves.easeOutCubic;
   static const double panelShellHandoff = 0.18;

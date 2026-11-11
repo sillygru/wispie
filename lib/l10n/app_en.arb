@@ -2041,6 +2041,7 @@
   "@profileDefaultName": {
     "description": "Default display name when no username is set"
   },
+  "appName": "wispie",
   "profileAppVersion": "wispie v{version}",
   "@profileAppVersion": {
     "description": "Label showing the app version on the profile screen",

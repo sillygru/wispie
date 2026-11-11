@@ -1615,6 +1615,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get profileDefaultName => 'Usuário';
 
   @override
+  String get appName => 'wispie';
+
+  @override
   String profileAppVersion(String version) {
     return 'wispie v$version';
   }

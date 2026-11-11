@@ -1587,6 +1587,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileDefaultName => 'User';
 
   @override
+  String get appName => 'wispie';
+
+  @override
   String profileAppVersion(String version) {
     return 'wispie v$version';
   }

@@ -2781,6 +2781,12 @@ abstract class AppLocalizations {
   /// **'User'**
   String get profileDefaultName;
 
+  /// No description provided for @appName.
+  ///
+  /// In en, this message translates to:
+  /// **'wispie'**
+  String get appName;
+
   /// Label showing the app version on the profile screen
   ///
   /// In en, this message translates to:
