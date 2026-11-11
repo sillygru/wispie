@@ -55,7 +55,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get settingsPageOnlineTitle => 'Online';
 
   @override
-  String get settingsPageOnlineSubtitle => 'YouTube catalogue and account';
+  String get settingsPageOnlineSubtitle => 'Catálogo e conta do YouTube';
 
   @override
   String get onlineSettingsGroup => 'YouTube';
@@ -65,14 +65,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsYoutubeEnabledSubtitle =>
-      'Show the YouTube tab and play music from YouTube. Turning this off removes it entirely.';
+      'Exibir a aba do YouTube e reproduzir músicas de lá. Ao desativar, a aba será removida por completo.';
 
   @override
   String get settingsYoutubeAccountSubtitle =>
-      'Sign in to import your playlists';
+      'Faça login para importar suas playlists';
 
   @override
-  String get settingsKwOnline => 'youtube,online,streaming,account,import';
+  String get settingsKwOnline => 'youtube,online,streaming,conta,importar';
 
   @override
   String get settingsPageSyncTitle => 'Sincronização';
@@ -559,7 +559,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get queueRemoveFromQueueTooltip => 'Remover da fila';
 
   @override
-  String get queueRemovedLabel => 'Removed from queue';
+  String get queueRemovedLabel => 'Removida da fila';
 
   @override
   String get queueUndo => 'Desfazer';
@@ -810,24 +810,24 @@ class AppLocalizationsPt extends AppLocalizations {
   String get syncAlbumArtHint => 'Opções de capa do álbum online';
 
   @override
-  String get syncQueueHistory => 'Queue history';
+  String get syncQueueHistory => 'Histórico da fila';
 
   @override
-  String get syncQueueHistoryHint => 'Recently played queues';
+  String get syncQueueHistoryHint => 'Filas reproduzidas recentemente';
 
   @override
-  String get syncCurrentQueue => 'Current queue';
+  String get syncCurrentQueue => 'Fila atual';
 
   @override
   String get syncCurrentQueueHint =>
-      'Uploaded automatically; downloaded only when you sync manually';
+      'Enviada automaticamente; baixada apenas quando você sincroniza manualmente';
 
   @override
-  String get syncPreferCloudQueue => 'Prefer cloud queue';
+  String get syncPreferCloudQueue => 'Priorizar fila da nuvem';
 
   @override
   String get syncPreferCloudQueueHint =>
-      'On: Sync now replaces this device\'s queue with the cloud queue. Off: this device\'s queue is kept and uploaded.';
+      'Ativado: sincronizar agora substitui a fila deste dispositivo pela fila da nuvem. Desativado: a fila deste dispositivo é mantida e enviada.';
 
   @override
   String get syncPrivacy => 'Privacidade';
@@ -1097,11 +1097,11 @@ class AppLocalizationsPt extends AppLocalizations {
       'Capa do player em tela cheia e telas de detalhes com gradiente';
 
   @override
-  String get appearancePlayerSwipeTitle => 'Swipe changes pane';
+  String get appearancePlayerSwipeTitle => 'Deslizar para mudar de painel';
 
   @override
   String get appearancePlayerSwipeSubtitle =>
-      'Left and right swipes move between lyrics, player and queue. Turn off to switch tracks instead.';
+      'Deslize para a esquerda ou direita para alternar entre letras, player e fila. Desative para trocar de faixa.';
 
   @override
   String get appearanceGroupPlayerMotion => 'Movimento do player';
@@ -1754,25 +1754,25 @@ class AppLocalizationsPt extends AppLocalizations {
       'Disponibilidade e texto das letras em cache';
 
   @override
-  String get storageOnlineAudioTitle => 'Online Audio Cache';
+  String get storageOnlineAudioTitle => 'Cache de áudio online';
 
   @override
   String get storageOnlineAudioSubtitle =>
-      'Streamed tracks kept on disk for instant, offline replay';
+      'Faixas transmitidas ficam no dispositivo para reprodução instantânea, mesmo offline';
 
   @override
-  String get storageClearOnlineAudioTitle => 'Clear online audio cache?';
+  String get storageClearOnlineAudioTitle => 'Limpar o cache de áudio online?';
 
   @override
   String get storageClearOnlineAudioBody =>
-      'Downloaded tracks will stream from the internet again. Your library, playlists and favorites are untouched.';
+      'As faixas baixadas voltarão a ser transmitidas pela internet. Sua biblioteca, playlists e favoritos não serão afetados.';
 
   @override
-  String get storageClearOnlineAudioSuccess => 'Online audio cache cleared';
+  String get storageClearOnlineAudioSuccess => 'Cache de áudio online limpo';
 
   @override
   String storageClearOnlineAudioError(Object error) {
-    return 'Error clearing online audio cache: $error';
+    return 'Erro ao limpar o cache de áudio online: $error';
   }
 
   @override
@@ -2365,7 +2365,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsKwPlayerSwipe =>
-      'swipe,gesture,panes,lyrics,queue,skip,track';
+      'deslizar,gesto,painéis,letras,fila,pular,faixa';
 
   @override
   String get settingsKwKeepAwake => 'sono,manter ativo,tela,letras';
@@ -2468,7 +2468,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settingsKwBatchReplace =>
-      'replace,swap,upgrade,flac,lossless,batch,compare,folder,duplicate';
+      'substituir,trocar,atualizar,flac,sem perdas,lote,comparar,pasta,duplicado';
 
   @override
   String get settingsKwManageStorage => 'disco,espaço,cache,limpeza';
@@ -2700,11 +2700,11 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get backupRestoreReloadingLibrary => 'Reloading the library…';
+  String get backupRestoreReloadingLibrary => 'Recarregando a biblioteca…';
 
   @override
   String get backupRestoreRefreshingPlaylists =>
-      'Refreshing playlists and mixes…';
+      'Atualizando playlists e mixes…';
 
   @override
   String get backupDeleteTitle => 'Excluir backup';
@@ -3446,7 +3446,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get homeRecentQueues => 'Filas recentes';
 
   @override
-  String get homePlaylists => 'Your Playlists';
+  String get homePlaylists => 'Suas playlists';
 
   @override
   String get homeForYou => 'Para você';
@@ -4046,7 +4046,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String lyricsSearchFailed(String error) {
-    return 'Lyrics search failed: $error';
+    return 'Falha ao buscar letras: $error';
   }
 
   @override
@@ -4784,61 +4784,64 @@ class AppLocalizationsPt extends AppLocalizations {
   String get onlineNoResults => 'Nenhuma faixa encontrada';
 
   @override
-  String get onlineArtistNotFound => 'No YouTube artist found for that name.';
+  String get onlineArtistNotFound =>
+      'Nenhum artista do YouTube encontrado com esse nome.';
 
   @override
-  String get onlineAlbumNotFound => 'No YouTube album found for that name.';
+  String get onlineAlbumNotFound =>
+      'Nenhum álbum do YouTube encontrado com esse nome.';
 
   @override
-  String get onlineYoutubeError => 'Could not load from YouTube.';
+  String get onlineYoutubeError =>
+      'Não foi possível carregar conteúdo do YouTube.';
 
   @override
   String get onlineYoutubeErrorNetwork =>
-      'Could not reach YouTube. Check your connection.';
+      'Não foi possível acessar o YouTube. Verifique sua conexão.';
 
   @override
   String get onlineYoutubeErrorRateLimited =>
-      'YouTube is rate limiting requests. Wait a moment and try again.';
+      'O YouTube está limitando as solicitações. Aguarde um pouco e tente novamente.';
 
   @override
   String get onlineYoutubeErrorUnavailable =>
-      'This video is not available on YouTube.';
+      'Este vídeo não está disponível no YouTube.';
 
   @override
   String get onlineYoutubeErrorBlocked =>
-      'YouTube refused this track. Try another result.';
+      'O YouTube recusou esta faixa. Tente outro resultado.';
 
   @override
   String get onlineYoutubeErrorResponse =>
-      'YouTube returned an unexpected response.';
+      'O YouTube retornou uma resposta inesperada.';
 
   @override
   String get onlineUnavailable => 'Indisponível no YouTube';
 
   @override
-  String get onlineLibraryAdd => 'Add to library';
+  String get onlineLibraryAdd => 'Adicionar à biblioteca';
 
   @override
-  String get onlineLibraryRemove => 'Remove from library';
+  String get onlineLibraryRemove => 'Remover da biblioteca';
 
   @override
   String onlineLibraryAdded(String title) {
-    return 'Added $title to your library';
+    return '$title foi adicionado à sua biblioteca';
   }
 
   @override
   String onlineLibraryRemoved(String title) {
-    return 'Removed $title from your library';
+    return '$title foi removido da sua biblioteca';
   }
 
   @override
   String onlineLibraryAddFailed(String title) {
-    return 'Could not save $title to your library';
+    return 'Não foi possível salvar $title na sua biblioteca';
   }
 
   @override
   String get songMenuLibrarySaveHint =>
-      'Keep this streamed track in your library';
+      'Manter esta faixa transmitida na sua biblioteca';
 
   @override
   String get searchEmptyTitle => 'Busque na sua coleção de músicas';
@@ -4942,22 +4945,23 @@ class AppLocalizationsPt extends AppLocalizations {
   String get aboutViewRelease => 'Ver versão';
 
   @override
-  String get aboutSupportGroup => 'Support';
+  String get aboutSupportGroup => 'Suporte';
 
   @override
-  String get aboutContactTitle => 'Contact me';
+  String get aboutContactTitle => 'Fale comigo';
 
   @override
-  String get aboutContactSubtitle => 'Bugs, ideas, or anything else';
+  String get aboutContactSubtitle =>
+      'Problemas, ideias ou qualquer outra coisa';
 
   @override
-  String get aboutIssuesTitle => 'Report an issue';
+  String get aboutIssuesTitle => 'Relatar um problema';
 
   @override
-  String get aboutIssuesSubtitle => 'Opens the wispie repository on GitHub';
+  String get aboutIssuesSubtitle => 'Abre o repositório do wispie no GitHub';
 
   @override
-  String get aboutLinkFailed => 'Could not open the link';
+  String get aboutLinkFailed => 'Não foi possível abrir o link';
 
   @override
   String get aboutDebugGroup => 'Depuração';
@@ -5249,431 +5253,439 @@ class AppLocalizationsPt extends AppLocalizations {
   String get barSeekLabel => 'Buscar';
 
   @override
-  String get indexerOpOptimizeDatabasesTitle => 'Optimize Databases';
+  String get indexerOpOptimizeDatabasesTitle => 'Otimizar bancos de dados';
 
   @override
   String get indexerOpOptimizeDatabasesDesc =>
-      'Clean and optimize all app databases';
+      'Limpar e otimizar todos os bancos de dados do app';
 
   @override
-  String get indexerOpRepairLinksTitle => 'Repair Library Links';
+  String get indexerOpRepairLinksTitle => 'Reparar links da biblioteca';
 
   @override
   String get indexerOpRepairLinksDesc =>
-      'Re-link album art and file paths after a restore or new device';
+      'Vincular novamente capas e caminhos de arquivos após uma restauração ou troca de dispositivo';
 
   @override
-  String get indexerOpMatchIdentityTitle => 'Match Songs by Audio';
+  String get indexerOpMatchIdentityTitle => 'Encontrar músicas pelo áudio';
 
   @override
   String get indexerOpMatchIdentityDesc =>
-      'Fingerprint every file so renamed songs keep their favourites, playlists and stats, and match across synced devices';
+      'Criar uma impressão digital de cada arquivo para preservar favoritos, playlists e estatísticas após renomear músicas e encontrar correspondências entre dispositivos sincronizados';
 
   @override
-  String get indexerOpCoverCacheTitle => 'Rebuild Cover Caches';
+  String get indexerOpCoverCacheTitle => 'Reconstruir caches de capas';
 
   @override
   String get indexerOpCoverCacheDesc =>
-      'Extract and cache embedded album artwork';
+      'Extrair e armazenar capas incorporadas nos arquivos';
 
   @override
-  String get indexerOpSearchIndexTitle => 'Rebuild Search Indexes';
+  String get indexerOpSearchIndexTitle => 'Reconstruir índices de busca';
 
   @override
   String get indexerOpSearchIndexDesc =>
-      'Rebuild the search index for all songs';
+      'Reconstruir o índice de busca de todas as músicas';
 
   @override
-  String get indexerOpLyricsCacheTitle => 'Rebuild Lyrics Cache';
+  String get indexerOpLyricsCacheTitle => 'Reconstruir cache de letras';
 
   @override
   String get indexerOpLyricsCacheDesc =>
-      'Extract and cache lyrics for all songs';
+      'Extrair e armazenar as letras de todas as músicas';
 
   @override
-  String get indexerOpWaveformCacheTitle => 'Rebuild Waveform Cache';
+  String get indexerOpWaveformCacheTitle =>
+      'Reconstruir cache de formas de onda';
 
   @override
   String get indexerOpWaveformCacheDesc =>
-      'Generate waveform data for all songs';
+      'Gerar dados de forma de onda para todas as músicas';
 
   @override
-  String get indexerOpColorCacheTitle => 'Rebuild App Theme on Cover Cache';
+  String get indexerOpColorCacheTitle => 'Reconstruir temas a partir das capas';
 
   @override
-  String get indexerOpColorCacheDesc => 'Extract color themes from all covers';
+  String get indexerOpColorCacheDesc =>
+      'Extrair temas de cores de todas as capas';
 
   @override
-  String get indexerOpBlurredCacheTitle => 'Rebuild Blurred Background Cache';
+  String get indexerOpBlurredCacheTitle =>
+      'Reconstruir cache de fundos desfocados';
 
   @override
   String get indexerOpBlurredCacheDesc =>
-      'Pre-generate optimized blurred backgrounds';
+      'Pré-gerar fundos desfocados otimizados';
 
   @override
-  String get indexerOpRecommendationsTitle => 'Rebuild Recommendations';
+  String get indexerOpRecommendationsTitle => 'Reconstruir recomendações';
 
   @override
   String get indexerOpRecommendationsDesc =>
-      'Force rebuild all recommendation playlists';
+      'Forçar a reconstrução de todas as playlists de recomendação';
 
   @override
-  String get indexerOpArtistAlbumArtTitle => 'Fetch Artist & Album Covers';
+  String get indexerOpArtistAlbumArtTitle =>
+      'Buscar capas de artistas e álbuns';
 
   @override
   String get indexerOpArtistAlbumArtDesc =>
-      'Fetch missing artist and album covers online, biggest collections first';
+      'Buscar online as capas ausentes de artistas e álbuns, começando pelas maiores coleções';
 
   @override
-  String get indexerCounting => 'Counting...';
+  String get indexerCounting => 'Contando…';
 
   @override
-  String get indexerWorking => 'Working...';
+  String get indexerWorking => 'Processando…';
 
   @override
-  String get indexerStopping => 'Stopping...';
+  String get indexerStopping => 'Parando…';
 
   @override
   String indexerProgressPercent(int percent) {
-    return 'Processing $percent%';
+    return 'Processando $percent%';
   }
 
   @override
   String indexerProgressFailed(int done, int total, int failed) {
-    return 'Processing $done/$total ($failed failed)';
+    return 'Processados $done/$total ($failed com falha)';
   }
 
   @override
   String indexerStoppedAt(int done, int total) {
-    return 'Stopped at $done/$total';
+    return 'Parado em $done/$total';
   }
 
   @override
   String indexerFinished(int processed, int failed) {
-    return 'Done: $processed processed, $failed failed';
+    return 'Concluído: $processed processados, $failed com falha';
   }
 
   @override
-  String get indexerNothingToDo => 'Nothing to do, already up to date';
+  String get indexerNothingToDo => 'Nada a fazer; tudo já está atualizado';
 
   @override
-  String get indexerErrorBusy => 'Already running in the background';
+  String get indexerErrorBusy => 'Já está sendo executado em segundo plano';
 
   @override
   String get indexerErrorOffline =>
-      'Went offline, the rest resumes automatically';
+      'A conexão foi perdida; o restante será retomado automaticamente';
 
   @override
-  String get indexerStop => 'Stop';
+  String get indexerStop => 'Parar';
 
   @override
-  String get youtubeAccountTitle => 'YouTube account';
+  String get youtubeAccountTitle => 'Conta do YouTube';
 
   @override
-  String get youtubeAccountLoading => 'Loading your YouTube account...';
+  String get youtubeAccountLoading => 'Carregando sua conta do YouTube…';
 
   @override
   String get youtubeAccountSignedOutTitle =>
-      'Bring your YouTube playlists here';
+      'Traga suas playlists do YouTube para cá';
 
   @override
   String get youtubeAccountSignedOutBody =>
-      'Signing in lets you import your YouTube playlists into this library. Search, playback, favorites and listening stats work without an account.';
+      'Faça login para importar suas playlists do YouTube para esta biblioteca. Busca, reprodução, favoritos e estatísticas de audição funcionam sem uma conta.';
 
   @override
-  String get youtubeAccountSignIn => 'Sign in with Google';
+  String get youtubeAccountSignIn => 'Fazer login com o Google';
 
   @override
-  String get youtubeAccountSignInTryWeb => 'Try in-app sign-in';
+  String get youtubeAccountSignInTryWeb => 'Tentar entrar pelo app';
 
   @override
   String get youtubeAccountSignInHint =>
-      'Opens Google\'s own sign-in page in the app. Wispie keeps the resulting YouTube session on this device and never sees your password.';
+      'Abre a página oficial de login do Google no app. O wispie mantém a sessão do YouTube neste dispositivo e nunca vê sua senha.';
 
   @override
   String get youtubeAccountSignInHintManual =>
-      'Sign in to YouTube in a browser, then bring the session cookies over: the account screen imports a Cookie header, a cookies.txt export or cookie JSON. The cookies stay on this device and are the only thing wispie needs.';
+      'Entre no YouTube pelo navegador e depois transfira os cookies da sessão: a tela da conta aceita um cabeçalho Cookie, uma exportação cookies.txt ou um JSON de cookies. Os cookies ficam neste dispositivo e são tudo de que o wispie precisa.';
 
   @override
-  String get youtubeAccountWebTitle => 'Google sign-in';
+  String get youtubeAccountWebTitle => 'Login do Google';
 
   @override
-  String get youtubeAccountWebTrouble =>
-      'Trouble signing in? Use cookies instead';
+  String get youtubeAccountWebTrouble => 'Problemas para entrar? Use cookies';
 
   @override
-  String get youtubeAccountWebTroubleAction => 'Use cookies';
+  String get youtubeAccountWebTroubleAction => 'Usar cookies';
 
   @override
   String get youtubeAccountWebFailed =>
-      'That page could not load. Check your connection, or use cookies instead.';
+      'Não foi possível carregar a página. Verifique sua conexão ou use cookies.';
 
   @override
   String get youtubeAccountWebUnsupported =>
-      'This platform has no in-app browser.';
+      'Esta plataforma não tem um navegador integrado ao app.';
 
   @override
   String get youtubeAccountWebBlockedTitle =>
-      'Google blocked the in-app sign-in';
+      'O Google bloqueou o login pelo app';
 
   @override
   String get youtubeAccountWebBlockedBody =>
-      'Google will not sign in from inside other apps, so a password typed here cannot be accepted. Sign in to YouTube in your browser, then import the session cookies on the account screen: the result is the same and your password is never typed into wispie.';
+      'O Google não permite login dentro de outros apps, então uma senha digitada aqui não será aceita. Entre no YouTube pelo navegador e importe os cookies da sessão na tela da conta. O resultado é o mesmo e você nunca digita sua senha no wispie.';
 
   @override
-  String get youtubeAccountWebPasskeyTitle => 'Google is asking for a passkey';
+  String get youtubeAccountWebPasskeyTitle =>
+      'O Google está solicitando uma chave de acesso';
 
   @override
   String get youtubeAccountWebPasskeyBody =>
-      'A passkey cannot be used from inside another app, so that step cannot finish here. Sign in with your password instead; the rest of the flow works normally.';
+      'Não é possível usar uma chave de acesso dentro de outro app, então esta etapa não pode ser concluída aqui. Entre com sua senha; o restante do processo funciona normalmente.';
 
   @override
-  String get youtubeAccountWebPasskeyAction => 'Use my password';
+  String get youtubeAccountWebPasskeyAction => 'Usar minha senha';
 
   @override
-  String get youtubeAccountOpenYouTube => 'Open youtube.com';
+  String get youtubeAccountOpenYouTube => 'Abrir youtube.com';
 
   @override
-  String get youtubeSearchSongs => 'Songs';
+  String get youtubeSearchSongs => 'Músicas';
 
   @override
-  String get youtubeSearchAlbums => 'Albums';
+  String get youtubeSearchAlbums => 'Álbuns';
 
   @override
   String get youtubeSearchPlaylists => 'Playlists';
 
   @override
-  String get youtubeSearchArtists => 'Artists';
+  String get youtubeSearchArtists => 'Artistas';
 
   @override
-  String get youtubeArtistSongsTitle => 'Top songs';
+  String get youtubeArtistSongsTitle => 'Músicas mais populares';
 
   @override
-  String get youtubeArtistAlbumsTitle => 'Albums & singles';
+  String get youtubeArtistAlbumsTitle => 'Álbuns e singles';
 
   @override
-  String get youtubeCollectionEmpty => 'Nothing to play in here.';
+  String get youtubeCollectionEmpty => 'Não há nada para reproduzir aqui.';
 
   @override
-  String get youtubeAccountSignOut => 'Sign out';
+  String get youtubeAccountSignOut => 'Sair';
 
   @override
   String youtubeAccountSignedInAs(String name) {
-    return 'Signed in as $name';
+    return 'Conectado como $name';
   }
 
   @override
   String get youtubeAccountSessionExpired =>
-      'Your YouTube session expired. Sign in again to keep syncing playlists.';
+      'Sua sessão do YouTube expirou. Entre novamente para continuar sincronizando playlists.';
 
   @override
-  String get youtubeAccountCookiesTitle => 'Paste YouTube cookies';
+  String get youtubeAccountCookiesTitle => 'Colar cookies do YouTube';
 
   @override
   String get youtubeAccountCookiesBody =>
-      'Sign in to YouTube in a browser, then copy the Cookie request header of any youtube.com request (devtools: Network -> Headers), or export a cookies.txt file, and paste it here. Only the youtube.com cookies are kept.';
+      'Entre no YouTube pelo navegador e copie o cabeçalho da solicitação Cookie de qualquer requisição para youtube.com (ferramentas de desenvolvedor: Rede → Cabeçalhos), ou exporte um arquivo cookies.txt e cole-o aqui. Apenas cookies de youtube.com serão mantidos.';
 
   @override
   String get youtubeAccountCookiesHint =>
-      'Cookie header, cookies.txt, or exported cookie JSON';
+      'Cabeçalho Cookie, cookies.txt ou JSON de cookies exportados';
 
   @override
-  String get youtubeAccountCookiesImport => 'Import cookies';
+  String get youtubeAccountCookiesImport => 'Importar cookies';
 
   @override
-  String get youtubeAccountCookiesFile => 'Choose a cookies.txt file';
+  String get youtubeAccountCookiesFile => 'Escolher arquivo cookies.txt';
 
   @override
-  String get youtubeAccountCookiesEmpty => 'No cookies found in that text.';
+  String get youtubeAccountCookiesEmpty =>
+      'Nenhum cookie encontrado nesse texto.';
 
   @override
-  String get youtubeAccountCookiesUnreadable => 'That file could not be read.';
+  String get youtubeAccountCookiesUnreadable =>
+      'Não foi possível ler esse arquivo.';
 
   @override
-  String get youtubeAccountPlaylistsTitle => 'Your playlists';
+  String get youtubeAccountPlaylistsTitle => 'Suas playlists';
 
   @override
-  String get youtubeFeedForYou => 'For you';
+  String get youtubeFeedForYou => 'Para você';
 
   @override
-  String get youtubeFeedFromLibrary => 'From artists you play';
+  String get youtubeFeedFromLibrary => 'De artistas que você ouve';
 
   @override
-  String get youtubeFeedFilterPlaylists => 'Choose playlists';
+  String get youtubeFeedFilterPlaylists => 'Escolher playlists';
 
   @override
   String get youtubeFeedPlaylistsHidden =>
-      'All playlists are hidden on this tab.';
+      'Todas as playlists estão ocultas nesta aba.';
 
   @override
-  String get youtubeFeedPlaylists => 'Your playlists';
+  String get youtubeFeedPlaylists => 'Suas playlists';
 
   @override
-  String get youtubeFeedSignInTitle => 'Sign in for your own feed';
+  String get youtubeFeedSignInTitle => 'Entre para ver seu feed';
 
   @override
   String get youtubeFeedSignInBody =>
-      'Your YouTube home feed follows what you watch and subscribe to. Signing in also lets you preview and import your playlists.';
+      'Seu feed inicial do YouTube é baseado no que você assiste e nos canais que acompanha. Ao entrar, você também pode pré-visualizar e importar suas playlists.';
 
   @override
-  String get youtubeFeedSignInAction => 'Sign in';
+  String get youtubeFeedSignInAction => 'Fazer login';
 
   @override
-  String get youtubeFeedEmpty =>
-      'Nothing here yet. Search for something above.';
+  String get youtubeFeedEmpty => 'Ainda não há nada aqui. Pesquise algo acima.';
 
   @override
-  String get youtubePreviewEmpty => 'This playlist has no playable tracks.';
+  String get youtubePreviewEmpty =>
+      'Esta playlist não tem faixas reproduzíveis.';
 
   @override
-  String get youtubePreviewPlayAll => 'Play all';
+  String get youtubePreviewPlayAll => 'Reproduzir tudo';
 
   @override
-  String get youtubeAccountLikedVideos => 'Liked videos';
+  String get youtubeAccountLikedVideos => 'Vídeos curtidos';
 
   @override
   String youtubeAccountPlaylistTracks(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '$count tracks',
-      one: '1 track',
-      zero: 'No tracks',
+      other: '$count faixas',
+      one: '1 faixa',
+      zero: 'Nenhuma faixa',
     );
     return '$_temp0';
   }
 
   @override
-  String get youtubeAccountImport => 'Import';
+  String get youtubeAccountImport => 'Importar';
 
   @override
-  String get youtubeAccountSync => 'Sync';
+  String get youtubeAccountSync => 'Sincronizar';
 
   @override
-  String get youtubeAccountSyncAll => 'Sync all imported playlists';
+  String get youtubeAccountSyncAll =>
+      'Sincronizar todas as playlists importadas';
 
   @override
   String get youtubeAccountSyncHint =>
-      'Syncing only adds tracks. Nothing is ever removed from your playlists.';
+      'A sincronização apenas adiciona faixas. Nada é removido das suas playlists.';
 
   @override
   String youtubeAccountImportDone(int count, String name) {
-    return 'Imported $count tracks from $name';
+    return '$count faixas importadas de $name';
   }
 
   @override
   String youtubeAccountSyncDone(int count, String name) {
-    return 'Added $count new tracks to $name';
+    return '$count novas faixas adicionadas a $name';
   }
 
   @override
   String youtubeAccountSyncUpToDate(String name) {
-    return '$name is up to date';
+    return '$name está atualizado';
   }
 
   @override
   String youtubeAccountSyncLimited(int count) {
-    return 'Only the first $count new tracks were added. Sync again for the rest.';
+    return 'Apenas as primeiras $count novas faixas foram adicionadas. Sincronize novamente para obter as restantes.';
   }
 
   @override
   String get youtubeAccountPlaylistEmpty =>
-      'That playlist has no playable tracks.';
+      'Esta playlist não tem faixas reproduzíveis.';
 
   @override
-  String get youtubeAccountLoadFailed => 'Could not load your playlists.';
+  String get youtubeAccountLoadFailed =>
+      'Não foi possível carregar suas playlists.';
 
   @override
-  String get youtubeAccountTryAgain => 'Try again';
+  String get youtubeAccountTryAgain => 'Tentar novamente';
 
   @override
   String get youtubeAccountErrorNetwork =>
-      'Could not reach YouTube. Check your connection and try again.';
+      'Não foi possível acessar o YouTube. Verifique sua conexão e tente novamente.';
 
   @override
   String get youtubeAccountErrorUnauthorized =>
-      'Your YouTube session is no longer valid. Sign in again.';
+      'Sua sessão do YouTube não é mais válida. Entre novamente.';
 
   @override
   String get youtubeAccountErrorResponse =>
-      'YouTube returned an unexpected response.';
+      'O YouTube retornou uma resposta inesperada.';
 
   @override
   String get youtubeAccountErrorRateLimited =>
-      'YouTube is limiting requests right now. Try again in a few minutes.';
+      'O YouTube está limitando as solicitações. Tente novamente em alguns minutos.';
 
   @override
   String get youtubeAccountErrorStorage =>
-      'Could not store the session securely on this device.';
+      'Não foi possível armazenar a sessão com segurança neste dispositivo.';
 
   @override
   String get youtubeAccountErrorGeneric =>
-      'Could not reach your YouTube account.';
+      'Não foi possível acessar sua conta do YouTube.';
 
   @override
-  String get playlistSyncFromYoutube => 'Sync from YouTube';
+  String get playlistSyncFromYoutube => 'Sincronizar do YouTube';
 
   @override
   String get playlistYoutubeBadge => 'YouTube';
 
   @override
-  String get batchReplaceTitle => 'Batch Replace';
+  String get batchReplaceTitle => 'Substituição em lote';
 
   @override
   String get batchReplaceIntro =>
-      'Pick a folder to compare against your library. Songs whose files match will be proposed for replacement.';
+      'Escolha uma pasta para comparar com sua biblioteca. Músicas cujos arquivos corresponderem serão sugeridas para substituição.';
 
   @override
-  String get batchReplaceFolderLabel => 'Folder to compare';
+  String get batchReplaceFolderLabel => 'Pasta para comparar';
 
   @override
-  String get batchReplaceNoFolder => 'No folder selected';
+  String get batchReplaceNoFolder => 'Nenhuma pasta selecionada';
 
   @override
-  String get batchReplaceChooseFolder => 'Choose folder';
+  String get batchReplaceChooseFolder => 'Escolher pasta';
 
   @override
-  String get batchReplaceChangeFolder => 'Change';
+  String get batchReplaceChangeFolder => 'Alterar';
 
   @override
-  String get batchReplaceSubfolders => 'Include subfolders';
+  String get batchReplaceSubfolders => 'Incluir subpastas';
 
   @override
   String get batchReplaceInsideLibrary =>
-      'That folder is already part of your library. Pick a folder outside it.';
+      'Essa pasta já faz parte da sua biblioteca. Escolha uma pasta fora dela.';
 
   @override
-  String get batchReplacePhaseListing => 'Listing files';
+  String get batchReplacePhaseListing => 'Listando arquivos';
 
   @override
-  String get batchReplacePhaseReading => 'Reading tags';
+  String get batchReplacePhaseReading => 'Lendo tags';
 
   @override
-  String get batchReplacePhaseReplacing => 'Replacing songs';
+  String get batchReplacePhaseReplacing => 'Substituindo músicas';
 
   @override
-  String get batchReplaceStopping => 'Stopping';
+  String get batchReplaceStopping => 'Parando';
 
   @override
   String batchReplaceCompareError(Object error) {
-    return 'Could not compare that folder: $error';
+    return 'Não foi possível comparar essa pasta: $error';
   }
 
   @override
   String batchReplaceMatched(int count) {
-    return '$count songs matched';
+    return '$count músicas correspondentes';
   }
 
   @override
   String batchReplaceCompared(int files, int songs) {
-    return 'Compared $files files against $songs library songs';
+    return '$files arquivos comparados com $songs músicas da biblioteca';
   }
 
   @override
-  String get batchReplaceSelectAll => 'Select all';
+  String get batchReplaceSelectAll => 'Selecionar tudo';
 
   @override
-  String get batchReplaceSelectNone => 'Select none';
+  String get batchReplaceSelectNone => 'Desmarcar tudo';
 
   @override
   String batchReplaceConfidence(int percent) {
@@ -5681,49 +5693,49 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get batchReplaceSignalTitle => 'Title';
+  String get batchReplaceSignalTitle => 'Título';
 
   @override
-  String get batchReplaceSignalFilename => 'File name';
+  String get batchReplaceSignalFilename => 'Nome do arquivo';
 
   @override
-  String get batchReplaceSignalArtist => 'Artist';
+  String get batchReplaceSignalArtist => 'Artista';
 
   @override
-  String get batchReplaceSignalAlbum => 'Album';
+  String get batchReplaceSignalAlbum => 'Álbum';
 
   @override
-  String get batchReplaceSignalDuration => 'Length';
+  String get batchReplaceSignalDuration => 'Duração';
 
   @override
-  String get batchReplaceLengthDiffers => 'length differs';
+  String get batchReplaceLengthDiffers => 'a duração é diferente';
 
   @override
   String batchReplaceUnmatched(int count) {
-    return '$count files matched nothing';
+    return 'Nenhuma correspondência para $count arquivos';
   }
 
   @override
   String batchReplaceAndMore(int count) {
-    return 'and $count more';
+    return 'e mais $count';
   }
 
   @override
-  String get batchReplaceCompareAgain => 'Compare again';
+  String get batchReplaceCompareAgain => 'Comparar novamente';
 
   @override
-  String get batchReplaceNoMatchesTitle => 'No matches';
+  String get batchReplaceNoMatchesTitle => 'Nenhuma correspondência';
 
   @override
   String batchReplaceNoMatchesMessage(int files) {
-    return 'None of the $files files in that folder looked like songs already in your library.';
+    return 'Nenhum dos $files arquivos dessa pasta parece ser uma música que já está na sua biblioteca.';
   }
 
   @override
-  String get batchReplaceNothingSelected => 'Nothing is selected';
+  String get batchReplaceNothingSelected => 'Nada está selecionado';
 
   @override
-  String get batchReplaceCollisionTitle => 'Files already exist';
+  String get batchReplaceCollisionTitle => 'Os arquivos já existem';
 
   @override
   String batchReplaceCollisionMessage(int count) {
@@ -5731,93 +5743,93 @@ class AppLocalizationsPt extends AppLocalizations {
       count,
       locale: localeName,
       other:
-          '$count replacement files already exist where they would be copied. Replace them or skip them?',
+          '$count arquivos de substituição já existem no local em que seriam copiados. Quer substituí-los ou ignorá-los?',
       one:
-          'One replacement file already exists where it would be copied. Replace it or skip it?',
+          'Um arquivo de substituição já existe no local em que seria copiado. Quer substituí-lo ou ignorá-lo?',
     );
     return '$_temp0';
   }
 
   @override
-  String get batchReplaceCollisionReplace => 'Replace';
+  String get batchReplaceCollisionReplace => 'Substituir';
 
   @override
-  String get batchReplaceCollisionSkip => 'Skip';
+  String get batchReplaceCollisionSkip => 'Ignorar';
 
   @override
-  String get batchReplaceOptionsTitle => 'Replace songs';
+  String get batchReplaceOptionsTitle => 'Substituir músicas';
 
   @override
-  String get batchReplaceTransportSection => 'New files';
+  String get batchReplaceTransportSection => 'Novos arquivos';
 
   @override
-  String get batchReplaceTransportCopy => 'Copy into the library';
+  String get batchReplaceTransportCopy => 'Copiar para a biblioteca';
 
   @override
   String get batchReplaceTransportCopyHint =>
-      'The folder you compared keeps its copies';
+      'As cópias na pasta comparada serão mantidas';
 
   @override
-  String get batchReplaceTransportMove => 'Move into the library';
+  String get batchReplaceTransportMove => 'Mover para a biblioteca';
 
   @override
   String get batchReplaceTransportMoveHint =>
-      'The folder you compared loses the files that were used';
+      'Os arquivos usados serão removidos da pasta comparada';
 
   @override
-  String get batchReplaceOriginalSection => 'Old files';
+  String get batchReplaceOriginalSection => 'Arquivos antigos';
 
   @override
-  String get batchReplaceOriginalHide => 'Keep them, hidden';
+  String get batchReplaceOriginalHide => 'Manter ocultos';
 
   @override
   String get batchReplaceOriginalHideHint =>
-      'The files stay on disk, out of the library';
+      'Os arquivos permanecem no dispositivo, fora da biblioteca';
 
   @override
-  String get batchReplaceOriginalDelete => 'Delete them';
+  String get batchReplaceOriginalDelete => 'Excluir';
 
   @override
   String get batchReplaceOriginalDeleteHint =>
-      'The files are deleted from disk for good';
+      'Os arquivos serão excluídos permanentemente do dispositivo';
 
   @override
   String batchReplaceRun(int count) {
-    return 'Replace $count songs';
+    return 'Substituir $count músicas';
   }
 
   @override
-  String get batchReplaceDeleteTitle => 'Delete the old files?';
+  String get batchReplaceDeleteTitle => 'Excluir os arquivos antigos?';
 
   @override
   String batchReplaceDeleteMessage(int count) {
-    return '$count original files will be deleted from disk. This cannot be undone.';
+    return '$count arquivos originais serão excluídos do dispositivo. Esta ação não pode ser desfeita.';
   }
 
   @override
-  String get batchReplaceDeleteConfirm => 'Delete';
+  String get batchReplaceDeleteConfirm => 'Excluir';
 
   @override
-  String get batchReplaceOutcomeTitle => 'Batch replace';
+  String get batchReplaceOutcomeTitle => 'Substituição em lote';
 
   @override
   String batchReplaceOutcomeDone(int count) {
-    return 'Replaced $count songs.';
+    return '$count músicas substituídas.';
   }
 
   @override
   String batchReplaceOutcomeDoneFailed(int count, int failed) {
-    return 'Replaced $count songs, $failed could not be replaced.';
+    return '$count músicas substituídas; não foi possível substituir $failed.';
   }
 
   @override
   String batchReplaceOutcomeStopped(int count) {
-    return 'Stopped after replacing $count songs.';
+    return 'Parou após substituir $count músicas.';
   }
 
   @override
   String batchReplaceOutcomeStoppedFailed(int count, int failed) {
-    return 'Stopped after replacing $count songs, $failed could not be replaced.';
+    return 'Parou após substituir $count músicas; não foi possível substituir $failed.';
   }
 
   @override
@@ -5826,97 +5838,97 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get settingsSearchBatchReplaceTitle => 'Batch Replace Songs';
+  String get settingsSearchBatchReplaceTitle => 'Substituir músicas em lote';
 
   @override
   String get settingsSearchBatchReplaceSubtitle =>
-      'Swap songs for better files from another folder';
+      'Troque músicas por arquivos melhores de outra pasta';
 
   @override
-  String get storageWispieCacheTitle => 'wispie cache';
+  String get storageWispieCacheTitle => 'Cache do wispie';
 
   @override
   String get storageWispieCacheSubtitle =>
-      'Rebuilt on demand. Nothing here is your data.';
+      'Reconstruído quando necessário. Nada aqui é dado seu.';
 
   @override
-  String get storageCleanCacheAction => 'Clean up';
+  String get storageCleanCacheAction => 'Limpar';
 
   @override
-  String get storageCleanCacheTitle => 'Clean up cache?';
+  String get storageCleanCacheTitle => 'Limpar o cache?';
 
   @override
   String get storageCleanCacheBody =>
-      'Deletes cached files nothing refers to, empty files, and anything over its size limit. Everything is rebuilt when needed.';
+      'Exclui arquivos em cache sem referências, arquivos vazios e tudo o que exceder o limite de tamanho. Tudo será reconstruído quando necessário.';
 
   @override
   String storageCleanCacheSuccess(String size) {
-    return 'Cleaned $size';
+    return 'Cache limpo: $size';
   }
 
   @override
-  String get storageCleanCacheNothing => 'Cache is already tidy';
+  String get storageCleanCacheNothing => 'O cache já está organizado';
 
   @override
   String storageCleanCacheError(String error) {
-    return 'Error cleaning cache: $error';
+    return 'Erro ao limpar o cache: $error';
   }
 
   @override
-  String get storageCacheEmpty => 'Empty';
+  String get storageCacheEmpty => 'Vazio';
 
   @override
   String storageClearBucketTitle(String name) {
-    return 'Clear $name?';
+    return 'Limpar $name?';
   }
 
   @override
   String get storageClearBucketBody =>
-      'These files are rebuilt the next time they are needed.';
+      'Esses arquivos serão reconstruídos quando forem necessários.';
 
   @override
   String storageClearBucketSuccess(String name) {
-    return 'Cleared $name';
+    return '$name limpo';
   }
 
   @override
   String storageClearBucketError(String name, String error) {
-    return 'Error clearing $name: $error';
+    return 'Erro ao limpar $name: $error';
   }
 
   @override
-  String get storageClearWispieCacheTitle => 'Clear wispie cache?';
+  String get storageClearWispieCacheTitle => 'Limpar o cache do wispie?';
 
   @override
   String get storageClearWispieCacheBody =>
-      'Every cached file is deleted and rebuilt when needed. Your library, playlists and statistics are untouched.';
+      'Todos os arquivos em cache serão excluídos e reconstruídos quando necessário. Sua biblioteca, playlists e estatísticas não serão afetadas.';
 
   @override
-  String get storageClearWispieCacheSuccess => 'wispie cache cleared';
+  String get storageClearWispieCacheSuccess => 'Cache do wispie limpo';
 
   @override
-  String get storageRemoteArtTitle => 'Downloaded Artwork';
+  String get storageRemoteArtTitle => 'Capas baixadas';
 
   @override
-  String get storageRemoteArtSubtitle => 'Artwork fetched online for themes';
+  String get storageRemoteArtSubtitle => 'Capas obtidas online para os temas';
 
   @override
-  String get storageNotificationCacheTitle => 'Notification Art';
+  String get storageNotificationCacheTitle => 'Capas das notificações';
 
   @override
   String get storageNotificationCacheSubtitle =>
-      'Square covers for the media notification';
+      'Capas quadradas para a notificação de mídia';
 
   @override
-  String get storageYoutubeCacheTitle => 'Online Pages';
+  String get storageYoutubeCacheTitle => 'Páginas online';
 
   @override
   String get storageYoutubeCacheSubtitle =>
-      'Cached YouTube pages and the home feed';
+      'Páginas do YouTube e feed inicial armazenados em cache';
 
   @override
   String storageBackupsLocation(String path) {
-    return 'Saved in $path';
+    return 'Salvo em $path';
   }
 }
 
@@ -5966,6 +5978,29 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get settingsPageHomeNavigationSubtitle =>
       'Secções do início, listas, ações rápidas';
+
+  @override
+  String get settingsPageOnlineTitle => 'Online';
+
+  @override
+  String get settingsPageOnlineSubtitle => 'Catálogo e conta do YouTube';
+
+  @override
+  String get onlineSettingsGroup => 'YouTube';
+
+  @override
+  String get settingsYoutubeEnabledTitle => 'YouTube';
+
+  @override
+  String get settingsYoutubeEnabledSubtitle =>
+      'Mostrar o separador do YouTube e reproduzir música do YouTube. Se desativares esta opção, o separador é removido por completo.';
+
+  @override
+  String get settingsYoutubeAccountSubtitle =>
+      'Inicia sessão para importar as tuas playlists';
+
+  @override
+  String get settingsKwOnline => 'youtube,online,streaming,conta,importação';
 
   @override
   String get settingsPageSyncTitle => 'Sincronização';
@@ -6458,6 +6493,9 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get queueRemoveFromQueueTooltip => 'Remover da fila';
 
   @override
+  String get queueRemovedLabel => 'Removida da fila';
+
+  @override
   String get queueUndo => 'Desfazer';
 
   @override
@@ -6704,6 +6742,26 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get syncAlbumArtHint => 'Opções de capa do álbum online';
+
+  @override
+  String get syncQueueHistory => 'Histórico da fila';
+
+  @override
+  String get syncQueueHistoryHint => 'Filas reproduzidas recentemente';
+
+  @override
+  String get syncCurrentQueue => 'Fila atual';
+
+  @override
+  String get syncCurrentQueueHint =>
+      'Enviada automaticamente; transferida apenas quando sincronizas manualmente';
+
+  @override
+  String get syncPreferCloudQueue => 'Priorizar fila da nuvem';
+
+  @override
+  String get syncPreferCloudQueueHint =>
+      'Ativado: sincronizar agora substitui a fila deste dispositivo pela fila da nuvem. Desativado: a fila deste dispositivo é mantida e enviada.';
 
   @override
   String get syncPrivacy => 'Privacidade';
@@ -6971,6 +7029,13 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get appearanceImmersiveSubtitle =>
       'Capa do player em ecrã inteiro e ecrãs de detalhes com gradiente';
+
+  @override
+  String get appearancePlayerSwipeTitle => 'Deslizar para mudar de painel';
+
+  @override
+  String get appearancePlayerSwipeSubtitle =>
+      'Desliza para a esquerda ou para a direita para alternar entre letras, leitor e fila. Desativa esta opção para mudares de faixa.';
 
   @override
   String get appearanceGroupPlayerMotion => 'Movimento do player';
@@ -7487,6 +7552,9 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get profileDefaultName => 'Utilizador';
 
   @override
+  String get appName => 'wispie';
+
+  @override
   String profileAppVersion(String version) {
     return 'wispie v$version';
   }
@@ -7621,6 +7689,28 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get storageLyricsCacheSubtitle =>
       'Disponibilidade e texto das letras em cache';
+
+  @override
+  String get storageOnlineAudioTitle => 'Cache de áudio online';
+
+  @override
+  String get storageOnlineAudioSubtitle =>
+      'Faixas transmitidas mantidas no dispositivo para reprodução imediata, mesmo offline';
+
+  @override
+  String get storageClearOnlineAudioTitle => 'Limpar a cache de áudio online?';
+
+  @override
+  String get storageClearOnlineAudioBody =>
+      'As faixas transferidas voltam a ser transmitidas pela Internet. A tua biblioteca, playlists e favoritos não são afetados.';
+
+  @override
+  String get storageClearOnlineAudioSuccess => 'Cache de áudio online limpo';
+
+  @override
+  String storageClearOnlineAudioError(Object error) {
+    return 'Erro ao limpar a cache de áudio online: $error';
+  }
 
   @override
   String get storageBlurredCacheTitle => 'Cache de desfoque';
@@ -8213,6 +8303,10 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get settingsKwSidebar => 'barra lateral,painel,desktop,fila,letras';
 
   @override
+  String get settingsKwPlayerSwipe =>
+      'deslizar,gesto,painéis,letras,fila,saltar,faixa';
+
+  @override
   String get settingsKwKeepAwake => 'sono,manter ativo,ecrã,letras';
 
   @override
@@ -8312,6 +8406,10 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get settingsKwBulkRename =>
       'renomear,nomes de ficheiro,lote,massa,formato,nomenclatura';
+
+  @override
+  String get settingsKwBatchReplace =>
+      'substituir,trocar,melhorar,flac,sem perdas,lote,comparar,pasta,duplicado';
 
   @override
   String get settingsKwManageStorage => 'disco,espaço,cache,limpeza';
@@ -8541,6 +8639,13 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String backupRestoreFailed(Object error) {
     return 'Falha ao restaurar backup: $error';
   }
+
+  @override
+  String get backupRestoreReloadingLibrary => 'A recarregar a biblioteca…';
+
+  @override
+  String get backupRestoreRefreshingPlaylists =>
+      'A atualizar playlists e mixes…';
 
   @override
   String get backupDeleteTitle => 'Eliminar backup';
@@ -9285,6 +9390,9 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get homeRecentQueues => 'Filas recentes';
 
   @override
+  String get homePlaylists => 'As tuas playlists';
+
+  @override
   String get homeForYou => 'Para ti';
 
   @override
@@ -9881,6 +9989,11 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
       'Nenhuma letra encontrada. Tenta outro título ou artista, ou verifica a tua ligação.';
 
   @override
+  String lyricsSearchFailed(String error) {
+    return 'Falha ao pesquisar letras: $error';
+  }
+
+  @override
   String get lyricsInstrumentalWarning =>
       'Marcada como instrumental. Aplicar isso apaga qualquer letra armazenada no ficheiro.';
 
@@ -10337,6 +10450,11 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   }
 
   @override
+  String statsDayTotals(String time, String plays) {
+    return '$time · $plays';
+  }
+
+  @override
   String get statsLibraryExplored => 'Biblioteca explorada';
 
   @override
@@ -10611,7 +10729,64 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   String get onlineNoResults => 'Não foram encontradas faixas';
 
   @override
+  String get onlineArtistNotFound =>
+      'Nenhum artista do YouTube encontrado com esse nome.';
+
+  @override
+  String get onlineAlbumNotFound =>
+      'Nenhum álbum do YouTube encontrado com esse nome.';
+
+  @override
+  String get onlineYoutubeError =>
+      'Não foi possível carregar conteúdo do YouTube.';
+
+  @override
+  String get onlineYoutubeErrorNetwork =>
+      'Não foi possível aceder ao YouTube. Verifica a tua ligação.';
+
+  @override
+  String get onlineYoutubeErrorRateLimited =>
+      'O YouTube está a limitar os pedidos. Aguarda um pouco e tenta novamente.';
+
+  @override
+  String get onlineYoutubeErrorUnavailable =>
+      'Este vídeo não está disponível no YouTube.';
+
+  @override
+  String get onlineYoutubeErrorBlocked =>
+      'O YouTube recusou esta faixa. Experimenta outro resultado.';
+
+  @override
+  String get onlineYoutubeErrorResponse =>
+      'O YouTube devolveu uma resposta inesperada.';
+
+  @override
   String get onlineUnavailable => 'Indisponível no YouTube';
+
+  @override
+  String get onlineLibraryAdd => 'Adicionar à biblioteca';
+
+  @override
+  String get onlineLibraryRemove => 'Remover da biblioteca';
+
+  @override
+  String onlineLibraryAdded(String title) {
+    return '$title foi adicionado à tua biblioteca';
+  }
+
+  @override
+  String onlineLibraryRemoved(String title) {
+    return '$title foi removido da tua biblioteca';
+  }
+
+  @override
+  String onlineLibraryAddFailed(String title) {
+    return 'Não foi possível guardar $title na tua biblioteca';
+  }
+
+  @override
+  String get songMenuLibrarySaveHint =>
+      'Manter esta faixa transmitida na tua biblioteca';
 
   @override
   String get searchEmptyTitle => 'Pesquisa na tua coleção de músicas';
@@ -10713,6 +10888,25 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get aboutViewRelease => 'Ver versão';
+
+  @override
+  String get aboutSupportGroup => 'Apoio';
+
+  @override
+  String get aboutContactTitle => 'Contacta-me';
+
+  @override
+  String get aboutContactSubtitle =>
+      'Problemas, ideias ou qualquer outra coisa';
+
+  @override
+  String get aboutIssuesTitle => 'Relatar um problema';
+
+  @override
+  String get aboutIssuesSubtitle => 'Abre o repositório do wispie no GitHub';
+
+  @override
+  String get aboutLinkFailed => 'Não foi possível abrir a ligação';
 
   @override
   String get aboutDebugGroup => 'Depuração';
@@ -11002,4 +11196,683 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get barSeekLabel => 'Procurar';
+
+  @override
+  String get indexerOpOptimizeDatabasesTitle => 'Otimizar bases de dados';
+
+  @override
+  String get indexerOpOptimizeDatabasesDesc =>
+      'Limpar e otimizar todas as bases de dados da app';
+
+  @override
+  String get indexerOpRepairLinksTitle => 'Reparar ligações da biblioteca';
+
+  @override
+  String get indexerOpRepairLinksDesc =>
+      'Voltar a associar capas de álbuns e caminhos de ficheiros após um restauro ou mudança de dispositivo';
+
+  @override
+  String get indexerOpMatchIdentityTitle => 'Encontrar músicas pelo áudio';
+
+  @override
+  String get indexerOpMatchIdentityDesc =>
+      'Criar uma impressão digital de cada ficheiro para preservar favoritos, playlists e estatísticas após renomeares músicas e encontrar correspondências entre dispositivos sincronizados';
+
+  @override
+  String get indexerOpCoverCacheTitle => 'Reconstruir caches de capas';
+
+  @override
+  String get indexerOpCoverCacheDesc =>
+      'Extrair e guardar capas incorporadas nos ficheiros';
+
+  @override
+  String get indexerOpSearchIndexTitle => 'Reconstruir índices de pesquisa';
+
+  @override
+  String get indexerOpSearchIndexDesc =>
+      'Reconstruir o índice de pesquisa de todas as músicas';
+
+  @override
+  String get indexerOpLyricsCacheTitle => 'Reconstruir cache de letras';
+
+  @override
+  String get indexerOpLyricsCacheDesc =>
+      'Extrair e guardar as letras de todas as músicas';
+
+  @override
+  String get indexerOpWaveformCacheTitle =>
+      'Reconstruir cache de formas de onda';
+
+  @override
+  String get indexerOpWaveformCacheDesc =>
+      'Gerar dados de forma de onda para todas as músicas';
+
+  @override
+  String get indexerOpColorCacheTitle => 'Reconstruir temas a partir das capas';
+
+  @override
+  String get indexerOpColorCacheDesc =>
+      'Extrair temas de cores de todas as capas';
+
+  @override
+  String get indexerOpBlurredCacheTitle =>
+      'Reconstruir cache de fundos desfocados';
+
+  @override
+  String get indexerOpBlurredCacheDesc =>
+      'Pré-gerar fundos desfocados otimizados';
+
+  @override
+  String get indexerOpRecommendationsTitle => 'Reconstruir recomendações';
+
+  @override
+  String get indexerOpRecommendationsDesc =>
+      'Forçar a reconstrução de todas as playlists de recomendação';
+
+  @override
+  String get indexerOpArtistAlbumArtTitle => 'Obter capas de artistas e álbuns';
+
+  @override
+  String get indexerOpArtistAlbumArtDesc =>
+      'Obter online as capas em falta de artistas e álbuns, começando pelas maiores coleções';
+
+  @override
+  String get indexerCounting => 'A contar…';
+
+  @override
+  String get indexerWorking => 'A processar…';
+
+  @override
+  String get indexerStopping => 'A parar…';
+
+  @override
+  String indexerProgressPercent(int percent) {
+    return 'A processar $percent%';
+  }
+
+  @override
+  String indexerProgressFailed(int done, int total, int failed) {
+    return 'Processados $done/$total ($failed com falha)';
+  }
+
+  @override
+  String indexerStoppedAt(int done, int total) {
+    return 'Parado em $done/$total';
+  }
+
+  @override
+  String indexerFinished(int processed, int failed) {
+    return 'Concluído: $processed processados, $failed com falha';
+  }
+
+  @override
+  String get indexerNothingToDo => 'Nada a fazer; tudo já está atualizado';
+
+  @override
+  String get indexerErrorBusy => 'Já está a ser executado em segundo plano';
+
+  @override
+  String get indexerErrorOffline =>
+      'A ligação foi perdida; o restante será retomado automaticamente';
+
+  @override
+  String get indexerStop => 'Parar';
+
+  @override
+  String get youtubeAccountTitle => 'Conta do YouTube';
+
+  @override
+  String get youtubeAccountLoading => 'A carregar a tua conta do YouTube…';
+
+  @override
+  String get youtubeAccountSignedOutTitle =>
+      'Traz as tuas playlists do YouTube para aqui';
+
+  @override
+  String get youtubeAccountSignedOutBody =>
+      'Inicia sessão para importar as tuas playlists do YouTube para esta biblioteca. A pesquisa, a reprodução, os favoritos e as estatísticas de audição funcionam sem conta.';
+
+  @override
+  String get youtubeAccountSignIn => 'Iniciar sessão com o Google';
+
+  @override
+  String get youtubeAccountSignInTryWeb => 'Tentar iniciar sessão na app';
+
+  @override
+  String get youtubeAccountSignInHint =>
+      'Abre a página oficial de início de sessão do Google na app. O wispie mantém a sessão do YouTube neste dispositivo e nunca vê a tua palavra-passe.';
+
+  @override
+  String get youtubeAccountSignInHintManual =>
+      'Inicia sessão no YouTube num navegador e transfere os cookies da sessão: o ecrã da conta aceita um cabeçalho Cookie, uma exportação cookies.txt ou um JSON de cookies. Os cookies ficam neste dispositivo e são tudo o que o wispie precisa.';
+
+  @override
+  String get youtubeAccountWebTitle => 'Início de sessão do Google';
+
+  @override
+  String get youtubeAccountWebTrouble =>
+      'Problemas ao iniciar sessão? Usa cookies';
+
+  @override
+  String get youtubeAccountWebTroubleAction => 'Usar cookies';
+
+  @override
+  String get youtubeAccountWebFailed =>
+      'Não foi possível carregar a página. Verifica a ligação ou usa cookies.';
+
+  @override
+  String get youtubeAccountWebUnsupported =>
+      'Esta plataforma não tem um navegador integrado na app.';
+
+  @override
+  String get youtubeAccountWebBlockedTitle =>
+      'O Google bloqueou o início de sessão na app';
+
+  @override
+  String get youtubeAccountWebBlockedBody =>
+      'O Google não permite iniciar sessão dentro de outras apps, pelo que uma palavra-passe escrita aqui não será aceite. Inicia sessão no YouTube no navegador e importa os cookies da sessão no ecrã da conta. O resultado é o mesmo e nunca escreves a tua palavra-passe no wispie.';
+
+  @override
+  String get youtubeAccountWebPasskeyTitle =>
+      'O Google está a pedir uma chave de acesso';
+
+  @override
+  String get youtubeAccountWebPasskeyBody =>
+      'Não é possível usar uma chave de acesso dentro de outra app, pelo que esta etapa não pode ser concluída aqui. Inicia sessão com a tua palavra-passe; o resto do processo funciona normalmente.';
+
+  @override
+  String get youtubeAccountWebPasskeyAction => 'Usar a minha palavra-passe';
+
+  @override
+  String get youtubeAccountOpenYouTube => 'Abrir youtube.com';
+
+  @override
+  String get youtubeSearchSongs => 'Músicas';
+
+  @override
+  String get youtubeSearchAlbums => 'Álbuns';
+
+  @override
+  String get youtubeSearchPlaylists => 'Playlists';
+
+  @override
+  String get youtubeSearchArtists => 'Artistas';
+
+  @override
+  String get youtubeArtistSongsTitle => 'Músicas mais populares';
+
+  @override
+  String get youtubeArtistAlbumsTitle => 'Álbuns e singles';
+
+  @override
+  String get youtubeCollectionEmpty => 'Não há nada para reproduzir aqui.';
+
+  @override
+  String get youtubeAccountSignOut => 'Sair';
+
+  @override
+  String youtubeAccountSignedInAs(String name) {
+    return 'Sessão iniciada como $name';
+  }
+
+  @override
+  String get youtubeAccountSessionExpired =>
+      'A tua sessão do YouTube expirou. Inicia sessão novamente para continuares a sincronizar playlists.';
+
+  @override
+  String get youtubeAccountCookiesTitle => 'Colar cookies do YouTube';
+
+  @override
+  String get youtubeAccountCookiesBody =>
+      'Inicia sessão no YouTube num navegador e copia o cabeçalho do pedido Cookie de qualquer pedido a youtube.com (ferramentas de programador: Rede → Cabeçalhos), ou exporta um ficheiro cookies.txt e cola-o aqui. Só serão guardados cookies de youtube.com.';
+
+  @override
+  String get youtubeAccountCookiesHint =>
+      'Cabeçalho Cookie, cookies.txt ou JSON de cookies exportados';
+
+  @override
+  String get youtubeAccountCookiesImport => 'Importar cookies';
+
+  @override
+  String get youtubeAccountCookiesFile => 'Escolher um ficheiro cookies.txt';
+
+  @override
+  String get youtubeAccountCookiesEmpty =>
+      'Nenhum cookie encontrado nesse texto.';
+
+  @override
+  String get youtubeAccountCookiesUnreadable =>
+      'Não foi possível ler esse ficheiro.';
+
+  @override
+  String get youtubeAccountPlaylistsTitle => 'As tuas playlists';
+
+  @override
+  String get youtubeFeedForYou => 'Para ti';
+
+  @override
+  String get youtubeFeedFromLibrary => 'De artistas que ouves';
+
+  @override
+  String get youtubeFeedFilterPlaylists => 'Escolher playlists';
+
+  @override
+  String get youtubeFeedPlaylistsHidden =>
+      'Todas as playlists estão ocultas neste separador.';
+
+  @override
+  String get youtubeFeedPlaylists => 'As tuas playlists';
+
+  @override
+  String get youtubeFeedSignInTitle => 'Inicia sessão para teres o teu feed';
+
+  @override
+  String get youtubeFeedSignInBody =>
+      'O feed inicial do YouTube segue aquilo a que assistes e os canais que subscreves. Ao iniciares sessão, também podes pré-visualizar e importar as tuas playlists.';
+
+  @override
+  String get youtubeFeedSignInAction => 'Iniciar sessão';
+
+  @override
+  String get youtubeFeedEmpty => 'Ainda não há nada aqui. Pesquisa algo acima.';
+
+  @override
+  String get youtubePreviewEmpty =>
+      'Esta playlist não tem faixas reproduzíveis.';
+
+  @override
+  String get youtubePreviewPlayAll => 'Reproduzir tudo';
+
+  @override
+  String get youtubeAccountLikedVideos => 'Vídeos de que gostaste';
+
+  @override
+  String youtubeAccountPlaylistTracks(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count faixas',
+      one: '1 faixa',
+      zero: 'Nenhuma faixa',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get youtubeAccountImport => 'Importar';
+
+  @override
+  String get youtubeAccountSync => 'Sincronizar';
+
+  @override
+  String get youtubeAccountSyncAll =>
+      'Sincronizar todas as playlists importadas';
+
+  @override
+  String get youtubeAccountSyncHint =>
+      'A sincronização apenas adiciona faixas. Nada é removido das tuas playlists.';
+
+  @override
+  String youtubeAccountImportDone(int count, String name) {
+    return '$count faixas importadas de $name';
+  }
+
+  @override
+  String youtubeAccountSyncDone(int count, String name) {
+    return '$count novas faixas adicionadas a $name';
+  }
+
+  @override
+  String youtubeAccountSyncUpToDate(String name) {
+    return '$name está atualizado';
+  }
+
+  @override
+  String youtubeAccountSyncLimited(int count) {
+    return 'Apenas as primeiras $count novas faixas foram adicionadas. Sincroniza novamente para obteres as restantes.';
+  }
+
+  @override
+  String get youtubeAccountPlaylistEmpty =>
+      'Esta playlist não tem faixas reproduzíveis.';
+
+  @override
+  String get youtubeAccountLoadFailed =>
+      'Não foi possível carregar as tuas playlists.';
+
+  @override
+  String get youtubeAccountTryAgain => 'Tentar novamente';
+
+  @override
+  String get youtubeAccountErrorNetwork =>
+      'Não foi possível aceder ao YouTube. Verifica a ligação e tenta novamente.';
+
+  @override
+  String get youtubeAccountErrorUnauthorized =>
+      'A tua sessão do YouTube já não é válida. Inicia sessão novamente.';
+
+  @override
+  String get youtubeAccountErrorResponse =>
+      'O YouTube devolveu uma resposta inesperada.';
+
+  @override
+  String get youtubeAccountErrorRateLimited =>
+      'O YouTube está a limitar os pedidos. Tenta novamente dentro de alguns minutos.';
+
+  @override
+  String get youtubeAccountErrorStorage =>
+      'Não foi possível guardar a sessão de forma segura neste dispositivo.';
+
+  @override
+  String get youtubeAccountErrorGeneric =>
+      'Não foi possível aceder à tua conta do YouTube.';
+
+  @override
+  String get playlistSyncFromYoutube => 'Sincronizar do YouTube';
+
+  @override
+  String get playlistYoutubeBadge => 'YouTube';
+
+  @override
+  String get batchReplaceTitle => 'Substituição em lote';
+
+  @override
+  String get batchReplaceIntro =>
+      'Escolhe uma pasta para comparar com a tua biblioteca. As músicas cujos ficheiros correspondam serão propostas para substituição.';
+
+  @override
+  String get batchReplaceFolderLabel => 'Pasta a comparar';
+
+  @override
+  String get batchReplaceNoFolder => 'Nenhuma pasta selecionada';
+
+  @override
+  String get batchReplaceChooseFolder => 'Escolher pasta';
+
+  @override
+  String get batchReplaceChangeFolder => 'Alterar';
+
+  @override
+  String get batchReplaceSubfolders => 'Incluir subpastas';
+
+  @override
+  String get batchReplaceInsideLibrary =>
+      'Essa pasta já faz parte da tua biblioteca. Escolhe uma pasta fora da biblioteca.';
+
+  @override
+  String get batchReplacePhaseListing => 'A listar ficheiros';
+
+  @override
+  String get batchReplacePhaseReading => 'A ler etiquetas';
+
+  @override
+  String get batchReplacePhaseReplacing => 'A substituir músicas';
+
+  @override
+  String get batchReplaceStopping => 'A parar';
+
+  @override
+  String batchReplaceCompareError(Object error) {
+    return 'Não foi possível comparar essa pasta: $error';
+  }
+
+  @override
+  String batchReplaceMatched(int count) {
+    return '$count músicas correspondentes';
+  }
+
+  @override
+  String batchReplaceCompared(int files, int songs) {
+    return '$files ficheiros comparados com $songs músicas da biblioteca';
+  }
+
+  @override
+  String get batchReplaceSelectAll => 'Selecionar tudo';
+
+  @override
+  String get batchReplaceSelectNone => 'Desmarcar tudo';
+
+  @override
+  String batchReplaceConfidence(int percent) {
+    return '$percent%';
+  }
+
+  @override
+  String get batchReplaceSignalTitle => 'Título';
+
+  @override
+  String get batchReplaceSignalFilename => 'Nome do ficheiro';
+
+  @override
+  String get batchReplaceSignalArtist => 'Artista';
+
+  @override
+  String get batchReplaceSignalAlbum => 'Álbum';
+
+  @override
+  String get batchReplaceSignalDuration => 'Duração';
+
+  @override
+  String get batchReplaceLengthDiffers => 'a duração é diferente';
+
+  @override
+  String batchReplaceUnmatched(int count) {
+    return 'Nenhuma correspondência para $count ficheiros';
+  }
+
+  @override
+  String batchReplaceAndMore(int count) {
+    return 'e mais $count';
+  }
+
+  @override
+  String get batchReplaceCompareAgain => 'Comparar novamente';
+
+  @override
+  String get batchReplaceNoMatchesTitle => 'Nenhuma correspondência';
+
+  @override
+  String batchReplaceNoMatchesMessage(int files) {
+    return 'Nenhum dos $files ficheiros dessa pasta parece corresponder a uma música que já esteja na tua biblioteca.';
+  }
+
+  @override
+  String get batchReplaceNothingSelected => 'Nada selecionado';
+
+  @override
+  String get batchReplaceCollisionTitle => 'Os ficheiros já existem';
+
+  @override
+  String batchReplaceCollisionMessage(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Já existem $count ficheiros de substituição no local para onde seriam copiados. Queres substituí-los ou ignorá-los?',
+      one:
+          'Já existe um ficheiro de substituição no local para onde seria copiado. Queres substituí-lo ou ignorá-lo?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get batchReplaceCollisionReplace => 'Substituir';
+
+  @override
+  String get batchReplaceCollisionSkip => 'Ignorar';
+
+  @override
+  String get batchReplaceOptionsTitle => 'Substituir músicas';
+
+  @override
+  String get batchReplaceTransportSection => 'Ficheiros novos';
+
+  @override
+  String get batchReplaceTransportCopy => 'Copiar para a biblioteca';
+
+  @override
+  String get batchReplaceTransportCopyHint =>
+      'As cópias na pasta comparada serão mantidas';
+
+  @override
+  String get batchReplaceTransportMove => 'Mover para a biblioteca';
+
+  @override
+  String get batchReplaceTransportMoveHint =>
+      'Os ficheiros usados serão removidos da pasta comparada';
+
+  @override
+  String get batchReplaceOriginalSection => 'Ficheiros antigos';
+
+  @override
+  String get batchReplaceOriginalHide => 'Manter ocultos';
+
+  @override
+  String get batchReplaceOriginalHideHint =>
+      'Os ficheiros permanecem no dispositivo, fora da biblioteca';
+
+  @override
+  String get batchReplaceOriginalDelete => 'Eliminar';
+
+  @override
+  String get batchReplaceOriginalDeleteHint =>
+      'Os ficheiros serão eliminados permanentemente do dispositivo';
+
+  @override
+  String batchReplaceRun(int count) {
+    return 'Substituir $count músicas';
+  }
+
+  @override
+  String get batchReplaceDeleteTitle => 'Eliminar os ficheiros antigos?';
+
+  @override
+  String batchReplaceDeleteMessage(int count) {
+    return '$count ficheiros originais serão eliminados do dispositivo. Esta ação não pode ser anulada.';
+  }
+
+  @override
+  String get batchReplaceDeleteConfirm => 'Eliminar';
+
+  @override
+  String get batchReplaceOutcomeTitle => 'Substituição em lote';
+
+  @override
+  String batchReplaceOutcomeDone(int count) {
+    return '$count músicas substituídas.';
+  }
+
+  @override
+  String batchReplaceOutcomeDoneFailed(int count, int failed) {
+    return '$count músicas substituídas; não foi possível substituir $failed.';
+  }
+
+  @override
+  String batchReplaceOutcomeStopped(int count) {
+    return 'Parado após substituir $count músicas.';
+  }
+
+  @override
+  String batchReplaceOutcomeStoppedFailed(int count, int failed) {
+    return 'Parado após substituir $count músicas; não foi possível substituir $failed.';
+  }
+
+  @override
+  String batchReplaceFailureError(Object error) {
+    return '$error';
+  }
+
+  @override
+  String get settingsSearchBatchReplaceTitle => 'Substituir músicas em lote';
+
+  @override
+  String get settingsSearchBatchReplaceSubtitle =>
+      'Troca músicas por ficheiros melhores de outra pasta';
+
+  @override
+  String get storageWispieCacheTitle => 'Cache do wispie';
+
+  @override
+  String get storageWispieCacheSubtitle =>
+      'Reconstruído quando necessário. Nada aqui são dados teus.';
+
+  @override
+  String get storageCleanCacheAction => 'Limpar';
+
+  @override
+  String get storageCleanCacheTitle => 'Limpar a cache?';
+
+  @override
+  String get storageCleanCacheBody =>
+      'Elimina ficheiros em cache sem referências, ficheiros vazios e tudo o que exceda o limite de tamanho. Tudo será reconstruído quando necessário.';
+
+  @override
+  String storageCleanCacheSuccess(String size) {
+    return 'Cache limpa: $size';
+  }
+
+  @override
+  String get storageCleanCacheNothing => 'A cache já está organizada';
+
+  @override
+  String storageCleanCacheError(String error) {
+    return 'Erro ao limpar a cache: $error';
+  }
+
+  @override
+  String get storageCacheEmpty => 'Vazio';
+
+  @override
+  String storageClearBucketTitle(String name) {
+    return 'Limpar $name?';
+  }
+
+  @override
+  String get storageClearBucketBody =>
+      'Estes ficheiros serão reconstruídos quando forem necessários.';
+
+  @override
+  String storageClearBucketSuccess(String name) {
+    return '$name limpa';
+  }
+
+  @override
+  String storageClearBucketError(String name, String error) {
+    return 'Erro ao limpar $name: $error';
+  }
+
+  @override
+  String get storageClearWispieCacheTitle => 'Limpar a cache do wispie?';
+
+  @override
+  String get storageClearWispieCacheBody =>
+      'Todos os ficheiros em cache serão eliminados e reconstruídos quando necessário. A tua biblioteca, playlists e estatísticas não serão afetadas.';
+
+  @override
+  String get storageClearWispieCacheSuccess => 'Cache do wispie limpa';
+
+  @override
+  String get storageRemoteArtTitle => 'Capas transferidas';
+
+  @override
+  String get storageRemoteArtSubtitle => 'Capas obtidas online para os temas';
+
+  @override
+  String get storageNotificationCacheTitle => 'Capas das notificações';
+
+  @override
+  String get storageNotificationCacheSubtitle =>
+      'Capas quadradas para a notificação multimédia';
+
+  @override
+  String get storageYoutubeCacheTitle => 'Páginas online';
+
+  @override
+  String get storageYoutubeCacheSubtitle =>
+      'Páginas do YouTube e feed inicial em cache';
+
+  @override
+  String storageBackupsLocation(String path) {
+    return 'Guardado em $path';
+  }
 }
