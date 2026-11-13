@@ -5,26 +5,17 @@
 /// artist's share of the shuffle is set by its bucket and does not shrink as the
 /// library grows. Summed over the pool, the weights are 1.
 ///
-/// Pure: no I/O and no clock. Consumes [TasteSnapshot] from `taste_model.dart`.
+/// Rust-backed, with no clock reads. Consumes [TasteSnapshot] from `taste_model.dart`.
 library;
 
 import 'dart:math';
 
+import 'native_accel.dart';
 import 'shuffle_selector.dart'
     show ShuffleContext, orderQueueWeighted, selectSeedWeighted;
 import 'taste_model.dart';
 
 const double _minWeight = 1e-12;
-const double _defaultFamiliarity = 0.65;
-const double _playlistBoost = 1.1;
-const double _favoriteArtistMass = 0.5;
-const double _coPlayArtistBoost = 0.5;
-
-/// Lift for a freshly added song at maximum discovery, and at maximum
-/// familiarity. Familiar means "play what I know", so a new arrival barely
-/// tilts the odds; discovery is where a new arrival should actually be noticed.
-const double _freshnessBoostAtDiscovery = 0.30;
-const double _freshnessBoostAtFamiliar = 0.06;
 
 /// A song, or a merge group of songs, that smart shuffle may choose.
 ///
@@ -51,53 +42,9 @@ class SmartCandidate<T> {
   });
 }
 
-enum _Bucket { recent, lapsed, discovery }
-
 /// Queue spacing in slots, derived from how many artists and albums carry the
 /// probability mass.
 typedef SmartSpacing = ({int artist, int album});
-
-double _lerp(double a, double b, double f) => a + (b - a) * f;
-
-double _familiarity(double f) =>
-    f.isFinite ? f.clamp(0.0, 1.0).toDouble() : _defaultFamiliarity;
-
-Map<String, _Bucket> _classifyArtists<T>(
-  List<SmartCandidate<T>> pool,
-  TasteSnapshot taste,
-) {
-  final favoritedArtists = <String>{
-    for (final c in pool)
-      if (c.isFavorite) c.artistKey,
-  };
-  return {
-    for (final c in pool)
-      c.artistKey: _bucketOf(
-        c.artistKey,
-        taste,
-        favoritedArtists.contains(c.artistKey),
-      ),
-  };
-}
-
-_Bucket _bucketOf(String key, TasteSnapshot taste, bool favorited) {
-  final artist = taste.artists[key];
-  if ((artist?.trendMass ?? 0.0) > 0) return _Bucket.recent;
-  if (favorited || (artist?.longMass ?? 0.0) > 0) return _Bucket.lapsed;
-  return _Bucket.discovery;
-}
-
-/// Bucket shares over the non-empty buckets, summing to 1. The discovery floor
-/// keeps unheard artists reachable at maximum familiarity.
-Map<_Bucket, double> _bucketShares(double f, Set<_Bucket> present) {
-  final raw = {
-    _Bucket.recent: _lerp(0.60, 0.97, f),
-    _Bucket.lapsed: _lerp(0.25, 0.03, f),
-    _Bucket.discovery: max(_lerp(0.15, 0.0, f), 1e-4),
-  };
-  final total = present.fold(0.0, (sum, b) => sum + raw[b]!);
-  return {for (final b in present) b: raw[b]! / total};
-}
 
 /// Probability of every candidate in [pool]. Keys are the candidates' items.
 ///
@@ -116,146 +63,55 @@ Map<T, double> computeSmartWeights<T>({
   double favoriteMultiplier = 1.0,
   double suggestLessMultiplier = 1.0,
 }) {
-  if (pool.isEmpty) return {};
+  final rows = _poolNative(pool);
+  final values = NativeAccel.smartWeights(
+    pool: rows,
+    taste: _tasteNative(taste),
+    familiarity: familiarity,
+    context: context.name,
+    currentArtistKey: currentArtist == null
+        ? ''
+        : tasteArtistKey(currentArtist, currentFilename ?? ''),
+    historyIndex: historyIndex,
+    historyLimit: historyLimit,
+    favoriteMultiplier: favoriteMultiplier,
+    suggestLessMultiplier: suggestLessMultiplier,
+  );
+  return {for (var i = 0; i < pool.length; i++) pool[i].item: values[i]};
+}
 
-  final f = _familiarity(familiarity);
-  final members = <String, List<int>>{};
-  for (var i = 0; i < pool.length; i++) {
-    (members[pool[i].artistKey] ??= []).add(i);
-  }
+List<Map<String, Object?>> _poolNative<T>(List<SmartCandidate<T>> pool) => [
+      for (final candidate in pool)
+        {
+          'filenames': candidate.filenames,
+          'artistKey': candidate.artistKey,
+          'albumKey': candidate.albumKey,
+          'isFavorite': candidate.isFavorite,
+          'isSuggestLess': candidate.isSuggestLess,
+          'isInPlaylist': candidate.isInPlaylist,
+        },
+    ];
 
-  final buckets = _classifyArtists(pool, taste);
-  final shares = _bucketShares(f, buckets.values.toSet());
-
-  final g = _lerp(0.7, 1.5, f);
-  final artistCoRow = currentArtist == null
-      ? null
-      : taste
-          .artistCoPlay[tasteArtistKey(currentArtist, currentFilename ?? '')];
-  final artistMass = <String, double>{};
-  final bucketTotal = <_Bucket, double>{};
-  final bucketCount = <_Bucket, int>{};
-
-  for (final entry in members.entries) {
-    final key = entry.key;
-    final bucket = buckets[key]!;
-    final artist = taste.artists[key];
-    final favorites = entry.value.where((i) => pool[i].isFavorite).length;
-
-    var mass = switch (bucket) {
-      _Bucket.recent => pow(artist?.trendMass ?? 0.0, g).toDouble(),
-      _Bucket.lapsed => pow(
-          (artist?.longMass ?? 0.0) + _favoriteArtistMass * favorites,
-          g,
-        ).toDouble(),
-      _Bucket.discovery => sqrt(entry.value.length.toDouble()),
+Map<String, Object?> _tasteNative(TasteSnapshot taste) => {
+      'songs': {
+        for (final entry in taste.songs.entries)
+          entry.key: {
+            'trendMass': entry.value.trendMass,
+            'longMass': entry.value.longMass,
+            'saturation': entry.value.saturation,
+            'skipRate': entry.value.skipRate,
+          },
+      },
+      'artists': {
+        for (final entry in taste.artists.entries)
+          entry.key: {
+            'trendMass': entry.value.trendMass,
+            'longMass': entry.value.longMass,
+          },
+      },
+      'artistCoPlay': taste.artistCoPlay,
+      'newness': taste.newness,
     };
-    if (artistCoRow != null) {
-      mass *= 1 + _coPlayArtistBoost * (artistCoRow[key] ?? 0.0);
-    }
-    if (!mass.isFinite || mass < 0) mass = 0.0;
-
-    artistMass[key] = mass;
-    bucketTotal[bucket] = (bucketTotal[bucket] ?? 0.0) + mass;
-    bucketCount[bucket] = (bucketCount[bucket] ?? 0) + 1;
-  }
-
-  final prior = _lerp(0.35, 0.08, f);
-  final freshnessBoost =
-      _lerp(_freshnessBoostAtFamiliar, _freshnessBoostAtDiscovery, 1 - f);
-  final antiRepeat = context != ShuffleContext.sort && historyLimit > 0;
-
-  final out = <T, double>{};
-  for (final entry in members.entries) {
-    final key = entry.key;
-    final bucket = buckets[key]!;
-    final total = bucketTotal[bucket]!;
-    final pArtist = total > 0 && artistMass[key]! > 0
-        ? artistMass[key]! / total
-        : 1.0 / bucketCount[bucket]!;
-
-    final indices = entry.value;
-    final signals = [for (final i in indices) _signalsOf(pool[i], taste)];
-    var maxTrend = 0.0;
-    var maxLong = 0.0;
-    for (final s in signals) {
-      maxTrend = max(maxTrend, s.trend);
-      maxLong = max(maxLong, s.long);
-    }
-
-    final raw = <double>[];
-    for (var k = 0; k < indices.length; k++) {
-      final c = pool[indices[k]];
-      final sig = signals[k];
-      var s = (maxTrend > 0 ? 0.6 * sig.trend / maxTrend : 0.0) +
-          (maxLong > 0 ? 0.4 * sig.long / maxLong : 0.0) +
-          prior;
-      s *= 1 + freshnessBoost * sig.freshness;
-      s *= (1 - sig.skipRate * 0.3).clamp(0.2, 1.0).toDouble();
-      s /= 1 + sig.saturation;
-
-      if (antiRepeat) {
-        final idx = _minHistory(c.filenames, historyIndex);
-        if (idx != null) {
-          final proximity = 1 - idx / historyLimit;
-          s *= 1 - (0.85 * proximity).clamp(0.0, 0.98).toDouble();
-        }
-      }
-      if (c.isFavorite) s *= favoriteMultiplier;
-      if (c.isSuggestLess) s *= suggestLessMultiplier;
-      if (c.isInPlaylist) s *= _playlistBoost;
-      raw.add(s.isFinite && s > 0 ? s : 0.0);
-    }
-
-    final sum = raw.fold(0.0, (a, b) => a + b);
-    for (var k = 0; k < indices.length; k++) {
-      final pSong = sum > 0 ? raw[k] / sum : 1.0 / indices.length;
-      final w = shares[bucket]! * pArtist * pSong;
-      out[pool[indices[k]].item] =
-          w.isFinite && w > _minWeight ? w : _minWeight;
-    }
-  }
-  return out;
-}
-
-class _Signals {
-  double trend = 0.0;
-  double long = 0.0;
-  double saturation = 0.0;
-  double skipRate = 0.0;
-
-  /// How new the candidate's own file is, 0..1.
-  double freshness = 0.0;
-}
-
-/// Reads the candidate's own taste. A merge group is one queue entry but each
-/// version keeps its own play counts, skip rate and newness.
-_Signals _signalsOf<T>(SmartCandidate<T> c, TasteSnapshot taste) {
-  final out = _Signals();
-  final filename = c.filenames.first;
-  final song = taste.songs[filename];
-  if (song != null) {
-    out.trend = song.trendMass;
-    out.long = song.longMass;
-    out.saturation = song.saturation;
-    out.skipRate = song.skipRate;
-  }
-  // An unplayed arrival has no `SongTaste` entry, and that is exactly the row
-  // whose newness matters.
-  out.freshness = taste.newness[filename] ?? 0.0;
-  return out;
-}
-
-/// Anti-repeat is the one signal that spans a merge group: a sibling of the
-/// track that just played must not be scheduled next.
-int? _minHistory(List<String> filenames, Map<String, int> historyIndex) {
-  int? best;
-  for (final f in filenames) {
-    final idx = historyIndex[f];
-    if (idx != null && (best == null || idx < best)) best = idx;
-  }
-  return best;
-}
 
 /// Adaptive queue spacing from the effective number of artists and albums in
 /// the recent and lapsed mass. One dominant artist gives 0, so a single-artist
@@ -266,37 +122,13 @@ SmartSpacing smartSpacing<T>({
   required TasteSnapshot taste,
   required bool streakBreakerEnabled,
 }) {
-  if (!streakBreakerEnabled || pool.isEmpty) return (artist: 0, album: 0);
-
-  final buckets = _classifyArtists(pool, taste);
-  final artistMass = <String, double>{};
-  final albumMass = <String, double>{};
-  for (final c in pool) {
-    if (buckets[c.artistKey] == _Bucket.discovery) continue;
-    final w = weights[c.item] ?? 0.0;
-    artistMass[c.artistKey] = (artistMass[c.artistKey] ?? 0.0) + w;
-    albumMass[c.albumKey] = (albumMass[c.albumKey] ?? 0.0) + w;
-  }
-
-  final nArtists = _effectiveCount(artistMass.values);
-  final nAlbums = _effectiveCount(albumMass.values);
-  return (
-    artist: max(0, min(5, nArtists - 1)),
-    album: max(0, min(4, nAlbums - 1)),
+  final values = NativeAccel.smartSpacing(
+    pool: _poolNative(pool),
+    weights: [for (final candidate in pool) weights[candidate.item] ?? 0.0],
+    taste: _tasteNative(taste),
+    streakBreakerEnabled: streakBreakerEnabled,
   );
-}
-
-/// exp(entropy) of the distribution, floored. Zero when there is no mass.
-int _effectiveCount(Iterable<double> masses) {
-  final total = masses.fold(0.0, (a, b) => a + b);
-  if (total <= 0) return 0;
-  var entropy = 0.0;
-  for (final m in masses) {
-    if (m <= 0) continue;
-    final p = m / total;
-    entropy -= p * log(p);
-  }
-  return exp(entropy).floor();
+  return (artist: values['artist']!, album: values['album']!);
 }
 
 /// Top [count] candidates by weight, with no artist holding more than
@@ -307,40 +139,12 @@ List<T> diversifiedTop<T>(
   Map<T, double> weights, {
   required int count,
 }) {
-  if (count <= 0 || pool.isEmpty) return [];
-  final n = min(count, pool.length);
-
-  final ranked = List<SmartCandidate<T>>.of(pool)
-    ..sort(
-        (a, b) => (weights[b.item] ?? 0.0).compareTo(weights[a.item] ?? 0.0));
-
-  final artistMass = <String, double>{};
-  var total = 0.0;
-  for (final c in pool) {
-    final w = weights[c.item] ?? 0.0;
-    artistMass[c.artistKey] = (artistMass[c.artistKey] ?? 0.0) + w;
-    total += w;
-  }
-
-  final taken = <String, int>{};
-  final out = <T>[];
-  final overflow = <T>[];
-  for (final c in ranked) {
-    if (out.length == n) break;
-    final share = total > 0 ? artistMass[c.artistKey]! / total : 0.0;
-    final cap = max(2, (n * share).ceil() + 1);
-    if ((taken[c.artistKey] ?? 0) < cap) {
-      out.add(c.item);
-      taken[c.artistKey] = (taken[c.artistKey] ?? 0) + 1;
-    } else {
-      overflow.add(c.item);
-    }
-  }
-  for (final item in overflow) {
-    if (out.length == n) break;
-    out.add(item);
-  }
-  return out;
+  final indices = NativeAccel.diversifiedTop(
+    pool: _poolNative(pool),
+    weights: [for (final candidate in pool) weights[candidate.item] ?? 0.0],
+    count: count,
+  );
+  return [for (final index in indices) pool[index].item];
 }
 
 /// Smart play order over [pool]: two-stage weights, adaptive spacing, then the

@@ -10,8 +10,10 @@ mod bulk_rename;
 mod cover;
 mod emitter;
 mod formats;
+mod hlc;
 mod image_sig;
 mod insights;
+mod lrclib_match;
 mod match_plan;
 mod merge_finder;
 mod meta;
@@ -19,8 +21,13 @@ mod model;
 mod palette;
 mod palette_jpeg;
 mod prosody;
+pub(crate) mod queue_ops;
+mod remembered_order;
+mod replacement;
 mod scan;
 mod search;
+mod settings_search;
+mod shuffle;
 mod tasks;
 mod waveform;
 
@@ -31,7 +38,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 4;
+pub const ABI_VERSION: u32 = 5;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -40,6 +47,26 @@ static VERSION: &[u8] = b"0.1.0\0";
 #[no_mangle]
 pub extern "C" fn wispie_core_abi_version() -> u32 {
     ABI_VERSION
+}
+
+#[no_mangle]
+pub extern "C" fn wispie_core_hlc_observe(remote: i64) {
+    hlc::observe(remote);
+}
+
+#[no_mangle]
+pub extern "C" fn wispie_core_hlc_set(last: i64) {
+    hlc::set(last);
+}
+
+#[no_mangle]
+pub extern "C" fn wispie_core_hlc_next(wall_millis: i64) -> i64 {
+    hlc::next(wall_millis)
+}
+
+#[no_mangle]
+pub extern "C" fn wispie_core_hlc_now() -> i64 {
+    hlc::now()
 }
 
 #[no_mangle]
@@ -205,6 +232,34 @@ fn dispatch(
             bytes.ok_or_else(|| "affinity requires a binary payload".to_string())?,
         )
         .map(|result| emitter.emit(Emit::Json(result))),
+        "shuffle_scores" => {
+            emitter.emit(Emit::Json(shuffle::score_candidates(&payload)));
+            Ok(())
+        }
+        "shuffle_select" => {
+            emitter.emit(Emit::Json(shuffle::select_seed(&payload)));
+            Ok(())
+        }
+        "shuffle_fallback_weights" => {
+            emitter.emit(Emit::Json(shuffle::fallback_weights(&payload)));
+            Ok(())
+        }
+        "shuffle_order" => {
+            emitter.emit(Emit::Json(shuffle::order_queue(&payload)));
+            Ok(())
+        }
+        "smart_weights" => {
+            emitter.emit(Emit::Json(shuffle::smart_weights(&payload)));
+            Ok(())
+        }
+        "smart_spacing" => {
+            emitter.emit(Emit::Json(shuffle::smart_spacing(&payload)));
+            Ok(())
+        }
+        "smart_diversified_top" => {
+            emitter.emit(Emit::Json(shuffle::diversified_top(&payload)));
+            Ok(())
+        }
         "palette" => palette::run(
             payload
                 .get("path")
@@ -216,6 +271,92 @@ fn dispatch(
         "bulk_rename_plan" => bulk_rename::run(payload, emitter),
         "merge_candidates" => {
             merge_finder::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "replacement_check" => {
+            emitter.emit(Emit::Json(replacement::check(&payload)));
+            Ok(())
+        }
+        "replacement_destination" => {
+            emitter.emit(Emit::Json(serde_json::json!({
+                "destinationPath": replacement::destination(
+                    payload
+                        .get("originalUrl")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or(""),
+                    payload
+                        .get("sourcePath")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or(""),
+                )
+            })));
+            Ok(())
+        }
+        "replacement_filename" => {
+            emitter.emit(Emit::Json(serde_json::json!({
+                "filename": replacement::filename(
+                    payload
+                        .get("sourcePath")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or(""),
+                )
+            })));
+            Ok(())
+        }
+        "remembered_order" => {
+            emitter.emit(Emit::Json(remembered_order::reorder(&payload)));
+            Ok(())
+        }
+        "session_top_order_update" => {
+            emitter.emit(Emit::Json(queue_ops::update_top_order(&payload)));
+            Ok(())
+        }
+        "session_top_order_prune" => {
+            emitter.emit(Emit::Json(queue_ops::prune_top_order(&payload)));
+            Ok(())
+        }
+        "queue_plan_reorder" => {
+            emitter.emit(Emit::Json(queue_ops::plan_reorder(&payload)));
+            Ok(())
+        }
+        "queue_plan_jump" => {
+            emitter.emit(Emit::Json(queue_ops::plan_jump(&payload)));
+            Ok(())
+        }
+        "queue_plan_move_top" => {
+            emitter.emit(Emit::Json(queue_ops::plan_move_upcoming_to_top(&payload)));
+            Ok(())
+        }
+        "queue_plan_play_next" => {
+            emitter.emit(Emit::Json(queue_ops::plan_play_next(&payload)));
+            Ok(())
+        }
+        "queue_apply_plan" => {
+            emitter.emit(Emit::Json(queue_ops::apply_plan(&payload)));
+            Ok(())
+        }
+        "queue_find" => {
+            emitter.emit(Emit::Json(queue_ops::find_in_queue(&payload)));
+            Ok(())
+        }
+        "queue_original_order" => {
+            emitter.emit(Emit::Json(queue_ops::original_order(&payload)));
+            Ok(())
+        }
+        "settings_search" => {
+            emitter.emit(Emit::Json(settings_search::search(&payload)));
+            Ok(())
+        }
+        "lrclib_rank" => {
+            emitter.emit(Emit::Json(lrclib_match::rank(&payload)));
+            Ok(())
+        }
+        "lrclib_score" => {
+            emitter.emit(Emit::Json(lrclib_match::score_one(&payload)));
+            Ok(())
+        }
+        "queue_reconcile_sequence" => {
+            emitter.emit(Emit::Json(queue_ops::reconcile_sequence(&payload)));
+            Ok(())
         }
         "insights" => insights::run(
             payload,

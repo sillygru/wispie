@@ -7,6 +7,7 @@ Local-first Flutter music player (plus a YouTube Music front end). Riverpod 3, `
 - **No git write commands.** NEVER run `git checkout`, `git reset`, `git revert`, `git clean`, or any file/branch-discarding operation. Parallel agents work on different files at the same time and destructive git ops destroy their work. Read-only git (`git status`, `git diff`, `git log`) is fine.
 - **No building.** Do not run `flutter build` or `flutter run` unless explicitly requested.
 - **No emojis** in code, comments, or messages.
+- **Backend belongs in Rust.** Implement backend behavior, domain rules, persistence, networking, synchronization, media processing, and file workflows in Rust. Dart may keep the Flutter UI and thin platform adapters/bindings, but must not contain backend implementations or fallbacks. Remove each Dart backend implementation after its temporary parity probe passes.
 - **No hardcoded user-facing strings.** Every string shown to the user (labels, titles, tooltips, messages, dialogs, semantics labels) must be added to `lib/l10n/app_en.arb` and read through the generated localizations, never inlined in widgets or services. This applies to every new feature and any UI change you touch.
 - **English ARB only.** Add and edit strings in `lib/l10n/app_en.arb` only (the `template-arb-file` in `l10n.yaml`). Leave every other `lib/l10n/app_*.arb` file alone unless the user asks for that locale. Enumerate the current ARB files instead of assuming a fixed locale list.
 - **Write in the user's language.** If the user is writing in a non-English language, also add the new keys to that language's ARB file, translated into it. If no file for it exists yet, that is the one deliberate case for adding a locale: start `lib/l10n/app_<tag>.arb` from `app_en.arb` with matching keys plus its own `languageNativeName` (nothing else needs wiring; the generated locale list picks it up). Keys stay identical to the template and the template stays English. Only do this for languages the user actually speaks or asks for.
@@ -23,7 +24,7 @@ NEVER write unit tests after you write code.
 
 There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
 
-The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`, `rust_scan_probe.dart`, `rust_bench_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
+The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
 
 ## Verification
 
@@ -147,16 +148,10 @@ third_party/         # vendored deps, wired via dependency_overrides
 
 ## Rust core (`rust/`)
 
-The library scan, tag reading and cover cache live in a Rust crate behind a small
-C ABI, called from `lib/data/rust/`. It is the only implementation: scan,
-enrichment, cover sweeps and folder compares all run natively. There is no Dart
-fallback — when the library is missing or its ABI does not match,
-`WispieCore.isAvailable` is false and the scan reports an error instead of
-quietly building a library another way.
-
-Single-file paths stay in Dart on purpose: lazy on-demand cover extraction,
-folder-cover lookups and video thumbnails (FFmpeg, platform channel) are not
-batch work and never went through the core.
+Backend behavior lives in the Rust crate behind the C ABI in
+`lib/data/rust/`. The port is in progress: do not add backend implementations
+or fallbacks in Dart. Flutter UI and thin OS/plugin adapters stay in Dart;
+shared rules and workflows belong in Rust.
 
 ### Build
 
@@ -193,13 +188,9 @@ dart run tool/rust/build.dart check   # fmt --check, clippy -D warnings, check
 ### Invariants
 
 - `rust/wispie_core/src/formats.rs` mirrors `media_formats.dart` and
-  `Song.videoExtensions`; `tool/rust_scan_probe.dart` asserts they match.
+  `Song.videoExtensions`.
 - The wire format is additive. Adding a JSON field is fine, changing or removing
   one is not: bump `ABI_VERSION` (Rust) and `WispieCore.abiVersion` (Dart) together.
 - No panic may cross the FFI boundary. Per-file work is wrapped in `catch_unwind`.
 - Covers are content-addressed (`c_<sha1>`) and written atomically, which is why
   the Rust path needs no file locks. Existing caches depend on that hash.
-- Probe: `WISPIE_CORE_LIB=rust/target/release/libwispie_core.dylib dart run tool/rust_scan_probe.dart`
-- Benchmark: `WISPIE_CORE_LIB=rust/target/release/libwispie_core.dylib dart run tool/rust_bench_probe.dart`
-  times native against the Dart paths it replaces and writes `build/rust_bench/report.md`;
-  it fails if the native core is slower, so a regression is caught, not just printed.

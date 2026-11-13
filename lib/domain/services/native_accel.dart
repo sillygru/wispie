@@ -72,6 +72,229 @@ class NativeAccel {
     return decoded;
   }
 
+  static Map<String, dynamic> replacementCheck({
+    required String originalUrl,
+    required String originalFilename,
+    required String sourcePath,
+    required bool isSupportedMediaFile,
+    required List<String> trackedFolders,
+    required List<String> libraryFilenames,
+    required bool destinationExists,
+    required bool overwriteDestination,
+  }) =>
+      _ask({
+        'command': 'replacement_check',
+        'originalUrl': originalUrl,
+        'originalFilename': originalFilename,
+        'sourcePath': sourcePath,
+        'isSupportedMediaFile': isSupportedMediaFile,
+        'trackedFolders': trackedFolders,
+        'libraryFilenames': libraryFilenames,
+        'destinationExists': destinationExists,
+        'overwriteDestination': overwriteDestination,
+      });
+
+  static String replacementDestination({
+    required String originalUrl,
+    required String sourcePath,
+  }) =>
+      _ask({
+        'command': 'replacement_destination',
+        'originalUrl': originalUrl,
+        'sourcePath': sourcePath,
+      })['destinationPath'] as String;
+
+  static String replacementFilename(String sourcePath) => _ask({
+        'command': 'replacement_filename',
+        'sourcePath': sourcePath,
+      })['filename'] as String;
+
+  static List<int> rememberedOrder({
+    required List<String> upcomingIds,
+    required List<String> rememberedIds,
+  }) =>
+      (_ask({
+        'command': 'remembered_order',
+        'upcomingIds': upcomingIds,
+        'rememberedIds': rememberedIds,
+      })['order'] as List<dynamic>)
+          .cast<int>();
+
+  static List<String> updateSessionTopOrder(
+    List<String> currentOrder,
+    String queueId, {
+    required bool isOverride,
+  }) =>
+      (_ask({
+        'command': 'session_top_order_update',
+        'currentOrder': currentOrder,
+        'queueId': queueId,
+        'isOverride': isOverride,
+      })['order'] as List<dynamic>)
+          .cast<String>();
+
+  static List<String> pruneSessionTopOrder(
+    List<Map<String, Object?>> queue,
+    int currentIndex,
+    List<String> sessionTopOrder,
+  ) =>
+      (_ask({
+        'command': 'session_top_order_prune',
+        'queue': queue,
+        'currentIndex': currentIndex,
+        'sessionTopOrder': sessionTopOrder,
+      })['order'] as List<dynamic>)
+          .cast<String>();
+
+  static Map<String, dynamic> planQueueReorder(
+    int length,
+    int oldIndex,
+    int newIndex,
+  ) =>
+      _ask({
+        'command': 'queue_plan_reorder',
+        'length': length,
+        'oldIndex': oldIndex,
+        'newIndex': newIndex,
+      });
+
+  static Map<String, dynamic> planQueueJump(
+    List<String> queueIds,
+    int currentIndex,
+    String queueId,
+  ) =>
+      _ask({
+        'command': 'queue_plan_jump',
+        'queueIds': queueIds,
+        'currentIndex': currentIndex,
+        'queueId': queueId,
+      });
+
+  static Map<String, dynamic> planQueueMoveUpcomingToTop({
+    required List<String> queueIds,
+    required int currentIndex,
+    required String queueId,
+    required List<String> sessionTopOrder,
+  }) =>
+      _ask({
+        'command': 'queue_plan_move_top',
+        'queueIds': queueIds,
+        'currentIndex': currentIndex,
+        'queueId': queueId,
+        'sessionTopOrder': sessionTopOrder,
+      });
+
+  static Map<String, dynamic> planQueuePlayNext({
+    required List<String> queueIds,
+    required List<String> filenames,
+    required int currentIndex,
+    required String candidateFilename,
+    required List<String> sessionTopOrder,
+  }) =>
+      _ask({
+        'command': 'queue_plan_play_next',
+        'queueIds': queueIds,
+        'filenames': filenames,
+        'currentIndex': currentIndex,
+        'candidateFilename': candidateFilename,
+        'sessionTopOrder': sessionTopOrder,
+      });
+
+  static Map<String, dynamic> applyQueuePlan({
+    required int length,
+    required int? from,
+    required int to,
+  }) =>
+      _ask({
+        'command': 'queue_apply_plan',
+        'length': length,
+        'from': from,
+        'to': to,
+      });
+
+  static int findQueueSong(
+    List<String> filenames,
+    String filename, {
+    required List<String> mergedSiblings,
+  }) =>
+      _ask({
+        'command': 'queue_find',
+        'filenames': filenames,
+        'filename': filename,
+        'mergedSiblings': mergedSiblings,
+      })['index'] as int;
+
+  static List<int> settingsSearchOrder({
+    required List<Map<String, Object?>> entries,
+    required String query,
+    required int limit,
+  }) =>
+      (_ask({
+        'command': 'settings_search',
+        'entries': entries,
+        'query': query,
+        'limit': limit,
+      })['indices'] as List<dynamic>)
+          .cast<int>();
+
+  static List<int> rankLrclibResults(
+    List<Map<String, Object?>> results,
+    Map<String, Object?> song, {
+    required bool preferPlain,
+  }) =>
+      (_ask({
+        'command': 'lrclib_rank',
+        'results': results,
+        'song': song,
+        'preferPlain': preferPlain,
+      })['indices'] as List<dynamic>)
+          .cast<int>();
+
+  static double scoreLrclibResult(
+    Map<String, Object?> result,
+    Map<String, Object?> song, {
+    required bool preferPlain,
+  }) =>
+      (_ask({
+        'command': 'lrclib_score',
+        'result': result,
+        'song': song,
+        'preferPlain': preferPlain,
+      })['score'] as num)
+          .toDouble();
+
+  static List<int> originalQueueOrder({
+    required List<String> upcomingIds,
+    required List<String> upcomingFilenames,
+    required String currentId,
+    required String currentFilename,
+    required List<String> originalIds,
+    required List<String> originalFilenames,
+  }) =>
+      (_ask({
+        'command': 'queue_original_order',
+        'upcomingIds': upcomingIds,
+        'upcomingFilenames': upcomingFilenames,
+        'currentId': currentId,
+        'currentFilename': currentFilename,
+        'originalIds': originalIds,
+        'originalFilenames': originalFilenames,
+      })['order'] as List<dynamic>)
+          .cast<int>();
+
+  static List<Map<String, dynamic>> reconcileQueueSequence({
+    required List<Map<String, String?>> effective,
+    required List<Map<String, String?>> sequence,
+    required List<bool> libraryFound,
+  }) =>
+      (_ask({
+        'command': 'queue_reconcile_sequence',
+        'effective': effective,
+        'sequence': sequence,
+        'libraryFound': libraryFound,
+      })['actions'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+
   static List<List<NativeWord>> prosodyLines(List<NativeProsodyLine> lines) {
     final decoded = _ask({
       'command': 'prosody',
@@ -232,6 +455,118 @@ class NativeAccel {
         'songs': songs,
         'existingGroups': existingGroups,
       });
+
+  static List<double> shuffleScores({
+    required List<Map<String, Object?>> candidates,
+    required Map<String, Object?> weights,
+  }) =>
+      (_ask({
+        'command': 'shuffle_scores',
+        'candidates': candidates,
+        'weights': weights,
+      })['scores'] as List<dynamic>)
+          .map((value) => (value as num).toDouble())
+          .toList(growable: false);
+
+  static int? shuffleSelect({
+    required List<double> scores,
+    double? draw,
+    int? fallbackIndex,
+  }) =>
+      _ask({
+        'command': 'shuffle_select',
+        'scores': scores,
+        'draw': draw,
+        'fallbackIndex': fallbackIndex,
+      })['index'] as int?;
+
+  static Map<String, dynamic> shuffleFallbackWeights({
+    required bool antiRepeatEnabled,
+    required bool streakBreakerEnabled,
+    required double favoriteMultiplier,
+    required double suggestLessMultiplier,
+    required int historyLimit,
+  }) =>
+      _ask({
+        'command': 'shuffle_fallback_weights',
+        'antiRepeatEnabled': antiRepeatEnabled,
+        'streakBreakerEnabled': streakBreakerEnabled,
+        'favoriteMultiplier': favoriteMultiplier,
+        'suggestLessMultiplier': suggestLessMultiplier,
+        'historyLimit': historyLimit,
+      });
+
+  static List<int> shuffleOrder({
+    required List<Map<String, Object?>> items,
+    required List<double> draws,
+    required int artistSpacing,
+    required int albumSpacing,
+    String? lastArtist,
+    String? lastAlbum,
+  }) =>
+      (_ask({
+        'command': 'shuffle_order',
+        'items': items,
+        'draws': draws,
+        'artistSpacing': artistSpacing,
+        'albumSpacing': albumSpacing,
+        'lastArtist': lastArtist,
+        'lastAlbum': lastAlbum,
+      })['order'] as List<dynamic>)
+          .cast<int>();
+
+  static List<double> smartWeights({
+    required List<Map<String, Object?>> pool,
+    required Map<String, Object?> taste,
+    required double familiarity,
+    required String context,
+    required String currentArtistKey,
+    required Map<String, int> historyIndex,
+    required int historyLimit,
+    required double favoriteMultiplier,
+    required double suggestLessMultiplier,
+  }) =>
+      (_ask({
+        'command': 'smart_weights',
+        'pool': pool,
+        'taste': taste,
+        'familiarity': familiarity,
+        'context': context,
+        'currentArtistKey': currentArtistKey,
+        'historyIndex': historyIndex,
+        'historyLimit': historyLimit,
+        'favoriteMultiplier': favoriteMultiplier,
+        'suggestLessMultiplier': suggestLessMultiplier,
+      })['weights'] as List<dynamic>)
+          .map((value) => (value as num).toDouble())
+          .toList(growable: false);
+
+  static Map<String, int> smartSpacing({
+    required List<Map<String, Object?>> pool,
+    required List<double> weights,
+    required Map<String, Object?> taste,
+    required bool streakBreakerEnabled,
+  }) =>
+      (_ask({
+        'command': 'smart_spacing',
+        'pool': pool,
+        'weights': weights,
+        'taste': taste,
+        'streakBreakerEnabled': streakBreakerEnabled,
+      }).map((key, value) => MapEntry(key, (value as num).toInt())));
+
+  static List<int> diversifiedTop({
+    required List<Map<String, Object?>> pool,
+    required List<double> weights,
+    required int count,
+  }) =>
+      (_ask({
+        'command': 'smart_diversified_top',
+        'pool': pool,
+        'weights': weights,
+        'count': count,
+      })['indices'] as List<dynamic>)
+          .cast<int>();
 
   static Map<String, dynamic> insights({
     required List<NativePlayEvent> events,

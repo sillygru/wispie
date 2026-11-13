@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/rust/wispie_core.dart';
+
 /// Hybrid logical clock.
 ///
 /// A 64-bit value `(unix_millis << 16) | counter`. [now] returns a strictly
@@ -23,21 +25,21 @@ class Hlc {
     if (_loaded) return;
     final prefs = await SharedPreferences.getInstance();
     _last = prefs.getInt(_prefsKey) ?? 0;
+    WispieCore.hlcSet(_last);
     _loaded = true;
   }
 
   /// A fresh, strictly increasing stamp for a local write.
   int now() {
-    final wall = DateTime.now().millisecondsSinceEpoch << 16;
-    final next = wall > _last ? wall : _last + 1;
-    _last = next;
+    _last = WispieCore.hlcNow();
     _persist();
-    return next;
+    return _last;
   }
 
   /// Fold in a clock seen on an incoming record so later local stamps dominate.
   void observe(int remote) {
     if (remote > _last) {
+      WispieCore.hlcObserve(remote);
       _last = remote;
       _persist();
     }
@@ -52,6 +54,7 @@ class Hlc {
   @visibleForTesting
   void resetForTest([int value = 0]) {
     _last = value;
+    WispieCore.hlcSet(value);
     _loaded = true;
   }
 }

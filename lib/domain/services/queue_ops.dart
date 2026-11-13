@@ -1,4 +1,5 @@
 import '../../models/queue_item.dart';
+import 'native_accel.dart';
 
 /// Pure queue list-planning logic.
 ///
@@ -43,14 +44,11 @@ int findInQueue(
   String filename, {
   List<String> mergedSiblings = const [],
 }) {
-  final direct = queue.indexWhere((item) => item.song.filename == filename);
-  if (direct != -1) return direct;
-
-  for (final sibling in mergedSiblings) {
-    final idx = queue.indexWhere((item) => item.song.filename == sibling);
-    if (idx != -1) return idx;
-  }
-  return -1;
+  return NativeAccel.findQueueSong(
+    [for (final item in queue) item.song.filename],
+    filename,
+    mergedSiblings: mergedSiblings,
+  );
 }
 
 /// Updates the RAM-based top order queue.
@@ -62,12 +60,11 @@ List<String> updateSessionTopOrder(
   String queueId, {
   required bool isOverride,
 }) {
-  final filtered = currentOrder.where((id) => id != queueId).toList();
-  if (isOverride) {
-    return [queueId, ...filtered];
-  } else {
-    return [...filtered, queueId];
-  }
+  return NativeAccel.updateSessionTopOrder(
+    currentOrder,
+    queueId,
+    isOverride: isOverride,
+  );
 }
 
 /// Prunes entries that are no longer upcoming in [queue] (either already played,
@@ -77,11 +74,13 @@ List<String> pruneSessionTopOrder(
   int currentIndex,
   List<String> sessionTopOrder,
 ) {
-  if (sessionTopOrder.isEmpty) return const [];
-  return sessionTopOrder.where((id) {
-    final idx = queue.indexWhere((item) => item.queueId == id);
-    return idx > currentIndex;
-  }).toList();
+  return NativeAccel.pruneSessionTopOrder(
+    [
+      for (final item in queue) {'queueId': item.queueId}
+    ],
+    currentIndex,
+    sessionTopOrder,
+  );
 }
 
 /// Plans moving an already-queued upcoming entry to the top section.
@@ -96,36 +95,17 @@ QueuePlan? planMoveUpcomingToTop(
   String queueId, {
   List<String> sessionTopOrder = const [],
 }) {
-  if (currentIndex < 0 || currentIndex >= queue.length) return null;
-
-  final sourceIndex = queue.indexWhere((item) => item.queueId == queueId);
-  if (sourceIndex <= currentIndex) return null;
-
-  final isOverride = sessionTopOrder.contains(queueId);
-  final int targetIndex;
-
-  if (isOverride) {
-    targetIndex = currentIndex + 1;
-  } else {
-    var lastTopIndex = currentIndex;
-    for (final topId in sessionTopOrder) {
-      if (topId == queueId) continue;
-      final idx = queue.indexWhere((item) => item.queueId == topId);
-      if (idx > currentIndex && idx > lastTopIndex) {
-        lastTopIndex = idx;
-      }
-    }
-    targetIndex = lastTopIndex + 1;
-  }
-
-  int target = targetIndex.clamp(0, queue.length);
-  if (sourceIndex < target) target -= 1;
-  if (target < 0 || target >= queue.length) return null;
-  if (sourceIndex == target) return null;
-
+  final plan = NativeAccel.planQueueMoveUpcomingToTop(
+    queueIds: [for (final item in queue) item.queueId],
+    currentIndex: currentIndex,
+    queueId: queueId,
+    sessionTopOrder: sessionTopOrder,
+  );
+  if (plan['valid'] != true) return null;
+  final sourceIndex = plan['from'] as int;
   return QueuePlan(
     from: sourceIndex,
-    to: target,
+    to: plan['to'] as int,
     item: queue[sourceIndex],
   );
 }
@@ -145,31 +125,19 @@ QueuePlan planPlayNext(
   QueueItem candidate, {
   List<String> sessionTopOrder = const [],
 }) {
-  // Only entries still ahead of the current track are candidates to move.
-  final upcomingIdx = queue.indexWhere(
-    (item) => item.song.filename == candidate.song.filename,
-    (currentIndex + 1).clamp(0, queue.length),
+  final plan = NativeAccel.planQueuePlayNext(
+    queueIds: [for (final item in queue) item.queueId],
+    filenames: [for (final item in queue) item.song.filename],
+    currentIndex: currentIndex,
+    candidateFilename: candidate.song.filename,
+    sessionTopOrder: sessionTopOrder,
   );
-
-  var lastTopIndex = currentIndex;
-  for (final topId in sessionTopOrder) {
-    if (upcomingIdx != -1 && queue[upcomingIdx].queueId == topId) continue;
-    final idx = queue.indexWhere((item) => item.queueId == topId);
-    if (idx > currentIndex && idx > lastTopIndex) {
-      lastTopIndex = idx;
-    }
-  }
-  final targetIndex = (lastTopIndex + 1).clamp(0, queue.length);
-
-  if (upcomingIdx != -1) {
-    return QueuePlan(
-      from: upcomingIdx,
-      to: upcomingIdx >= targetIndex ? targetIndex : targetIndex - 1,
-      item: queue[upcomingIdx],
-    );
-  }
-
-  return QueuePlan(to: targetIndex, item: candidate);
+  final source = plan['source'] as int?;
+  return QueuePlan(
+    from: plan['from'] as int?,
+    to: plan['to'] as int,
+    item: source == null ? candidate : queue[source],
+  );
 }
 
 /// Plans a tap on a queue row: play that entry now.
@@ -179,27 +147,19 @@ QueuePlan planPlayNext(
 /// instead, leaving the played section intact. Either way nothing at or before
 /// the current track is disturbed. Returns null when there is nothing to do.
 QueuePlan? planJumpTo(List<QueueItem> queue, int currentIndex, String queueId) {
-  if (currentIndex < 0 || currentIndex >= queue.length) return null;
-
-  final sourceIndex = queue.indexWhere((item) => item.queueId == queueId);
-  if (sourceIndex < 0 || sourceIndex == currentIndex) return null;
-
-  final targetIndex = currentIndex + 1;
-
-  if (sourceIndex > currentIndex) {
-    if (sourceIndex == targetIndex) return null;
-    return QueuePlan(
-      from: sourceIndex,
-      to: targetIndex,
-      item: queue[sourceIndex],
-    );
-  }
-
-  // A fresh QueueItem, so the original entry keeps its own identity in the
-  // played section rather than being yanked out of history.
+  final plan = NativeAccel.planQueueJump(
+    [for (final item in queue) item.queueId],
+    currentIndex,
+    queueId,
+  );
+  if (plan['valid'] != true) return null;
+  final source = plan['source'] as int;
   return QueuePlan(
-    to: targetIndex,
-    item: QueueItem(song: queue[sourceIndex].song),
+    from: plan['from'] as int?,
+    to: plan['to'] as int,
+    item: plan['from'] == null
+        ? QueueItem(song: queue[source].song)
+        : queue[source],
   );
 }
 
@@ -207,24 +167,33 @@ QueuePlan? planJumpTo(List<QueueItem> queue, int currentIndex, String queueId) {
 /// the slot the entry is dropped into, before its own removal is accounted for.
 /// Returns null when the move is a no-op or out of range.
 QueuePlan? planReorder(List<QueueItem> queue, int oldIndex, int newIndex) {
-  if (queue.isEmpty) return null;
-  if (oldIndex < 0 || oldIndex >= queue.length) return null;
-
-  int targetIndex = newIndex.clamp(0, queue.length);
-  if (oldIndex < targetIndex) targetIndex -= 1;
-  if (targetIndex < 0 || targetIndex >= queue.length) return null;
-  if (oldIndex == targetIndex) return null;
-
-  return QueuePlan(from: oldIndex, to: targetIndex, item: queue[oldIndex]);
+  final plan = NativeAccel.planQueueReorder(
+    queue.length,
+    oldIndex,
+    newIndex,
+  );
+  if (plan['valid'] != true) return null;
+  return QueuePlan(
+    from: plan['from'] as int,
+    to: plan['to'] as int,
+    item: queue[oldIndex],
+  );
 }
 
 /// Applies a plan to a copy of [queue].
 List<QueueItem> applyPlan(List<QueueItem> queue, QueuePlan plan) {
-  final next = List<QueueItem>.from(queue);
-  final from = plan.from;
-  if (from != null) next.removeAt(from);
-  next.insert(plan.to.clamp(0, next.length), plan.item);
-  return next;
+  final result = NativeAccel.applyQueuePlan(
+    length: queue.length,
+    from: plan.from,
+    to: plan.to,
+  );
+  if (result['valid'] != true) {
+    throw RangeError.index(plan.from ?? -1, queue);
+  }
+  final order = (result['order'] as List<dynamic>).cast<int>();
+  return [
+    for (final index in order) index == queue.length ? plan.item : queue[index]
+  ];
 }
 
 /// Sorts [upcoming] back into [originalQueue] order, resuming from where
@@ -236,36 +205,15 @@ List<QueueItem> inOriginalOrder(
   QueueItem current,
   List<QueueItem> originalQueue,
 ) {
-  final byQueueId = <String, int>{};
-  final byFilename = <String, int>{};
-  for (int i = 0; i < originalQueue.length; i++) {
-    byQueueId[originalQueue[i].queueId] = i;
-    byFilename.putIfAbsent(originalQueue[i].song.filename, () => i);
-  }
-
-  // Duplicated entries carry a fresh queueId, so fall back to the filename.
-  int? positionOf(QueueItem item) =>
-      byQueueId[item.queueId] ?? byFilename[item.song.filename];
-
-  final anchor = positionOf(current) ?? -1;
-  final length = originalQueue.length;
-
-  // Entries the original queue never had — added via Play Next, or generated on
-  // the fly — have no natural position, so they keep their relative order at the
-  // end rather than being dropped.
-  final known = <QueueItem>[];
-  final unknown = <QueueItem>[];
-  for (final item in upcoming) {
-    (positionOf(item) == null ? unknown : known).add(item);
-  }
-
-  int rank(QueueItem item) {
-    final position = positionOf(item)!;
-    return position > anchor ? position : position + length;
-  }
-
-  known.sort((a, b) => rank(a).compareTo(rank(b)));
-  return [...known, ...unknown];
+  final order = NativeAccel.originalQueueOrder(
+    upcomingIds: [for (final item in upcoming) item.queueId],
+    upcomingFilenames: [for (final item in upcoming) item.song.filename],
+    currentId: current.queueId,
+    currentFilename: current.song.filename,
+    originalIds: [for (final item in originalQueue) item.queueId],
+    originalFilenames: [for (final item in originalQueue) item.song.filename],
+  );
+  return [for (final index in order) upcoming[index]];
 }
 
 /// One entry of the player's audio source sequence, reduced to what
@@ -284,47 +232,39 @@ List<QueueItem> reconcileWithSequence(
   List<SequenceEntry> sequence,
   QueueItem? Function(String filename) resolveItem,
 ) {
-  final byQueueId = <String, QueueItem>{
-    for (final item in effective) item.queueId: item,
-  };
-  final byFilename = <String, List<QueueItem>>{};
-  for (final item in effective) {
-    byFilename.putIfAbsent(item.song.filename, () => []).add(item);
-  }
-
-  final consumedQueueIds = <String>{};
-  final consumedFilenameCounts = <String, int>{};
+  final libraryItems = [
+    for (final entry in sequence) resolveItem(entry.filename)
+  ];
+  final actions = NativeAccel.reconcileQueueSequence(
+    effective: [
+      for (final item in effective)
+        {'queueId': item.queueId, 'filename': item.song.filename},
+    ],
+    sequence: [
+      for (final entry in sequence)
+        {'filename': entry.filename, 'queueId': entry.queueId},
+    ],
+    libraryFound: [for (final item in libraryItems) item != null],
+  );
   final rebuilt = <QueueItem>[];
-
-  for (final entry in sequence) {
-    final queueId = entry.queueId;
-    QueueItem? resolved;
-    if (queueId != null && !consumedQueueIds.contains(queueId)) {
-      resolved = byQueueId[queueId];
-    }
-
-    if (resolved == null) {
-      final candidates = byFilename[entry.filename];
-      final usedCount = consumedFilenameCounts[entry.filename] ?? 0;
-      if (candidates != null && usedCount < candidates.length) {
-        resolved = candidates[usedCount];
-        consumedFilenameCounts[entry.filename] = usedCount + 1;
-      }
-    }
-
-    final fromLibrary = resolveItem(entry.filename);
-    if (resolved == null) {
-      if (fromLibrary == null) continue;
-      resolved = QueueItem(song: fromLibrary.song, queueId: queueId);
+  for (final action in actions) {
+    final sequenceIndex = action['sequenceIndex'] as int;
+    final effectiveIndex = action['effectiveIndex'] as int?;
+    final entry = sequence[sequenceIndex];
+    final fromLibrary = libraryItems[sequenceIndex];
+    if (effectiveIndex == null) {
+      rebuilt.add(
+        QueueItem(song: fromLibrary!.song, queueId: entry.queueId),
+      );
     } else {
-      resolved = resolved.copyWith(
-        song: fromLibrary?.song ?? resolved.song,
-        queueId: queueId ?? resolved.queueId,
+      final resolved = effective[effectiveIndex];
+      rebuilt.add(
+        resolved.copyWith(
+          song: fromLibrary?.song ?? resolved.song,
+          queueId: entry.queueId ?? resolved.queueId,
+        ),
       );
     }
-
-    consumedQueueIds.add(resolved.queueId);
-    rebuilt.add(resolved);
   }
 
   return rebuilt;

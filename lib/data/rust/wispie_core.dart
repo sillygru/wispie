@@ -13,7 +13,7 @@ class WispieCore {
   WispieCore._();
 
   /// Must match `ABI_VERSION` in `rust/wispie_core/src/lib.rs`.
-  static const int abiVersion = 4;
+  static const int abiVersion = 5;
 
   /// Event kinds sent by the native core.
   static const int eventItems = 0;
@@ -165,6 +165,34 @@ class WispieCore {
       _bindings!.cancel();
     }
   }
+
+  static void hlcObserve(int remote) {
+    if (!_ensureLoaded()) {
+      throw StateError('native core unavailable: $_reason');
+    }
+    _bindings!.hlcObserve(remote);
+  }
+
+  static void hlcSet(int last) {
+    if (!_ensureLoaded()) {
+      throw StateError('native core unavailable: $_reason');
+    }
+    _bindings!.hlcSet(last);
+  }
+
+  static int hlcNext(int wallMillis) {
+    if (!_ensureLoaded()) {
+      throw StateError('native core unavailable: $_reason');
+    }
+    return _bindings!.hlcNext(wallMillis);
+  }
+
+  static int hlcNow() {
+    if (!_ensureLoaded()) {
+      throw StateError('native core unavailable: $_reason');
+    }
+    return _bindings!.hlcNow();
+  }
 }
 
 typedef _EventNative = Void Function(
@@ -194,6 +222,15 @@ typedef _AllocDart = Pointer<Uint8> Function(int);
 typedef _FreeNative = Void Function(Pointer<Uint8>, UintPtr);
 typedef _FreeDart = void Function(Pointer<Uint8>, int);
 
+typedef _HlcObserveNative = Void Function(Int64);
+typedef _HlcObserveDart = void Function(int);
+typedef _HlcSetNative = Void Function(Int64);
+typedef _HlcSetDart = void Function(int);
+typedef _HlcNextNative = Int64 Function(Int64);
+typedef _HlcNextDart = int Function(int);
+typedef _HlcNowNative = Int64 Function();
+typedef _HlcNowDart = int Function();
+
 class _Bindings {
   _Bindings(DynamicLibrary library)
       : abiVersion = library.lookupFunction<_AbiVersionNative, _AbiVersionDart>(
@@ -208,7 +245,15 @@ class _Bindings {
         alloc = library
             .lookupFunction<_AllocNative, _AllocDart>('wispie_core_alloc'),
         free =
-            library.lookupFunction<_FreeNative, _FreeDart>('wispie_core_free');
+            library.lookupFunction<_FreeNative, _FreeDart>('wispie_core_free'),
+        hlcObserve = library.lookupFunction<_HlcObserveNative, _HlcObserveDart>(
+            'wispie_core_hlc_observe'),
+        hlcSet = library
+            .lookupFunction<_HlcSetNative, _HlcSetDart>('wispie_core_hlc_set'),
+        hlcNext = library.lookupFunction<_HlcNextNative, _HlcNextDart>(
+            'wispie_core_hlc_next'),
+        hlcNow = library
+            .lookupFunction<_HlcNowNative, _HlcNowDart>('wispie_core_hlc_now');
 
   final _AbiVersionDart abiVersion;
   final _VersionDart version;
@@ -217,4 +262,8 @@ class _Bindings {
   final _VoidDart cancel;
   final _AllocDart alloc;
   final _FreeDart free;
+  final _HlcObserveDart hlcObserve;
+  final _HlcSetDart hlcSet;
+  final _HlcNextDart hlcNext;
+  final _HlcNowDart hlcNow;
 }
