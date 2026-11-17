@@ -239,97 +239,9 @@
   "@coverFetchError": {
     "description": "Snackbar shown when fetching cover art errors"
   },
-  "metaResultsTitle": "Metadata Fetch Results",
-  "@metaResultsTitle": {
-    "description": "Title of the metadata fetch results panel"
-  },
-  "metaFetchingTitle": "Fetching Missing Metadata",
-  "@metaFetchingTitle": {
-    "description": "Title shown while fetching missing metadata"
-  },
-  "metaStatUpdated": "Updated",
-  "@metaStatUpdated": {
-    "description": "Stat label for tracks whose metadata was updated"
-  },
-  "metaStatNotFound": "Not Found",
-  "@metaStatNotFound": {
-    "description": "Stat label for tracks whose metadata was not found"
-  },
-  "metaStatSkipped": "Skipped",
-  "@metaStatSkipped": {
-    "description": "Stat label for tracks skipped during metadata fetch"
-  },
-  "metaUndoAll": "Undo All",
-  "@metaUndoAll": {
-    "description": "Button label to undo all metadata changes"
-  },
-  "metaUndoSong": "Undo this song",
-  "@metaUndoSong": {
-    "description": "Tooltip to undo metadata changes for one song"
-  },
-  "metaRevertedCount": "Reverted metadata changes for {count} track(s)",
-  "@metaRevertedCount": {
-    "description": "Snackbar shown after reverting metadata changes for tracks",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "metaViaSource": "via {source}",
-  "@metaViaSource": {
-    "description": "Label showing the source of fetched metadata"
-  },
-  "metaMoreItems": "... and {count} more",
-  "@metaMoreItems": {
-    "description": "Ellipsis-overflow label shared by metadata results and indexer warnings",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "metaCouldNotFind": "Could Not Find",
-  "@metaCouldNotFind": {
-    "description": "Heading for tracks whose metadata could not be found"
-  },
   "metaUnknownArtist": "Unknown Artist",
   "@metaUnknownArtist": {
     "description": "Fallback artist name when unknown"
-  },
-  "metaAllHaveMetadata": "All {count} tracks already have metadata",
-  "@metaAllHaveMetadata": {
-    "description": "Message when all tracks already have metadata",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "metaNoMissingMetadata": "No tracks with missing metadata found",
-  "@metaNoMissingMetadata": {
-    "description": "Message when no tracks with missing metadata found"
-  },
-  "metaSearchingBatch": "Searching batch {batch}...",
-  "@metaSearchingBatch": {
-    "description": "Progress text while searching a batch of tracks",
-    "placeholders": {
-      "batch": {
-        "type": "int"
-      }
-    }
-  },
-  "metaCancelledSummary": "Metadata fetch cancelled ({updated} updated, {notFound} not found)",
-  "@metaCancelledSummary": {
-    "description": "Summary shown when metadata fetch is cancelled",
-    "placeholders": {
-      "updated": {
-        "type": "int"
-      },
-      "notFound": {
-        "type": "int"
-      }
-    }
   },
   "songMenuTitle": "Song Options",
   "@songMenuTitle": {
@@ -398,14 +310,6 @@
   "songMenuFetchCoverHint": "Try searching Last.fm, Deezer and iTunes for cover art",
   "@songMenuFetchCoverHint": {
     "description": "Hint for fetch cover action"
-  },
-  "songMenuFetchMetadata": "Fetch Missing Metadata",
-  "@songMenuFetchMetadata": {
-    "description": "Action label to fetch missing metadata"
-  },
-  "songMenuFetchMetadataHint": "Search online for title, artist, album and cover",
-  "@songMenuFetchMetadataHint": {
-    "description": "Hint for fetch metadata action"
   },
   "songMenuMoveToFolder": "Move to Folder",
   "@songMenuMoveToFolder": {

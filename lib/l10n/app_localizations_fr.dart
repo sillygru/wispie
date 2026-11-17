@@ -233,65 +233,7 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get metaResultsTitle => 'Résultats de la récupération des métadonnées';
-
-  @override
-  String get metaFetchingTitle => 'Récupération des métadonnées manquantes';
-
-  @override
-  String get metaStatUpdated => 'Mis à jour';
-
-  @override
-  String get metaStatNotFound => 'Introuvable';
-
-  @override
-  String get metaStatSkipped => 'Ignoré';
-
-  @override
-  String get metaUndoAll => 'Tout annuler';
-
-  @override
-  String get metaUndoSong => 'Annuler pour ce morceau';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Modifications des métadonnées annulées pour $count piste(s)';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'via $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '… et $count de plus';
-  }
-
-  @override
-  String get metaCouldNotFind => 'Introuvable';
-
-  @override
   String get metaUnknownArtist => 'Artiste inconnu';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'Les $count pistes ont déjà des métadonnées';
-  }
-
-  @override
-  String get metaNoMissingMetadata =>
-      'Aucune piste avec des métadonnées manquantes trouvée';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'Recherche du lot $batch…';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Récupération des métadonnées annulée ($updated mises à jour, $notFound introuvables)';
-  }
 
   @override
   String get songMenuTitle => 'Options du morceau';
@@ -352,13 +294,6 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get songMenuFetchCoverHint =>
       'Rechercher une pochette sur Last.fm, Deezer et iTunes';
-
-  @override
-  String get songMenuFetchMetadata => 'Récupérer les métadonnées manquantes';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Rechercher en ligne le titre, l’artiste, l’album et la pochette';
 
   @override
   String get songMenuMoveToFolder => 'Déplacer vers un dossier';

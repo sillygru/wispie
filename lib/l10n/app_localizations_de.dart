@@ -234,65 +234,7 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get metaResultsTitle => 'Ergebnisse des Metadatenabrufs';
-
-  @override
-  String get metaFetchingTitle => 'Fehlende Metadaten werden abgerufen';
-
-  @override
-  String get metaStatUpdated => 'Aktualisiert';
-
-  @override
-  String get metaStatNotFound => 'Nicht gefunden';
-
-  @override
-  String get metaStatSkipped => 'Übersprungen';
-
-  @override
-  String get metaUndoAll => 'Alles rückgängig machen';
-
-  @override
-  String get metaUndoSong => 'Änderung für diesen Song rückgängig machen';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Metadatenänderungen für $count Titel rückgängig gemacht';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'über $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '… und $count weitere';
-  }
-
-  @override
-  String get metaCouldNotFind => 'Nicht gefunden';
-
-  @override
   String get metaUnknownArtist => 'Unbekannter Interpret';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'Alle $count Titel haben bereits Metadaten';
-  }
-
-  @override
-  String get metaNoMissingMetadata =>
-      'Keine Titel mit fehlenden Metadaten gefunden';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'Suche in Stapel $batch …';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Metadatenabruf abgebrochen ($updated aktualisiert, $notFound nicht gefunden)';
-  }
 
   @override
   String get songMenuTitle => 'Songoptionen';
@@ -349,13 +291,6 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get songMenuFetchCoverHint =>
       'Bei Last.fm, Deezer und iTunes nach einem Coverbild suchen';
-
-  @override
-  String get songMenuFetchMetadata => 'Fehlende Metadaten abrufen';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Online nach Titel, Interpret, Album und Cover suchen';
 
   @override
   String get songMenuMoveToFolder => 'In Ordner verschieben';

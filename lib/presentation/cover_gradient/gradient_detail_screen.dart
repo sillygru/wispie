@@ -273,13 +273,6 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       }
     }
 
-    final bool isUnknownArtistOrAlbum = (effectiveIsArtist &&
-            OnlineMetadataService.cleanTag(effectiveArtistName) == null) ||
-        (effectiveIsAlbum &&
-            OnlineMetadataService.cleanTag(effectiveAlbumName) == null) ||
-        widget.title.toLowerCase() == 'unknown artist' ||
-        widget.title.toLowerCase() == 'unknown album';
-
     final bool showAlbumGroups = effectiveIsArtist &&
         widget.playlistId == null &&
         LibraryLogic.hasMultipleAlbums(widget.songs);
@@ -512,7 +505,6 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
       visibleSongs: visibleSongs,
       sortedSongs: sortedSongs,
       playlistId: widget.playlistId,
-      isUnknown: isUnknownArtistOrAlbum,
       albumCount: showAlbumGroups ? albumGroups.length : 0,
       accent: baseAccent,
     );
@@ -661,7 +653,6 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 revealOffset: isWide ? 1e9 : titleRevealOffset,
                 effectiveSortOrder: effectiveSortOrder,
                 usesLocalSort: usesLocalSort,
-                isUnknown: isUnknownArtistOrAlbum,
                 canFetchCover: canFetchCover,
                 effectiveIsArtist: effectiveIsArtist,
                 effectiveIsAlbum: effectiveIsAlbum,
@@ -672,8 +663,6 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                 onFetchCover: handleFetchCover,
                 onPlaylistOptions: () => _showPlaylistOptions(context, ref),
                 onMerge: () => _onMerge(context, ref, sortedSongs),
-                onFetchMissing: () => songActionFetchMissingMetadataForList(
-                    context, ref, sortedSongs),
               ),
             ),
             if (!LibraryTabScope.isEmbedded(context))
@@ -1325,7 +1314,6 @@ class _DetailInfo extends ConsumerWidget {
   final List<Song> visibleSongs;
   final List<Song> sortedSongs;
   final String? playlistId;
-  final bool isUnknown;
   final int albumCount;
   final Color accent;
 
@@ -1335,7 +1323,6 @@ class _DetailInfo extends ConsumerWidget {
     required this.visibleSongs,
     required this.sortedSongs,
     required this.playlistId,
-    required this.isUnknown,
     required this.albumCount,
     required this.accent,
   });
@@ -1445,16 +1432,6 @@ class _DetailInfo extends ConsumerWidget {
               ),
             ],
           ),
-          if (isUnknown && sortedSongs.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: AppTokens.s3),
-              child: OutlinedButton.icon(
-                onPressed: () => songActionFetchMissingMetadataForList(
-                    context, ref, sortedSongs),
-                icon: const AppIcon(AppIcons.manageSearch),
-                label: Text(AppLocalizations.of(context).songMenuFetchMetadata),
-              ),
-            ),
         ],
       ),
     );
@@ -1820,7 +1797,6 @@ class _FloatingTopBar extends StatelessWidget {
   final double revealOffset;
   final SongSortOrder effectiveSortOrder;
   final bool usesLocalSort;
-  final bool isUnknown;
   final bool canFetchCover;
   final bool effectiveIsArtist;
   final bool effectiveIsAlbum;
@@ -1831,7 +1807,6 @@ class _FloatingTopBar extends StatelessWidget {
   final VoidCallback onFetchCover;
   final VoidCallback onPlaylistOptions;
   final VoidCallback onMerge;
-  final VoidCallback onFetchMissing;
 
   const _FloatingTopBar({
     required this.title,
@@ -1839,7 +1814,6 @@ class _FloatingTopBar extends StatelessWidget {
     required this.revealOffset,
     required this.effectiveSortOrder,
     required this.usesLocalSort,
-    required this.isUnknown,
     required this.canFetchCover,
     required this.effectiveIsArtist,
     required this.effectiveIsAlbum,
@@ -1850,7 +1824,6 @@ class _FloatingTopBar extends StatelessWidget {
     required this.onFetchCover,
     required this.onPlaylistOptions,
     required this.onMerge,
-    required this.onFetchMissing,
   });
 
   /// 0 while the in-page title is still visible, 1 once the bar owns it.
@@ -1949,14 +1922,7 @@ class _FloatingTopBar extends StatelessWidget {
                       )
                     : const SortMenu(),
               ),
-              if (isUnknown)
-                GlassCircleButton(
-                  icon: const AppIcon(AppIcons.manageSearch,
-                      color: Colors.white, size: 20),
-                  tooltip: AppLocalizations.of(context).songMenuFetchMetadata,
-                  onPressed: onFetchMissing,
-                )
-              else if (canFetchCover)
+              if (canFetchCover)
                 GlassCircleButton(
                   icon: const AppIcon(AppIcons.imageSearch,
                       color: Colors.white, size: 20),

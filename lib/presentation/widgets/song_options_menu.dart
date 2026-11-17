@@ -410,18 +410,6 @@ class _SongOptionsPopupState extends ConsumerState<_SongOptionsPopup>
             },
           ),
           _submenuEntry(
-            icon: AppIcons.manageSearch,
-            label: l10n.songMenuFetchMetadata,
-            subtitle: l10n.songMenuFetchMetadataHint,
-            onTap: () async {
-              final song = widget.song;
-              if (song == null) return;
-              _closePopup();
-              await songActionFetchMissingMetadata(
-                  widget.parentContext, ref, song);
-            },
-          ),
-          _submenuEntry(
             icon: AppIcons.folderMove,
             label: l10n.songMenuMoveToFolder,
             subtitle: l10n.songMenuMoveToFolderHint,

@@ -233,65 +233,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get metaResultsTitle => 'Resultados de búsqueda de metadatos';
-
-  @override
-  String get metaFetchingTitle => 'Buscando metadatos faltantes';
-
-  @override
-  String get metaStatUpdated => 'Actualizado';
-
-  @override
-  String get metaStatNotFound => 'No encontrado';
-
-  @override
-  String get metaStatSkipped => 'Omitido';
-
-  @override
-  String get metaUndoAll => 'Deshacer todo';
-
-  @override
-  String get metaUndoSong => 'Deshacer para esta canción';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Se revirtieron los cambios de metadatos de $count pistas';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'mediante $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '... y $count más';
-  }
-
-  @override
-  String get metaCouldNotFind => 'No se pudo encontrar';
-
-  @override
   String get metaUnknownArtist => 'Artista desconocido';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'Las $count pistas ya tienen metadatos';
-  }
-
-  @override
-  String get metaNoMissingMetadata =>
-      'No se encontraron pistas con metadatos faltantes';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'Buscando el lote $batch...';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Búsqueda de metadatos cancelada ($updated actualizados, $notFound no encontrados)';
-  }
 
   @override
   String get songMenuTitle => 'Opciones de la canción';
@@ -351,13 +293,6 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get songMenuFetchCoverHint =>
       'Buscar una carátula en Last.fm, Deezer e iTunes';
-
-  @override
-  String get songMenuFetchMetadata => 'Buscar metadatos faltantes';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Buscar en línea el título, artista, álbum y carátula';
 
   @override
   String get songMenuMoveToFolder => 'Mover a una carpeta';

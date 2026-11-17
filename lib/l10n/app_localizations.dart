@@ -465,101 +465,11 @@ abstract class AppLocalizations {
   /// **'Error fetching cover: {error}'**
   String coverFetchError(Object error);
 
-  /// Title of the metadata fetch results panel
-  ///
-  /// In en, this message translates to:
-  /// **'Metadata Fetch Results'**
-  String get metaResultsTitle;
-
-  /// Title shown while fetching missing metadata
-  ///
-  /// In en, this message translates to:
-  /// **'Fetching Missing Metadata'**
-  String get metaFetchingTitle;
-
-  /// Stat label for tracks whose metadata was updated
-  ///
-  /// In en, this message translates to:
-  /// **'Updated'**
-  String get metaStatUpdated;
-
-  /// Stat label for tracks whose metadata was not found
-  ///
-  /// In en, this message translates to:
-  /// **'Not Found'**
-  String get metaStatNotFound;
-
-  /// Stat label for tracks skipped during metadata fetch
-  ///
-  /// In en, this message translates to:
-  /// **'Skipped'**
-  String get metaStatSkipped;
-
-  /// Button label to undo all metadata changes
-  ///
-  /// In en, this message translates to:
-  /// **'Undo All'**
-  String get metaUndoAll;
-
-  /// Tooltip to undo metadata changes for one song
-  ///
-  /// In en, this message translates to:
-  /// **'Undo this song'**
-  String get metaUndoSong;
-
-  /// Snackbar shown after reverting metadata changes for tracks
-  ///
-  /// In en, this message translates to:
-  /// **'Reverted metadata changes for {count} track(s)'**
-  String metaRevertedCount(int count);
-
-  /// Label showing the source of fetched metadata
-  ///
-  /// In en, this message translates to:
-  /// **'via {source}'**
-  String metaViaSource(Object source);
-
-  /// Ellipsis-overflow label shared by metadata results and indexer warnings
-  ///
-  /// In en, this message translates to:
-  /// **'... and {count} more'**
-  String metaMoreItems(int count);
-
-  /// Heading for tracks whose metadata could not be found
-  ///
-  /// In en, this message translates to:
-  /// **'Could Not Find'**
-  String get metaCouldNotFind;
-
   /// Fallback artist name when unknown
   ///
   /// In en, this message translates to:
   /// **'Unknown Artist'**
   String get metaUnknownArtist;
-
-  /// Message when all tracks already have metadata
-  ///
-  /// In en, this message translates to:
-  /// **'All {count} tracks already have metadata'**
-  String metaAllHaveMetadata(int count);
-
-  /// Message when no tracks with missing metadata found
-  ///
-  /// In en, this message translates to:
-  /// **'No tracks with missing metadata found'**
-  String get metaNoMissingMetadata;
-
-  /// Progress text while searching a batch of tracks
-  ///
-  /// In en, this message translates to:
-  /// **'Searching batch {batch}...'**
-  String metaSearchingBatch(int batch);
-
-  /// Summary shown when metadata fetch is cancelled
-  ///
-  /// In en, this message translates to:
-  /// **'Metadata fetch cancelled ({updated} updated, {notFound} not found)'**
-  String metaCancelledSummary(int updated, int notFound);
 
   /// Title and barrier label of the song options menu sheet
   ///
@@ -662,18 +572,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Try searching Last.fm, Deezer and iTunes for cover art'**
   String get songMenuFetchCoverHint;
-
-  /// Action label to fetch missing metadata
-  ///
-  /// In en, this message translates to:
-  /// **'Fetch Missing Metadata'**
-  String get songMenuFetchMetadata;
-
-  /// Hint for fetch metadata action
-  ///
-  /// In en, this message translates to:
-  /// **'Search online for title, artist, album and cover'**
-  String get songMenuFetchMetadataHint;
 
   /// Move to Folder label shared by the song menu, quick action bar, and quick actions settings
   ///

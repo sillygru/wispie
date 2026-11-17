@@ -32,7 +32,6 @@ import '../widgets/collection_accent.dart';
 import '../widgets/song_list_item.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
-import '../components/song_actions.dart';
 import '../components/transport_controls.dart';
 import '../cover_gradient/gradient_detail_screen.dart';
 import '../utils/wide_layout.dart';
@@ -292,13 +291,6 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       }
     }
 
-    final bool isUnknownArtistOrAlbum = (effectiveIsArtist &&
-            OnlineMetadataService.cleanTag(effectiveArtistName) == null) ||
-        (effectiveIsAlbum &&
-            OnlineMetadataService.cleanTag(effectiveAlbumName) == null) ||
-        title.toLowerCase() == 'unknown artist' ||
-        title.toLowerCase() == 'unknown album';
-
     // Grouped artist layout: albums ordered by total plays, songs filtered
     // to the selected chip. The selection clamps back to All songs if the
     // album disappears (e.g. metadata edit) instead of showing an empty list.
@@ -456,24 +448,6 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
               );
             },
           ),
-          if (isUnknownArtistOrAlbum)
-            OutlinedButton.icon(
-              onPressed: sortedSongs.isNotEmpty
-                  ? () => songActionFetchMissingMetadataForList(
-                        context,
-                        ref,
-                        sortedSongs,
-                      )
-                  : null,
-              icon: const AppIcon(AppIcons.manageSearch),
-              label: Text(l10n.songMenuFetchMetadata),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-            ),
         ],
       );
     }
@@ -513,17 +487,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
                       )
                     else
                       const SortMenu(),
-                    if (isUnknownArtistOrAlbum)
-                      IconButton(
-                        icon: const AppIcon(AppIcons.manageSearch),
-                        onPressed: () => songActionFetchMissingMetadataForList(
-                          context,
-                          ref,
-                          sortedSongs,
-                        ),
-                        tooltip: l10n.songMenuFetchMetadata,
-                      )
-                    else if (canFetchCover)
+                    if (canFetchCover)
                       IconButton(
                         icon: const AppIcon(AppIcons.imageSearch),
                         onPressed: handleFetchCover,

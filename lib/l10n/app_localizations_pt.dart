@@ -232,65 +232,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get metaResultsTitle => 'Resultados da busca de metadata';
-
-  @override
-  String get metaFetchingTitle => 'Buscando metadata faltando';
-
-  @override
-  String get metaStatUpdated => 'Atualizado';
-
-  @override
-  String get metaStatNotFound => 'Não encontrado';
-
-  @override
-  String get metaStatSkipped => 'Ignorado';
-
-  @override
-  String get metaUndoAll => 'Desfazer tudo';
-
-  @override
-  String get metaUndoSong => 'Desfazer esta música';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Alterações de metadata revertidas em $count faixa(s)';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'via $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '... e mais $count';
-  }
-
-  @override
-  String get metaCouldNotFind => 'Não foi possível encontrar';
-
-  @override
   String get metaUnknownArtist => 'Artista desconhecido';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'Todas as $count faixas já têm metadata';
-  }
-
-  @override
-  String get metaNoMissingMetadata =>
-      'Nenhuma música com metadata faltando foi encontrada';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'Buscando o lote $batch...';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Busca de metadata cancelada ($updated atualizadas, $notFound não encontradas)';
-  }
 
   @override
   String get songMenuTitle => 'Opções da música';
@@ -349,13 +291,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get songMenuFetchCoverHint =>
       'Tentar buscar capas no Last.fm, Deezer e iTunes';
-
-  @override
-  String get songMenuFetchMetadata => 'Buscar metadata faltando';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Buscar online título, artista, álbum e capa';
 
   @override
   String get songMenuMoveToFolder => 'Mover para pasta';
@@ -6193,65 +6128,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   }
 
   @override
-  String get metaResultsTitle => 'Resultados da pesquisa de metadata';
-
-  @override
-  String get metaFetchingTitle => 'A procurar metadata em falta';
-
-  @override
-  String get metaStatUpdated => 'Atualizado';
-
-  @override
-  String get metaStatNotFound => 'Não encontrado';
-
-  @override
-  String get metaStatSkipped => 'Ignorado';
-
-  @override
-  String get metaUndoAll => 'Desfazer tudo';
-
-  @override
-  String get metaUndoSong => 'Desfazer esta música';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Alterações de metadata revertidas em $count faixa(s)';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'via $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '... e mais $count';
-  }
-
-  @override
-  String get metaCouldNotFind => 'Não foi possível encontrar';
-
-  @override
   String get metaUnknownArtist => 'Artista desconhecido';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'Todas as $count faixas já têm metadata';
-  }
-
-  @override
-  String get metaNoMissingMetadata =>
-      'Nenhuma música com metadata em falta foi encontrada';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'A procurar o lote $batch...';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Pesquisa de metadata cancelada ($updated atualizadas, $notFound não encontradas)';
-  }
 
   @override
   String get songMenuTitle => 'Opções da música';
@@ -6312,13 +6189,6 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   @override
   String get songMenuFetchCoverHint =>
       'Tentar procurar capas no Last.fm, Deezer e iTunes';
-
-  @override
-  String get songMenuFetchMetadata => 'Procurar metadata em falta';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Procurar online título, artista, álbum e capa';
 
   @override
   String get songMenuMoveToFolder => 'Mover para pasta';

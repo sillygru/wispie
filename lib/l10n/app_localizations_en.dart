@@ -228,64 +228,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get metaResultsTitle => 'Metadata Fetch Results';
-
-  @override
-  String get metaFetchingTitle => 'Fetching Missing Metadata';
-
-  @override
-  String get metaStatUpdated => 'Updated';
-
-  @override
-  String get metaStatNotFound => 'Not Found';
-
-  @override
-  String get metaStatSkipped => 'Skipped';
-
-  @override
-  String get metaUndoAll => 'Undo All';
-
-  @override
-  String get metaUndoSong => 'Undo this song';
-
-  @override
-  String metaRevertedCount(int count) {
-    return 'Reverted metadata changes for $count track(s)';
-  }
-
-  @override
-  String metaViaSource(Object source) {
-    return 'via $source';
-  }
-
-  @override
-  String metaMoreItems(int count) {
-    return '... and $count more';
-  }
-
-  @override
-  String get metaCouldNotFind => 'Could Not Find';
-
-  @override
   String get metaUnknownArtist => 'Unknown Artist';
-
-  @override
-  String metaAllHaveMetadata(int count) {
-    return 'All $count tracks already have metadata';
-  }
-
-  @override
-  String get metaNoMissingMetadata => 'No tracks with missing metadata found';
-
-  @override
-  String metaSearchingBatch(int batch) {
-    return 'Searching batch $batch...';
-  }
-
-  @override
-  String metaCancelledSummary(int updated, int notFound) {
-    return 'Metadata fetch cancelled ($updated updated, $notFound not found)';
-  }
 
   @override
   String get songMenuTitle => 'Song Options';
@@ -341,13 +284,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get songMenuFetchCoverHint =>
       'Try searching Last.fm, Deezer and iTunes for cover art';
-
-  @override
-  String get songMenuFetchMetadata => 'Fetch Missing Metadata';
-
-  @override
-  String get songMenuFetchMetadataHint =>
-      'Search online for title, artist, album and cover';
 
   @override
   String get songMenuMoveToFolder => 'Move to Folder';
