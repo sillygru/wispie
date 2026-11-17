@@ -25,6 +25,7 @@ class FolderManagementScreen extends ConsumerStatefulWidget {
 class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
     with WidgetsBindingObserver {
   List<Map<String, String>> _folders = [];
+  List<Map<String, String>> _lyricsFolders = [];
   bool _isLoading = true;
 
   /// Null when all-files access does not apply to this platform or API level.
@@ -126,8 +127,10 @@ class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
   Future<void> _loadFolders() async {
     final storage = ref.read(storageServiceProvider);
     final folders = await storage.getMusicFolders();
+    final lyricsFolders = await storage.getLyricsFolders();
     setState(() {
       _folders = folders;
+      _lyricsFolders = lyricsFolders;
       _isLoading = false;
     });
   }
@@ -182,13 +185,79 @@ class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
     }
   }
 
+  Future<void> _addLyricsFolder() async {
+    final storage = ref.read(storageServiceProvider);
+    final Map<String, String>? selection;
+    try {
+      selection = await storage.pickMusicFolder(context);
+    } on FolderPickerUnavailable catch (e) {
+      if (mounted) appSnack(context, e.userFacingHint);
+      return;
+    }
+    if (selection == null) return;
+    final selectedPath = selection['path'] ?? '';
+    if (selectedPath.isEmpty) {
+      if (mounted) {
+        appSnack(context, context.l10n.setupUnableToAccessFolder);
+      }
+      return;
+    }
+
+    await storage.addLyricsFolder(
+      selectedPath,
+      treeUri: selection['treeUri'],
+      iosBookmarkId: selection['iosBookmarkId'],
+      platform: selection['platform'],
+    );
+
+    await _loadFolders();
+    ref.invalidate(musicFoldersProvider);
+    ref.invalidate(songsProvider);
+
+    if (mounted) {
+      appSnack(context, context.l10n.foldersLyricsAddedSnack);
+    }
+  }
+
+  Future<void> _removeLyricsFolder(String path) async {
+    await ref.read(storageServiceProvider).removeLyricsFolder(path);
+
+    await _loadFolders();
+    ref.invalidate(musicFoldersProvider);
+    ref.invalidate(songsProvider);
+
+    if (mounted) {
+      appSnack(context, context.l10n.foldersLyricsRemovedSnack);
+    }
+  }
+
+  Widget _folderRow(
+    Map<String, String> folder,
+    Future<void> Function(Map<String, String>) onRemove,
+  ) {
+    final path = folder['path'] ?? '';
+    return AppListRow(
+      leading: AppRowIcon(
+        icon: AppIcons.folder,
+        color: AppTokens.accentOf(context, ref),
+      ),
+      title: p.basename(path),
+      subtitle: path,
+      trailing: IconButton(
+        icon: const AppIcon(AppIcons.delete),
+        tooltip: context.l10n.setupRemoveFolderTooltip,
+        onPressed: () => onRemove(folder),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AmbientScaffold(
       appBar: AppTopBar(title: context.l10n.settingsSearchMusicFoldersTitle),
       body: _isLoading
           ? const AppLoading()
-          : Column(
+          : ListView(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -203,39 +272,20 @@ class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
                   ),
                 ),
                 if (_allFilesGranted != null) _buildAllFilesCard(context),
-                Expanded(
-                  child: _folders.isEmpty
-                      ? AppEmptyState(
-                          icon: AppIcons.folder,
-                          title: context.l10n.foldersEmptyTitle,
-                          message: context.l10n.foldersEmptyMessage,
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTokens.s3,
-                          ),
-                          itemCount: _folders.length,
-                          itemBuilder: (context, index) {
-                            final folder = _folders[index];
-                            final path = folder['path'] ?? '';
-                            final name = p.basename(path);
-
-                            return AppListRow(
-                              leading: AppRowIcon(
-                                icon: AppIcons.folder,
-                                color: AppTokens.accentOf(context, ref),
-                              ),
-                              title: name,
-                              subtitle: path,
-                              trailing: IconButton(
-                                icon: const AppIcon(AppIcons.delete),
-                                tooltip: context.l10n.setupRemoveFolderTooltip,
-                                onPressed: () => _removeFolder(folder),
-                              ),
-                            );
-                          },
-                        ),
-                ),
+                if (_folders.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s5,
+                      vertical: AppTokens.s3,
+                    ),
+                    child: Text(
+                      context.l10n.foldersEmptyMessage,
+                      style: AppTokens.rowSubtitle(context),
+                    ),
+                  )
+                else
+                  for (final folder in _folders)
+                    _folderRow(folder, _removeFolder),
                 SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.all(AppTokens.s4),
@@ -245,6 +295,58 @@ class _FolderManagementScreenState extends ConsumerState<FolderManagementScreen>
                         onPressed: _addFolder,
                         icon: const AppIcon(AppIcons.add),
                         label: Text(context.l10n.foldersAddButton),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s5,
+                    AppTokens.s2,
+                    AppTokens.s5,
+                    AppTokens.s2,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.l10n.foldersLyricsTitle,
+                        style: AppTokens.sectionLabel(context),
+                      ),
+                      const SizedBox(height: AppTokens.s1),
+                      Text(
+                        context.l10n.foldersLyricsSubtitle,
+                        style: AppTokens.rowSubtitle(context),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_lyricsFolders.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s5,
+                      vertical: AppTokens.s3,
+                    ),
+                    child: Text(
+                      context.l10n.foldersLyricsEmptyTitle,
+                      style: AppTokens.rowSubtitle(context),
+                    ),
+                  )
+                else
+                  for (final folder in _lyricsFolders)
+                    _folderRow(
+                      folder,
+                      (target) => _removeLyricsFolder(target['path'] ?? ''),
+                    ),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppTokens.s4),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed: _addLyricsFolder,
+                        icon: const AppIcon(AppIcons.add),
+                        label: Text(context.l10n.foldersLyricsAddButton),
                       ),
                     ),
                   ),

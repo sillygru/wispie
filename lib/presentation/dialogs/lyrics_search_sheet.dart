@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 import '../../domain/models/lrclib_result.dart';
 import '../../l10n/l10n.dart';
@@ -7,6 +8,8 @@ import '../../domain/services/lrclib_match.dart';
 import '../../models/song.dart';
 import '../../providers/providers.dart';
 import '../../services/lrclib_service.dart';
+import '../../services/lyrics_files_service.dart';
+import '../components/app_feedback.dart';
 import '../components/app_sheet.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
@@ -49,6 +52,10 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
   /// Drops results from a query the user has already moved on from.
   int _searchToken = 0;
 
+  /// Sidecar files already on disk, primary first. Shown while the network
+  /// search runs, so lyrics the user already has never wait on a provider.
+  List<String> _localPaths = const [];
+
   @override
   void initState() {
     super.initState();
@@ -59,9 +66,17 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
         text: LrclibService.cleanTag(widget.song.title) ?? '');
     _artistController = TextEditingController(
         text: LrclibService.cleanTag(widget.song.artist) ?? '');
+    _loadLocal();
     // The song's own tags are the best first guess, so search immediately
     // rather than making the user press a button to see the obvious query.
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+  }
+
+  Future<void> _loadLocal() async {
+    final links = await LyricsFilesService.instance.linksFor([widget.song]);
+    final link = links[widget.song.filename];
+    if (!mounted || link == null) return;
+    setState(() => _localPaths = link.paths);
   }
 
   @override
@@ -108,17 +123,45 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
     final lyrics = result.lyricsFor(preferPlain: _preferPlain);
     if (lyrics == null) return;
 
+    final confirmed = await _confirmPreview(
+      result.trackName,
+      result.instrumental
+          ? context.l10n.lyricsInstrumentalWarning
+          : _previewText(lyrics),
+    );
+    if (confirmed && mounted) {
+      Navigator.pop(context, lyrics);
+    }
+  }
+
+  /// Uses a sidecar file the user already has, previewed like a remote result.
+  Future<void> _previewLocal(String path) async {
+    final lyrics = await LyricsFilesService.instance.textForPath(path);
+    if (!mounted) return;
+    if (lyrics == null) {
+      appSnack(context, context.l10n.lyricsFileUnreadable);
+      return;
+    }
+
+    final confirmed = await _confirmPreview(
+      p.basename(path),
+      _previewText(lyrics),
+    );
+    if (confirmed && mounted) {
+      Navigator.pop(context, lyrics);
+    }
+  }
+
+  Future<bool> _confirmPreview(String title, String shown) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(result.trackName),
+        title: Text(title),
         content: SizedBox(
           width: double.maxFinite,
           child: SingleChildScrollView(
             child: Text(
-              result.instrumental
-                  ? context.l10n.lyricsInstrumentalWarning
-                  : _previewText(lyrics),
+              shown,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ),
@@ -135,10 +178,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
         ],
       ),
     );
-
-    if (confirmed == true && mounted) {
-      Navigator.pop(context, lyrics);
-    }
+    return confirmed == true;
   }
 
   /// First few lines only — enough to tell two versions apart without turning
@@ -235,8 +275,36 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
   }
 
   Widget _buildBody(Color accent) {
+    final l10n = context.l10n;
+    final children = <Widget>[];
+
+    if (_localPaths.isNotEmpty) {
+      children.add(Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTokens.s5,
+          0,
+          AppTokens.s5,
+          AppTokens.s2,
+        ),
+        child: Text(
+          l10n.lyricsLocalFileSection,
+          style: AppTokens.sectionLabel(context),
+        ),
+      ));
+      for (var i = 0; i < _localPaths.length; i++) {
+        final path = _localPaths[i];
+        children.add(_LocalFileRow(
+          path: path,
+          isDefault: i == 0,
+          accent: accent,
+          onTap: () => _previewLocal(path),
+        ));
+      }
+      children.add(const SizedBox(height: AppTokens.s3));
+    }
+
     if (_searching) {
-      return const Padding(
+      children.add(const Padding(
         padding: EdgeInsets.symmetric(vertical: AppTokens.s6),
         child: Center(
           child: SizedBox(
@@ -245,12 +313,9 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
             child: CircularProgressIndicator(strokeWidth: 2.4),
           ),
         ),
-      );
-    }
-
-    final error = _error;
-    if (error != null) {
-      return Padding(
+      ));
+    } else if (_error != null) {
+      children.add(Padding(
         padding: const EdgeInsets.fromLTRB(
           AppTokens.s5,
           AppTokens.s4,
@@ -258,27 +323,112 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
           AppTokens.s6,
         ),
         child: Text(
-          error,
+          _error!,
           textAlign: TextAlign.center,
           style: AppTokens.rowSubtitle(context),
         ),
-      );
+      ));
+    } else {
+      final results = _results ?? const <LrclibResult>[];
+      for (final result in results) {
+        children.add(_ResultRow(
+          result: result,
+          localDuration: widget.song.duration,
+          preferPlain: _preferPlain,
+          accent: accent,
+          onTap: () => _preview(result),
+        ));
+      }
     }
 
-    final results = _results ?? const <LrclibResult>[];
-    return ListView.builder(
+    return ListView(
       shrinkWrap: true,
       padding: const EdgeInsets.only(bottom: AppTokens.s4),
-      itemCount: results.length,
-      itemBuilder: (context, index) => _ResultRow(
-        result: results[index],
-        localDuration: widget.song.duration,
-        preferPlain: _preferPlain,
-        accent: accent,
-        onTap: () => _preview(results[index]),
+      children: children,
+    );
+  }
+}
+
+/// A lyric file that is already on disk, listed above the network results.
+class _LocalFileRow extends StatelessWidget {
+  final String path;
+  final bool isDefault;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _LocalFileRow({
+    required this.path,
+    required this.isDefault,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s3,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    p.basename(path),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTokens.rowTitle(context),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    p.dirname(path),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTokens.rowSubtitle(context),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTokens.s3),
+            if (isDefault) ...[
+              _badge(context.l10n.lyricsLocalFileDefaultBadge, accent),
+              const SizedBox(width: AppTokens.s1),
+            ],
+            _badge(
+              context.l10n.lyricsLocalFileBadge,
+              AppTokens.fgTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _badge(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s2,
+          vertical: AppTokens.s1,
+        ),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: AppTokens.brPill,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+            color: color,
+          ),
+        ),
+      );
 }
 
 /// Switches the whole list between synced and plain, rather than asking per

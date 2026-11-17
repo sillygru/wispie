@@ -4,6 +4,7 @@
 use crate::cover;
 use crate::emitter::{Emit, Emitter};
 use crate::formats;
+use crate::lyrics_files;
 use crate::meta;
 use crate::model::{ScanRequest, SongJson};
 use crate::CANCEL;
@@ -28,6 +29,7 @@ struct Context<'a> {
     by_url: HashMap<&'a str, &'a SongJson>,
     by_filename: HashMap<&'a str, &'a SongJson>,
     folder_covers: Mutex<HashMap<PathBuf, Option<String>>>,
+    lyrics: lyrics_files::LyricsIndex,
 }
 
 enum Piece {
@@ -44,6 +46,15 @@ pub fn run(request: ScanRequest, emitter: &Emitter) -> Result<(), String> {
         }
     }
 
+    // Lyric files come out of the same walk as the songs, plus whatever the
+    // configured lyrics folders hold, so linking costs no second pass.
+    let (files, unreachable, lyric_files) = collect(&request);
+    let mut lyrics = lyrics_files::index_paths(lyric_files);
+    lyrics_files::merge(
+        &mut lyrics,
+        lyrics_files::index_roots(&request.lyrics_roots, &request.excluded_folders),
+    );
+
     let mut context = Context {
         covers_dir,
         play_counts: &request.play_counts,
@@ -52,13 +63,13 @@ pub fn run(request: ScanRequest, emitter: &Emitter) -> Result<(), String> {
         by_url: HashMap::with_capacity(request.existing.len()),
         by_filename: HashMap::with_capacity(request.existing.len()),
         folder_covers: Mutex::new(HashMap::new()),
+        lyrics,
     };
     for song in &request.existing {
         context.by_url.insert(song.url.as_str(), song);
         context.by_filename.insert(song.filename.as_str(), song);
     }
 
-    let (files, unreachable) = collect(&request);
     let total = files.len();
     emitter.emit(Emit::Progress {
         done: 0,
@@ -143,9 +154,10 @@ fn chunk_size(concurrency: usize) -> usize {
 
 /// Every media file to look at, plus the roots that could not be listed.
 /// An unlistable root is reported, never treated as empty.
-fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>) {
+fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
     let mut files = Vec::new();
     let mut unreachable = Vec::new();
+    let mut lyrics = Vec::new();
 
     for root in &request.roots {
         let path = Path::new(root);
@@ -166,6 +178,10 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>) {
                         continue;
                     }
                     let file_path = entry.path();
+                    if lyrics_files::is_lyrics_path(file_path) {
+                        lyrics.push(file_path.to_path_buf());
+                        continue;
+                    }
                     if !formats::is_supported_path(file_path) {
                         continue;
                     }
@@ -188,10 +204,17 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>) {
 
     files.sort();
     files.dedup();
-    (files, unreachable)
+    lyrics.sort();
+    lyrics.dedup();
+    (files, unreachable, lyrics)
 }
 
-fn is_excluded(path: &Path, excluded_folders: &[String]) -> bool {
+/// Whether a `.lrc`/`.ttml` file named after [filename] was found.
+fn has_sidecar(context: &Context, filename: &str) -> bool {
+    lyrics_files::lookup(&context.lyrics, filename).is_some()
+}
+
+pub(crate) fn is_excluded(path: &Path, excluded_folders: &[String]) -> bool {
     excluded_folders.iter().any(|excluded| {
         let excluded = Path::new(excluded);
         path == excluded || path.starts_with(excluded)
@@ -230,6 +253,10 @@ pub fn hydrate(existing: &SongJson, covers_dir: &Path) -> Option<SongJson> {
         by_url: HashMap::new(),
         by_filename: HashMap::new(),
         folder_covers: Mutex::new(HashMap::new()),
+        lyrics: path
+            .parent()
+            .map(|parent| lyrics_files::index_directories([parent]))
+            .unwrap_or_default(),
     };
 
     let mut song = build_song(
@@ -315,7 +342,7 @@ fn reuse_song(
         url,
         filename: existing.filename.clone().pipe_if_empty(&filename),
         cover_url: existing.cover_url.clone(),
-        has_lyrics: existing.has_lyrics,
+        has_lyrics: existing.has_lyrics || has_sidecar(context, &filename),
         play_count: context
             .play_counts
             .get(&filename)
@@ -366,7 +393,8 @@ fn fast_song(
             .map(|s| s.album.clone())
             .unwrap_or_else(|| "Unknown Album".to_string()),
         cover_url: existing.and_then(|s| s.cover_url.clone()),
-        has_lyrics: existing.map(|s| s.has_lyrics).unwrap_or(false),
+        has_lyrics: existing.map(|s| s.has_lyrics).unwrap_or(false)
+            || has_sidecar(context, &filename),
         play_count: context
             .play_counts
             .get(&filename)
@@ -458,6 +486,9 @@ fn build_song(
     if !is_video && cover_url.is_none() {
         cover_url = cover::manual_extract(path, &context.covers_dir);
     }
+
+    // A sidecar is lyrics whether or not the file has a tag for them.
+    has_lyrics = has_lyrics || has_sidecar(context, &filename);
 
     Some(SongJson {
         title,

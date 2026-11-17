@@ -24,7 +24,7 @@ NEVER write unit tests after you write code.
 
 There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
 
-The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
+The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `lyrics_files_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
 
 ## Verification
 
@@ -74,6 +74,8 @@ Riverpod 3 `Notifier`/`AsyncNotifier`. `lib/providers/providers.dart` (~2200 lin
 ### Library scanning
 
 `ScannerService` drives the native core (`lib/services/scanner_service.dart` → `lib/data/rust/`): a fast scan writes minimal rows, then metadata enrichment and cover extraction in throttled batches, all on Rust worker threads. `lib/domain/services/media_formats.dart` is the one list of playable extensions — `rust/wispie_core/src/formats.rs` mirrors it, and the scanner, the storage probe and the folder reader all ask it. Video thumbnails go through `FFmpegService`, which is platform-channel and main-thread only. `MediaDecodePriority` (`lib/services/media_decode_gate.dart`) serializes full-file decodes — waveform and beat analysis must not run concurrently on one file.
+
+Sidecar lyrics (`<song>.lrc` / `<song>.ttml`) are discovered by the same walk: `rust/wispie_core/src/lyrics_files.rs` matches on the song's stem, prefers `.lrc` over `.ttml`, converts TTML to LRC, and reports every match so the picker can list them all. The scan marks a row `has_lyrics` from a sidecar, the search index indexes its text, and bulk rename moves the files with the song. Adding a lyrics folder is optional (settings → library → music folders).
 
 ### Networking
 

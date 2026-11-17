@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../domain/services/cache_policy.dart';
 import '../../models/song.dart';
 import '../../services/ffmpeg_service.dart';
+import '../../services/lyrics_files_service.dart';
 import '../../services/wispie_cache.dart';
 
 class SongRepository {
@@ -44,6 +45,15 @@ class SongRepository {
           return cacheEntry.lyrics;
         }
 
+        // Checked on every miss, not cached as a negative: dropping an .lrc or
+        // .ttml beside the file has to be enough for it to appear.
+        final sidecar = await LyricsFilesService.instance.textFor(song);
+        if (sidecar != null) {
+          await _writeLyricsCache(song, sidecar);
+          _resolvedLyrics[song.url] = sidecar;
+          return sidecar;
+        }
+
         final lyrics = await _ffmpegService.getLyrics(song.url);
         final normalizedLyrics =
             (lyrics != null && lyrics.trim().isNotEmpty) ? lyrics : null;
@@ -68,18 +78,23 @@ class SongRepository {
     });
   }
 
-  /// Checks if a song has lyrics using cached data first, then FFmpeg if needed.
+  /// Checks if a song has lyrics using cached data first, then the sidecar
+  /// files and FFmpeg if needed.
   Future<bool> hasLyrics(Song song) async {
     final cacheEntry = await _readLyricsCache(song);
-    if (cacheEntry != null) {
-      if (song.hasLyrics && !cacheEntry.hasLyrics) return true;
-      return cacheEntry.hasLyrics;
-    }
+    if (cacheEntry != null && cacheEntry.hasLyrics) return true;
 
     if (song.hasLyrics) {
       await _writeLyricsCache(song, null, hasLyricsOverride: true);
       return true;
     }
+
+    // The row's flag is only as fresh as the last scan, so a sidecar dropped in
+    // since then is still found here.
+    final sidecars = await LyricsFilesService.instance.linksFor([song]);
+    if (sidecars.containsKey(song.filename)) return true;
+
+    if (cacheEntry != null) return false;
 
     final lyrics = await getLyrics(song);
     return lyrics != null && lyrics.isNotEmpty;

@@ -5161,6 +5161,22 @@
     }
   },
   "lyricsInstrumentalWarning": "Marked as instrumental. Applying this clears any lyrics stored on the file.",
+  "lyricsLocalFileSection": "On this device",
+  "@lyricsLocalFileSection": {
+    "description": "Section title above lyric files found on disk in the lyrics search sheet"
+  },
+  "lyricsLocalFileBadge": "File",
+  "@lyricsLocalFileBadge": {
+    "description": "Badge marking a lyric result that is a file on disk"
+  },
+  "lyricsLocalFileDefaultBadge": "Default",
+  "@lyricsLocalFileDefaultBadge": {
+    "description": "Badge marking the lyric file the player uses when several match"
+  },
+  "lyricsFileUnreadable": "This lyrics file could not be read.",
+  "@lyricsFileUnreadable": {
+    "description": "Snackbar when a lyric file on disk cannot be read"
+  },
   "@lyricsInstrumentalWarning": {
     "description": "Warning shown when applying an instrumental lyrics result"
   },
@@ -5474,6 +5490,30 @@
   "foldersAddButton": "Add Folder",
   "@foldersAddButton": {
     "description": "Label for the add folder button"
+  },
+  "foldersLyricsTitle": "Lyrics folders (optional)",
+  "@foldersLyricsTitle": {
+    "description": "Section title for the optional lyrics folders list"
+  },
+  "foldersLyricsSubtitle": "Searched for .lrc and .ttml files named after a song. Lyrics next to your music are always found.",
+  "@foldersLyricsSubtitle": {
+    "description": "Explains what the optional lyrics folders are used for"
+  },
+  "foldersLyricsEmptyTitle": "No lyrics folder added",
+  "@foldersLyricsEmptyTitle": {
+    "description": "Shown when the optional lyrics folder list is empty"
+  },
+  "foldersLyricsAddButton": "Add lyrics folder",
+  "@foldersLyricsAddButton": {
+    "description": "Label for adding an optional lyrics folder"
+  },
+  "foldersLyricsAddedSnack": "Lyrics folder added",
+  "@foldersLyricsAddedSnack": {
+    "description": "Snackbar after adding a lyrics folder"
+  },
+  "foldersLyricsRemovedSnack": "Lyrics folder removed",
+  "@foldersLyricsRemovedSnack": {
+    "description": "Snackbar after removing a lyrics folder"
   },
   "foldersAllFilesGrantedTitle": "All files access granted",
   "@foldersAllFilesGrantedTitle": {

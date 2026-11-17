@@ -23,6 +23,7 @@ import '../services/notification_cover_warmer.dart';
 import '../services/update_service.dart';
 import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
+import '../services/lyrics_files_service.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
 import '../domain/services/taste_model.dart';
@@ -1412,6 +1413,12 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       await journal.clear();
     }
 
+    // Sidecars are found before anything moves: afterwards the old stem is
+    // gone, and finding them would cost a second search per song.
+    final sidecars = await LyricsFilesService.instance.linksFor([
+      for (final entry in actionable) entry.song,
+    ]);
+
     onProgress?.call('Renaming files', 0, actionable.length);
 
     for (var i = 0; i < actionable.length; i++) {
@@ -1466,6 +1473,22 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       if (applied.length - committed >= _commitSlice) await commit();
 
       onProgress?.call('Renaming files', i + 1, actionable.length);
+    }
+
+    // Every sidecar follows its song, keeping its own extension, so a renamed
+    // file does not keep pointing at lyrics under the old name.
+    final sidecarRenames = <String, String>{};
+    for (final item in applied) {
+      final link = sidecars[item.previousFilename];
+      if (link == null) continue;
+      final stem = p.basenameWithoutExtension(item.updated.filename);
+      for (final path in link.paths) {
+        sidecarRenames[path] = stem;
+      }
+    }
+    if (sidecarRenames.isNotEmpty) {
+      final moved = await LyricsFilesService.instance.rename(sidecarRenames);
+      debugPrint('Moved ${moved.length} lyrics files with their songs');
     }
 
     if (applied.isEmpty) {

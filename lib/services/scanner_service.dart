@@ -71,6 +71,7 @@ class _ScanParams {
   final bool includeVideos;
   final int minimumFileSizeBytes;
   final bool fastMode;
+  final List<String> lyricsRoots;
 
   _ScanParams({
     required this.paths,
@@ -82,6 +83,7 @@ class _ScanParams {
     this.includeVideos = true,
     this.minimumFileSizeBytes = 0,
     this.fastMode = false,
+    this.lyricsRoots = const [],
   });
 }
 
@@ -326,6 +328,10 @@ class ScannerService {
 
     final storage = StorageService();
     final excludedFolders = await storage.getExcludedFolders();
+    final lyricsRoots = [
+      for (final folder in await storage.getLyricsFolders())
+        if ((folder['path'] ?? '').isNotEmpty) folder['path']!,
+    ];
     final effectivePlayCounts =
         playCounts ?? await DatabaseService.instance.getPlayCounts();
 
@@ -347,6 +353,7 @@ class ScannerService {
       minFileSizeBytes: minimumFileSizeBytes,
       fastMode: fastMode,
       batchSize: fastMode ? 20 : 200,
+      lyricsRoots: lyricsRoots,
     ));
 
     await for (final event in events) {
@@ -436,6 +443,10 @@ class ScannerService {
 
     final storage = StorageService();
     final excludedFolders = await storage.getExcludedFolders();
+    final lyricsRoots = [
+      for (final folder in await storage.getLyricsFolders())
+        if ((folder['path'] ?? '').isNotEmpty) folder['path']!,
+    ];
     final effectivePlayCounts =
         playCounts ?? await DatabaseService.instance.getPlayCounts();
 
@@ -493,6 +504,7 @@ class ScannerService {
       fastMode: fastMode,
       includeVideos: includeVideos,
       minimumFileSizeBytes: minimumFileSizeBytes,
+      lyricsRoots: lyricsRoots,
     );
 
     _startScan(params);
@@ -913,6 +925,7 @@ class ScannerService {
       existingSongs: params.existingSongs ?? const [],
       playCounts: params.playCounts,
       batchSize: params.fastMode ? 20 : 200,
+      lyricsRoots: params.lyricsRoots,
     )).listen((message) {
       if (message is double || message is List<Song>) {
         params.sendPort.send(message);

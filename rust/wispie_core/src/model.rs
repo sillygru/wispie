@@ -66,6 +66,9 @@ pub struct ScanRequest {
     #[serde(rename = "batchSize")]
     pub batch_size: usize,
     pub concurrency: usize,
+    /// Extra folders searched for `.lrc`/`.ttml` sidecars.
+    #[serde(rename = "lyricsRoots")]
+    pub lyrics_roots: Vec<String>,
 }
 
 impl Default for ScanRequest {
@@ -81,6 +84,7 @@ impl Default for ScanRequest {
             play_counts: HashMap::new(),
             batch_size: 200,
             concurrency: 0,
+            lyrics_roots: Vec::new(),
         }
     }
 }

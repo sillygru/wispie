@@ -195,6 +195,14 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
       keywords: _kw(l.settingsKwManageFolders),
       open: () => const FolderManagementScreen(),
     ),
+    SettingsDestination(
+      icon: AppIcons.subtitles,
+      title: l.foldersLyricsTitle,
+      subtitle: l.foldersLyricsSubtitle,
+      breadcrumb: l.settingsCrumbLibraryFolders,
+      keywords: _kw('lyrics,lrc,ttml,subtitles,folders'),
+      open: () => const FolderManagementScreen(),
+    ),
 
     // --------------------------------------------------------------- playback
     SettingsDestination(

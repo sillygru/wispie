@@ -5,6 +5,7 @@ import 'package:path/path.dart';
 import '../../models/song.dart';
 import '../../services/wispie_cache.dart';
 import '../../services/ffmpeg_service.dart';
+import '../../services/lyrics_files_service.dart';
 import '../../services/wispie_paths.dart';
 import '../models/search_index_entry.dart';
 
@@ -121,6 +122,16 @@ class SearchIndexRepository {
       for (final entry in existingEntries) entry['filename'] as String: entry
     };
 
+    // One native pass over the sidecar files, rather than one probe per song.
+    final sidecarLyrics = <String, String>{};
+    final sidecars = await LyricsFilesService.instance.textsFor(songs);
+    for (final entry in sidecars.entries) {
+      final text = entry.value.text;
+      if (text == null) continue;
+      final plain = LyricLine.extractPlainText(text).toLowerCase().trim();
+      if (plain.isNotEmpty) sidecarLyrics[entry.key] = plain;
+    }
+
     await _database!.transaction((txn) async {
       final Set<String> newFilenames = songs.map((s) => s.filename).toSet();
       final List<String> toRemove = existingMap.keys
@@ -167,19 +178,30 @@ class SearchIndexRepository {
         // still current is whether it has cached lyrics now and did not before.
         final String? remoteLyrics =
             song.isLocal ? null : await _cachedRemoteLyrics(song);
+        final String? sidecar = sidecarLyrics[song.filename];
         final bool lyricsUnchanged = song.isLocal
             ? songMtime == existingMtime
             : (remoteLyrics != null) == (existing?['lyrics_content'] != null);
 
+        // A sidecar the row has not indexed yet forces a refresh: its file may
+        // not have changed, but what the library can show has.
+        final bool sidecarPending =
+            sidecar != null && existing?['lyrics_content'] == null;
+
         // Optimization: Skip extraction if file mtime and metadata haven't changed
-        if (existing != null && lyricsUnchanged && metadataMatches) {
+        if (existing != null &&
+            lyricsUnchanged &&
+            metadataMatches &&
+            !sidecarPending) {
           continue;
         }
 
         updateCount++;
 
         // Reuse lyrics if available, otherwise extract if song has them
-        if (song.isLocal) {
+        if (sidecar != null) {
+          lyricsContent = sidecar;
+        } else if (song.isLocal) {
           if (existing != null && existing['lyrics_content'] != null) {
             lyricsContent = existing['lyrics_content'] as String;
           } else if (song.hasLyrics) {
@@ -259,6 +281,15 @@ class SearchIndexRepository {
     if (!song.isLocal) {
       await _upsertRow(song, await _cachedRemoteLyrics(song));
       return;
+    }
+
+    final sidecar = await LyricsFilesService.instance.textFor(song);
+    if (sidecar != null) {
+      final plain = LyricLine.extractPlainText(sidecar).toLowerCase().trim();
+      if (plain.isNotEmpty) {
+        await _upsertRow(song, plain);
+        return;
+      }
     }
 
     // Check if we already have lyrics for this file to avoid re-extraction

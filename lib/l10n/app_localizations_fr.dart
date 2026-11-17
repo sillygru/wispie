@@ -4102,6 +4102,18 @@ class AppLocalizationsFr extends AppLocalizations {
       'Marqué comme instrumental. Cette action efface toutes les paroles enregistrées dans le fichier.';
 
   @override
+  String get lyricsLocalFileSection => 'On this device';
+
+  @override
+  String get lyricsLocalFileBadge => 'File';
+
+  @override
+  String get lyricsLocalFileDefaultBadge => 'Default';
+
+  @override
+  String get lyricsFileUnreadable => 'This lyrics file could not be read.';
+
+  @override
   String get lyricsApplyUpper => 'APPLIQUER';
 
   @override
@@ -4356,6 +4368,25 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get foldersAddButton => 'Ajouter un dossier';
+
+  @override
+  String get foldersLyricsTitle => 'Lyrics folders (optional)';
+
+  @override
+  String get foldersLyricsSubtitle =>
+      'Searched for .lrc and .ttml files named after a song. Lyrics next to your music are always found.';
+
+  @override
+  String get foldersLyricsEmptyTitle => 'No lyrics folder added';
+
+  @override
+  String get foldersLyricsAddButton => 'Add lyrics folder';
+
+  @override
+  String get foldersLyricsAddedSnack => 'Lyrics folder added';
+
+  @override
+  String get foldersLyricsRemovedSnack => 'Lyrics folder removed';
 
   @override
   String get foldersAllFilesGrantedTitle =>

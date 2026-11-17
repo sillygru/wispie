@@ -6783,6 +6783,30 @@ abstract class AppLocalizations {
   /// **'Marked as instrumental. Applying this clears any lyrics stored on the file.'**
   String get lyricsInstrumentalWarning;
 
+  /// Section title above lyric files found on disk in the lyrics search sheet
+  ///
+  /// In en, this message translates to:
+  /// **'On this device'**
+  String get lyricsLocalFileSection;
+
+  /// Badge marking a lyric result that is a file on disk
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get lyricsLocalFileBadge;
+
+  /// Badge marking the lyric file the player uses when several match
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get lyricsLocalFileDefaultBadge;
+
+  /// Snackbar when a lyric file on disk cannot be read
+  ///
+  /// In en, this message translates to:
+  /// **'This lyrics file could not be read.'**
+  String get lyricsFileUnreadable;
+
   /// Label for the apply button in the lyrics search preview dialog
   ///
   /// In en, this message translates to:
@@ -7196,6 +7220,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add Folder'**
   String get foldersAddButton;
+
+  /// Section title for the optional lyrics folders list
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics folders (optional)'**
+  String get foldersLyricsTitle;
+
+  /// Explains what the optional lyrics folders are used for
+  ///
+  /// In en, this message translates to:
+  /// **'Searched for .lrc and .ttml files named after a song. Lyrics next to your music are always found.'**
+  String get foldersLyricsSubtitle;
+
+  /// Shown when the optional lyrics folder list is empty
+  ///
+  /// In en, this message translates to:
+  /// **'No lyrics folder added'**
+  String get foldersLyricsEmptyTitle;
+
+  /// Label for adding an optional lyrics folder
+  ///
+  /// In en, this message translates to:
+  /// **'Add lyrics folder'**
+  String get foldersLyricsAddButton;
+
+  /// Snackbar after adding a lyrics folder
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics folder added'**
+  String get foldersLyricsAddedSnack;
+
+  /// Snackbar after removing a lyrics folder
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics folder removed'**
+  String get foldersLyricsRemovedSnack;
 
   /// Status title on the music folders screen when all files access is on
   ///

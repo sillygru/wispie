@@ -38,6 +38,7 @@ class StorageService {
   static String? testDocumentsPath;
 
   static const String _musicFoldersKey = 'music_folders_list';
+  static const String _lyricsFoldersKey = 'lyrics_folders_list';
   static const String _musicFolderKey = 'music_folder_path';
   static const String _excludedFoldersKey = 'excluded_folders';
   static const String _lastLibraryFolderKey = 'last_library_folder';
@@ -412,6 +413,64 @@ class StorageService {
     await _markLibraryFoldersChanged();
   }
 
+  // Lyrics Folders (optional, searched for .lrc/.ttml sidecars)
+  static List<Map<String, String>>? _cachedLyricsFolders;
+
+  Future<void> _persistLyricsFolders(List<Map<String, String>> folders) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_lyricsFoldersKey, _encodeFolderRecords(folders));
+    _cachedLyricsFolders = folders.map(_normalizeFolderRecord).toList();
+  }
+
+  /// Folders searched for lyric files, beyond each song's own folder.
+  Future<List<Map<String, String>>> getLyricsFolders(
+      {bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedLyricsFolders != null) {
+      return _cachedLyricsFolders!.map(_normalizeFolderRecord).toList();
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final decoded = (prefs.getStringList(_lyricsFoldersKey) ?? [])
+        .map(_decodeFolderRecord)
+        .toList();
+    _cachedLyricsFolders = decoded;
+    return decoded.map(_normalizeFolderRecord).toList();
+  }
+
+  Future<void> addLyricsFolder(
+    String path, {
+    String? treeUri,
+    String? iosBookmarkId,
+    String? platform,
+  }) async {
+    final current = await getLyricsFolders(forceRefresh: true);
+    final next = List<Map<String, String>>.from(current);
+    final normalized = _normalizeFolderRecord({
+      'path': path,
+      'treeUri': treeUri ?? '',
+      'platform': platform ?? Platform.operatingSystem,
+      'iosBookmarkId': iosBookmarkId ?? '',
+    });
+
+    final existing = next.indexWhere((folder) => folder['path'] == path);
+    if (existing >= 0) {
+      next[existing] = normalized;
+    } else {
+      next.add(normalized);
+    }
+
+    await _persistLyricsFolders(next);
+    await _markLibraryFoldersChanged();
+  }
+
+  Future<void> removeLyricsFolder(String path) async {
+    final current = await getLyricsFolders(forceRefresh: true);
+    final remaining =
+        current.where((folder) => folder['path'] != path).toList();
+    await _persistLyricsFolders(remaining);
+    await _markLibraryFoldersChanged();
+  }
+
   // Legacy compatibility - returns first music folder or null
   Future<String?> getMusicFolderPath() async {
     final folders = await getMusicFolders();
@@ -562,6 +621,7 @@ class StorageService {
     'username',
     'local_username',
     'music_folders_list',
+    'lyrics_folders_list',
     'excluded_folders',
     'last_library_folder',
     'is_local_mode',
@@ -704,6 +764,7 @@ class StorageService {
 
   static const List<String> _scannerSettingsKeys = [
     'music_folders_list',
+    'lyrics_folders_list',
     'excluded_folders',
     'last_library_folder',
     'minimum_file_size_bytes',

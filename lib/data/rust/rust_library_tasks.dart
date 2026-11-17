@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:isolate';
 
+import 'package:path/path.dart' as p;
+
 import '../../models/song.dart';
 import 'wispie_core.dart';
 
@@ -41,6 +43,7 @@ class RustTaskRequest {
     this.songs = const [],
     this.paths = const [],
     this.force = false,
+    this.lyricsRoots = const [],
   });
 
   final String command;
@@ -57,6 +60,9 @@ class RustTaskRequest {
   final List<String> paths;
   final bool force;
 
+  /// Extra folders searched for `.lrc`/`.ttml` sidecars.
+  final List<String> lyricsRoots;
+
   Map<String, Object?> toJson() {
     switch (command) {
       case 'scan':
@@ -71,6 +77,7 @@ class RustTaskRequest {
           'existing': [for (final song in existingSongs) song.toJson()],
           'playCounts': playCounts,
           'batchSize': batchSize,
+          'lyricsRoots': lyricsRoots,
         };
       case 'read_facts':
         return {'command': command, 'paths': paths};
@@ -83,6 +90,40 @@ class RustTaskRequest {
         };
     }
   }
+}
+
+/// A `.lrc`/`.ttml` sidecar that matches one song's filename.
+class LyricsFileLink {
+  const LyricsFileLink({
+    required this.filename,
+    required this.path,
+    required this.duplicates,
+    this.text,
+  });
+
+  final String filename;
+
+  /// The file the player uses.
+  final String path;
+
+  /// The other matches; the user can pick one of these in the lyrics sheet.
+  final List<String> duplicates;
+
+  /// LRC text, when the request asked for it and the file could be read.
+  final String? text;
+
+  /// Every match, best first.
+  List<String> get paths => [path, ...duplicates];
+
+  factory LyricsFileLink.fromJson(Map<String, dynamic> json) => LyricsFileLink(
+        filename: json['filename'] as String? ?? '',
+        path: json['path'] as String? ?? '',
+        duplicates: [
+          for (final path in json['duplicates'] as List<dynamic>? ?? const [])
+            path as String,
+        ],
+        text: json['text'] as String?,
+      );
 }
 
 /// Runs library work on the native core, one background isolate per task.
@@ -188,6 +229,76 @@ class RustLibraryTasks {
     return (result['covers'] as Map?)?[url] as String?;
   }
 
+  /// Sidecar `.lrc`/`.ttml` files that match [songs], keyed by filename.
+  ///
+  /// A song's own folder is always searched, so this works on a library that
+  /// was never rescanned; [roots] adds the user's own lyrics folders.
+  static Future<Map<String, LyricsFileLink>> lyricsLinks(
+    List<Song> songs, {
+    List<String> roots = const [],
+    bool withText = false,
+  }) async {
+    if (songs.isEmpty) return const {};
+    final result = await _collectOnce({
+      'command': 'lyrics_link',
+      'songs': [
+        for (final song in songs) {'filename': song.filename, 'url': song.url},
+      ],
+      'roots': roots,
+      'text': withText,
+    });
+
+    final links = <String, LyricsFileLink>{};
+    for (final row in result['links'] as List<dynamic>? ?? const []) {
+      final link = LyricsFileLink.fromJson(row as Map<String, dynamic>);
+      if (link.path.isEmpty) continue;
+      links[link.filename] = link;
+    }
+    return links;
+  }
+
+  /// The LRC text of one sidecar file, or null when it cannot be read.
+  static Future<String?> lyricsFileText(String path) async {
+    final result = await _collectOnce({
+      'command': 'lyrics_link',
+      'songs': [
+        {'filename': p.basename(path), 'url': path},
+      ],
+      'text': true,
+    });
+    final rows = result['links'] as List<dynamic>? ?? const [];
+    if (rows.isEmpty) return null;
+    return (rows.first as Map<String, dynamic>)['text'] as String?;
+  }
+
+  /// Renames sidecar files, mapping each existing path to the song's new stem.
+  ///
+  /// Returns the moves that landed, old path to new path.
+  static Future<Map<String, String>> renameLyrics(
+    Map<String, String> newStemByPath,
+  ) async {
+    if (newStemByPath.isEmpty) return const {};
+    final result = await _collectOnce({
+      'command': 'lyrics_rename',
+      'items': [
+        for (final entry in newStemByPath.entries)
+          {
+            'paths': [entry.key],
+            'newStem': entry.value,
+          },
+      ],
+    });
+
+    final moved = <String, String>{};
+    for (final row in result['renames'] as List<dynamic>? ?? const []) {
+      final map = row as Map<String, dynamic>;
+      final from = map['from'] as String?;
+      final to = map['to'] as String?;
+      if (from != null && to != null) moved[from] = to;
+    }
+    return moved;
+  }
+
   /// Reads a whole row for one file: tags, duration, year, lyrics and cover.
   static Future<Song?> readSong(Song song, {required String coversDir}) async {
     final result = await _collectOnce({
@@ -278,6 +389,9 @@ void _collect(_CollectJob job) {
   final compacted = <String, String>{};
   final songs = <Map<String, dynamic>>[];
   final covers = <String, String>{};
+  final links = <Map<String, dynamic>>[];
+  final renames = <Map<String, dynamic>>[];
+  final failures = <Map<String, dynamic>>[];
 
   try {
     WispieCore.run(job.request, onEvent: (kind, payload) {
@@ -294,6 +408,12 @@ void _collect(_CollectJob job) {
             songs.addAll(list.cast<Map<String, dynamic>>());
           } else if (decoded['covers'] case final Map<String, dynamic> map) {
             covers.addAll(Map<String, String>.from(map));
+          } else if (decoded['links'] case final List<dynamic> list) {
+            links.addAll(list.cast<Map<String, dynamic>>());
+          } else if (decoded['renames'] case final List<dynamic> list) {
+            renames.addAll(list.cast<Map<String, dynamic>>());
+          } else if (decoded['failures'] case final List<dynamic> list) {
+            failures.addAll(list.cast<Map<String, dynamic>>());
           }
         case WispieCore.eventProgress:
           final total = (decoded['total'] as num?)?.toInt() ?? 0;
@@ -310,6 +430,9 @@ void _collect(_CollectJob job) {
       'compacted': compacted,
       'songs': songs,
       'covers': covers,
+      'links': links,
+      'renames': renames,
+      'failures': failures,
     });
   } catch (error) {
     job.port.send(RustTaskError('$error'));
