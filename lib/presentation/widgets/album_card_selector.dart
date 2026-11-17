@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,13 +11,29 @@ import '../tokens/app_tokens.dart';
 import 'album_art_image.dart';
 import 'collection_cover.dart';
 
+/// One album the catalogue named, drawn ahead of the locally grouped ones.
+class OnlineAlbumCard {
+  const OnlineAlbumCard({
+    required this.id,
+    required this.title,
+    this.subtitle = '',
+    this.coverUrl,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String? coverUrl;
+}
+
 /// Album picker for the grouped artist view: a horizontal carousel of cover
-/// cards, always starting with "All songs", then one card per album.
+/// cards, starting with the catalogue's own albums, then one card per album
+/// found in the library.
 ///
 /// Cards filter the song list below the carousel inline — the selected card
 /// takes the accent wash over its cover and an accent title, the same active
 /// treatment as a list row. Color blocking only: no outlines, no gradients.
-class AlbumCardSelector extends ConsumerWidget {
+class AlbumCardSelector extends ConsumerStatefulWidget {
   /// Every song by the artist, backing the "All songs" card.
   final List<Song> allSongs;
 
@@ -34,6 +51,12 @@ class AlbumCardSelector extends ConsumerWidget {
 
   final ValueChanged<String?> onSelected;
 
+  /// Catalogue albums, shown before the library's own groupings.
+  final List<OnlineAlbumCard> onlineAlbums;
+
+  /// Opens one of [onlineAlbums]; the caller owns that navigation.
+  final ValueChanged<OnlineAlbumCard>? onOnlineAlbumTap;
+
   const AlbumCardSelector({
     super.key,
     required this.allSongs,
@@ -42,6 +65,8 @@ class AlbumCardSelector extends ConsumerWidget {
     required this.selected,
     required this.artistName,
     required this.onSelected,
+    this.onlineAlbums = const [],
+    this.onOnlineAlbumTap,
   });
 
   static const double _cardWidth = 124;
@@ -64,62 +89,137 @@ class AlbumCardSelector extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AlbumCardSelector> createState() => _AlbumCardSelectorState();
+}
+
+class _AlbumCardSelectorState extends ConsumerState<AlbumCardSelector> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// A mouse wheel only carries a vertical delta, and a horizontal list ignores
+  /// it — so without this the carousel cannot be moved by a wheel at all.
+  ///
+  /// The event is claimed through the pointer-signal resolver so the page's own
+  /// vertical scrollable does not also consume it.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_scroll.hasClients) return;
+    final Offset delta = event.scrollDelta;
+    final double step = delta.dx.abs() > delta.dy.abs() ? delta.dx : delta.dy;
+    if (step == 0) return;
+
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      if (!_scroll.hasClients) return;
+      final position = _scroll.position;
+      _scroll.jumpTo(
+        (position.pixels + step).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final artState = ref.watch(artistAlbumArtProvider);
     final accent = AppTokens.accentOf(context, ref);
+    final online = widget.onlineAlbums;
 
     return SizedBox(
       height: 182,
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: _edgeFade,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-          itemCount: albums.length + 1,
-          separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s3),
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              return _AlbumCard(
-                title: context.l10n.albumCardAllSongs,
-                subtitle: context.l10n.libraryTrackCount(allSongs.length),
-                cover: CollectionCover(
-                  songs: allSongs,
-                ),
-                isSelected: selected == null,
-                accent: accent,
-                onTap: () => onSelected(null),
-              );
-            }
-            final album = albums[index - 1];
-            final albumSongs = albumGroups[album] ?? const <Song>[];
-            final cachedArt = artState.getAlbumArt(
-              album,
-              artistName: artistName,
-            );
-            // Width-only decode: giving cacheWidth and cacheHeight together
-            // resizes to exactly those numbers and squashes non-square art.
-            final Widget cover = (cachedArt != null && cachedArt.isNotEmpty)
-                ? AlbumArtImage(
-                    url: cachedArt,
-                    width: _cardWidth,
-                    height: _cardWidth,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 310,
-                    placeholder: CollectionCover(songs: albumSongs),
-                  )
-                : CollectionCover(songs: albumSongs);
-            return _AlbumCard(
-              title: album,
-              subtitle: context.l10n.libraryTrackCount(albumSongs.length),
-              cover: cover,
-              isSelected: selected == album,
-              accent: accent,
-              onTap: () => onSelected(album),
-            );
-          },
+      child: Listener(
+        onPointerSignal: _onPointerSignal,
+        // Desktop drag is off by default in Flutter, which left the carousel
+        // looking like a static strip of covers on a mouse-driven machine.
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            scrollbars: false,
+            dragDevices: const <PointerDeviceKind>{
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
+          ),
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: AlbumCardSelector._edgeFade,
+            child: ListView.separated(
+              controller: _scroll,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+              itemCount: online.length + 1 + widget.albums.length,
+              separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s3),
+              itemBuilder: (context, index) {
+                if (index < online.length) {
+                  return _buildOnlineCard(online[index], accent);
+                }
+                if (index == online.length) {
+                  return _AlbumCard(
+                    title: context.l10n.albumCardAllSongs,
+                    subtitle:
+                        context.l10n.libraryTrackCount(widget.allSongs.length),
+                    cover: CollectionCover(songs: widget.allSongs),
+                    isSelected: widget.selected == null,
+                    accent: accent,
+                    onTap: () => widget.onSelected(null),
+                  );
+                }
+
+                final album = widget.albums[index - online.length - 1];
+                final albumSongs = widget.albumGroups[album] ?? const <Song>[];
+                final cachedArt = artState.getAlbumArt(
+                  album,
+                  artistName: widget.artistName,
+                );
+                // Width-only decode: giving cacheWidth and cacheHeight together
+                // resizes to exactly those numbers and squashes non-square art.
+                final Widget cover = (cachedArt != null && cachedArt.isNotEmpty)
+                    ? AlbumArtImage(
+                        url: cachedArt,
+                        width: AlbumCardSelector._cardWidth,
+                        height: AlbumCardSelector._cardWidth,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 310,
+                        placeholder: CollectionCover(songs: albumSongs),
+                      )
+                    : CollectionCover(songs: albumSongs);
+                return _AlbumCard(
+                  title: album,
+                  subtitle: context.l10n.libraryTrackCount(albumSongs.length),
+                  cover: cover,
+                  isSelected: widget.selected == album,
+                  accent: accent,
+                  onTap: () => widget.onSelected(album),
+                );
+              },
+            ),
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildOnlineCard(OnlineAlbumCard album, Color accent) {
+    return _AlbumCard(
+      title: album.title,
+      subtitle: album.subtitle,
+      cover: AlbumArtImage(
+        url: album.coverUrl ?? '',
+        width: AlbumCardSelector._cardWidth,
+        height: AlbumCardSelector._cardWidth,
+        fit: BoxFit.cover,
+        memCacheWidth: 310,
+      ),
+      isSelected: false,
+      accent: accent,
+      onTap: () => widget.onOnlineAlbumTap?.call(album),
     );
   }
 }
@@ -146,7 +246,7 @@ class _AlbumCard extends StatelessWidget {
     return Semantics(
       selected: isSelected,
       button: true,
-      label: '$title, $subtitle',
+      label: subtitle.isEmpty ? title : '$title, $subtitle',
       child: Pressable(
         pressedScale: 0.96,
         onTap: () {

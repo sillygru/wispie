@@ -12,6 +12,8 @@ import '../components/ambient_scaffold.dart';
 import '../cover_gradient/gradient_detail_screen.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/youtube_error_message.dart';
+import '../widgets/album_card_selector.dart';
+import 'youtube_collection_screen.dart';
 
 /// Fetches one artist's catalogue page, then opens the shared artist screen.
 ///
@@ -38,6 +40,10 @@ class YouTubeArtistScreen extends ConsumerStatefulWidget {
 
 class _YouTubeArtistScreenState extends ConsumerState<YouTubeArtistScreen> {
   List<Song>? _songs;
+
+  /// The artist page's own album results, shown before the album groupings
+  /// derived from its tracks.
+  List<OnlineAlbumCard> _albums = const [];
   String _name = '';
   Object? _error;
 
@@ -56,6 +62,15 @@ class _YouTubeArtistScreenState extends ConsumerState<YouTubeArtistScreen> {
       unawaited(ref.read(userDataProvider.notifier).cacheRemoteSongs(songs));
       setState(() {
         _songs = songs;
+        _albums = [
+          for (final album in artist.albums)
+            OnlineAlbumCard(
+              id: album.id,
+              title: album.title,
+              subtitle: album.subtitle,
+              coverUrl: album.coverUrl,
+            ),
+        ];
         _name = artist.name;
         _error = null;
       });
@@ -67,6 +82,21 @@ class _YouTubeArtistScreenState extends ConsumerState<YouTubeArtistScreen> {
 
   String get _title => _name.isEmpty ? widget.name : _name;
 
+  void _openAlbum(OnlineAlbumCard album) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => YouTubeCollectionScreen(
+          kind: OnlineCollectionKind.album,
+          id: album.id,
+          title: album.title,
+          subtitle: album.subtitle,
+          coverUrl: album.coverUrl,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final songs = _songs;
@@ -77,6 +107,8 @@ class _YouTubeArtistScreenState extends ConsumerState<YouTubeArtistScreen> {
         fromCatalogue: true,
         isArtist: true,
         artistName: _title,
+        onlineAlbums: _albums,
+        onOpenOnlineAlbum: _openAlbum,
       );
     }
 

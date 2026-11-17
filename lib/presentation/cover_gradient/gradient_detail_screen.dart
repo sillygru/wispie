@@ -66,6 +66,12 @@ class GradientDetailScreen extends ConsumerStatefulWidget {
   /// A catalogue page: its art comes with it, and it owns no local files.
   final bool fromCatalogue;
 
+  /// Albums the catalogue named for this artist, leading the album carousel.
+  final List<OnlineAlbumCard> onlineAlbums;
+
+  /// Opens one of [onlineAlbums]; the caller owns that navigation.
+  final ValueChanged<OnlineAlbumCard>? onOpenOnlineAlbum;
+
   const GradientDetailScreen({
     super.key,
     required this.title,
@@ -76,6 +82,8 @@ class GradientDetailScreen extends ConsumerStatefulWidget {
     this.artistName,
     this.albumName,
     this.fromCatalogue = false,
+    this.onlineAlbums = const [],
+    this.onOpenOnlineAlbum,
   });
 
   @override
@@ -416,7 +424,13 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
             ? effectiveArtistName
             : null;
 
-    final Widget? albumsBlock = showAlbumGroups
+    // Catalogue albums are real results for this artist, so they lead the
+    // carousel even when the track list only names one album.
+    final bool showOnlineAlbumCards =
+        widget.playlistId == null && widget.onlineAlbums.isNotEmpty;
+    final bool showAlbumsBlock = showAlbumGroups || showOnlineAlbumCards;
+
+    final Widget? albumsBlock = showAlbumsBlock
         ? Padding(
             padding: const EdgeInsets.only(top: AppTokens.s2),
             child: Column(
@@ -439,6 +453,8 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
                   albumGroups: albumGroups,
                   selected: selectedAlbum,
                   artistName: effectiveArtistName,
+                  onlineAlbums: widget.onlineAlbums,
+                  onOnlineAlbumTap: widget.onOpenOnlineAlbum,
                   onSelected: (album) => setState(() {
                     _selectedAlbum = album;
                     _localSort = null;
