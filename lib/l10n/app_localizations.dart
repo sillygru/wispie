@@ -379,7 +379,7 @@ abstract class AppLocalizations {
   ///
   /// In en, this message translates to:
   /// **'{title} by {artist}'**
-  String songShareText(Object artist, Object title);
+  String songShareText(Object title, Object artist);
 
   /// Snackbar shown after adding a song to a playlist
   ///
@@ -397,7 +397,7 @@ abstract class AppLocalizations {
   ///
   /// In en, this message translates to:
   /// **'Moved {title} to {path}'**
-  String songMovedTo(Object path, Object title);
+  String songMovedTo(Object title, Object path);
 
   /// Snackbar shown when moving a song file fails
   ///
@@ -451,7 +451,7 @@ abstract class AppLocalizations {
   ///
   /// In en, this message translates to:
   /// **'Updated cover art for \"{title}\" ({source})'**
-  String coverUpdated(Object source, Object title);
+  String coverUpdated(Object title, Object source);
 
   /// Snackbar shown when cover art download fails
   ///

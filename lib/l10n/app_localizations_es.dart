@@ -165,7 +165,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String songShareText(Object artist, Object title) {
+  String songShareText(Object title, Object artist) {
     return '$title de $artist';
   }
 
@@ -180,7 +180,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String songMovedTo(Object path, Object title) {
+  String songMovedTo(Object title, Object path) {
     return 'Se movió $title a $path';
   }
 
@@ -220,7 +220,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get coverNoneFound => 'No se encontraron carátulas faltantes en línea';
 
   @override
-  String coverUpdated(Object source, Object title) {
+  String coverUpdated(Object title, Object source) {
     return 'Se actualizó la carátula de «$title» ($source)';
   }
 

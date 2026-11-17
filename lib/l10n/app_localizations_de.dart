@@ -164,7 +164,7 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String songShareText(Object artist, Object title) {
+  String songShareText(Object title, Object artist) {
     return '$title von $artist';
   }
 
@@ -179,7 +179,7 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String songMovedTo(Object path, Object title) {
+  String songMovedTo(Object title, Object path) {
     return '„$title“ nach $path verschoben';
   }
 
@@ -220,7 +220,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Online wurden keine fehlenden Coverbilder gefunden';
 
   @override
-  String coverUpdated(Object source, Object title) {
+  String coverUpdated(Object title, Object source) {
     return 'Coverbild für „$title“ aktualisiert ($source)';
   }
 

@@ -165,7 +165,7 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String songShareText(Object artist, Object title) {
+  String songShareText(Object title, Object artist) {
     return '$title par $artist';
   }
 
@@ -180,7 +180,7 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String songMovedTo(Object path, Object title) {
+  String songMovedTo(Object title, Object path) {
     return '$title déplacé vers $path';
   }
 
@@ -220,7 +220,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get coverNoneFound => 'Aucune pochette manquante trouvée en ligne';
 
   @override
-  String coverUpdated(Object source, Object title) {
+  String coverUpdated(Object title, Object source) {
     return 'Pochette de « $title » mise à jour ($source)';
   }
 

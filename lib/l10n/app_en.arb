@@ -181,7 +181,11 @@
   },
   "songShareText": "{title} by {artist}",
   "@songShareText": {
-    "description": "Text shared externally for a song as title by artist"
+    "description": "Text shared externally for a song as title by artist",
+    "placeholders": {
+      "title": {},
+      "artist": {}
+    }
   },
   "songAddedToPlaylist": "Added to {name}",
   "@songAddedToPlaylist": {
@@ -193,7 +197,11 @@
   },
   "songMovedTo": "Moved {title} to {path}",
   "@songMovedTo": {
-    "description": "Snackbar shown after moving a song file to a folder"
+    "description": "Snackbar shown after moving a song file to a folder",
+    "placeholders": {
+      "title": {},
+      "path": {}
+    }
   },
   "songMoveError": "Error moving song: {error}",
   "@songMoveError": {
@@ -229,7 +237,11 @@
   },
   "coverUpdated": "Updated cover art for \"{title}\" ({source})",
   "@coverUpdated": {
-    "description": "Snackbar shown after cover art is updated"
+    "description": "Snackbar shown after cover art is updated",
+    "placeholders": {
+      "title": {},
+      "source": {}
+    }
   },
   "coverDownloadFailed": "Failed to download cover art",
   "@coverDownloadFailed": {
