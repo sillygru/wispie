@@ -24,7 +24,7 @@ NEVER write unit tests after you write code.
 
 There are no unit tests in this repo. Do not add `test/` files, `*_test.dart`, or Go `_test.go` files. Verify by running the app end to end and leaving a repeatable artifact.
 
-The artifacts that exist today are the probes in `tool/` (`search_probe.dart`, `taste_probe.dart`, `lyrics_probe.dart`, `lyrics_activity_probe.dart`, `lyrics_files_probe.dart`, `batch_replace_probe.dart`, `panel_probe.dart`, `youtube_probe.dart`, `youtube_account_probe.dart`, `youtube_music_probe.dart`). Each runs with `dart run tool/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. Extend the nearest probe instead of adding a test file.
+Probes are temporary files. Write one under `temp/` (gitignored), run it, and delete it; never commit a probe and never add one to `tool/`. A probe runs with `dart run temp/<name>.dart`, prints one line per check, writes its result under `build/`, and exits non-zero on regression. A ported backend implementation is deleted only after its temporary parity probe passes, so no probe is retained as a fallback.
 
 ## Verification
 
@@ -81,9 +81,9 @@ Sidecar lyrics (`<song>.lrc` / `<song>.ttml`) are discovered by the same walk: `
 
 `SharedHttpClient.instance` is the one pooled `HttpClient` for outbound requests. Don't construct per-request clients; that's the regression its comment describes. Secrets arrive via `--dart-define`: `TELEMETRY_SECRET` (plus `WISPIE_MUSIC_UTILS_BASE_URL` for the music API).
 
-The YouTube account has no OAuth client and no API quota: it signs InnerTube requests with the user's own web-session cookies (`SAPISIDHASH` over `SAPISID`, `lib/domain/services/youtube_session.dart`). Sign-in is a WebView on Google's own page (`flutter_inappwebview`), which reads the HttpOnly cookies from the platform store that no JavaScript could see. Google blocks its login form in embedded browsers on some platforms — on macOS it answers "this browser or app may not be secure" almost every time — and Linux has no WebView plugin, so importing a `Cookie` header, `cookies.txt` or cookie JSON is the path that always works; the screen detects the block page and offers the import directly. The WebView UA must match its engine (Safari UA on Apple platforms, Chrome-family on Chromium), because a Chrome UA over WebKit is itself a block signal. `flutter_inappwebview` is CocoaPods-only on macOS, so that platform runs Flutter's mixed mode: `macos/Podfile` stays committed next to the Swift Packages, and `.github/workflows/build.yml` installs the pods before building. Cookies live in secure storage, never in settings, and are dropped on sign-out along with the WebView jar. Response shape is parsed by walking the JSON, not by hardcoding containers, because YouTube reshuffles them; `tool/youtube_account_probe.dart` exercises all of it.
+The YouTube account has no OAuth client and no API quota: it signs InnerTube requests with the user's own web-session cookies (`SAPISIDHASH` over `SAPISID`, `lib/domain/services/youtube_session.dart`). Sign-in is a WebView on Google's own page (`flutter_inappwebview`), which reads the HttpOnly cookies from the platform store that no JavaScript could see. Google blocks its login form in embedded browsers on some platforms — on macOS it answers "this browser or app may not be secure" almost every time — and Linux has no WebView plugin, so importing a `Cookie` header, `cookies.txt` or cookie JSON is the path that always works; the screen detects the block page and offers the import directly. The WebView UA must match its engine (Safari UA on Apple platforms, Chrome-family on Chromium), because a Chrome UA over WebKit is itself a block signal. `flutter_inappwebview` is CocoaPods-only on macOS, so that platform runs Flutter's mixed mode: `macos/Podfile` stays committed next to the Swift Packages, and `.github/workflows/build.yml` installs the pods before building. Cookies live in secure storage, never in settings, and are dropped on sign-out along with the WebView jar. Response shape is parsed by walking the JSON, not by hardcoding containers, because YouTube reshuffles them; a temporary probe exercises all of it.
 
-The same client also reads the **catalogue**, not just the account: `musicSearchAll` keeps the album, playlist and artist rows a search page returns (browse ids starting `MPRE`, `VL`, `UC`), `album()` and `artist()` browse one of them, and an artist page's own sort chips (`parseMusicSortOptions`, which matches any `*sortFilterButton*` node and keeps its label) are sent back as `params`, so most-popular and release-date ordering come from YouTube instead of being guessed out of bylines. `OnlineMusicService` maps all of it to `OnlineTrack` / `OnlineCollection`, which is what the online tab, `youtube_collection_screen.dart` and `youtube_artist_screen.dart` draw. `tool/youtube_music_probe.dart` covers the container, artist and album parsing.
+The same client also reads the **catalogue**, not just the account: `musicSearchAll` keeps the album, playlist and artist rows a search page returns (browse ids starting `MPRE`, `VL`, `UC`), `album()` and `artist()` browse one of them, and an artist page's own sort chips (`parseMusicSortOptions`, which matches any `*sortFilterButton*` node and keeps its label) are sent back as `params`, so most-popular and release-date ordering come from YouTube instead of being guessed out of bylines. `OnlineMusicService` maps all of it to `OnlineTrack` / `OnlineCollection`, which is what the online tab, `youtube_collection_screen.dart` and `youtube_artist_screen.dart` draw. A temporary probe covers the container, artist and album parsing.
 
 Data policy that is easy to regress: catalogue rows ask for a 320-wide still (`upscaleThumbnailUrl(url, size: 320)`), and `CoverPath.renditionUrl` then picks the rendition the drawing box actually needs in *both* directions — a 52dp tile never downloads a 480px or 1280px still, a full-size cover still upgrades. Don't reintroduce a 720 default in a parser. `PassiveArtFetcherService` caps a passive art sweep at 80 keys per launch (an explicit fetch stays uncapped), so a first open over a large library is not hundreds of image downloads. Streamed audio fills `OnlineAudioCache` once, so replaying a track costs no network.
 
@@ -128,7 +128,7 @@ Before returning UI code: no borders used for separation, no gradients outside t
 | Online tab | `lib/presentation/screens/online_screen.dart` |
 | Album / playlist / artist screens | `lib/presentation/screens/youtube_collection_screen.dart`, `youtube_artist_screen.dart` |
 | Settings registry | `lib/presentation/screens/settings_registry.dart` |
-| Repeatable probes | `tool/*_probe.dart` |
+| Temporary probes | `temp/*.dart` (gitignored, deleted after use) |
 | Shared components | `lib/presentation/components/` |
 | Design tokens | `lib/presentation/tokens/` |
 
@@ -144,7 +144,8 @@ lib/
 ├── data/            # schema/migrations + repository implementations
 └── presentation/    # screens/ (player/ subdir), widgets/, components/, tokens/, routes/
 server/              # self-hostable Go sync server (stores opaque encrypted blobs)
-tool/                # repeatable probes + icon generator
+tool/                # rust build script + icon generator
+temp/                # throwaway parity probes, never committed
 third_party/         # vendored deps, wired via dependency_overrides
 ```
 
@@ -154,6 +155,13 @@ Backend behavior lives in the Rust crate behind the C ABI in
 `lib/data/rust/`. The port is in progress: do not add backend implementations
 or fallbacks in Dart. Flutter UI and thin OS/plugin adapters stay in Dart;
 shared rules and workflows belong in Rust.
+
+Per-frame helpers (playhead prediction, spectrum ballistics, lyric activity,
+video sync, cover URL renditions) cross the ABI as primitives over
+caller-owned buffers so a frame never pays for JSON. One-shot helpers (timing
+offset windows, LRCLIB queries, style routing, backup stats, version compare,
+decode-gate order, taste scores, cached waveform decoding, cover optimization)
+use the `helpers` JSON command in `helpers.rs`.
 
 ### Build
 
