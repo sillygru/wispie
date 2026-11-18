@@ -1,8 +1,7 @@
-import 'dart:io';
-
-import 'package:flutter/foundation.dart';
+import 'dart:isolate';
 
 import '../domain/services/media_formats.dart';
+import '../domain/services/native_accel.dart';
 
 /// Outcome of probing one music folder before a full scan.
 class FolderProbe {
@@ -50,106 +49,26 @@ class FolderProbe {
 /// Lightweight pre-scan check: can we list this folder and actually read bytes
 /// from a few files? Distinguishes "empty folder" from "permission denied",
 /// which a bare file count cannot.
+///
+/// The walk runs in the native core; this only maps its reply.
 class StorageProbeService {
-  static const int _listCap = 40;
-  static const int _readSampleSize = 5;
-
   /// Same list the scanner indexes by, so a folder cannot probe clean and then
   /// scan empty (or the reverse).
   static bool isSupportedMediaPath(String path) =>
       MediaFormats.isSupportedPath(path);
 
   Future<FolderProbe> probeFolder(String path) async {
-    final dir = Directory(path);
-    bool exists = false;
-    try {
-      exists = await dir.exists();
-    } on FileSystemException catch (e) {
-      return FolderProbe(
-        path: path,
-        folderExists: false,
-        listed: false,
-        listError: '${e.runtimeType}: ${e.message}',
-        filesFound: 0,
-        filesSampled: 0,
-        filesReadable: 0,
-      );
-    }
-    if (!exists) {
-      return FolderProbe(
-        path: path,
-        folderExists: false,
-        listed: false,
-        listError: 'directory does not exist',
-        filesFound: 0,
-        filesSampled: 0,
-        filesReadable: 0,
-      );
-    }
-
-    final List<File> candidates = [];
-    try {
-      await for (final entity
-          in dir.list(recursive: true, followLinks: false)) {
-        if (entity is File && isSupportedMediaPath(entity.path)) {
-          candidates.add(entity);
-          if (candidates.length >= _listCap) break;
-        }
-      }
-    } on FileSystemException catch (e) {
-      debugPrint('StorageProbe: cannot list $path: $e');
-      return FolderProbe(
-        path: path,
-        folderExists: true,
-        listed: false,
-        listError: '${e.runtimeType}: ${e.message}',
-        filesFound: 0,
-        filesSampled: 0,
-        filesReadable: 0,
-      );
-    }
-
-    if (candidates.isEmpty) {
-      return FolderProbe(
-        path: path,
-        folderExists: true,
-        listed: true,
-        filesFound: 0,
-        filesSampled: 0,
-        filesReadable: 0,
-      );
-    }
-
-    int readable = 0;
-    String? readError;
-    final sample = candidates.take(_readSampleSize).toList();
-    for (final file in sample) {
-      RandomAccessFile? raf;
-      try {
-        raf = await file.open(mode: FileMode.read);
-        await raf.readByte();
-        readable++;
-      } on FileSystemException catch (e) {
-        readError ??= '${e.runtimeType}: ${e.message} (${file.path})';
-      } on OSError catch (e) {
-        readError ??= 'OSError: ${e.message} (${file.path})';
-      } finally {
-        try {
-          await raf?.close();
-        } on FileSystemException catch (e) {
-          debugPrint('StorageProbe: failed to close ${file.path}: $e');
-        }
-      }
-    }
-
+    // Off the UI isolate: the walk and the sample reads are blocking file I/O.
+    final reply = await Isolate.run(() => NativeAccel.storageProbe(path));
     return FolderProbe(
-      path: path,
-      folderExists: true,
-      listed: true,
-      filesFound: candidates.length,
-      filesSampled: sample.length,
-      filesReadable: readable,
-      readError: readError,
+      path: reply['path'] as String? ?? path,
+      folderExists: reply['exists'] == true,
+      listed: reply['listed'] == true,
+      listError: reply['listError'] as String?,
+      filesFound: (reply['filesFound'] as num?)?.toInt() ?? 0,
+      filesSampled: (reply['sampled'] as num?)?.toInt() ?? 0,
+      filesReadable: (reply['readable'] as num?)?.toInt() ?? 0,
+      readError: reply['readError'] as String?,
     );
   }
 }

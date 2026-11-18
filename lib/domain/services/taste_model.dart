@@ -3,19 +3,16 @@
 /// Turns play history into raw taste mass per song and per artist, on two
 /// timescales: long-term (90 day half-life) and recent trend (10 day half-life,
 /// 30 day horizon). Masses are not normalized. How much of the shuffle goes to
-/// each artist is decided downstream, so this file only measures evidence.
+/// each artist is decided downstream, so this only measures evidence.
 ///
-/// Negative evidence is deliberately weak: browsing taps, bursts of skips,
-/// manual picks and skips later followed by a full listen all count for less.
-///
-/// Pure by design: no I/O, no clock reads beyond the injected [TasteInputs.now].
-/// Legacy personalities keep using `song_affinity.dart`.
+/// The rules live in the native core (`rust/wispie_core/src/taste.rs`); this
+/// file is the wire shape around one `taste_snapshot` request.
 library;
 
-import 'dart:math';
+import 'dart:typed_data';
 
 import '../models/play_source.dart';
-import 'song_affinity.dart';
+import 'native_accel.dart';
 
 /// One `playevent` row. [timestamp] is epoch seconds, as in the database.
 class PlaySignal {
@@ -54,8 +51,7 @@ class TasteInputs {
 
   /// filename -> epoch seconds the app added the row, for the whole library.
   ///
-  /// Used only to tell a genuinely fresh arrival from the bulk of the library;
-  /// see [kFreshnessMinLibraryAgeDays].
+  /// Used only to tell a genuinely fresh arrival from the bulk of the library.
   final Map<String, double> addedAt;
 
   const TasteInputs({
@@ -133,386 +129,163 @@ class TasteSnapshot {
 /// YouTube channel decoration is stripped: a streamed track credited to
 /// `Aurora - Topic` or `AuroraVEVO` is the same artist as a local file tagged
 /// `Aurora`, and keying them apart would hide half of a mixed history.
-String tasteArtistKey(String artist, String filename) {
-  final a = _stripChannelDecoration(artist).toLowerCase();
-  return a.isEmpty ? '\u0000$filename' : a;
-}
+String tasteArtistKey(String artist, String filename) =>
+    tasteArtistKeys([(artist: artist, filename: filename)]).first;
 
-/// Removes the `- Topic`, `VEVO` and `Official` suffixes YouTube puts on the
-/// auto-generated artist channels. Local tags pass through untouched.
-String _stripChannelDecoration(String raw) {
-  var value = raw.trim();
-  const topic = ' - topic';
-  if (value.toLowerCase().endsWith(topic)) {
-    value = value.substring(0, value.length - topic.length).trim();
-  }
-  value = value.replaceAll(RegExp(r'\s*-?\s*vevo$', caseSensitive: false), '');
-  return value.trim();
-}
+/// [tasteArtistKey] for a batch, in the order given.
+List<String> tasteArtistKeys(List<({String artist, String filename})> songs) =>
+    NativeAccel.tasteArtistKeys([
+      for (final song in songs) [song.artist, song.filename],
+    ]);
 
-const double _negativeCap = 3.0;
-const double _fullListenRatio = 0.85;
-const double _shortListenSeconds = 3.0;
-const double _longListenSeconds = 240.0;
-const double _burstWindowSeconds = 90.0;
-const double _forgivenessFactor = 0.3;
-const double _replayBonus = 0.5;
-const int _coPlayTop = 20;
-const int _artistCoPlayTop = 10;
+/// One event row: filename index, timestamp, ratio, seconds, session index,
+/// source code.
+const int _eventStride = 33;
+const int _noSession = 0xFFFFFFFF;
 
-/// Builds the taste snapshot. Runs in an isolate in production, so it must
-/// stay free of Flutter and platform calls.
+/// Builds the taste snapshot. Runs in an isolate in production, so it must stay
+/// free of Flutter and platform calls.
 TasteSnapshot buildTasteSnapshot(TasteInputs inputs) {
-  final nowSec = inputs.now.millisecondsSinceEpoch / 1000.0;
-
-  final events = <PlaySignal>[
-    for (final e in inputs.events)
-      if (e.timestamp.isFinite) e,
-  ]..sort(_bySessionThenTime);
-  final n = events.length;
-
-  final ratio = List<double>.filled(n, 0.0);
-  final seconds = List<double>.filled(n, 0.0);
-  final quality = List<double>.filled(n, 0.0);
-  for (var i = 0; i < n; i++) {
-    final e = events[i];
-    final r = e.ratio.isFinite ? e.ratio.clamp(0.0, 1.0) : 0.0;
-    final secs = e.secondsPlayed.isFinite ? e.secondsPlayed : 0.0;
-    var q = _baseQuality(r);
-    if (secs >= _longListenSeconds) q = max(q, 0.6);
-    ratio[i] = r;
-    seconds[i] = secs;
-    quality[i] = q;
-  }
-
-  final burst = _burstFlags(events, quality);
-  final forgiven = _forgivenessFlags(events, quality, ratio);
-  final replay = _replayFlags(events, ratio);
-  final artistOf = [
-    for (final e in events)
-      tasteArtistKey(inputs.meta[e.filename]?.artist ?? '', e.filename),
+  final events = [
+    for (final event in inputs.events)
+      if (event.timestamp.isFinite) event,
   ];
 
-  final ledger = _Ledger();
-  final coRaw = <String, Map<String, double>>{};
-  final artistCoRaw = <String, Map<String, double>>{};
+  final filenames = <String>[];
+  final fileIndex = <String, int>{};
+  final artists = <String>[];
+  final sessions = <String>[];
+  final sessionIndex = <String, int>{};
 
-  for (var i = 0; i < n; i++) {
-    final e = events[i];
-    final d = _decayAt((nowSec - e.timestamp) / 86400.0);
-    final q = quality[i];
+  final rows = ByteData(events.length * _eventStride);
+  for (var i = 0; i < events.length; i++) {
+    final event = events[i];
+    final file = fileIndex.putIfAbsent(event.filename, () {
+      filenames.add(event.filename);
+      artists.add(inputs.meta[event.filename]?.artist ?? '');
+      return filenames.length - 1;
+    });
+    final sessionId = event.sessionId;
+    final session = sessionId == null
+        ? _noSession
+        : sessionIndex.putIfAbsent(sessionId, () {
+            sessions.add(sessionId);
+            return sessions.length - 1;
+          });
 
-    double w;
-    if (q > 0) {
-      w = q * _positiveSourceMultiplier(e.source);
-    } else if (q < 0) {
-      var m = _negativeSourceMultiplier(e.source);
-      if (seconds[i] < _shortListenSeconds) m *= 0.1;
-      if (burst[i]) m *= 0.15;
-      if (forgiven[i]) m *= _forgivenessFactor;
-      w = q * m;
-    } else {
-      w = 0.0;
-    }
-
-    ledger.credit(e.filename, artistOf[i], w, e.timestamp, d, countPlay: true);
-    if (replay[i]) {
-      ledger.credit(e.filename, artistOf[i], _replayBonus, e.timestamp, d,
-          countPlay: false);
-    }
-
-    if (i > 0 &&
-        e.sessionId != null &&
-        events[i - 1].sessionId == e.sessionId &&
-        quality[i - 1] >= 0.5 &&
-        q >= 0.5 &&
-        d.trend > 0) {
-      final prev = events[i - 1];
-      if (prev.filename != e.filename) {
-        final row = coRaw.putIfAbsent(prev.filename, () => <String, double>{});
-        row[e.filename] = (row[e.filename] ?? 0.0) + d.trend;
-      }
-      if (artistOf[i - 1] != artistOf[i]) {
-        final row =
-            artistCoRaw.putIfAbsent(artistOf[i - 1], () => <String, double>{});
-        row[artistOf[i]] = (row[artistOf[i]] ?? 0.0) + d.trend;
-      }
-    }
+    final offset = i * _eventStride;
+    rows.setUint32(offset, file, Endian.little);
+    rows.setFloat64(offset + 4, event.timestamp, Endian.little);
+    rows.setFloat64(
+      offset + 12,
+      event.ratio.isFinite ? event.ratio : 0.0,
+      Endian.little,
+    );
+    rows.setFloat64(
+      offset + 20,
+      event.secondsPlayed.isFinite ? event.secondsPlayed : 0.0,
+      Endian.little,
+    );
+    rows.setUint32(offset + 28, session, Endian.little);
+    rows.setUint8(offset + 32, _sourceCode(event.source));
   }
 
-  final songs = <String, SongTaste>{
-    for (final entry in ledger.songs.entries)
-      entry.key: SongTaste(
-        trendMass: entry.value.trendMass,
-        longMass: entry.value.longMass,
-        saturation: entry.value.saturation,
-        skipRate: entry.value.totalW > 0
-            ? entry.value.skipW / entry.value.totalW
-            : 0.0,
-        playCount: entry.value.playCount,
-        lastPlayed:
-            entry.value.lastPlayed.isFinite ? entry.value.lastPlayed : null,
-      ),
-  };
+  final addedFiles = <String>[];
+  final addedValues = <double>[];
+  for (final entry in inputs.addedAt.entries) {
+    if (!entry.value.isFinite || entry.value <= 0) continue;
+    addedFiles.add(entry.key);
+    addedValues.add(entry.value);
+  }
+  final added = ByteData(addedValues.length * 8);
+  for (var i = 0; i < addedValues.length; i++) {
+    added.setFloat64(i * 8, addedValues[i], Endian.little);
+  }
 
-  final artists = <String, ArtistTaste>{
-    for (final entry in ledger.artists.entries)
-      entry.key: ArtistTaste(
-        trendMass: entry.value.trendMass,
-        longMass: entry.value.longMass,
-      ),
-  };
+  final bytes = Uint8List(rows.lengthInBytes + added.lengthInBytes)
+    ..setAll(0, rows.buffer.asUint8List())
+    ..setAll(rows.lengthInBytes, added.buffer.asUint8List());
+
+  return _snapshotFrom(NativeAccel.tasteSnapshot({
+    'now': inputs.now.millisecondsSinceEpoch / 1000.0,
+    'eventCount': events.length,
+    'filenames': filenames,
+    'artists': artists,
+    'sessions': sessions,
+    'addedFiles': addedFiles,
+  }, bytes));
+}
+
+int _sourceCode(PlaySource? source) => switch (source) {
+      PlaySource.manual => 1,
+      PlaySource.shuffle => 2,
+      PlaySource.queued => 3,
+      PlaySource.linear => 4,
+      null => 0,
+    };
+
+TasteSnapshot _snapshotFrom(Map<String, dynamic> reply) {
+  final songs = reply['songs'] as Map<String, dynamic>? ?? const {};
+  final names =
+      (songs['filenames'] as List<dynamic>? ?? const []).cast<String>();
+  final trend = _doubles(songs['trendMass']);
+  final long = _doubles(songs['longMass']);
+  final saturation = _doubles(songs['saturation']);
+  final skipRate = _doubles(songs['skipRate']);
+  final playCount = songs['playCount'] as List<dynamic>? ?? const [];
+  final lastPlayed = songs['lastPlayed'] as List<dynamic>? ?? const [];
+
+  final artists = reply['artists'] as Map<String, dynamic>? ?? const {};
+  final artistNames =
+      (artists['keys'] as List<dynamic>? ?? const []).cast<String>();
+  final artistTrend = _doubles(artists['trendMass']);
+  final artistLong = _doubles(artists['longMass']);
+
+  final newness = reply['newness'] as Map<String, dynamic>? ?? const {};
+  final newnessNames =
+      (newness['filenames'] as List<dynamic>? ?? const []).cast<String>();
+  final newnessValues = _doubles(newness['values']);
 
   return TasteSnapshot(
-    songs: songs,
-    artists: artists,
-    coPlay: _topNormalized(coRaw, _coPlayTop),
-    artistCoPlay: _topNormalized(artistCoRaw, _artistCoPlayTop),
-    newness: _freshnessOf(inputs.addedAt, inputs.now),
+    songs: {
+      for (var i = 0; i < names.length; i++)
+        names[i]: SongTaste(
+          trendMass: trend[i],
+          longMass: long[i],
+          saturation: saturation[i],
+          skipRate: skipRate[i],
+          playCount: (playCount[i] as num).toInt(),
+          lastPlayed: (lastPlayed[i] as num?)?.toDouble(),
+        ),
+    },
+    artists: {
+      for (var i = 0; i < artistNames.length; i++)
+        artistNames[i]: ArtistTaste(
+          trendMass: artistTrend[i],
+          longMass: artistLong[i],
+        ),
+    },
+    coPlay: _transitions(reply['coPlay']),
+    artistCoPlay: _transitions(reply['artistCoPlay']),
+    newness: {
+      for (var i = 0; i < newnessNames.length; i++)
+        newnessNames[i]: newnessValues[i],
+    },
   );
 }
 
-/// Below this median library age, an addition is not "new" in any useful
-/// sense: the whole collection turned up together, so favouring its newest rows
-/// would just reorder one import against itself.
-const double kFreshnessMinLibraryAgeDays = 30.0;
+List<double> _doubles(Object? raw) => [
+      for (final value in raw as List<dynamic>? ?? const [])
+        (value as num).toDouble(),
+    ];
 
-/// How long an addition keeps counting as new. Anything at or beyond this age
-/// is simply part of the library.
-const double kFreshnessWindowDays = 90.0;
-
-/// 0..1 newness per filename, relative to the library's own age distribution.
-///
-/// The reference is the library's median age, capped at
-/// [kFreshnessWindowDays]: a song added today in a collection whose median row
-/// is a year old scores 1, one added two months ago scores about a third, and
-/// anything older scores 0. A library whose median row is younger than
-/// [kFreshnessMinLibraryAgeDays] yields nothing at all, which is what keeps a
-/// 400-track import from being favoured over the five tracks that were already
-/// there, and keeps a brand-new install from favouring its own last import.
-Map<String, double> _freshnessOf(
-  Map<String, double> addedAt,
-  DateTime now,
-) {
-  if (addedAt.length < 2) return const {};
-  final nowSec = now.millisecondsSinceEpoch / 1000.0;
-
-  final ages = <double>[];
-  for (final added in addedAt.values) {
-    if (!added.isFinite || added <= 0) continue;
-    ages.add(((nowSec - added) / 86400.0).clamp(0.0, 36500.0));
-  }
-  if (ages.length < 2) return const {};
-  ages.sort();
-
-  final median = ages[ages.length ~/ 2];
-  if (median < kFreshnessMinLibraryAgeDays) return const {};
-
-  final window = median < kFreshnessWindowDays ? median : kFreshnessWindowDays;
-  final out = <String, double>{};
-  for (final entry in addedAt.entries) {
-    final added = entry.value;
-    if (!added.isFinite || added <= 0) continue;
-    final age = (nowSec - added) / 86400.0;
-    final fresh = (1 - age / window).clamp(0.0, 1.0);
-    if (fresh > 0) out[entry.key] = fresh;
-  }
-  return out;
-}
-
-Map<String, Map<String, double>> _topNormalized(
-  Map<String, Map<String, double>> raw,
-  int top,
-) {
-  final out = <String, Map<String, double>>{};
-  raw.forEach((a, row) {
-    final sorted = row.entries.where((e) => e.value > 0).toList()
-      ..sort((x, y) => y.value.compareTo(x.value));
-    if (sorted.isEmpty) return;
-    final capped = sorted.take(top).toList();
-    final peak = capped.first.value;
-    out[a] = {for (final e in capped) e.key: e.value / peak};
-  });
-  return out;
-}
-
-int _bySessionThenTime(PlaySignal a, PlaySignal b) {
-  final s = (a.sessionId ?? '').compareTo(b.sessionId ?? '');
-  return s != 0 ? s : a.timestamp.compareTo(b.timestamp);
-}
-
-/// Base evidence of one play from how much of it was heard.
-double _baseQuality(double ratio) {
-  if (ratio >= _fullListenRatio) return 1.0;
-  if (ratio >= 0.5) return 0.5 + 0.5 * (ratio - 0.5) / 0.35;
-  if (ratio >= 0.25) return 0.5 * (ratio - 0.25) / 0.25;
-  return -1.0;
-}
-
-/// Skips that are one of at least three within 90 s in the same session.
-/// Events are sorted by session then time, so a two-pointer window suffices.
-List<bool> _burstFlags(List<PlaySignal> events, List<double> quality) {
-  final n = events.length;
-  final burst = List<bool>.filled(n, false);
-  var gs = 0;
-  while (gs < n) {
-    var ge = gs + 1;
-    while (ge < n && events[ge].sessionId == events[gs].sessionId) {
-      ge++;
-    }
-    if (events[gs].sessionId != null) {
-      final skips = <int>[
-        for (var i = gs; i < ge; i++)
-          if (quality[i] < 0) i,
-      ];
-      var lo = 0;
-      var hi = -1;
-      for (var k = 0; k < skips.length; k++) {
-        final t = events[skips[k]].timestamp;
-        while (hi + 1 < skips.length &&
-            events[skips[hi + 1]].timestamp <= t + _burstWindowSeconds) {
-          hi++;
-        }
-        while (events[skips[lo]].timestamp < t - _burstWindowSeconds) {
-          lo++;
-        }
-        if (hi - lo >= 2) burst[skips[k]] = true;
-      }
-    }
-    gs = ge;
-  }
-  return burst;
-}
-
-/// A skip is forgiven if the same song was fully heard at some later time.
-/// Walks newest to oldest so one set answers "completed later?" in O(1).
-List<bool> _forgivenessFlags(
-  List<PlaySignal> events,
-  List<double> quality,
-  List<double> ratio,
-) {
-  final n = events.length;
-  final forgiven = List<bool>.filled(n, false);
-  final order = List<int>.generate(n, (i) => i)
-    ..sort((a, b) => events[b].timestamp.compareTo(events[a].timestamp));
-  final completedLater = <String>{};
-  for (final i in order) {
-    final fn = events[i].filename;
-    if (quality[i] < 0 && completedLater.contains(fn)) forgiven[i] = true;
-    if (ratio[i] >= _fullListenRatio) completedLater.add(fn);
-  }
-  return forgiven;
-}
-
-/// Marks the second full listen of a song within one session.
-List<bool> _replayFlags(List<PlaySignal> events, List<double> ratio) {
-  final replay = List<bool>.filled(events.length, false);
-  final completions = <String, int>{};
-  for (var i = 0; i < events.length; i++) {
-    final e = events[i];
-    if (e.sessionId == null || ratio[i] < _fullListenRatio) continue;
-    final key = '${e.sessionId}\u0000${e.filename}';
-    final c = (completions[key] ?? 0) + 1;
-    completions[key] = c;
-    if (c == 2) replay[i] = true;
-  }
-  return replay;
-}
-
-double _positiveSourceMultiplier(PlaySource? source) => switch (source) {
-      PlaySource.queued => 1.4,
-      PlaySource.manual => 1.3,
-      PlaySource.shuffle => 0.8,
-      PlaySource.linear || null => 1.0,
+Map<String, Map<String, double>> _transitions(Object? raw) => {
+      for (final entry in (raw as Map<String, dynamic>? ?? const {}).entries)
+        entry.key: {
+          for (final row
+              in (entry.value as Map<String, dynamic>? ?? const {}).entries)
+            row.key: _double(row.value),
+        },
     };
 
-double _negativeSourceMultiplier(PlaySource? source) => switch (source) {
-      PlaySource.shuffle => 1.0,
-      PlaySource.queued => 0.5,
-      PlaySource.manual => 0.3,
-      PlaySource.linear || null => 0.6,
-    };
-
-class _Decay {
-  final double long;
-  final double trend;
-  final double neg;
-  final double negTrend;
-  final double sat;
-
-  const _Decay({
-    required this.long,
-    required this.trend,
-    required this.neg,
-    required this.negTrend,
-    required this.sat,
-  });
-}
-
-/// Positive evidence decays on the long/trend half-lives. Negative evidence
-/// decays fast (10 days) so old skips stop mattering quickly.
-_Decay _decayAt(double ageDays) {
-  final age = ageDays < 0 ? 0.0 : ageDays;
-  final neg = decayFactor(age, 10);
-  return _Decay(
-    long: decayFactor(age, 90),
-    trend: age <= 30 ? decayFactor(age, 10) : 0.0,
-    neg: neg,
-    negTrend: age <= 30 ? neg : 0.0,
-    sat: decayFactor(age, 2),
-  );
-}
-
-class _Acc {
-  double posLong = 0.0;
-  double negLong = 0.0;
-  double posTrend = 0.0;
-  double negTrend = 0.0;
-  double saturation = 0.0;
-  double skipW = 0.0;
-  double totalW = 0.0;
-  int playCount = 0;
-  double lastPlayed = double.negativeInfinity;
-
-  double get longMass => max(0.0, posLong - min(negLong, _negativeCap));
-  double get trendMass => max(0.0, posTrend - min(negTrend, _negativeCap));
-}
-
-void _addEvidence(_Acc a, double w, double ts, _Decay d,
-    {required bool countPlay}) {
-  final m = w.abs();
-  if (w > 0) {
-    a.posLong += w * d.long;
-    a.posTrend += w * d.trend;
-    a.saturation += d.sat;
-  } else {
-    a.negLong += m * d.neg;
-    a.negTrend += m * d.negTrend;
-  }
-  if (w < 0) a.skipW += m * d.long;
-  a.totalW += m * d.long;
-  if (countPlay) {
-    a.playCount++;
-    a.lastPlayed = max(a.lastPlayed, ts);
-  }
-}
-
-/// Per-entity evidence for songs and artists.
-class _Ledger {
-  final songs = <String, _Acc>{};
-  final artists = <String, _Acc>{};
-
-  void credit(
-    String filename,
-    String artistKey,
-    double w,
-    double ts,
-    _Decay d, {
-    required bool countPlay,
-  }) {
-    _addEvidence(songs.putIfAbsent(filename, () => _Acc()), w, ts, d,
-        countPlay: countPlay);
-    _addEvidence(artists.putIfAbsent(artistKey, () => _Acc()), w, ts, d,
-        countPlay: countPlay);
-  }
-}
+double _double(Object? value) => (value as num?)?.toDouble() ?? 0.0;

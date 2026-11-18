@@ -280,9 +280,12 @@ class LibraryLogic {
     request['familiarity'] = 1 - shuffleConfig.discoveryLevel;
     request['favoriteMultiplier'] = shuffleConfig.favoriteMultiplier;
     request['suggestLessMultiplier'] = shuffleConfig.suggestLessMultiplier;
+    final artistKeys = tasteArtistKeys([
+      for (final song in songs) (artist: song.artist, filename: song.filename),
+    ]);
     request['artistKeys'] = {
-      for (final song in songs)
-        song.filename: tasteArtistKey(song.artist, song.filename),
+      for (var index = 0; index < songs.length; index++)
+        songs[index].filename: artistKeys[index],
     };
     final playlists = _userPlaylistFilenames(userData);
     request['favorites'] = [

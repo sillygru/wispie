@@ -27,11 +27,14 @@ class SearchTaste {
     if (isEmpty || rows.isEmpty) {
       return List<double>.filled(rows.length, 0);
     }
+    final keys = tasteArtistKeys([
+      for (final song in rows) (artist: song.artist, filename: song.filename),
+    ]);
     final reply = WispieCore.helper({
       'action': 'taste_scores',
       'items': [
-        for (final song in rows)
-          [song.filename, tasteArtistKey(song.artist, song.filename)],
+        for (var index = 0; index < rows.length; index++)
+          [rows[index].filename, keys[index]],
       ],
       'songScores': songs,
       'artistScores': artists,

@@ -7,7 +7,7 @@ unsafe extern "C" {
     fn pow(base: f64, exponent: f64) -> f64;
 }
 
-fn decay_factor(age_days: f64, half_life_days: f64) -> f64 {
+pub(crate) fn decay_factor(age_days: f64, half_life_days: f64) -> f64 {
     if half_life_days <= 0.0 || age_days <= 0.0 {
         1.0
     } else {

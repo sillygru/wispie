@@ -37,7 +37,9 @@ mod search;
 mod search_index;
 mod settings_search;
 mod shuffle;
+mod storage_probe;
 mod tasks;
+mod taste;
 mod view_math;
 mod waveform;
 
@@ -211,6 +213,19 @@ fn dispatch(
         "list_media" => tasks::list_media(parse(payload)?, emitter),
         "compact_covers" => tasks::compact_covers(parse(payload)?, emitter),
         "helpers" => helpers::run(payload, bytes, emitter),
+        "taste_snapshot" => taste::run(
+            &payload,
+            bytes.ok_or_else(|| "taste_snapshot requires a binary payload".to_string())?,
+        )
+        .map(|result| emitter.emit(Emit::Json(result))),
+        "taste_artist_keys" => {
+            emitter.emit(Emit::Json(taste::artist_keys_json(&payload)?));
+            Ok(())
+        }
+        "storage_probe" => {
+            emitter.emit(Emit::Json(storage_probe::run(&payload)));
+            Ok(())
+        }
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

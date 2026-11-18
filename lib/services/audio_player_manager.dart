@@ -3161,22 +3161,30 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   /// representative version alone.
   List<SmartCandidate<_VirtualShuffleItem>> _smartCandidates(
     List<_VirtualShuffleItem> virtual,
-  ) =>
-      [
-        for (final v in virtual)
-          SmartCandidate<_VirtualShuffleItem>(
-            item: v,
-            filenames: [for (final q in v.items) q.song.filename],
-            artistKey: tasteArtistKey(
-              v.representative.song.artist,
-              v.representative.song.filename,
-            ),
-            albumKey: v.representative.song.album.trim().toLowerCase(),
-            isFavorite: _isFavorite(v.representative.song.filename),
-            isSuggestLess: _isSuggestLess(v.representative.song.filename),
-            isInPlaylist: _isInPlaylist(v.representative.song.filename),
-          ),
-      ];
+  ) {
+    final keys = tasteArtistKeys([
+      for (final v in virtual)
+        (
+          artist: v.representative.song.artist,
+          filename: v.representative.song.filename,
+        ),
+    ]);
+    return [
+      for (var index = 0; index < virtual.length; index++)
+        SmartCandidate<_VirtualShuffleItem>(
+          item: virtual[index],
+          filenames: [for (final q in virtual[index].items) q.song.filename],
+          artistKey: keys[index],
+          albumKey:
+              virtual[index].representative.song.album.trim().toLowerCase(),
+          isFavorite: _isFavorite(virtual[index].representative.song.filename),
+          isSuggestLess:
+              _isSuggestLess(virtual[index].representative.song.filename),
+          isInPlaylist:
+              _isInPlaylist(virtual[index].representative.song.filename),
+        ),
+    ];
+  }
 
   /// Collapses a candidate (possibly a merge group) into the signals scoring
   /// needs.

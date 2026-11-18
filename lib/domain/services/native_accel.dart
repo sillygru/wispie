@@ -615,6 +615,26 @@ class NativeAccel {
         'day': value.day,
       };
 
+  /// Taste evidence per song and artist over the whole play history.
+  ///
+  /// Events cross as fixed-stride rows: a library-sized history would otherwise
+  /// pay for JSON on both sides.
+  static Map<String, dynamic> tasteSnapshot(
+    Map<String, Object?> request,
+    Uint8List rows,
+  ) =>
+      _askBytes({'command': 'taste_snapshot', ...request}, rows);
+
+  static List<String> tasteArtistKeys(List<List<String>> items) => (_ask({
+        'command': 'taste_artist_keys',
+        'items': items,
+      })['keys'] as List<dynamic>)
+          .cast<String>();
+
+  /// Can this folder be listed, and can a few files actually be read?
+  static Map<String, dynamic> storageProbe(String path) =>
+      _ask({'command': 'storage_probe', 'path': path});
+
   static List<int> rankSearch({
     required String query,
     required List<NativeRankRow> results,
