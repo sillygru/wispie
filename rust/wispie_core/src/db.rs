@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Map, Value};
 
 use crate::emitter::{Emit, Emitter};
@@ -382,22 +382,46 @@ fn open(payload: &Value) -> Result<Value, String> {
         Some(other) => return Err(format!("unknown schema {other}")),
         None => None,
     };
-    if let Some(parent) = Path::new(path).parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| format!("create db directory: {error}"))?;
+    let read_only = payload
+        .get("read_only")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if !read_only {
+        if let Some(parent) = Path::new(path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| format!("create db directory: {error}"))?;
+            }
         }
     }
 
-    let mut connection = Connection::open(path).map_err(|error| format!("open {path}: {error}"))?;
+    let flags = if read_only {
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI
+    } else {
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI
+    };
+    let mut connection = Connection::open_with_flags(path, flags)
+        .map_err(|error| format!("open {path}: {error}"))?;
     connection
         .busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|error| format!("busy timeout: {error}"))?;
+
+    // Foreign keys stay off, as they were under sqflite: it does not enable
+    // them either, and bundled SQLite compiles with the opposite default. The
+    // schema's REFERENCES clauses are documentation. Enforcement makes a newer
+    // remote tombstone for a playlist abort the whole sync transaction while
+    // local playlist_song rows still exist, and turns every parent DELETE into
+    // a cascade that skips the tombstones the app writes for the children.
     connection
-        .execute_batch("PRAGMA foreign_keys = ON")
+        .execute_batch("PRAGMA foreign_keys = OFF")
         .map_err(|error| format!("foreign keys: {error}"))?;
 
-    let Some(stats) = stats else {
+    let Some(stats) = stats.filter(|_| !read_only) else {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         lock().insert(id, connection);
         return Ok(json!({ "id": id, "version": 0, "fresh": false }));

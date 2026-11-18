@@ -55,7 +55,7 @@ Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `me
 
 `DatabaseService` (`lib/services/database_service.dart`, `.instance`) owns `wispie_stats.db` (play sessions/events) and `wispie_data.db` (library, playlists, favorites, merged groups, queue snapshots).
 
-Schema and the upgrade ladder are canonical in `rust/wispie_core/src/db.rs`: `DATA_TABLES` / `DATA_INDEXES` (and the `STATS_` equivalents) for fresh creates, plus one `if from < N` block per historical version inside `upgrade()`. Versions are `STATS_VERSION` / `DATA_VERSION`, stamped as `PRAGMA user_version`. Adding a table or column means touching the create path and adding a ladder step; never rewrite an existing step, since a file on some device is sitting at that version. `lib/data/rust/native_database.dart` is the sqflite-shaped adapter every repository talks to.
+Schema and the upgrade ladder are canonical in `rust/wispie_core/src/db.rs`: `DATA_TABLES` / `DATA_INDEXES` (and the `STATS_` equivalents) for fresh creates, plus one `if from < N` block per historical version inside `upgrade()`. Versions are `STATS_VERSION` / `DATA_VERSION`, stamped as `PRAGMA user_version`. Adding a table or column means touching the create path and adding a ladder step; never rewrite an existing step, since a file on some device is sitting at that version. `lib/data/rust/native_database.dart` is the sqflite-shaped adapter every repository talks to. `PRAGMA foreign_keys` stays off: sqflite never enabled it either, and the `REFERENCES` clauses are documentation. Enforcing them aborts a sync apply that deletes a parent row whose local children still exist, and turns every parent `DELETE` into a cascade that skips the tombstones the app writes for the children.
 
 ### Playback
 

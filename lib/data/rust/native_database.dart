@@ -110,12 +110,14 @@ class Database implements DatabaseExecutor {
     String path, {
     DatabaseSchema? schema,
     int? hlc,
+    bool readOnly = false,
   }) async {
     final reply = _call({
       'action': 'open',
       'path': path,
       if (schema != null) 'schema': _schemaNames[schema],
       if (hlc != null) 'hlc': hlc,
+      if (readOnly) 'read_only': true,
     });
     return Database._(path, (reply['id'] as num).toInt(), inTransaction: false);
   }
@@ -136,8 +138,16 @@ class Database implements DatabaseExecutor {
     return _call({...request, 'id': _id});
   }
 
-  Future<T> _run<T>(Map<String, Object?> request) =>
-      _serialized(() async => _dispatch(request) as T);
+  Future<T> _run<T>(Map<String, Object?> request) {
+    // The transaction body holds the queue, so a statement queued behind it
+    // would wait on the transaction that is waiting on it. Transactions queue
+    // as usual; only a statement out of scope is a mistake.
+    if (_inTransaction) {
+      throw DatabaseException(
+          'database $path is in a transaction; pass the transaction handle');
+    }
+    return _serialized(() async => _dispatch(request) as T);
+  }
 
   /// Begins, runs [action], then commits or rolls back. The queue is held for
   /// the whole body, so nothing else writes into the transaction.
@@ -539,7 +549,10 @@ class Transaction implements DatabaseExecutor {
 /// Opens [path] through the core.
 ///
 /// [schema] is what asks for creation or an upgrade; a database opened without
-/// one (an integrity check, a backup read) is opened as it stands.
+/// one (an integrity check, a backup read) is opened as it stands. [readOnly]
+/// opens without read-write access, for looking at a file the app must not
+/// touch. Every call opens its own connection, so [singleInstance] is accepted
+/// for call-site compatibility but changes nothing.
 Future<Database> openDatabase(
   String path, {
   DatabaseSchema? schema,
@@ -547,7 +560,7 @@ Future<Database> openDatabase(
   bool readOnly = false,
   bool singleInstance = true,
 }) =>
-    Database.open(path, schema: schema, hlc: hlc);
+    Database.open(path, schema: schema, hlc: hlc, readOnly: readOnly);
 
 /// The first column of the first row as an int, or null when there is no row.
 int? firstIntValue(List<Map<String, Object?>> rows) {
