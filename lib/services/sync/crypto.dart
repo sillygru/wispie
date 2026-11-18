@@ -1,11 +1,8 @@
 import 'dart:convert';
 import 'dart:isolate';
-import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as c;
-import 'package:cryptography/cryptography.dart';
-import 'package:unorm_dart/unorm_dart.dart' as unorm;
+import '../../domain/services/native_accel.dart';
 
 /// Thrown when a wrap/unwrap or key decode fails authentication.
 class SyncCryptoException implements Exception {
@@ -45,164 +42,132 @@ class KdfParams {
 
 /// Key hierarchy of plan_sync.md section 1.2.
 ///
-/// Deviation from the plan: implemented on the pure-Dart `cryptography`
-/// package (no native libsodium), and
-/// the keyed BLAKE2b derivations are HMAC-SHA256 with the same context strings.
+/// The contract lives in the native core (`rust/wispie_core/src/sync.rs`): every
+/// derived key, sealed box and recovery key here is a byte-for-byte contract
+/// with already-shipped clients and the Go server.
 class SyncCrypto {
   SyncCrypto._();
 
-  static final _aead = Xchacha20.poly1305Aead();
-  static final _hmac = Hmac.sha256();
-  static final _rng = Random.secure();
-
-  static const ctxAuth = 'wispie/auth/v1';
-  static const ctxKek = 'wispie/kek/v1';
-  static const ctxData = 'wispie/data/v1';
-  static const ctxRecoveryAuth = 'wispie/rauth/v1';
-  static const ctxRecoveryKek = 'wispie/rkek/v1';
-  static const aadAccountKey = 'wispie/ak/v1|';
-  static const aadAccountKeyRecovery = 'wispie/ak-rk/v1|';
-
-  static Uint8List randomBytes(int n) =>
-      Uint8List.fromList(List.generate(n, (_) => _rng.nextInt(256)));
+  static Uint8List randomBytes(int n) => _hex(NativeAccel.sync({
+        'action': 'random',
+        'bytes': n,
+      })['hex'] as String);
 
   /// NFKC + lowercase, used for usernames on both sides.
-  static String normalizeUsername(String s) =>
-      unorm.nfkc(s.trim()).toLowerCase();
+  static String normalizeUsername(String s) => NativeAccel.sync({
+        'action': 'normalize',
+        'text': s,
+        'username': true,
+      })['value'] as String;
 
-  static List<int> passwordBytes(String p) => utf8.encode(unorm.nfkc(p));
-
-  /// Argon2id off the UI isolate. [kdf] is validated against the server's bounds.
+  /// Argon2id off the UI isolate: the derivation is deliberately expensive.
   static Future<Uint8List> deriveMasterKey(
     String password,
     Uint8List salt,
     KdfParams kdf,
-  ) {
-    final pw = passwordBytes(password);
-    return Isolate.run(() async {
-      final algo = Argon2id(
-        memory: kdf.memoryKib,
-        parallelism: kdf.parallelism,
-        iterations: kdf.iterations,
-        hashLength: 32,
-      );
-      final key = await algo.deriveKey(
-        secretKey: SecretKey(pw),
-        nonce: salt,
-      );
-      return Uint8List.fromList(await key.extractBytes());
-    });
-  }
+  ) =>
+      Isolate.run(() => _hex(NativeAccel.sync({
+            'action': 'argon2',
+            'password': password,
+            'saltHex': _hexOf(salt),
+            'mKiB': kdf.memoryKib,
+            'iterations': kdf.iterations,
+            'parallelism': kdf.parallelism,
+          })['keyHex'] as String));
 
-  static Future<Uint8List> derive(List<int> key, String context) async {
-    final mac = await _hmac.calculateMac(
-      utf8.encode(context),
-      secretKey: SecretKey(key),
-    );
-    return Uint8List.fromList(mac.bytes);
-  }
+  static Uint8List authKey(Uint8List masterKey) => _role(masterKey, 'auth');
+  static Uint8List kek(Uint8List masterKey) => _role(masterKey, 'kek');
+  static Uint8List dataKey(Uint8List accountKey) => _role(accountKey, 'data');
+  static Uint8List recoveryAuth(Uint8List recoveryKey) =>
+      _role(recoveryKey, 'recovery_auth');
+  static Uint8List recoveryKek(Uint8List recoveryKey) =>
+      _role(recoveryKey, 'recovery_kek');
 
-  static Future<Uint8List> authKey(Uint8List masterKey) =>
-      derive(masterKey, ctxAuth);
-  static Future<Uint8List> kek(Uint8List masterKey) =>
-      derive(masterKey, ctxKek);
-  static Future<Uint8List> dataKey(Uint8List accountKey) =>
-      derive(accountKey, ctxData);
-  static Future<Uint8List> recoveryAuth(Uint8List recoveryKey) =>
-      derive(recoveryKey, ctxRecoveryAuth);
-  static Future<Uint8List> recoveryKek(Uint8List recoveryKey) =>
-      derive(recoveryKey, ctxRecoveryKek);
+  static Uint8List _role(Uint8List key, String role) => _hex(NativeAccel.sync({
+        'action': 'derive_role',
+        'keyHex': _hexOf(key),
+        'role': role,
+      })['keyHex'] as String);
 
-  /// Output: nonce(24) || ciphertext || tag(16).
-  static Future<Uint8List> seal(
-    List<int> key,
-    List<int> plain,
-    List<int> aad,
-  ) async {
-    final box = await _aead.encrypt(plain, secretKey: SecretKey(key), aad: aad);
-    return Uint8List.fromList(box.concatenation());
-  }
-
-  static Future<Uint8List> open(
-    List<int> key,
-    List<int> sealed,
-    List<int> aad,
-  ) async {
-    if (sealed.length < 24 + 16) {
-      throw const SyncCryptoException('sealed box too short');
-    }
-    try {
-      final box = SecretBox.fromConcatenation(
-        sealed,
-        nonceLength: 24,
-        macLength: 16,
-      );
-      return Uint8List.fromList(
-        await _aead.decrypt(box, secretKey: SecretKey(key), aad: aad),
-      );
-    } on SecretBoxAuthenticationError {
-      throw const SyncCryptoException('authentication failed');
-    }
-  }
-
-  static Future<Uint8List> wrapAccountKey(
+  static Uint8List wrapAccountKey(
     Uint8List kek,
     Uint8List accountKey,
     String accountId,
   ) =>
-      seal(kek, accountKey, utf8.encode('$aadAccountKey$accountId'));
+      _hex(NativeAccel.sync({
+        'action': 'wrap_account_key',
+        'keyHex': _hexOf(kek),
+        'accountKeyHex': _hexOf(accountKey),
+        'accountId': accountId,
+      })['sealedHex'] as String);
 
-  static Future<Uint8List> unwrapAccountKey(
+  static Uint8List unwrapAccountKey(
     Uint8List kek,
     Uint8List wrapped,
     String accountId,
   ) =>
-      open(kek, wrapped, utf8.encode('$aadAccountKey$accountId'));
+      _crypto(() => _hex(NativeAccel.sync({
+            'action': 'unwrap_account_key',
+            'keyHex': _hexOf(kek),
+            'sealedHex': _hexOf(wrapped),
+            'accountId': accountId,
+          })['accountKeyHex'] as String));
 
-  static Future<Uint8List> wrapAccountKeyByRecovery(
+  static Uint8List wrapAccountKeyByRecovery(
     Uint8List recoveryKek,
     Uint8List accountKey,
     String accountId,
   ) =>
-      seal(recoveryKek, accountKey,
-          utf8.encode('$aadAccountKeyRecovery$accountId'));
+      _hex(NativeAccel.sync({
+        'action': 'wrap_account_key_recovery',
+        'keyHex': _hexOf(recoveryKek),
+        'accountKeyHex': _hexOf(accountKey),
+        'accountId': accountId,
+      })['sealedHex'] as String);
 
-  static Future<Uint8List> unwrapAccountKeyByRecovery(
+  static Uint8List unwrapAccountKeyByRecovery(
     Uint8List recoveryKek,
     Uint8List wrapped,
     String accountId,
   ) =>
-      open(recoveryKek, wrapped,
-          utf8.encode('$aadAccountKeyRecovery$accountId'));
+      _crypto(() => _hex(NativeAccel.sync({
+            'action': 'unwrap_account_key_recovery',
+            'keyHex': _hexOf(recoveryKek),
+            'sealedHex': _hexOf(wrapped),
+            'accountId': accountId,
+          })['accountKeyHex'] as String));
 
   /// Hashcash: SHA-256(challenge || nonce) must have [bits] leading zero bits.
   /// Nonce is base64url(u64be counter), matching the server's `pow.Solve`.
-  static Future<String> solvePow(String challenge, int bits) =>
-      Isolate.run(() => solvePowSync(challenge, bits));
+  static Future<String> solvePow(String challenge, int bits) => Isolate.run(
+        () => NativeAccel.sync({
+          'action': 'pow',
+          'challenge': challenge,
+          'bits': bits,
+        })['nonce'] as String,
+      );
 
-  static String solvePowSync(String challenge, int bits) {
-    final prefix = utf8.encode(challenge);
-    for (var i = 0;; i++) {
-      final ctr = ByteData(8)..setUint64(0, i);
-      final nonce =
-          base64Url.encode(ctr.buffer.asUint8List()).replaceAll('=', '');
-      final digest = c.sha256.convert([...prefix, ...utf8.encode(nonce)]).bytes;
-      if (leadingZeroBits(digest) >= bits) return nonce;
+  static T _crypto<T>(T Function() body) {
+    try {
+      return body();
+    } on NativeCommandException catch (error) {
+      throw SyncCryptoException(error.message.replaceFirst('crypto: ', ''));
     }
-  }
-
-  static int leadingZeroBits(List<int> d) {
-    var n = 0;
-    for (final b in d) {
-      if (b == 0) {
-        n += 8;
-        continue;
-      }
-      return n + (7 - (b.bitLength - 1));
-    }
-    return n;
   }
 }
+
+String _hexOf(List<int> bytes) {
+  final out = StringBuffer();
+  for (final byte in bytes) {
+    out.write(byte.toRadixString(16).padLeft(2, '0'));
+  }
+  return out.toString();
+}
+
+Uint8List _hex(String text) => Uint8List.fromList([
+      for (var i = 0; i < text.length; i += 2)
+        int.parse(text.substring(i, i + 2), radix: 16),
+    ]);
 
 String b64u(List<int> b) => base64Url.encode(b).replaceAll('=', '');
 Uint8List unb64u(String s) {
@@ -214,77 +179,24 @@ Uint8List unb64u(String s) {
 class RecoveryKey {
   RecoveryKey._();
 
-  static const _alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
   static const int byteLength = 20;
 
   static Uint8List generate() => SyncCrypto.randomBytes(byteLength);
 
-  static String encode(Uint8List key) {
-    if (key.length != byteLength) {
-      throw ArgumentError('recovery key must be $byteLength bytes');
-    }
-    final data = StringBuffer();
-    var bits = 0, acc = 0;
-    final values = <int>[];
-    for (final b in key) {
-      acc = (acc << 8) | b;
-      bits += 8;
-      while (bits >= 5) {
-        values.add((acc >> (bits - 5)) & 31);
-        bits -= 5;
-      }
-      acc &= (1 << bits) - 1;
-    }
-    values.add(_check(values));
-    for (var i = 0; i < values.length; i++) {
-      if (i > 0 && i % 5 == 0) data.write('-');
-      data.write(_alphabet[values[i]]);
-    }
-    return data.toString();
-  }
-
-  static int _check(List<int> v) {
-    // Prime modulus keeps every positional weight invertible, so any single
-    // character substitution (except 0<->31) changes the check.
-    var s = 0;
-    for (var i = 0; i < v.length; i++) {
-      s += ((i % 30) + 1) * v[i];
-    }
-    return s % 31;
-  }
+  static String encode(Uint8List key) => NativeAccel.sync({
+        'action': 'recovery_encode',
+        'keyHex': _hexOf(key),
+      })['text'] as String;
 
   /// Throws [SyncCryptoException] on bad characters, length or check char.
   static Uint8List decode(String input) {
-    final s = input.toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
-    final values = <int>[];
-    for (final ch in s.split('')) {
-      final mapped = switch (ch) {
-        'O' => '0',
-        'I' || 'L' => '1',
-        _ => ch,
-      };
-      final i = _alphabet.indexOf(mapped);
-      if (i < 0) throw const SyncCryptoException('invalid recovery key');
-      values.add(i);
+    try {
+      return _hex(NativeAccel.sync({
+        'action': 'recovery_decode',
+        'text': input,
+      })['keyHex'] as String);
+    } on NativeCommandException catch (error) {
+      throw SyncCryptoException(error.message.replaceFirst('crypto: ', ''));
     }
-    if (values.length != 33) {
-      throw const SyncCryptoException('invalid recovery key length');
-    }
-    final check = values.removeLast();
-    if (_check(values) != check) {
-      throw const SyncCryptoException('recovery key check failed');
-    }
-    final out = <int>[];
-    var bits = 0, acc = 0;
-    for (final v in values) {
-      acc = (acc << 5) | v;
-      bits += 5;
-      if (bits >= 8) {
-        out.add((acc >> (bits - 8)) & 255);
-        bits -= 8;
-        acc &= (1 << bits) - 1;
-      }
-    }
-    return Uint8List.fromList(out);
   }
 }

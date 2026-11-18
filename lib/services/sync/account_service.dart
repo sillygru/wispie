@@ -308,15 +308,15 @@ class AccountService {
       powChallenge: begin.challenge,
       salt: salt,
       kdf: kdf.toJson(),
-      authKey: await SyncCrypto.authKey(master),
-      recoveryAuth: await SyncCrypto.recoveryAuth(recovery),
-      wrappedByPw: await SyncCrypto.wrapAccountKey(
-        await SyncCrypto.kek(master),
+      authKey: SyncCrypto.authKey(master),
+      recoveryAuth: SyncCrypto.recoveryAuth(recovery),
+      wrappedByPw: SyncCrypto.wrapAccountKey(
+        SyncCrypto.kek(master),
         accountKey,
         begin.accountId,
       ),
-      wrappedByRk: await SyncCrypto.wrapAccountKeyByRecovery(
-        await SyncCrypto.recoveryKek(recovery),
+      wrappedByRk: SyncCrypto.wrapAccountKeyByRecovery(
+        SyncCrypto.recoveryKek(recovery),
         accountKey,
         begin.accountId,
       ),
@@ -339,9 +339,9 @@ class AccountService {
       pre.salt,
       KdfParams.fromJson(pre.kdf),
     );
-    final res = await api.login(user, await SyncCrypto.authKey(master));
-    final accountKey = await SyncCrypto.unwrapAccountKey(
-      await SyncCrypto.kek(master),
+    final res = await api.login(user, SyncCrypto.authKey(master));
+    final accountKey = SyncCrypto.unwrapAccountKey(
+      SyncCrypto.kek(master),
       res.wrappedByPw!,
       res.accountId,
     );
@@ -359,10 +359,9 @@ class AccountService {
     if (pErr != null) throw SyncApiException(0, 'weak_password', pErr);
     final rk = RecoveryKey.decode(recoveryKey);
     final api = SyncApiClient(baseUrl: serverUrl);
-    final begin =
-        await api.recoverBegin(user, await SyncCrypto.recoveryAuth(rk));
-    final accountKey = await SyncCrypto.unwrapAccountKeyByRecovery(
-      await SyncCrypto.recoveryKek(rk),
+    final begin = await api.recoverBegin(user, SyncCrypto.recoveryAuth(rk));
+    final accountKey = SyncCrypto.unwrapAccountKeyByRecovery(
+      SyncCrypto.recoveryKek(rk),
       begin.wrappedByRk,
       begin.accountId,
     );
@@ -372,9 +371,9 @@ class AccountService {
       recoverToken: begin.recoverToken,
       salt: salt,
       kdf: kdf.toJson(),
-      authKey: await SyncCrypto.authKey(master),
-      wrappedByPw: await SyncCrypto.wrapAccountKey(
-        await SyncCrypto.kek(master),
+      authKey: SyncCrypto.authKey(master),
+      wrappedByPw: SyncCrypto.wrapAccountKey(
+        SyncCrypto.kek(master),
         accountKey,
         begin.accountId,
       ),
@@ -407,9 +406,9 @@ class AccountService {
       currentAuthKey: current,
       salt: salt,
       kdf: kdf.toJson(),
-      authKey: await SyncCrypto.authKey(master),
-      wrappedByPw: await SyncCrypto.wrapAccountKey(
-        await SyncCrypto.kek(master),
+      authKey: SyncCrypto.authKey(master),
+      wrappedByPw: SyncCrypto.wrapAccountKey(
+        SyncCrypto.kek(master),
         _accountKey!,
         s.accountId,
       ),
@@ -422,9 +421,9 @@ class AccountService {
     final rk = RecoveryKey.generate();
     await client.replaceRecoveryKey(
       currentAuthKey: current,
-      recoveryAuth: await SyncCrypto.recoveryAuth(rk),
-      wrappedByRk: await SyncCrypto.wrapAccountKeyByRecovery(
-        await SyncCrypto.recoveryKek(rk),
+      recoveryAuth: SyncCrypto.recoveryAuth(rk),
+      wrappedByRk: SyncCrypto.wrapAccountKeyByRecovery(
+        SyncCrypto.recoveryKek(rk),
         _accountKey!,
         _session!.accountId,
       ),

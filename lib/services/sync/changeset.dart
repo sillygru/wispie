@@ -434,7 +434,8 @@ class Changeset {
     if (remote.isEmpty && index.byFilename.isEmpty) return payload;
 
     final learned = <String, String>{};
-    final remapped = remapSongNames(records, (name) {
+    final mapping = <String, String?>{};
+    for (final name in collectSongNames(records)) {
       final cid = remote[name];
       final target = index.resolve(name, remoteCid: cid);
       if (target == name &&
@@ -443,8 +444,13 @@ class Changeset {
           index.liveFilesFor(cid).isEmpty) {
         learned[name] = cid;
       }
-      return target;
-    });
+      mapping[name] = target;
+    }
+    // Every name landing on itself is a no-op rewrite; skip the payload round
+    // trip a fresh device would pay on every incoming delta.
+    final unchanged =
+        mapping.entries.every((entry) => entry.key == entry.value);
+    final remapped = unchanged ? records : remapSongNames(records, mapping);
     if (learned.isNotEmpty) {
       await SongIdentityRepository.learnOrphans(userData, learned);
       learned.forEach(index.addOrphan);

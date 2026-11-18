@@ -635,6 +635,66 @@ class NativeAccel {
   static Map<String, dynamic> storageProbe(String path) =>
       _ask({'command': 'storage_probe', 'path': path});
 
+  /// One sync-contract request: key derivation, sealed boxes, the blob format
+  /// and song-name rewriting. The core reports why a request failed, which the
+  /// adapters turn into their own exception types.
+  static Map<String, dynamic> sync(
+    Map<String, Object?> request, [
+    Uint8List? bytes,
+  ]) {
+    Map<String, dynamic>? items;
+    String? error;
+    final code = WispieCore.runBytes(
+      {...request, 'command': 'sync'},
+      bytes ?? Uint8List(0),
+      onEvent: (kind, payload) {
+        final decoded = jsonDecode(payload);
+        if (kind == WispieCore.eventItems) {
+          items = decoded as Map<String, dynamic>;
+        } else if (kind == WispieCore.eventError) {
+          error = (decoded as Map<String, dynamic>)['message'] as String?;
+        }
+      },
+    );
+    if (code != 0) {
+      throw NativeCommandException(error ?? 'sync core exited with $code');
+    }
+    final decoded = items;
+    if (decoded == null) {
+      throw const NativeCommandException('sync core sent no result');
+    }
+    return decoded;
+  }
+
+  /// A sync request whose reply is raw bytes: a blob payload must not pay for a
+  /// base64 round trip just to cross the ABI as JSON.
+  static Uint8List syncBytes(
+    Map<String, Object?> request,
+    Uint8List bytes,
+  ) {
+    Uint8List? out;
+    String? error;
+    final code = WispieCore.runBytes(
+      {...request, 'command': 'sync'},
+      bytes,
+      onEvent: (kind, payload) {
+        if (kind == WispieCore.eventError) {
+          error = (jsonDecode(payload) as Map<String, dynamic>)['message']
+              as String?;
+        }
+      },
+      onBytes: (value) => out = value,
+    );
+    if (code != 0) {
+      throw NativeCommandException(error ?? 'sync core exited with $code');
+    }
+    final decoded = out;
+    if (decoded == null) {
+      throw const NativeCommandException('sync core sent no result');
+    }
+    return decoded;
+  }
+
   static List<int> rankSearch({
     required String query,
     required List<NativeRankRow> results,
@@ -890,6 +950,15 @@ class NativeAccel {
     }
     return decoded;
   }
+}
+
+/// A native request that failed on its own terms; [message] is the core's.
+class NativeCommandException implements Exception {
+  final String message;
+  const NativeCommandException(this.message);
+
+  @override
+  String toString() => 'NativeCommandException: $message';
 }
 
 typedef NativeWord = ({int startUs, int endUs, String text});

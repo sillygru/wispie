@@ -12,7 +12,13 @@ name = "wispie_core"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+argon2 = "0.5"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+getrandom = "0.2"
+hmac = "0.12"
 image = { version = "0.25", default-features = false, features = [
     "bmp",
     "gif",
@@ -27,4 +33,6 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha1 = "0.10"
+sha2 = "0.10"
+unicode-normalization = "0.1"
 walkdir = "2"

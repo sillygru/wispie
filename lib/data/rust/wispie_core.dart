@@ -21,6 +21,9 @@ class WispieCore {
   static const int eventDone = 2;
   static const int eventError = 3;
 
+  /// Raw bytes instead of JSON, for payloads that must not be transcoded.
+  static const int eventBytes = 4;
+
   static const String _processLibrary = '<process>';
 
   static bool? _available;
@@ -104,14 +107,22 @@ class WispieCore {
     Map<String, Object?> request,
     Uint8List bytes, {
     required void Function(int kind, String payload) onEvent,
+    void Function(Uint8List bytes)? onBytes,
   }) =>
-      _run(request, bytes, binaryRequest: true, onEvent: onEvent);
+      _run(
+        request,
+        bytes,
+        binaryRequest: true,
+        onEvent: onEvent,
+        onBytes: onBytes,
+      );
 
   static int _run(
     Map<String, Object?> request,
     Uint8List bytes, {
     required bool binaryRequest,
     required void Function(int kind, String payload) onEvent,
+    void Function(Uint8List bytes)? onBytes,
   }) {
     if (!_ensureLoaded()) {
       throw StateError('native core unavailable: $_reason');
@@ -137,6 +148,10 @@ class WispieCore {
 
       final callable = NativeCallable<_EventNative>.isolateLocal(
         (Pointer<Void> _, int kind, Pointer<Uint8> json, int size) {
+          if (kind == eventBytes && onBytes != null) {
+            onBytes(Uint8List.fromList(json.asTypedList(size)));
+            return;
+          }
           onEvent(kind, utf8.decode(json.asTypedList(size)));
         },
       );

@@ -38,6 +38,7 @@ mod search_index;
 mod settings_search;
 mod shuffle;
 mod storage_probe;
+mod sync;
 mod tasks;
 mod taste;
 mod view_math;
@@ -226,6 +227,10 @@ fn dispatch(
             emitter.emit(Emit::Json(storage_probe::run(&payload)));
             Ok(())
         }
+        "sync" => sync::run(&payload, bytes.unwrap_or(&[])).map(|reply| match reply {
+            sync::Reply::Json(value) => emitter.emit(Emit::Json(value)),
+            sync::Reply::Bytes(out) => emitter.emit(Emit::Bytes(out)),
+        }),
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

@@ -10,6 +10,8 @@ pub const EVENT_ITEMS: i32 = 0;
 pub const EVENT_PROGRESS: i32 = 1;
 pub const EVENT_DONE: i32 = 2;
 pub const EVENT_ERROR: i32 = 3;
+/// Raw bytes instead of JSON: a blob payload must not be base64'd to cross.
+pub const EVENT_BYTES: i32 = 4;
 
 pub type RawCallback = extern "C" fn(*mut c_void, i32, *const u8, usize);
 
@@ -30,6 +32,7 @@ pub enum Emit {
     Paths(Vec<String>),
     Compacted(HashMap<String, String>),
     Json(serde_json::Value),
+    Bytes(Vec<u8>),
     Progress {
         done: u64,
         total: u64,
@@ -57,6 +60,12 @@ impl Emitter {
     /// Sends one event; the payload is only valid for the duration of the call.
     pub fn emit(&self, event: Emit) {
         let (kind, payload) = match event {
+            Emit::Bytes(bytes) => {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (self.callback)(self.user_data, EVENT_BYTES, bytes.as_ptr(), bytes.len());
+                }));
+                return;
+            }
             Emit::Songs(songs) => (EVENT_ITEMS, json!({ "songs": songs })),
             Emit::Covers(covers) => (EVENT_ITEMS, json!({ "covers": covers })),
             Emit::Facts(facts) => (EVENT_ITEMS, json!({ "facts": facts })),
