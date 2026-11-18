@@ -23,6 +23,7 @@ mod lrclib_match;
 mod lyrics_files;
 mod lyrics_view;
 mod match_plan;
+mod media;
 mod merge_finder;
 mod meta;
 mod model;
@@ -231,6 +232,7 @@ fn dispatch(
             sync::Reply::Json(value) => emitter.emit(Emit::Json(value)),
             sync::Reply::Bytes(out) => emitter.emit(Emit::Bytes(out)),
         }),
+        "media_decode" => media::run(&payload, emitter),
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

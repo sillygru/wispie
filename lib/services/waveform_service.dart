@@ -1,18 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
-import 'package:path/path.dart' as p;
 
 import '../domain/services/cache_policy.dart';
 import '../domain/services/native_accel.dart';
 import 'wispie_cache.dart';
-import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
 
 class WaveformService {
@@ -25,8 +19,12 @@ class WaveformService {
   /// should occupy, so the waveform reveals left-to-right as it decodes.
   static const int targetWaveformSamples = waveformBarCount;
 
+  /// The rate the bar decode runs at: four thousand mono samples a second is
+  /// all a few hundred bars can show.
+  static const int _waveformSampleRate = 4000;
+
   /// PCM bytes the decode writes per second: 4000 Hz, mono, 16-bit.
-  static const int _pcmBytesPerSecond = 4000 * 2;
+  static const int _pcmBytesPerSecond = _waveformSampleRate * 2;
 
   /// One decode at a time. Parallel FFmpeg sessions fight the audio thread.
   Future<void> _chain = Future.value();
@@ -209,289 +207,54 @@ class WaveformService {
     );
   }
 
-  /// Streams 16-bit mono PCM directly from FFmpeg's output pipe without writing
-  /// uncompressed temp files to disk or polling file sizes.
+  /// Decodes straight to the bar rate inside the native core: no subprocess on
+  /// desktop, no FFmpegKit session on mobile, no temp PCM file.
   Future<List<double>> _extractWaveformStream({
     required String path,
     required Duration total,
     void Function(List<double>)? onPartial,
   }) {
     return MediaDecodeGate.run(
-      () => _runWaveformStreamDecode(
-        path: path,
-        total: total,
-        onPartial: onPartial,
-      ),
+      () => _decodeWaveform(path: path, total: total, onPartial: onPartial),
       priority: MediaDecodePriority.high,
     );
   }
 
-  Future<List<double>> _runWaveformStreamDecode({
+  Future<List<double>> _decodeWaveform({
     required String path,
     required Duration total,
     void Function(List<double>)? onPartial,
   }) async {
     final targetSamples = targetWaveformSamples;
+    // The player's duration, when known, says how much of the song a prefix
+    // covers, so a partial reveal lands where the final shape will.
     final expectedBytes = total.inMilliseconds > 0
         ? (total.inMilliseconds * _pcmBytesPerSecond) ~/ 1000
-        : (total.inSeconds > 0 ? total.inSeconds * _pcmBytesPerSecond : 0);
+        : total.inSeconds * _pcmBytesPerSecond;
 
-    if (FFmpegService.usesSystemProcess) {
-      return _decodeViaSystemProcessPipe(
-        path: path,
-        targetSamples: targetSamples,
-        expectedBytes: expectedBytes,
-        onPartial: onPartial,
-      );
-    } else {
-      return _decodeViaMobilePipeOrFallback(
-        path: path,
-        targetSamples: targetSamples,
-        expectedBytes: expectedBytes,
-        onPartial: onPartial,
-      );
-    }
-  }
-
-  /// Decodes directly from FFmpeg's stdout stream pipe on Desktop/Linux.
-  /// 100% event-driven push, zero disk writes, zero polling.
-  Future<List<double>> _decodeViaSystemProcessPipe({
-    required String path,
-    required int targetSamples,
-    required int expectedBytes,
-    void Function(List<double>)? onPartial,
-  }) async {
-    final args = [
-      '-threads',
-      '1',
-      '-i',
-      path,
-      '-vn',
-      '-ac',
-      '1',
-      '-ar',
-      '4000',
-      '-f',
-      's16le',
-      '-',
-    ];
-
-    final process = await FFmpegService.instance.startFFmpeg(args);
-    if (process == null) {
-      debugPrint('FFmpegService: Failed to start ffmpeg process for streaming');
-      return _failedWaveform(targetSamples);
-    }
-
-    final builder = BytesBuilder(copy: false);
-    var lastEmittedBytes = 0;
-    var lastEmitTime = DateTime.fromMillisecondsSinceEpoch(0);
-    const int emitThresholdBytes = 3200;
-
-    // FFmpeg names the real duration on stderr before it decodes, so a track
-    // whose player duration is still unknown can reveal as it is read.
-    var stderrBytes = 0;
-    final stderrText = StringBuffer();
-    unawaited(process.stderr
-        .transform(const Utf8Decoder(allowMalformed: true))
-        .listen(
-          (String chunk) {
-            if (stderrBytes > 0 || stderrText.length > 8192) return;
-            stderrText.write(chunk);
-            stderrBytes = _pcmBytesForDurationText(stderrText.toString()) ?? 0;
-          },
-          onError: (Object _) {},
-        )
-        .asFuture<void>()
-        .catchError((Object _) {}));
-
-    final completer = Completer<void>();
-    final sub = process.stdout.listen(
-      (chunk) {
-        builder.add(chunk);
-        final expected = expectedBytes > 0 ? expectedBytes : stderrBytes;
-        if (onPartial != null && expected > 0) {
-          final currentLen = builder.length;
-          final now = DateTime.now();
-          if (currentLen - lastEmittedBytes >= emitThresholdBytes &&
-              now.difference(lastEmitTime).inMilliseconds >= 32) {
-            lastEmitTime = now;
-            lastEmittedBytes = currentLen;
-            final bytesSnapshot = builder.toBytes();
-            final peaks = NativeAccel.waveformPeaks(
-              bytesSnapshot,
-              targetSamples: targetSamples,
-              expectedBytes: expected,
-            );
-            if (peaks.isNotEmpty) onPartial(peaks);
-          }
-        }
-      },
-      onError: (e) {
-        debugPrint('Waveform pipe stream error: $e');
-      },
-      onDone: () {
-        if (!completer.isCompleted) completer.complete();
-      },
-      cancelOnError: false,
-    );
-
-    final exitCode = await process.exitCode;
-    await completer.future;
-    await sub.cancel();
-
-    if (exitCode != 0) {
-      debugPrint('FFmpeg streaming exited with code $exitCode');
-      return _failedWaveform(targetSamples);
-    }
-
-    final fullBytes = builder.toBytes();
-    if (fullBytes.length < 2) {
-      return _failedWaveform(targetSamples);
-    }
-
-    return NativeAccel.waveformPeaks(fullBytes, targetSamples: targetSamples);
-  }
-
-  /// Decodes via named pipe on mobile platforms (iOS/Android), or falls back to temp file.
-  Future<List<double>> _decodeViaMobilePipeOrFallback({
-    required String path,
-    required int targetSamples,
-    required int expectedBytes,
-    void Function(List<double>)? onPartial,
-  }) async {
-    String? pipePath;
+    final port = ReceivePort();
+    final subscription = port.listen((message) {
+      if (message is List) onPartial?.call(message.cast<double>());
+    });
     try {
-      pipePath = await FFmpegKitConfig.registerNewFFmpegPipe();
-    } catch (_) {
-      pipePath = null;
-    }
-
-    if (pipePath != null) {
-      try {
-        final args = [
-          '-threads',
-          '1',
-          '-i',
+      final bytes = await Isolate.run(
+        () => NativeAccel.decodePcm(
           path,
-          '-vn',
-          '-ac',
-          '1',
-          '-ar',
-          '4000',
-          '-f',
-          's16le',
-          '-y',
-          pipePath,
-        ];
-
-        final builder = BytesBuilder(copy: false);
-        var lastEmittedBytes = 0;
-        var lastEmitTime = DateTime.fromMillisecondsSinceEpoch(0);
-        const int emitThresholdBytes = 3200;
-
-        final sessionCompleter = Completer<bool>();
-        await FFmpegKit.executeWithArgumentsAsync(args, (session) async {
-          final returnCode = await session.getReturnCode();
-          sessionCompleter.complete(returnCode?.isValueSuccess() ?? false);
-        });
-
-        final pipeFile = File(pipePath);
-        final stream = pipeFile.openRead();
-
-        await for (final chunk in stream) {
-          builder.add(chunk);
-          if (onPartial != null && expectedBytes > 0) {
-            final currentLen = builder.length;
-            final now = DateTime.now();
-            if (currentLen - lastEmittedBytes >= emitThresholdBytes &&
-                now.difference(lastEmitTime).inMilliseconds >= 32) {
-              lastEmitTime = now;
-              lastEmittedBytes = currentLen;
-              final bytesSnapshot = builder.toBytes();
-              final peaks = NativeAccel.waveformPeaks(
-                bytesSnapshot,
-                targetSamples: targetSamples,
-                expectedBytes: expectedBytes,
-              );
-              if (peaks.isNotEmpty) onPartial(peaks);
-            }
-          }
-        }
-
-        final isSuccess = await sessionCompleter.future;
-        if (!isSuccess) {
-          return _failedWaveform(targetSamples);
-        }
-
-        final fullBytes = builder.toBytes();
-        if (fullBytes.length < 2) {
-          return _failedWaveform(targetSamples);
-        }
-        return NativeAccel.waveformPeaks(fullBytes,
-            targetSamples: targetSamples);
-      } catch (e) {
-        debugPrint('Mobile pipe decode error: $e');
-      } finally {
-        try {
-          await FFmpegKitConfig.closeFFmpegPipe(pipePath);
-        } catch (_) {}
-      }
-    }
-
-    // Fallback if named pipe unsupported
-    return _decodeWithTempFileFallback(
-      path: path,
-      targetSamples: targetSamples,
-    );
-  }
-
-  Future<List<double>> _decodeWithTempFileFallback({
-    required String path,
-    required int targetSamples,
-  }) async {
-    File? raw;
-    try {
-      final tempDir = await _cacheService.scratchDirectory();
-      final outputPath = p.join(
-        tempDir.path,
-        'waveform_${DateTime.now().microsecondsSinceEpoch}.raw',
+          _waveformSampleRate,
+          peakSamples: targetSamples,
+          expectedBytes: expectedBytes,
+          onPartial:
+              onPartial == null ? null : (bars) => port.sendPort.send(bars),
+        ),
       );
-
-      final args = [
-        '-threads',
-        '1',
-        '-i',
-        path,
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '4000',
-        '-f',
-        's16le',
-        '-y',
-        outputPath,
-      ];
-
-      final result = await FFmpegService.instance.executeFFmpeg(args);
-      if (!result.isSuccess) {
-        return _failedWaveform(targetSamples);
-      }
-
-      raw = File(outputPath);
-      if (!await raw.exists()) {
-        return _failedWaveform(targetSamples);
-      }
-
-      final bytes = await raw.readAsBytes();
+      if (bytes.length < 2) return const [];
       return NativeAccel.waveformPeaks(bytes, targetSamples: targetSamples);
-    } catch (e) {
-      debugPrint('Fallback waveform extraction failed: $e');
-      return _failedWaveform(targetSamples);
+    } on NativeCommandException catch (error) {
+      debugPrint('WaveformService: decode failed for $path: ${error.message}');
+      return const [];
     } finally {
-      try {
-        if (raw != null && await raw.exists()) await raw.delete();
-      } catch (_) {}
+      await subscription.cancel();
+      port.close();
     }
   }
 
@@ -536,18 +299,4 @@ class _ProgressiveWaveform {
   Future<void> close() async {
     if (!_controller.isClosed) await _controller.close();
   }
-}
-
-/// A failed decode yields no bars so it cannot be cached as this track's shape.
-List<double> _failedWaveform(int _) => const [];
-
-/// PCM byte count of an FFmpeg `Duration: hh:mm:ss.cc` log line.
-int? _pcmBytesForDurationText(String text) {
-  final match = RegExp(r'Duration:\s*(\d+):(\d{2}):(\d{2})').firstMatch(text);
-  if (match == null) return null;
-  final seconds = int.parse(match.group(1)!) * 3600 +
-      int.parse(match.group(2)!) * 60 +
-      int.parse(match.group(3)!);
-  if (seconds <= 0) return null;
-  return seconds * WaveformService._pcmBytesPerSecond;
 }

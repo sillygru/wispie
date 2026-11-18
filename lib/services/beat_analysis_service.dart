@@ -11,7 +11,6 @@ import '../domain/services/native_accel.dart';
 import '../domain/services/cache_policy.dart';
 import '../models/song.dart';
 import 'wispie_cache.dart';
-import 'ffmpeg_service.dart';
 import 'media_decode_gate.dart';
 import 'online_audio_cache.dart';
 
@@ -25,12 +24,6 @@ class BeatAnalysisService {
   final WispieCache _cacheService;
 
   BeatAnalysisService(this._cacheService);
-
-  /// Decoding to 16-bit rather than float halves the temp file (a 4-minute
-  /// track is 10 MB instead of 21 MB) and costs nothing that matters — the
-  /// analyser works on log magnitudes, where 16-bit precision is far beyond
-  /// what any of this resolves.
-  static const String _pcmFormat = 's16le';
 
   /// Analyses can be several seconds of CPU. Running two at once on a phone
   /// just makes both slower and heats the device, so they queue.
@@ -217,7 +210,7 @@ class BeatAnalysisService {
 
     File? raw;
     try {
-      raw = await _decodeToPcm(path, filename);
+      raw = await _decodeToPcm(path);
       if (raw == null) return null;
 
       final rawPath = raw.path;
@@ -247,72 +240,40 @@ class BeatAnalysisService {
     }
   }
 
-  /// Decodes any supported audio file to raw mono PCM at the analyser's sample
-  /// rate. No audio filters: `-af` filters like compand or loudnorm introduce
-  /// lookahead delay, which would shift every detected beat.
+  /// Decodes to the analyser's raw mono PCM in the native core.
+  ///
+  /// No audio filters: filter chains like compand or loudnorm bring lookahead
+  /// delay, which would shift every detected beat.
   ///
   /// The decode goes through the shared gate so it never runs while a waveform
   /// (or another analysis) is mid-decode of the same file.
-  Future<File?> _decodeToPcm(String path, String filename) {
+  Future<File?> _decodeToPcm(String path) {
     return MediaDecodeGate.run(() async {
       final tempDir = await _cacheService.scratchDirectory();
-
       final outputPath = p.join(
         tempDir.path,
         'pcm_${DateTime.now().microsecondsSinceEpoch}.raw',
       );
-
-      var active = true;
-      var analyzing = false;
-      var lastLength = 0;
       final file = File(outputPath);
-      final timer =
-          Timer.periodic(const Duration(milliseconds: 500), (_) async {
-        if (!active || analyzing) return;
-        analyzing = true;
-        try {
-          if (!await file.exists()) return;
-          final length = await file.length();
-          if (length - lastLength < _analysisSampleRate * 2 * 5) return;
-          lastLength = length;
-          final map = await _isolateAnalyzeRawFile(outputPath);
-          if (active && map != null && map.hasBands) {
-            _publishPartial(filename, map);
-          }
-        } catch (_) {
-          // The decoder may still be creating or closing the file.
-        } finally {
-          analyzing = false;
-        }
-      });
-      late final FFmpegExecutionResult result;
-      try {
-        result = await FFmpegService.instance.executeFFmpeg([
-          '-threads', '1', // leave headroom for the audio callback
-          '-i', path,
-          '-vn', // ignore cover art and video streams
-          '-ac', '1', // mono
-          '-ar', '$_analysisSampleRate',
-          '-f', _pcmFormat,
-          '-y', outputPath,
-        ]);
-      } finally {
-        active = false;
-        timer.cancel();
-      }
 
-      if (!result.isSuccess) {
-        if (kDebugMode) {
-          debugPrint(
-              'BeatAnalysisService: ffmpeg decode failed (${result.returnCode}) for $path\n${result.logs}');
-        }
-        try {
-          if (await file.exists()) await file.delete();
-        } catch (_) {}
+      final Uint8List bytes;
+      try {
+        bytes = await Isolate.run(
+          () => NativeAccel.decodePcm(path, _analysisSampleRate),
+        );
+      } on NativeCommandException catch (error) {
+        debugPrint(
+            'BeatAnalysisService: decode failed for $path: ${error.message}');
         return null;
       }
+      if (bytes.length < 2) return null;
 
-      if (!await file.exists() || await file.length() == 0) return null;
+      try {
+        await file.writeAsBytes(bytes, flush: true);
+      } catch (e) {
+        debugPrint('BeatAnalysisService: PCM write failed for $path: $e');
+        return null;
+      }
       return file;
     });
   }

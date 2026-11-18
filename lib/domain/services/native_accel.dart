@@ -666,6 +666,56 @@ class NativeAccel {
     return decoded;
   }
 
+  /// Decodes [path] to little-endian mono 16-bit PCM at [sampleRate].
+  ///
+  /// [onPartial] receives the waveform bars of everything decoded so far, so a
+  /// seek bar can reveal while a long track is still being read.
+  static Uint8List decodePcm(
+    String path,
+    int sampleRate, {
+    int? peakSamples,
+    int expectedBytes = 0,
+    void Function(List<double> bars)? onPartial,
+  }) {
+    Uint8List? out;
+    String? error;
+    final code = WispieCore.runBytes(
+      {
+        'command': 'media_decode',
+        'path': path,
+        'sampleRate': sampleRate,
+        if (peakSamples != null)
+          'peaks': {'samples': peakSamples, 'expectedBytes': expectedBytes},
+      },
+      Uint8List(0),
+      onEvent: (kind, payload) {
+        if (kind == WispieCore.eventError) {
+          error = (jsonDecode(payload) as Map<String, dynamic>)['message']
+              as String?;
+          return;
+        }
+        if (onPartial == null) return;
+        final decoded = jsonDecode(payload);
+        if (decoded is! Map) return;
+        final bars = decoded['bars'];
+        if (bars is! List) return;
+        onPartial([
+          for (final value in bars)
+            if (value is num) value.toDouble() else 0.0,
+        ]);
+      },
+      onBytes: (value) => out = value,
+    );
+    if (code != 0) {
+      throw NativeCommandException(error ?? 'media decode exited with $code');
+    }
+    final decoded = out;
+    if (decoded == null) {
+      throw const NativeCommandException('media decode sent no audio');
+    }
+    return decoded;
+  }
+
   /// A sync request whose reply is raw bytes: a blob payload must not pay for a
   /// base64 round trip just to cross the ABI as JSON.
   static Uint8List syncBytes(
