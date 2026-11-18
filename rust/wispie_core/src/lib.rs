@@ -45,6 +45,7 @@ mod tasks;
 mod taste;
 mod view_math;
 mod waveform;
+mod youtube;
 
 use emitter::{Emit, Emitter, RawCallback};
 use model::{CompactRequest, FactsRequest, ListRequest, ProsodyRequest, ScanRequest, SongsRequest};
@@ -235,6 +236,7 @@ fn dispatch(
         }),
         "media_decode" => media::run(&payload, emitter),
         "db" => db::run(&payload, emitter),
+        "youtube" => youtube::run(&payload, emitter),
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

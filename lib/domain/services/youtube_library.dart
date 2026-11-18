@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../data/rust/wispie_core.dart';
 import 'youtube_session.dart';
 
 /// Read-only InnerTube client for the signed-in account, authenticated with the
@@ -102,13 +103,8 @@ String youtubeThumbnailUrl(String videoId) =>
 /// board, so this asks for that instead of guessing from the widget size.
 String upscaleThumbnailUrl(String url, {int size = 720}) {
   if (url.isEmpty) return url;
-  final boxed = RegExp(r'=w\d+-h\d+');
-  if (boxed.hasMatch(url)) return url.replaceFirst(boxed, '=w$size-h$size');
-  final square = RegExp(r'=s(\d+)(?=-|$)').firstMatch(url);
-  if (square == null) return url;
-  final current = int.tryParse(square.group(1) ?? '');
-  if (current != null && current >= size) return url;
-  return url.replaceRange(square.start, square.end, '=s$size');
+  return _parse('thumbnail', {'url': url, 'size': size})['url'] as String? ??
+      url;
 }
 
 class YouTubePlaylistItem {
@@ -1066,121 +1062,111 @@ class _JsonResponse {
   const _JsonResponse(this.status, this.json);
 }
 
-// ---------------------------------------------------------------------------
-// Response parsing
-// ---------------------------------------------------------------------------
+/// One parsing request to the core, which owns every catalogue rule: the
+/// containers move around often, and one walker that ignores unfamiliar shapes
+/// is easier to keep alive in one place than in two languages.
+Map<String, dynamic> _parse(String action, Map<String, Object?> request) {
+  Map<String, dynamic>? reply;
+  String? error;
+  final code = WispieCore.run(
+    {'command': 'youtube', 'action': action, ...request},
+    onEvent: (kind, payload) {
+      if (kind == WispieCore.eventItems) {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map<String, dynamic>) reply = decoded;
+      } else if (kind == WispieCore.eventError) {
+        error =
+            (jsonDecode(payload) as Map<String, dynamic>)['message'] as String?;
+      }
+    },
+  );
+  if (code != 0 || reply == null) {
+    throw StateError('youtube $action failed: ${error ?? 'code $code'}');
+  }
+  return reply!;
+}
+
+YouTubePlaylistItem _itemFromCore(Map<String, dynamic> row) {
+  final millis = (row['duration_ms'] as num?)?.toInt();
+  return YouTubePlaylistItem(
+    videoId: row['video_id'] as String? ?? '',
+    title: row['title'] as String? ?? '',
+    artist: row['artist'] as String? ?? '',
+    duration: millis == null ? null : Duration(milliseconds: millis),
+    thumbnailUrl: row['thumbnail_url'] as String?,
+    position: (row['position'] as num?)?.toInt() ?? 0,
+    viewCountText: row['view_count_text'] as String?,
+  );
+}
+
+Map<String, Object?> _itemToCore(YouTubePlaylistItem item) => {
+      'video_id': item.videoId,
+      'title': item.title,
+      'artist': item.artist,
+      'duration_ms': item.duration?.inMilliseconds,
+      'thumbnail_url': item.thumbnailUrl,
+      'position': item.position,
+      'view_count_text': item.viewCountText,
+    };
+
+YouTubeContainerKind _containerKindFromCore(Object? raw) => switch (raw) {
+      'album' => YouTubeContainerKind.album,
+      'playlist' => YouTubeContainerKind.playlist,
+      'artist' => YouTubeContainerKind.artist,
+      _ => throw StateError('unknown container kind $raw'),
+    };
+
+YouTubeContainer _containerFromCore(Map<String, dynamic> row) =>
+    YouTubeContainer(
+      id: row['id'] as String? ?? '',
+      title: row['title'] as String? ?? '',
+      subtitle: row['subtitle'] as String? ?? '',
+      thumbnailUrl: row['thumbnail_url'] as String?,
+      kind: _containerKindFromCore(row['kind']),
+    );
+
+List<YouTubePlaylistItem> _itemsFromCore(Object? rows) => [
+      for (final row in rows as List? ?? const [])
+        _itemFromCore(row as Map<String, dynamic>),
+    ];
+
+List<YouTubeContainer> _containersFromCore(Object? rows) => [
+      for (final row in rows as List? ?? const [])
+        _containerFromCore(row as Map<String, dynamic>),
+    ];
 
 /// The signed-in account header from `account/account_menu`.
 YouTubeAccountProfile? parseAccountProfile(Object? json) {
-  for (final node in walkJsonMaps(json)) {
-    final header = node['activeAccountHeaderRenderer'];
-    if (header is! Map) continue;
-    final title = textOf(header['accountName']);
-    if (title == null) continue;
-    final browseId = mapOf(
-        mapOf(header['navigationEndpoint'])['browseEndpoint'])['browseId'];
-    return YouTubeAccountProfile(
-      channelId: browseId?.toString() ?? '',
-      title: title,
-      avatarUrl: bestImageUrl(header['accountPhoto']),
-    );
-  }
-  return null;
+  final profile = _parse('account_profile', {'json': json})['profile'];
+  if (profile is! Map) return null;
+  return YouTubeAccountProfile(
+    channelId: profile['channel_id'] as String? ?? '',
+    title: profile['title'] as String? ?? '',
+    avatarUrl: profile['avatar_url'] as String?,
+  );
 }
 
 /// Playlists from a `FEplaylists` browse response, in page order.
 ///
-/// Accepts the grid shapes (`gridPlaylistRenderer`, `playlistRenderer`) and the
-/// newer `lockupViewModel` grid. Liked videos come back as the `LL` playlist on
-/// some layouts; it is dropped here because the API exposes it as its own
-/// synthetic entry.
+/// Liked videos come back as the `LL` playlist on some layouts; the core drops
+/// it because the API exposes it as its own synthetic entry.
 List<YouTubeAccountPlaylist> parseAccountPlaylists(Object? json) {
-  final result = <YouTubeAccountPlaylist>[];
-  final seen = <String>{};
-
-  for (final node in walkJsonMaps(json)) {
-    YouTubeAccountPlaylist? playlist;
-    final renderer = node['gridPlaylistRenderer'] ?? node['playlistRenderer'];
-    if (renderer is Map) {
-      playlist = _playlistFromRenderer(renderer);
-    } else {
-      final lockup = node['lockupViewModel'];
-      if (lockup is Map) playlist = _playlistFromLockup(lockup);
-    }
-    if (playlist == null) continue;
-    if (playlist.id == _kLikedBrowsePlaylistId) continue;
-    if (!seen.add(playlist.id)) continue;
-    result.add(playlist);
-  }
-  return result;
-}
-
-YouTubeAccountPlaylist? _playlistFromRenderer(Map renderer) {
-  final id = _playlistIdOf(renderer);
-  final title = textOf(renderer['title']);
-  if (id == null || title == null) return null;
-  final count = intOf(renderer['videoCount']) ??
-      countOfText(textOf(renderer['videoCountText']));
-  return YouTubeAccountPlaylist(
-    id: id,
-    title: title,
-    itemCount: count,
-    thumbnailUrl: bestImageUrl(renderer['thumbnail']),
-  );
-}
-
-YouTubeAccountPlaylist? _playlistFromLockup(Map lockup) {
-  final type = lockup['contentType']?.toString().toUpperCase() ?? '';
-  if (!type.contains('PLAYLIST')) return null;
-  final id = stripVl(lockup['contentId']?.toString() ?? '');
-  if (id.isEmpty) return null;
-  final metadata = mapOf(mapOf(lockup['metadata'])['lockupMetadataViewModel']);
-  final title = textOf(metadata['title']);
-  if (title == null) return null;
-  return YouTubeAccountPlaylist(
-    id: id,
-    title: title,
-    itemCount: countInNode(metadata['metadata']),
-    thumbnailUrl: bestImageUrl(lockup['contentImage']),
-  );
+  final rows = _parse('account_playlists', {'json': json})['playlists'];
+  return [
+    for (final row in rows as List? ?? const [])
+      YouTubeAccountPlaylist(
+        id: (row as Map<String, dynamic>)['id'] as String? ?? '',
+        title: row['title'] as String? ?? '',
+        itemCount: (row['item_count'] as num?)?.toInt(),
+        thumbnailUrl: row['thumbnail_url'] as String?,
+      ),
+  ];
 }
 
 /// Tracks from a playlist or liked-videos browse response, in page order,
 /// de-duplicated.
-List<YouTubePlaylistItem> parsePlaylistVideoItems(Object? json) {
-  final result = <YouTubePlaylistItem>[];
-  final seen = <String>{};
-
-  for (final node in walkJsonMaps(json)) {
-    YouTubePlaylistItem? item;
-    final playlistVideo = node['playlistVideoRenderer'];
-    final compactVideo = node['compactVideoRenderer'];
-    final video = node['videoRenderer'];
-    final lockup = node['lockupViewModel'];
-    if (playlistVideo is Map) {
-      item = _itemFromPlaylistVideo(playlistVideo);
-    } else if (compactVideo is Map) {
-      item = _itemFromVideoRenderer(compactVideo);
-    } else if (video is Map) {
-      item = _itemFromVideoRenderer(video);
-    } else if (lockup is Map) {
-      item = _itemFromLockup(lockup);
-    }
-    if (item == null) continue;
-    if (!seen.add(item.videoId)) continue;
-    result.add(
-      YouTubePlaylistItem(
-        videoId: item.videoId,
-        title: item.title,
-        artist: item.artist,
-        duration: item.duration,
-        thumbnailUrl: item.thumbnailUrl,
-        position: result.length,
-      ),
-    );
-  }
-  return result;
-}
+List<YouTubePlaylistItem> parsePlaylistVideoItems(Object? json) =>
+    _itemsFromCore(_parse('playlist_videos', {'json': json})['items']);
 
 /// Tracks from a YouTube Music browse or search response, in page order.
 ///
@@ -1188,46 +1174,12 @@ List<YouTubePlaylistItem> parsePlaylistVideoItems(Object? json) {
 /// or `musicTwoRowItemRenderer` (carousels). Both carry a watch endpoint for a
 /// playable track and a browse id for an album or playlist, so only entries
 /// with a watch endpoint are kept: everything else is a container.
-List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
-  final result = <YouTubePlaylistItem>[];
-  final seen = <String>{};
-
-  for (final node in walkJsonMaps(json)) {
-    final responsive = node['musicResponsiveListItemRenderer'];
-    final twoRow = node['musicTwoRowItemRenderer'];
-    YouTubePlaylistItem? item;
-    if (responsive is Map) {
-      item = _itemFromMusicResponsive(responsive);
-    } else if (twoRow is Map) {
-      item = _itemFromMusicTwoRow(twoRow);
-    }
-    if (item == null) continue;
-    if (item.artist.isEmpty && artistHint != null && artistHint.isNotEmpty) {
-      item = YouTubePlaylistItem(
-        videoId: item.videoId,
-        title: item.title,
-        artist: stripTopicSuffix(artistHint),
-        duration: item.duration,
-        thumbnailUrl: item.thumbnailUrl,
-        position: item.position,
-        viewCountText: item.viewCountText,
-      );
-    }
-    if (!seen.add(item.videoId)) continue;
-    result.add(
-      YouTubePlaylistItem(
-        videoId: item.videoId,
-        title: item.title,
-        artist: item.artist,
-        duration: item.duration,
-        thumbnailUrl: item.thumbnailUrl,
-        position: result.length,
-        viewCountText: item.viewCountText,
-      ),
-    );
-  }
-  return result;
-}
+List<YouTubePlaylistItem> parseMusicTracks(Object? json,
+        {String? artistHint}) =>
+    _itemsFromCore(_parse('music_tracks', {
+      'json': json,
+      'artist_hint': artistHint,
+    })['items']);
 
 /// Container rows (albums, playlists, artists) from a music search or browse
 /// page, in page order.
@@ -1237,151 +1189,11 @@ List<YouTubePlaylistItem> parseMusicTracks(Object? json, {String? artistHint}) {
 List<YouTubeContainer> parseMusicContainers(
   Object? json, {
   bool shelvesOnly = false,
-}) {
-  final result = <YouTubeContainer>[];
-  final seen = <String>{};
-
-  final nodes = shelvesOnly ? _resultShelfRows(json) : walkJsonMaps(json);
-  for (final node in nodes) {
-    final card = node['musicCardShelfRenderer'];
-    final twoRow = node['musicTwoRowItemRenderer'];
-    final responsive = node['musicResponsiveListItemRenderer'];
-    final YouTubeContainer? container = card is Map
-        ? _containerFromMusicCard(card)
-        : twoRow is Map
-            ? _containerFromMusicTwoRow(twoRow)
-            : responsive is Map
-                ? _containerFromMusicResponsive(responsive)
-                : null;
-    if (container == null) continue;
-    if (!seen.add(container.id)) continue;
-    result.add(container);
-  }
-  return result;
-}
-
-/// Rows of a search page's own result shelves and its top-result card.
-///
-/// The same page also carries discovery carousels (`you might also like`), whose
-/// rows are answers to nothing the listener asked for.
-Iterable<Map> _resultShelfRows(Object? json) sync* {
-  for (final node in walkJsonMaps(json)) {
-    final card = node['musicCardShelfRenderer'];
-    final shelf = node['musicShelfRenderer'];
-    if (card is! Map && shelf is! Map) continue;
-    if (card is Map) yield node;
-    if (shelf is! Map) continue;
-    for (final row in walkJsonMaps(shelf)) {
-      yield row;
-    }
-  }
-}
-
-/// The sort chips a music page offers (`Popularity`, `Release date`, ...).
-///
-/// The labels are the catalogue's own, so they need no translation, and each
-/// chip carries the token that asks YouTube for that order.
-List<YouTubeSortOption> parseMusicSortOptions(Object? json) {
-  final result = <YouTubeSortOption>[];
-  final seen = <String>{};
-
-  for (final node in walkJsonMaps(json)) {
-    for (final entry in node.entries) {
-      if (!entry.key.toString().toLowerCase().contains('sortfilterbutton')) {
-        continue;
-      }
-      final renderer = mapOf(entry.value);
-      final label = textOf(renderer['title']) ?? textOf(renderer['label']);
-      if (label == null || label.isEmpty) continue;
-      if (!seen.add(label)) continue;
-      final bool selected = renderer['isSelected'] == true ||
-          renderer['selected'] == true ||
-          mapOf(renderer['icon'])['iconType'] == 'CHECK';
-      result.add(
-        YouTubeSortOption(
-          label: label,
-          params: renderer['params']?.toString() ?? '',
-          selected: selected,
-        ),
-      );
-    }
-  }
-  // The chip YouTube marks as current leads, so the default label is the order
-  // the songs arrived in.
-  final selectedIndex = result.indexWhere((option) => option.selected);
-  if (selectedIndex > 0) {
-    final selected = result.removeAt(selectedIndex);
-    result.insert(0, selected);
-  }
-  return result;
-}
-
-/// Name and avatar from an artist page's header.
-({String name, String? thumbnailUrl}) parseArtistHeader(Object? json) {
-  const keys = [
-    'musicImmersiveHeaderRenderer',
-    'musicVisualHeaderRenderer',
-    'musicResponsiveHeaderRenderer',
-    'musicDetailHeaderRenderer',
-  ];
-  for (final node in walkJsonMaps(json)) {
-    for (final key in keys) {
-      final header = node[key];
-      if (header is! Map) continue;
-      final name = textOf(header['title']);
-      if (name == null || name.isEmpty) continue;
-      return (
-        name: stripTopicSuffix(name),
-        thumbnailUrl: bestImageUrl(header['thumbnail']) ??
-            bestImageUrl(header['foregroundThumbnail']),
-      );
-    }
-  }
-  return (name: '', thumbnailUrl: null);
-}
-
-/// Title, byline artist and artwork from an album or playlist header.
-({String title, String artist, String? thumbnailUrl}) parseCollectionHeader(
-  Object? json,
-) {
-  const keys = [
-    'musicResponsiveHeaderRenderer',
-    'musicDetailHeaderRenderer',
-    'musicEditablePlaylistDetailHeaderRenderer',
-  ];
-  for (final node in walkJsonMaps(json)) {
-    for (final key in keys) {
-      final header = node[key];
-      if (header is! Map) continue;
-      final title = textOf(header['title']);
-      if (title == null || title.isEmpty) continue;
-
-      var artist = '';
-      for (final field in const ['straplineTextOne', 'subtitle', 'subtitle2']) {
-        final byline = textOf(header[field]);
-        if (byline == null) continue;
-        for (final raw in byline.split('•')) {
-          final part = raw.trim();
-          if (part.isEmpty) continue;
-          if (_musicTypeLabels.contains(part.toLowerCase())) continue;
-          if (RegExp(r'^\d{4}$').hasMatch(part)) continue;
-          if (_viewCountPattern.hasMatch(part)) continue;
-          if (_relativeTimePattern.hasMatch(part)) continue;
-          artist = stripTopicSuffix(part);
-          break;
-        }
-        if (artist.isNotEmpty) break;
-      }
-
-      return (
-        title: title,
-        artist: artist,
-        thumbnailUrl: bestImageUrl(header['thumbnail']),
-      );
-    }
-  }
-  return (title: '', artist: '', thumbnailUrl: null);
-}
+}) =>
+    _containersFromCore(_parse('music_containers', {
+      'json': json,
+      'shelves_only': shelvesOnly,
+    })['containers']);
 
 List<YouTubeContainer> _ofKind(
   List<YouTubeContainer> all,
@@ -1389,418 +1201,53 @@ List<YouTubeContainer> _ofKind(
 ) =>
     List<YouTubeContainer>.unmodifiable(all.where((c) => c.kind == kind));
 
-YouTubeContainer? _containerFromMusicTwoRow(Map renderer) {
-  final id = _browseIdOf(renderer);
-  if (id == null) return null;
-  final kind = _containerKindOf(id);
-  if (kind == null) return null;
-  final title = textOf(renderer['title']);
-  if (title == null || title.isEmpty) return null;
-  return YouTubeContainer(
-    id: id,
-    title: title,
-    subtitle: textOf(renderer['subtitle']) ?? '',
-    thumbnailUrl: _largeThumbnail(renderer),
-    kind: kind,
-  );
-}
-
-/// The place a search's top-result card names, if it names one.
-YouTubeContainer? _containerFromMusicCard(Map renderer) {
-  final id = _browseIdOf(renderer);
-  if (id == null) return null;
-  final kind = _containerKindOf(id);
-  if (kind == null) return null;
-  final title = textOf(renderer['title']);
-  if (title == null || title.isEmpty) return null;
-
-  // Only a card that labels itself a place; a song card links its artist in
-  // the subtitle and must not turn into that artist.
-  final subtitle = textOf(renderer['subtitle']) ?? '';
-  final label = subtitle.split('•').first.trim().toLowerCase();
-  if (!_musicTypeLabels.contains(label)) return null;
-  if (_trackTypeLabels.contains(label)) return null;
-
-  final parts = <String>[];
-  for (final raw in subtitle.split('•')) {
-    final part = raw.trim();
-    if (part.isEmpty) continue;
-    if (_musicTypeLabels.contains(part.toLowerCase())) continue;
-    parts.add(part);
-  }
-  return YouTubeContainer(
-    id: id,
-    title: title,
-    subtitle: parts.join(' • '),
-    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
-    kind: kind,
-  );
-}
-
-YouTubeContainer? _containerFromMusicResponsive(Map renderer) {
-  if (_isTrackRow(renderer)) return null;
-  final id = _browseIdOf(renderer);
-  if (id == null) return null;
-  final kind = _containerKindOf(id);
-  if (kind == null) return null;
-  final title = textOf(_flexColumn(renderer, 0));
-  if (title == null || title.isEmpty) return null;
-
-  // The section above the row already names the kind, so `Album` is dropped
-  // from the byline and the row reads `Aurora • 2016`.
-  final parts = <String>[];
-  for (var column = 1; column <= 2; column++) {
-    final text = textOf(_flexColumn(renderer, column));
-    if (text == null || text.isEmpty) continue;
-    for (final raw in text.split('•')) {
-      final part = raw.trim();
-      if (part.isEmpty) continue;
-      if (_musicTypeLabels.contains(part.toLowerCase())) continue;
-      parts.add(part);
-    }
-  }
-  return YouTubeContainer(
-    id: id,
-    title: title,
-    subtitle: parts.join(' • '),
-    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
-    kind: kind,
-  );
-}
-
-/// The page a row opens, if it opens one. A radio playlist (`RD...`) is a
-/// playback queue rather than a place, so only `VL` ids count.
-String? _browseIdOf(Map renderer) {
-  final navigation = mapOf(renderer['navigationEndpoint']);
-  final browse = mapOf(navigation['browseEndpoint'])['browseId']?.toString();
-  if (browse != null && browse.isNotEmpty) return browse;
-
-  // A search shelf row holds its page on the title text, not on the row.
-  // The subtitle is never read: there it names the artist, not the row.
-  final textId = _browseIdInText(renderer['title']) ??
-      _browseIdInText(_flexColumn(renderer, 0));
-  if (textId != null) return textId;
-
-  final playlist = mapOf(navigation['watchEndpoint'])['playlistId']?.toString();
-  if (playlist != null && playlist.startsWith('VL')) return playlist;
-
-  final button = mapOf(
-    mapOf(
-        mapOf(mapOf(renderer['overlay'])['musicItemThumbnailOverlayRenderer'])[
-            'content'])['musicPlayButtonRenderer'],
-  );
-  final play = mapOf(button['playNavigationEndpoint']);
-  final playBrowse = mapOf(play['browseEndpoint'])['browseId']?.toString();
-  if (playBrowse != null && playBrowse.isNotEmpty) return playBrowse;
-  final playPlaylist = mapOf(play['watchEndpoint'])['playlistId']?.toString();
-  if (playPlaylist != null && playPlaylist.startsWith('VL')) {
-    return playPlaylist;
-  }
-
-  final command =
-      mapOf(mapOf(renderer['rendererContext'])['commandContext'])['onTap'];
-  final inner = mapOf(mapOf(command)['innertubeCommand']);
-  final innerBrowse = mapOf(inner['browseEndpoint'])['browseId']?.toString();
-  if (innerBrowse != null && innerBrowse.isNotEmpty) return innerBrowse;
-  return null;
-}
-
-/// The first page link inside a text node, skipping ids the app cannot open.
-String? _browseIdInText(Object? node) {
-  for (final map in walkJsonMaps(node)) {
-    final browse =
-        mapOf(mapOf(map['navigationEndpoint'])['browseEndpoint'])['browseId']
-            ?.toString();
-    if (browse == null || browse.isEmpty) continue;
-    if (_containerKindOf(browse) == null) continue;
-    return browse;
-  }
-  return null;
-}
-
-/// Albums, playlists and channels each have their own browse id prefix.
-YouTubeContainerKind? _containerKindOf(String id) {
-  if (id.startsWith('MPRE')) return YouTubeContainerKind.album;
-  if (id.startsWith('VL')) return YouTubeContainerKind.playlist;
-  if (id.startsWith('UC')) return YouTubeContainerKind.artist;
-  return null;
-}
-
-YouTubePlaylistItem? _itemFromMusicResponsive(Map renderer) {
-  final id = _watchVideoId(renderer) ??
-      mapOf(mapOf(renderer['playlistItemData']))['videoId']?.toString() ??
-      '';
-  if (id.isEmpty) return null;
-  // A search page mixes albums, playlists, artists, profiles, podcasts and
-  // episodes into the same row renderer, and all of them carry a play button.
-  // Only the type label tells a track from a container.
-  if (!_isTrackRow(renderer)) return null;
-  final title = textOf(_flexColumn(renderer, 0));
-  if (!isPlayableTitle(title)) return null;
-  // The metadata columns shift with the shelf: a search hit reads
-  // `Song • 4:11` then `36M plays`, a playlist row reads `Artist • Album` then
-  // `4:11`, so each column is read for whatever it happens to hold.
-  var artist = '';
-  Duration? duration;
-  String? viewCountText;
-  for (var column = 1; column <= 4; column++) {
-    final byline = _musicByline(_flexColumn(renderer, column));
-    if (artist.isEmpty) artist = byline.artist;
-    duration ??= byline.duration;
-    viewCountText ??= byline.viewCountText;
-  }
-  // On a search hit the artist is nowhere in the columns: the only copy is in
-  // the play button's accessibility label. Without it the row shows Unknown
-  // artist, which is what half of the catalogue's search results used to do.
-  if (artist.isEmpty) artist = _artistFromPlayLabel(renderer['overlay']);
-  duration ??= clockInNode(renderer['overlay']);
-  return YouTubePlaylistItem(
-    videoId: id,
-    title: title!,
-    artist: artist,
-    duration: duration,
-    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
-    viewCountText: viewCountText,
-  );
-}
-
-/// A row's artwork at a row's size.
+/// The sort chips a music page offers (`Popularity`, `Release date`, ...).
 ///
-/// Catalogue URLs are tiny (`=w60-h60`), so they are rewritten to the smallest
-/// rendition that still looks sharp in a 52dp row. Surfaces that draw the cover
-/// large (the player) ask for more through `CoverPath.sharperUrl` themselves, so
-/// asking for 720 here spent four times the bytes on every list row in the app.
-String? _largeThumbnail(Object? node) {
-  final url = bestImageUrl(node);
-  return url == null ? null : upscaleThumbnailUrl(url, size: 320);
-}
-
-final RegExp _viewCountPattern =
-    RegExp(r'^[\d.,]+\s*[KMB]?\s*(?:plays?|views?)$', caseSensitive: false);
-
-/// The `Play <title> - <artist>` label YouTube Music puts on a row's play
-/// button. The artist is the last ` - ` segment, because titles may contain one.
-String _artistFromPlayLabel(Object? overlay) {
-  for (final node in walkJsonMaps(overlay)) {
-    final label = textOf(mapOf(node['accessibilityData'])['label']);
-    if (label == null || !label.startsWith('Play ')) continue;
-    final parts = label.substring(5).split(' - ');
-    if (parts.length < 2) continue;
-    final artist = stripTopicSuffix(parts.last.trim());
-    if (artist.isNotEmpty) return artist;
-  }
-  return '';
-}
-
-YouTubePlaylistItem? _itemFromMusicTwoRow(Map renderer) {
-  final id = _watchVideoId(renderer) ?? '';
-  if (id.isEmpty) return null;
-  final title = textOf(renderer['title']);
-  if (!isPlayableTitle(title)) return null;
-  final byline = _musicByline(renderer['subtitle']);
-  return YouTubePlaylistItem(
-    videoId: id,
-    title: title!,
-    artist: byline.artist,
-    duration: byline.duration,
-    thumbnailUrl: _largeThumbnail(renderer),
-    viewCountText: byline.viewCountText,
-  );
-}
-
-/// The watch endpoint a music renderer opens, or null when it opens a browse
-/// page (which is an album, an artist or a playlist rather than a track).
-String? _watchVideoId(Map renderer) {
-  final candidates = <Object?>[
-    mapOf(renderer['navigationEndpoint'])['watchEndpoint'],
-    mapOf(
-        mapOf(mapOf(renderer['overlay'])['musicItemThumbnailOverlayRenderer'])[
-            'content'])['musicPlayButtonRenderer'],
+/// The labels are the catalogue's own, so they need no translation, and each
+/// chip carries the token that asks YouTube for that order.
+List<YouTubeSortOption> parseMusicSortOptions(Object? json) {
+  final rows = _parse('sort_options', {'json': json})['options'];
+  return [
+    for (final row in rows as List? ?? const [])
+      YouTubeSortOption(
+        label: (row as Map<String, dynamic>)['label'] as String? ?? '',
+        params: row['params'] as String? ?? '',
+        selected: row['selected'] == true,
+      ),
   ];
-  for (final candidate in candidates) {
-    final watch = candidate;
-    if (watch is! Map) continue;
-    final direct = watch['videoId']?.toString();
-    if (direct != null && direct.isNotEmpty) return direct;
-    final endpoint = mapOf(watch['playNavigationEndpoint'])['watchEndpoint'];
-    final nested = mapOf(endpoint)['videoId']?.toString();
-    if (nested != null && nested.isNotEmpty) return nested;
-    final queue = mapOf(watch['playlistItemData'])['videoId']?.toString();
-    if (queue != null && queue.isNotEmpty) return queue;
-  }
-  return null;
 }
 
-Object? _flexColumn(Map renderer, int index) {
-  final columns = renderer['flexColumns'];
-  if (columns is! List || columns.length <= index) return null;
-  final column = mapOf(columns[index]);
-  final flex = mapOf(column['musicResponsiveListItemFlexColumnRenderer']);
-  return flex['text'];
+/// Name and avatar from an artist page's header.
+({String name, String? thumbnailUrl}) parseArtistHeader(Object? json) {
+  final header = _parse('artist_header', {'json': json})['header'];
+  if (header is! Map) return (name: '', thumbnailUrl: null);
+  return (
+    name: header['name'] as String? ?? '',
+    thumbnailUrl: header['thumbnail_url'] as String?,
+  );
 }
 
-/// Artist, duration and view count from a music byline
-/// (`Artist • Album • 3:52`, or `Song • 4:11`), any of which may be absent.
-({String artist, Duration? duration, String? viewCountText}) _musicByline(
-  Object? node,
+/// Title, byline artist and artwork from an album or playlist header.
+({String title, String artist, String? thumbnailUrl}) parseCollectionHeader(
+  Object? json,
 ) {
-  final text = textOf(node);
-  if (text == null) return (artist: '', duration: null, viewCountText: null);
-
-  Duration? duration;
-  String artist = '';
-  String? viewCountText;
-  for (final raw in text.split('•')) {
-    final part = raw.trim();
-    if (part.isEmpty) continue;
-    if (RegExp(r'^\d{1,2}:\d{2}(?::\d{2})?$').hasMatch(part)) {
-      duration ??= parseClock(part);
-      continue;
-    }
-    if (_musicTypeLabels.contains(part.toLowerCase())) continue;
-    if (_viewCountPattern.hasMatch(part)) {
-      viewCountText ??= part;
-      continue;
-    }
-    if (_relativeTimePattern.hasMatch(part)) continue;
-    if (RegExp(r'^\d{4}$').hasMatch(part)) continue;
-    if (artist.isEmpty) artist = stripTopicSuffix(part);
-  }
-  return (artist: artist, duration: duration, viewCountText: viewCountText);
-}
-
-final RegExp _relativeTimePattern =
-    RegExp(r'\b(?:ago|premiere[sd]?|watching)\b', caseSensitive: false);
-
-/// Words the music catalogue puts in the second row where an artist would be.
-const Set<String> _musicTypeLabels = {
-  'song',
-  'video',
-  'music video',
-  'single',
-  'album',
-  'ep',
-  'playlist',
-  'artist',
-  'profile',
-  'podcast',
-  'episode',
-};
-
-/// Type labels that name something the player can actually play as itself.
-/// Anything else on a row is a container worth at least two levels of tapping.
-const Set<String> _trackTypeLabels = {'song', 'video', 'music video'};
-
-/// True unless the row labels itself as a container. Rows that label nothing
-/// are kept: an untyped row predates the label and has always been playable.
-bool _isTrackRow(Map renderer) {
-  final byline = textOf(_flexColumn(renderer, 1));
-  if (byline == null) return true;
-  final label = byline.split('•').first.trim().toLowerCase();
-  if (!_musicTypeLabels.contains(label)) return true;
-  return _trackTypeLabels.contains(label);
-}
-
-YouTubePlaylistItem? _itemFromPlaylistVideo(Map renderer) {
-  if (renderer['isPlayable'] == false) return null;
-  final id = renderer['videoId']?.toString() ?? '';
-  final title = textOf(renderer['title']);
-  if (id.isEmpty || !isPlayableTitle(title)) return null;
-  return YouTubePlaylistItem(
-    videoId: id,
-    title: title!,
-    artist: artistOf(renderer['shortBylineText'] ?? renderer['longBylineText']),
-    duration: parseClock(textOf(renderer['lengthText'])),
-    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
-  );
-}
-
-YouTubePlaylistItem? _itemFromVideoRenderer(Map renderer) {
-  final id = renderer['videoId']?.toString() ?? '';
-  final title = textOf(renderer['title']);
-  if (id.isEmpty || !isPlayableTitle(title)) return null;
-  return YouTubePlaylistItem(
-    videoId: id,
-    title: title!,
-    artist: artistOf(
-      renderer['shortBylineText'] ??
-          renderer['longBylineText'] ??
-          renderer['ownerText'],
-    ),
-    duration: parseClock(
-      textOf(renderer['lengthText'] ??
-          renderer['thumbnailOverlayTimeStatusRenderer']),
-    ),
-    thumbnailUrl: _largeThumbnail(renderer['thumbnail']),
-  );
-}
-
-YouTubePlaylistItem? _itemFromLockup(Map lockup) {
-  final type = lockup['contentType']?.toString().toUpperCase() ?? '';
-  if (!type.contains('VIDEO')) return null;
-  final id = lockup['contentId']?.toString() ?? '';
-  if (id.isEmpty) return null;
-  final metadata = mapOf(mapOf(lockup['metadata'])['lockupMetadataViewModel']);
-  final title = textOf(metadata['title']);
-  if (!isPlayableTitle(title)) return null;
-  return YouTubePlaylistItem(
-    videoId: id,
-    title: title!,
-    artist: artistFromMetadata(metadata['metadata']),
-    duration: clockInNode(lockup),
-    thumbnailUrl: _largeThumbnail(lockup['contentImage']),
+  final header = _parse('collection_header', {'json': json})['header'];
+  if (header is! Map) return (title: '', artist: '', thumbnailUrl: null);
+  return (
+    title: header['title'] as String? ?? '',
+    artist: header['artist'] as String? ?? '',
+    thumbnailUrl: header['thumbnail_url'] as String?,
   );
 }
 
 /// Channel name from a view model's metadata rows.
-///
-/// The first row holds the channel and then views/age; only the channel is a
-/// byline, so anything that reads as a count or a relative time is skipped.
-String artistFromMetadata(Object? node) {
-  final rows = mapOf(node)['metadataRows'];
-  if (rows is! List) return '';
-  for (final row in rows) {
-    final parts = mapOf(row)['metadataParts'];
-    if (parts is! List) continue;
-    for (final part in parts) {
-      final text = textOf(mapOf(part)['text']);
-      if (text == null || text.isEmpty) continue;
-      if (RegExp(r'\b(views?|watching|ago|premiere[sd]?)\b',
-              caseSensitive: false)
-          .hasMatch(text)) {
-        continue;
-      }
-      if (RegExp(r'^[\d.,]+[KMB]?$', caseSensitive: false).hasMatch(text)) {
-        continue;
-      }
-      return stripTopicSuffix(text);
-    }
-  }
-  return '';
-}
+String artistFromMetadata(Object? node) =>
+    _parse('artist_from_metadata', {'node': node})['artist'] as String? ?? '';
 
 /// Continuation token for the next page, from either the current
 /// `continuationItemRenderer` shape or the older `nextContinuationData` one.
-String? nextContinuation(Object? json) {
-  for (final node in walkJsonMaps(json)) {
-    final renderer = node['continuationItemRenderer'];
-    if (renderer is Map) {
-      final endpoint = mapOf(renderer['continuationEndpoint']);
-      final token = mapOf(endpoint['continuationCommand'])['token'];
-      if (token is String && token.isNotEmpty) return token;
-      final button = mapOf(mapOf(renderer['button'])['buttonRenderer']);
-      final buttonToken =
-          mapOf(mapOf(button['command'])['continuationCommand'])['token'];
-      if (buttonToken is String && buttonToken.isNotEmpty) return buttonToken;
-    }
-    final legacy = node['nextContinuationData'];
-    if (legacy is Map) {
-      final token = legacy['continuation'];
-      if (token is String && token.isNotEmpty) return token;
-    }
-  }
-  return null;
-}
+String? nextContinuation(Object? json) =>
+    _parse('next_continuation', {'json': json})['token'] as String?;
 
 // ---------------------------------------------------------------------------
 // Import planning
@@ -1837,28 +1284,15 @@ YouTubePlaylistImportPlan planPlaylistImport({
   required Set<String> localVideoIds,
   int maxNewItems = 600,
 }) {
-  final seen = <String>{};
-  final toAdd = <YouTubePlaylistItem>[];
-  final alreadyLocal = <YouTubePlaylistItem>[];
-  var skipped = 0;
-
-  for (final item in remoteItems) {
-    if (!seen.add(item.videoId)) continue;
-    if (localVideoIds.contains(item.videoId)) {
-      alreadyLocal.add(item);
-      continue;
-    }
-    if (toAdd.length >= maxNewItems) {
-      skipped++;
-      continue;
-    }
-    toAdd.add(item);
-  }
-
+  final reply = _parse('import_plan', {
+    'items': [for (final item in remoteItems) _itemToCore(item)],
+    'local_ids': localVideoIds.toList(),
+    'max_new_items': maxNewItems,
+  });
   return YouTubePlaylistImportPlan(
-    toAdd: List.unmodifiable(toAdd),
-    alreadyLocal: List.unmodifiable(alreadyLocal),
-    skippedForLimit: skipped,
+    toAdd: List.unmodifiable(_itemsFromCore(reply['to_add'])),
+    alreadyLocal: List.unmodifiable(_itemsFromCore(reply['already_local'])),
+    skippedForLimit: (reply['skipped_for_limit'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -1868,189 +1302,20 @@ YouTubePlaylistImportPlan planPlaylistImport({
 
 /// `Artist - Topic` is YouTube's auto-generated artist channel; the suffix is
 /// noise in a music library.
-String stripTopicSuffix(String raw) {
-  var value = raw.trim();
-  const suffix = ' - Topic';
-  if (value.toLowerCase().endsWith(suffix.toLowerCase())) {
-    value = value.substring(0, value.length - suffix.length).trim();
-  }
-  return value;
-}
-
-/// Visits every map in [root], parents before children and siblings in document
-/// order. Response shapes move around; walking is what keeps this parser alive
-/// across those changes.
-Iterable<Map> walkJsonMaps(Object? root) sync* {
-  final stack = <Object?>[root];
-  while (stack.isNotEmpty) {
-    final node = stack.removeLast();
-    if (node is Map) {
-      yield node;
-      final children = node.values.toList();
-      for (var i = children.length - 1; i >= 0; i--) {
-        final child = children[i];
-        if (child is Map || child is List) stack.add(child);
-      }
-    } else if (node is List) {
-      for (var i = node.length - 1; i >= 0; i--) {
-        final child = node[i];
-        if (child is Map || child is List) stack.add(child);
-      }
-    }
-  }
-}
-
-Map mapOf(Object? value) => value is Map ? value : const {};
-
-/// InnerTube text fields are `{simpleText}`, `{runs: [{text}]}` or, in the newer
-/// view models, `{content}`.
-String? textOf(Object? node) {
-  if (node is String) {
-    final text = node.trim();
-    return text.isEmpty ? null : text;
-  }
-  if (node is! Map) return null;
-  for (final key in const ['simpleText', 'content', 'text']) {
-    final value = node[key];
-    if (value is String) {
-      final text = value.trim();
-      if (text.isNotEmpty) return text;
-    }
-  }
-  final runs = node['runs'];
-  if (runs is List) {
-    final buffer = StringBuffer();
-    for (final run in runs) {
-      if (run is Map) buffer.write(run['text']?.toString() ?? '');
-    }
-    final text = buffer.toString().trim();
-    if (text.isNotEmpty) return text;
-  }
-  return null;
-}
-
-/// Byline text, with the auto-generated `- Topic` suffix removed.
-String artistOf(Object? node) {
-  final text = textOf(node);
-  if (text == null) return '';
-  return stripTopicSuffix(text);
-}
-
-/// `3:52`, `1:02:03` -> [Duration]. Returns null for live streams and premieres,
-/// whose length reads `LIVE` or is absent.
-Duration? parseClock(String? raw) {
-  if (raw == null) return null;
-  final parts = raw.trim().split(':');
-  if (parts.length < 2 || parts.length > 3) return null;
-  var seconds = 0;
-  for (final part in parts) {
-    final value = int.tryParse(part.trim());
-    if (value == null || value < 0) return null;
-    seconds = seconds * 60 + value;
-  }
-  return seconds > 0 ? Duration(seconds: seconds) : null;
-}
-
-/// Largest image URL in a thumbnail/collection node.
-String? bestImageUrl(Object? node) {
-  String? best;
-  var bestSize = -1;
-  for (final map in walkJsonMaps(node)) {
-    final url = map['url'];
-    if (url is! String || url.isEmpty) continue;
-    final size = intOf(map['width']) ?? intOf(map['height']) ?? 0;
-    if (size >= bestSize) {
-      best = url;
-      bestSize = size;
-    }
-  }
-  return best;
-}
-
-int? intOf(Object? value) {
-  if (value is int) return value;
-  if (value is num) return value.round();
-  return int.tryParse(value?.toString() ?? '');
-}
-
-int? countOfText(String? text) {
-  if (text == null) return null;
-  final match =
-      RegExp(r'([\d.,\s]+)\s*(video|track|song|item)', caseSensitive: false)
-          .firstMatch(text);
-  if (match == null) return null;
-  final digits = match.group(1)!.replaceAll(RegExp(r'[^\d]'), '');
-  return int.tryParse(digits);
-}
-
-/// First `count`-like text (`12 videos`) anywhere under [node].
-int? countInNode(Object? node) {
-  for (final map in walkJsonMaps(node)) {
-    for (final value in map.values) {
-      final text = value is String ? value : textOf(value);
-      final count = countOfText(text);
-      if (count != null) return count;
-    }
-  }
-  return null;
-}
-
-/// First clock-shaped text (`3:52`) anywhere under [node], used for the view
-/// models that only expose duration as a thumbnail overlay.
-Duration? clockInNode(Object? node) {
-  final clock = RegExp(r'^\d{1,2}:\d{2}(?::\d{2})?$');
-  for (final map in walkJsonMaps(node)) {
-    for (final value in map.values) {
-      final text = value is String ? value : textOf(value);
-      if (text != null && clock.hasMatch(text)) {
-        final parsed = parseClock(text);
-        if (parsed != null) return parsed;
-      }
-    }
-  }
-  return null;
-}
-
-bool isPlayableTitle(String? title) {
-  if (title == null) return false;
-  final lower = title.trim().toLowerCase();
-  if (lower.isEmpty) return false;
-  return !lower.contains('deleted video') &&
-      !lower.contains('private video') &&
-      lower != '[private video]';
-}
-
-String? _playlistIdOf(Map node) {
-  final direct = node['playlistId'];
-  if (direct is String && direct.isNotEmpty) {
-    final id = stripVl(direct);
-    if (id.isNotEmpty) return id;
-  }
-  final navigation = mapOf(node['navigationEndpoint']);
-  final browse = mapOf(navigation['browseEndpoint'])['browseId'];
-  if (browse is String) {
-    final id = stripVl(browse);
-    if (id.isNotEmpty) return id;
-  }
-  final watch = mapOf(navigation['watchEndpoint'])['playlistId'];
-  if (watch is String && watch.isNotEmpty) return watch;
-
-  final command =
-      mapOf(mapOf(node['rendererContext'])['commandContext'])['onTap'];
-  final inner = mapOf(mapOf(command)['innertubeCommand']);
-  final innerWatch = mapOf(inner['watchEndpoint'])['playlistId'];
-  if (innerWatch is String && innerWatch.isNotEmpty) return innerWatch;
-  final innerBrowse = mapOf(inner['browseEndpoint'])['browseId'];
-  if (innerBrowse is String) {
-    final id = stripVl(innerBrowse);
-    if (id.isNotEmpty) return id;
-  }
-  return null;
-}
+String stripTopicSuffix(String raw) =>
+    _parse('strip_topic', {'value': raw})['value'] as String? ?? raw;
 
 /// Browse ids address a playlist as `VL<playlistId>`; stored ids are bare.
-String stripVl(String raw) {
-  final value = raw.trim();
-  if (value.length > 2 && value.startsWith('VL')) return value.substring(2);
-  return value;
+String stripVl(String raw) =>
+    _parse('strip_vl', {'value': raw})['value'] as String? ?? raw;
+
+/// `3:52`, `1:02:03` -> [Duration]. Returns null for live streams and
+/// premieres, whose length reads `LIVE` or is absent.
+Duration? parseClock(String? raw) {
+  if (raw == null) return null;
+  final seconds = (_parse('clock', {'value': raw})['seconds'] as num?)?.toInt();
+  return seconds == null ? null : Duration(seconds: seconds);
 }
+
+bool isPlayableTitle(String? title) =>
+    _parse('playable_title', {'value': title})['playable'] == true;
