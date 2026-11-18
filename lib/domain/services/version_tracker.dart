@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/rust/wispie_core.dart';
+
 enum VersionChangeKind { firstRun, same, upgraded, downgraded }
 
 /// What happened between the previous launch and this one. [previous] is null
@@ -15,39 +17,35 @@ class VersionChange {
   bool get isUpgrade => kind == VersionChangeKind.upgraded;
 }
 
+/// Compares launches and records the version.
+///
+/// The comparison and classification live in the native core; the preferences
+/// store stays here because it is the platform key-value store.
 class VersionTracker {
   static const String lastOpenedVersionKey = 'last_opened_version';
 
   /// Compares dotted versions numerically; ignores `+build` and `-pre` suffixes.
-  static int compare(String a, String b) {
-    List<int> parse(String v) => v
-        .split(RegExp(r'[+-]'))
-        .first
-        .split('.')
-        .map((p) => int.tryParse(p.trim()) ?? 0)
-        .toList();
-    final pa = parse(a);
-    final pb = parse(b);
-    final len = pa.length > pb.length ? pa.length : pb.length;
-    for (var i = 0; i < len; i++) {
-      final x = i < pa.length ? pa[i] : 0;
-      final y = i < pb.length ? pb[i] : 0;
-      if (x != y) return x < y ? -1 : 1;
-    }
-    return 0;
-  }
+  static int compare(String a, String b) => (WispieCore.helper({
+        'action': 'version_compare',
+        'a': a,
+        'b': b,
+      })['value'] as num)
+          .toInt();
 
   static VersionChange classify(String? previous, String current) {
-    if (previous == null || previous.isEmpty) {
-      return VersionChange(VersionChangeKind.firstRun, null, current);
-    }
-    final c = compare(previous, current);
-    final kind = c == 0
-        ? VersionChangeKind.same
-        : c < 0
-            ? VersionChangeKind.upgraded
-            : VersionChangeKind.downgraded;
-    return VersionChange(kind, previous, current);
+    final stored = (previous == null || previous.isEmpty) ? null : previous;
+    final reply = WispieCore.helper({
+      'action': 'version_classify',
+      'previous': stored,
+      'current': current,
+    });
+    final kind = switch (reply['kind']) {
+      'same' => VersionChangeKind.same,
+      'upgraded' => VersionChangeKind.upgraded,
+      'downgraded' => VersionChangeKind.downgraded,
+      _ => VersionChangeKind.firstRun,
+    };
+    return VersionChange(kind, stored, current);
   }
 
   /// Classifies this launch and records the version, except on a downgrade:

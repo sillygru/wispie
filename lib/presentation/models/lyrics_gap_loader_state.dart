@@ -78,7 +78,7 @@ LyricsGapLoaderState _stateForWindow({
 }
 
 LyricsGapLoaderState computeLyricsGapLoaderState({
-  required List<LyricLineTiming> timings,
+  required LyricTimings timings,
   required Duration position,
   required Duration delay,
   required Duration minimumWindow,
@@ -89,10 +89,9 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
   var nextIdx = -1;
   var firstIdx = -1;
   for (var i = 0; i < timings.length; i++) {
-    final timing = timings[i];
-    if (!timing.timed) continue;
+    if (!timings.isTimed(i)) continue;
     if (firstIdx < 0) firstIdx = i;
-    if (timing.startFor(simulateEnabled) <= position) {
+    if (timings.startFor(i, simulateEnabled) <= position) {
       activeIdx = i;
     } else {
       nextIdx = i;
@@ -107,7 +106,7 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
     return _stateForWindow(
       position: position,
       windowStart: delay,
-      windowEnd: timings[firstIdx].startFor(simulateEnabled),
+      windowEnd: timings.startFor(firstIdx, simulateEnabled),
       minimumWindow: minimumWindow,
       insertBeforeLyricIndex: firstIdx,
     );
@@ -117,13 +116,12 @@ LyricsGapLoaderState computeLyricsGapLoaderState({
 
   // Silence starts when the line stops sounding: its last word, or its start
   // when it carries no word timing.
-  final active = timings[activeIdx];
-  final soundingEnd =
-      active.endFor(simulateEnabled) ?? active.startFor(simulateEnabled);
+  final soundingEnd = timings.endFor(activeIdx, simulateEnabled) ??
+      timings.startFor(activeIdx, simulateEnabled);
   return _stateForWindow(
     position: position,
     windowStart: soundingEnd + delay,
-    windowEnd: timings[nextIdx].startFor(simulateEnabled),
+    windowEnd: timings.startFor(nextIdx, simulateEnabled),
     minimumWindow: minimumWindow,
     insertBeforeLyricIndex: nextIdx,
   );

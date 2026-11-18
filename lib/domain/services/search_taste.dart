@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import '../../data/rust/wispie_core.dart';
 import '../../models/song.dart';
 import 'taste_model.dart';
 
@@ -6,8 +7,8 @@ import 'taste_model.dart';
 /// does this listener care about this row?
 ///
 /// Built once per history change (see `searchTasteProvider`), never per
-/// keystroke: ranking only does two map lookups per comparison, so a query the
-/// user types into costs the same whether or not taste is in play.
+/// keystroke. The weighting lives in the native core; this holds the two maps
+/// and batches the lookup so ranking still costs no per-song request.
 class SearchTaste {
   /// filename -> 0..1, from the same affinity model shuffle scores with.
   final Map<String, double> songs;
@@ -21,13 +22,23 @@ class SearchTaste {
 
   bool get isEmpty => songs.isEmpty && artists.isEmpty;
 
-  /// 0..1 for one row. The artist channel leads, because "the one by an artist
-  /// I play constantly" is what a tie between two equally good matches is
-  /// really asking; the row's own affinity breaks ties within one artist.
-  double scoreOf(Song song) {
-    if (isEmpty) return 0;
-    final byArtist = artists[tasteArtistKey(song.artist, song.filename)] ?? 0;
-    final bySong = songs[song.filename] ?? 0;
-    return 0.55 * byArtist + 0.45 * bySong;
+  /// 0..1 for each row, in the order given.
+  List<double> scoresFor(List<Song> rows) {
+    if (isEmpty || rows.isEmpty) {
+      return List<double>.filled(rows.length, 0);
+    }
+    final reply = WispieCore.helper({
+      'action': 'taste_scores',
+      'items': [
+        for (final song in rows)
+          [song.filename, tasteArtistKey(song.artist, song.filename)],
+      ],
+      'songScores': songs,
+      'artistScores': artists,
+    });
+    return [
+      for (final value in (reply['scores'] as List).cast<num>())
+        value.toDouble(),
+    ];
   }
 }

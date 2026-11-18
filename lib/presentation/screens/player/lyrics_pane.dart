@@ -491,7 +491,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   /// small notifiers and the list rebuilds when the singing moves on.
   final ValueNotifier<LyricsActivity> _activity =
       ValueNotifier(LyricsActivity.idle);
-  List<LyricLineTiming> _timings = const [];
+  LyricTimings _timings = LyricTimings.empty;
   final ValueNotifier<Duration> _playbackPosition =
       ValueNotifier(Duration.zero);
 
@@ -633,12 +633,14 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   }
 
   void _rebuildTimings() {
+    final previous = _timings;
     _timings = buildLyricTimings(_lyrics ?? const <LyricLine>[], _wordLines);
+    previous.dispose();
   }
 
   Duration _lineStart(int index, bool simulateEnabled) {
     if (index < _timings.length) {
-      return _timings[index].startFor(simulateEnabled);
+      return _timings.startFor(index, simulateEnabled);
     }
     final lyrics = _lyrics;
     return lyrics != null && index < lyrics.length
@@ -678,6 +680,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _cascade.dispose();
     _frameTicker.dispose();
     _timing.dispose();
+    _timings.dispose();
     _activity.dispose();
     _playbackPosition.dispose();
     _gapSlot.dispose();
@@ -767,7 +770,8 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _loading = true;
       _lyrics = null;
       _wordLines = const [];
-      _timings = const [];
+      _timings.dispose();
+      _timings = LyricTimings.empty;
       _richSyncAvailable = false;
       _hasSynced = false;
       _loadedFilename = filename;

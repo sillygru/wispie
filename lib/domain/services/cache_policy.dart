@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../../data/rust/wispie_core.dart';
+
 const int _mib = 1024 * 1024;
 
 /// How a bucket reacts to age and size pressure.
@@ -131,16 +133,12 @@ Uint8List encodeWaveformBars(List<double> bars) {
 /// to decoding the audio instead of drawing garbage.
 List<double> decodeWaveformBars(Uint8List bytes) {
   if (bytes.length < 6) return const [];
-  for (var i = 0; i < 4; i++) {
-    if (bytes[i] != waveformMagic[i]) return const [];
-  }
-  final count = bytes[4] | (bytes[5] << 8);
-  if (count == 0 || bytes.length < 6 + count) return const [];
-  final bars = List<double>.filled(count, 0);
-  for (var i = 0; i < count; i++) {
-    bars[i] = bytes[6 + i] / 255;
-  }
-  return bars;
+  final reply = WispieCore.helper({
+    'action': 'waveform_bars',
+  }, bytes: bytes);
+  return [
+    for (final value in (reply['bars'] as List).cast<num>()) value.toDouble(),
+  ];
 }
 
 /// Writes [samples] as the waveform at [path], refusing an incomplete list.

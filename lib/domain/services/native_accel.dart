@@ -660,17 +660,18 @@ class NativeAccel {
     }
 
     _generation++;
+    final scores = taste.scoresFor(songs);
     _ask({
       'command': 'search_prepare',
       'generation': _generation,
       'songs': [
-        for (final song in songs)
+        for (var index = 0; index < songs.length; index++)
           [
-            song.filename,
-            song.title,
-            song.artist,
-            song.album,
-            taste.scoreOf(song),
+            songs[index].filename,
+            songs[index].title,
+            songs[index].artist,
+            songs[index].album,
+            scores[index],
           ],
       ],
     });

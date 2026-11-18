@@ -16,19 +16,20 @@ List<SearchResult> rankSearchResults({
   final lowerQuery = query.toLowerCase().trim();
   if (lowerQuery.isEmpty) return results;
 
+  final tastes = taste.scoresFor([for (final result in results) result.song]);
   final order = NativeAccel.rankSearch(
     query: lowerQuery,
     results: [
-      for (final result in results)
+      for (var index = 0; index < results.length; index++)
         (
-          title: result.song.title,
-          artist: result.song.artist,
-          album: result.song.album,
-          matchedTitle: result.matchedTitle,
-          matchedArtist: result.matchedArtist,
-          matchedAlbum: result.matchedAlbum,
-          lyricsLine: result.lyricsMatch?.fullLine,
-          taste: taste.scoreOf(result.song),
+          title: results[index].song.title,
+          artist: results[index].song.artist,
+          album: results[index].song.album,
+          matchedTitle: results[index].matchedTitle,
+          matchedArtist: results[index].matchedArtist,
+          matchedAlbum: results[index].matchedAlbum,
+          lyricsLine: results[index].lyricsMatch?.fullLine,
+          taste: tastes[index],
         ),
     ],
   );

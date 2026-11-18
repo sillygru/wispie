@@ -367,25 +367,19 @@ class SpectrumController extends ChangeNotifier {
           (_gridBlend - dtSeconds * 1000 / _gridBlendMs).clamp(0.0, 1.0);
     }
 
-    final elapsedSeconds = _elapsed.inMicroseconds / 1e6;
-    for (var i = 0; i < SpectrumBars.barCount; i++) {
-      var target = _idleTargets[i];
-      if (_gridBlend > 0) {
-        final band = _syncedTargets[i] * SpectrumBars.breath(i, elapsedSeconds);
-        target = target + (band - target) * _gridBlend;
-      }
-      target = target + (SpectrumBars.floor - target) * _pauseBlend;
-      // Cross-fade the response along with the targets: the idle walk has one
-      // time constant in both directions, the synced bars snap up and glide
-      // down. Switching filters in one frame is visible; sliding between them
-      // is not.
-      final asymmetric = SpectrumBars.tauFor(levels[i], target);
-      final tau = _gridBlend <= 0
-          ? _idleTau
-          : _idleTau + (asymmetric - _idleTau) * _gridBlend;
-      levels[i] = SpectrumBars.advanceWithTau(levels[i], target, dtSeconds, tau)
-          .clamp(0.0, 1.0);
-    }
+    // Cross-fade the response along with the targets: the idle walk has one
+    // time constant in both directions, the synced bars snap up and glide down.
+    // Switching filters in one frame is visible; sliding between them is not.
+    SpectrumBars.stepFrame(
+      levels: levels,
+      synced: _syncedTargets,
+      idle: _idleTargets,
+      elapsedSeconds: _elapsed.inMicroseconds / 1e6,
+      dtSeconds: dtSeconds,
+      gridBlend: _gridBlend,
+      pauseBlend: _pauseBlend,
+      idleTau: _idleTau,
+    );
   }
 
   /// The old visualiser's motion, kept for [VisualizerMode.classic] and used as

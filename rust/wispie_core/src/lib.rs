@@ -5,16 +5,19 @@
 //! talk to a newer library and simply ignore what it does not know.
 
 mod affinity;
+mod artwork;
 mod beat;
 mod bulk_rename;
 mod cover;
 mod emitter;
 mod formats;
+mod helpers;
 mod hlc;
 mod image_sig;
 mod insights;
 mod lrclib_match;
 mod lyrics_files;
+mod lyrics_view;
 mod match_plan;
 mod merge_finder;
 mod meta;
@@ -30,6 +33,7 @@ mod search;
 mod settings_search;
 mod shuffle;
 mod tasks;
+mod view_math;
 mod waveform;
 
 use emitter::{Emit, Emitter, RawCallback};
@@ -39,7 +43,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 5;
+pub const ABI_VERSION: u32 = 6;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -201,6 +205,7 @@ fn dispatch(
         "read_song" => tasks::read_song(parse(payload)?, emitter),
         "list_media" => tasks::list_media(parse(payload)?, emitter),
         "compact_covers" => tasks::compact_covers(parse(payload)?, emitter),
+        "helpers" => helpers::run(payload, bytes, emitter),
         "prosody" => prosody::run(parse::<ProsodyRequest>(payload)?.lines, emitter),
         "rank_search" => search::rank(parse(payload)?, emitter),
         "search_prepare" => search::prepare(parse(payload)?, emitter),

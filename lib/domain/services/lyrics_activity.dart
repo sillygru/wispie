@@ -1,100 +1,84 @@
-/// Which lyric lines are being sung at a playhead position.
-///
-/// Line timing alone is not enough: a word-synced source often marks a line
-/// before its first word is audible (TTML paragraphs overlap for harmonies),
-/// so switching on the line's own start cuts the previous line short. The first
-/// word is the real cue. Word data that does not hold together falls back to
-/// the line's timing, per line, so one bad line cannot spoil the rest.
-///
-/// Pure: no widgets, no I/O, no clock.
-library;
-
+import 'dart:ffi';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import '../../data/rust/wispie_core.dart';
 import '../../models/song.dart';
 import '../models/rich_lyrics.dart';
 
-/// How long one line's words are trusted to be out of step with its own start.
-const Duration _wordLeadTolerance = Duration(seconds: 1);
+/// One lyric sheet's resolved timings, packed by the native core.
+///
+/// Columns per line: timed, line start, start with simulated words, start
+/// without, end with simulated words (-1 none), end without, simulated flag.
+/// The word trust rules live in the core, so callers only pick a column.
+class LyricTimings {
+  LyricTimings._(this.length, this._buffer, this._scratch);
 
-/// A single line's timing, resolved from its words where they can be trusted.
-class LyricLineTiming {
-  /// The line carries a timestamp of its own. Untimed lines never light up.
-  final bool timed;
-  final Duration lineStart;
+  final int length;
+  final Int64List _buffer;
+  final NativeScratch? _scratch;
 
-  /// First and last word, or null when the line has no usable words.
-  final Duration? wordStart;
-  final Duration? wordEnd;
+  static final LyricTimings empty = LyricTimings._(0, Int64List(0), null);
 
-  /// The words were estimated from the line rather than supplied by the source.
-  final bool simulated;
+  bool isTimed(int index) =>
+      index >= 0 && index < length && _buffer[index * _stride] != 0;
 
-  const LyricLineTiming({
-    required this.timed,
-    required this.lineStart,
-    this.wordStart,
-    this.wordEnd,
-    this.simulated = false,
-  });
+  Duration startFor(int index, bool simulateEnabled) {
+    if (index < 0 || index >= length) return Duration.zero;
+    final column = simulateEnabled ? 2 : 3;
+    return Duration(microseconds: _buffer[index * _stride + column]);
+  }
 
-  bool _trustsWords(bool simulateEnabled) =>
-      wordStart != null && wordEnd != null && (!simulated || simulateEnabled);
+  Duration? endFor(int index, bool simulateEnabled) {
+    if (index < 0 || index >= length) return null;
+    final value = _buffer[index * _stride + (simulateEnabled ? 4 : 5)];
+    return value < 0 ? null : Duration(microseconds: value);
+  }
 
-  /// When the line starts sounding.
-  Duration startFor(bool simulateEnabled) =>
-      _trustsWords(simulateEnabled) ? wordStart! : lineStart;
+  void dispose() => _scratch?.dispose();
 
-  /// When the line stops sounding, or null when only the next line can say —
-  /// line-synced data has no end of its own.
-  Duration? endFor(bool simulateEnabled) =>
-      _trustsWords(simulateEnabled) ? wordEnd : null;
+  static const int _stride = 7;
 }
 
-/// Resolves every line's timing once per lyric load, so the per-tick work stays
-/// a scan of already-cheap values.
-List<LyricLineTiming> buildLyricTimings(
+const int _timingStride = 7;
+
+/// Resolves every line's timing once per lyric load.
+LyricTimings buildLyricTimings(
   List<LyricLine> lyrics,
   List<RichLyricLine?> wordLines,
 ) {
-  return [
-    for (var index = 0; index < lyrics.length; index++)
-      _timingFor(
-        lyrics[index],
-        index < wordLines.length ? wordLines[index] : null,
-      ),
-  ];
-}
-
-LyricLineTiming _timingFor(LyricLine line, RichLyricLine? words) {
-  final usable = words != null && _wordsAreTrustworthy(line, words);
-  return LyricLineTiming(
-    timed: line.isSynced,
-    lineStart: line.time,
-    wordStart: usable ? words.words.first.start : null,
-    wordEnd: usable ? words.words.last.end : null,
-    simulated: words?.isSimulated ?? false,
-  );
-}
-
-/// Words must march forward, belong to their line's moment, and last a
-/// plausible time. Anything else is a mis-parse to be ignored.
-bool _wordsAreTrustworthy(LyricLine line, RichLyricLine words) {
-  final timed = words.words;
-  if (timed.isEmpty) return false;
-
-  var previous = Duration.zero;
-  var advances = false;
-  for (final word in timed) {
-    if (word.start < Duration.zero || word.end < word.start) return false;
-    if (word.start < previous) return false;
-    if (word.end > word.start) advances = true;
-    previous = word.start;
+  final rows = <Object?>[];
+  for (var index = 0; index < lyrics.length; index++) {
+    final line = lyrics[index];
+    final words = index < wordLines.length ? wordLines[index] : null;
+    rows.add([
+      line.time.inMicroseconds,
+      line.isSynced,
+      words?.isSimulated ?? false,
+      words == null
+          ? null
+          : [
+              for (final word in words.words)
+                [word.start.inMicroseconds, word.end.inMicroseconds],
+            ],
+    ]);
   }
-  if (!advances) return false;
-  if (words.words.first.start < line.time - _wordLeadTolerance) return false;
-  return words.words.last.end - words.words.first.start <=
-      const Duration(minutes: 2);
+
+  final reply = WispieCore.helper({
+    'action': 'lyrics_timings',
+    'lines': rows,
+  });
+  final raw = (reply['timings'] as List).cast<List>();
+  final bytes = math.max(1, raw.length * _timingStride) * 8;
+  final scratch = NativeScratch(bytes);
+  final buffer = scratch.longs;
+  for (var index = 0; index < raw.length; index++) {
+    final row = raw[index];
+    for (var column = 0; column < _timingStride; column++) {
+      buffer[index * _timingStride + column] = (row[column] as num).toInt();
+    }
+  }
+  return LyricTimings._(raw.length, buffer, scratch);
 }
 
 /// The lines sounding at one instant.
@@ -138,58 +122,46 @@ class LyricsActivity {
       a.length == b.length && a.every(b.contains);
 }
 
+NativeScratch? _activityOut;
+int _activityCapacity = 0;
+
+NativeScratch _outputFor(int needed) {
+  final capacity = math.max(64, needed);
+  if (_activityOut == null || _activityCapacity < capacity) {
+    _activityOut?.dispose();
+    _activityOut = NativeScratch(capacity * 4);
+    _activityCapacity = capacity;
+  }
+  return _activityOut!;
+}
+
 /// Lines sounding at [position].
 ///
 /// A line runs from its start until its last word ends; when it has no words it
 /// runs until the next line starts. With nothing sounding the newest line is
 /// held, which is what keeps the last lyric lit through an instrumental break.
 LyricsActivity lyricsActivityAt(
-  List<LyricLineTiming> timings,
+  LyricTimings timings,
   Duration position, {
   bool simulateEnabled = true,
 }) {
-  final active = <int>{};
-  var latest = -1;
-  var latestStart = Duration.zero;
-
-  for (var index = 0; index < timings.length; index++) {
-    final timing = timings[index];
-    if (!timing.timed) continue;
-    final start = timing.startFor(simulateEnabled);
-    if (start > position) continue;
-    latest = index;
-    latestStart = start;
-
-    final end = timing.endFor(simulateEnabled) ??
-        _nextStart(timings, index, simulateEnabled);
-    if (end == null || position < end) active.add(index);
-  }
-
-  if (active.isEmpty && latest >= 0) {
-    // Lines that start together are one moment, so hold all of them.
-    for (var index = 0; index < timings.length; index++) {
-      final timing = timings[index];
-      if (!timing.timed) continue;
-      if (timing.startFor(simulateEnabled) == latestStart) active.add(index);
-    }
-  }
-
-  return LyricsActivity(active: active, latest: latest);
-}
-
-/// The next line that starts *after* this one. Lines sharing a start are one
-/// moment and run together.
-Duration? _nextStart(
-  List<LyricLineTiming> timings,
-  int index,
-  bool simulateEnabled,
-) {
-  final start = timings[index].startFor(simulateEnabled);
-  for (var next = index + 1; next < timings.length; next++) {
-    final timing = timings[next];
-    if (!timing.timed) continue;
-    final candidate = timing.startFor(simulateEnabled);
-    if (candidate > start) return candidate;
-  }
-  return null;
+  if (timings.length == 0) return LyricsActivity.idle;
+  final capacity = 2 + timings.length;
+  final out = _outputFor(capacity);
+  final written = WispieCore.lyricsActivity(
+    timings: timings._scratch!.pointer.cast<Int64>(),
+    count: timings.length,
+    positionUs: position.inMicroseconds,
+    simulate: simulateEnabled,
+    out: out.pointer.cast<Int32>(),
+    outCapacity: _activityCapacity,
+  );
+  if (written < 2) return LyricsActivity.idle;
+  final ints = out.ints;
+  return LyricsActivity(
+    latest: ints[0],
+    active: {
+      for (var index = 2; index < written; index++) ints[index],
+    },
+  );
 }

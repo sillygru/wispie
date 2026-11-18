@@ -55,7 +55,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
   static const Duration _gapCollapseHold = PlayerTokens.dSlow;
 
   List<LyricLine> _lines = const [];
-  List<LyricLineTiming> _timings = const [];
+  LyricTimings _timings = LyricTimings.empty;
   List<LyricLine?> _translatedLines = const [];
   bool _hasSynced = false;
   String? _loadedFilename;
@@ -230,7 +230,8 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
     _loadedFilename = filename;
     _hasSynced = false;
     _lines = const [];
-    _timings = const [];
+    _timings.dispose();
+    _timings = LyricTimings.empty;
     _translatedLines = const [];
     _gapVisible.value = false;
     _gapProgress.value = 0;
@@ -253,6 +254,7 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
 
     setState(() {
       _lines = parsed;
+      _timings.dispose();
       _timings = buildLyricTimings(parsed, const []);
       _hasSynced = parsed.any((l) => l.isSynced);
     });

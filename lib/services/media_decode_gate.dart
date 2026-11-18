@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../data/rust/wispie_core.dart';
+
 /// How urgently a gated decode needs the CPU. A running decode is never
 /// preempted — FFmpeg sessions cannot be cheaply interrupted — so priority only
 /// reorders the *waiting* queue.
@@ -15,16 +17,10 @@ enum MediaDecodePriority {
 
 /// Serializes the app's expensive full-file decodes across services.
 ///
-/// Waveform extraction and beat analysis each used to queue internally but run
-/// beside each other, so the first play of an uncached track could have two
-/// FFmpeg sessions decoding the same file while just_audio was still buffering
-/// it — three readers thrashing one file and starving the audio thread. Every
-/// decode that runs through this gate executes one at a time, so the second
-/// one starts only when the first has written its output and freed the CPU.
-///
-/// High-priority starvation of normal work is bounded in practice: waveform
-/// requests arrive at most once per uncached song and stop entirely after the
-/// first play-through, and beat analysis caps itself at two queued prefetches.
+/// Every decode that runs through this gate executes one at a time, so the
+/// second one starts only when the first has written its output and freed the
+/// CPU. The ordering rule lives in the native core; the futures themselves are
+/// Dart's, so the queue and its drain stay here.
 class MediaDecodeGate {
   MediaDecodeGate._();
 
@@ -45,15 +41,16 @@ class MediaDecodeGate {
     MediaDecodePriority priority = MediaDecodePriority.normal,
   }) {
     final job = _DecodeJob<T>(body, priority: priority);
-    if (priority == MediaDecodePriority.high) {
-      // Land ahead of every queued normal job, but behind earlier high ones.
-      final firstNormal = _waiting.indexWhere(
-        (queued) => queued.priority != MediaDecodePriority.high,
-      );
-      _waiting.insert(firstNormal == -1 ? _waiting.length : firstNormal, job);
-    } else {
-      _waiting.add(job);
-    }
+    final index = (WispieCore.helper({
+      'action': 'decode_gate_insert',
+      'priorities': [
+        for (final queued in _waiting)
+          queued.priority == MediaDecodePriority.high ? 'high' : 'normal',
+      ],
+      'priority': priority == MediaDecodePriority.high ? 'high' : 'normal',
+    })['index'] as num)
+        .toInt();
+    _waiting.insert(index, job);
     _drain();
     return job.result.future;
   }
