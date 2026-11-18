@@ -7,14 +7,51 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 
+import '../data/rust/native_command.dart';
 import '../domain/models/online_search_result.dart';
 import '../domain/services/cover_optimizer.dart';
-import '../domain/services/cover_path.dart';
 import '../domain/services/embedded_cover_bytes.dart';
 import '../models/song.dart';
 import 'music_utils_api_client.dart';
 import 'scanner_service.dart';
 import 'shared_http_client.dart';
+
+Map<String, dynamic> _core(String action, Map<String, Object?> request) =>
+    runCoreCommand('online_meta', {'action': action, ...request});
+
+Map<String, Object?> _resultWire(OnlineSearchResult result) => {
+      'title': result.title,
+      'artist': result.artist,
+      'album': result.album,
+      'cover_url': result.coverUrl,
+      'source': result.source,
+      'duration_ms': result.duration?.inMilliseconds,
+    };
+
+OnlineSearchResult _resultFromWire(Map<String, dynamic> row) {
+  final millis = (row['duration_ms'] as num?)?.toInt();
+  return OnlineSearchResult(
+    title: row['title'] as String? ?? '',
+    artist: row['artist'] as String? ?? '',
+    album: row['album'] as String? ?? '',
+    coverUrl: row['cover_url'] as String?,
+    source: row['source'] as String? ?? '',
+    duration: millis == null ? null : Duration(milliseconds: millis),
+  );
+}
+
+List<OnlineSearchResult> _resultsFromWire(Object? rows) => [
+      for (final row in rows as List? ?? const [])
+        _resultFromWire(row as Map<String, dynamic>),
+    ];
+
+List<Map<String, String>> _candidateMaps(Object? rows) => [
+      for (final row in rows as List? ?? const [])
+        {
+          'url': (row as Map<String, dynamic>)['url'] as String,
+          'source': row['source'] as String,
+        },
+    ];
 
 /// Client for Deezer & iTunes keyless search APIs.
 ///
@@ -34,19 +71,19 @@ class OnlineMetadataService {
   /// The collection's own covers, in the page's song order, so the artwork
   /// picker can offer one of them when the online search has nothing.
   static List<Map<String, String>> songCoverCandidates(List<Song> songs) {
-    final seen = <String>{};
-    final candidates = <Map<String, String>>[];
-    for (final song in songs) {
-      final cover = song.coverUrl?.trim() ?? '';
-      if (cover.isEmpty || !seen.add(cover)) continue;
-      // A MediaStore `content://` cover has no path to save as artwork.
-      if (!cover.startsWith('http') && CoverPath.toLocalPath(cover) == null) {
-        continue;
-      }
-      candidates.add({'url': cover, 'source': song.title});
-      if (candidates.length == 8) break;
-    }
-    return candidates;
+    final reply = _core('song_cover_candidates', {
+      'songs': [
+        for (final song in songs)
+          {'cover_url': song.coverUrl, 'title': song.title},
+      ],
+    });
+    return [
+      for (final row in reply['candidates'] as List? ?? const [])
+        {
+          'url': (row as Map<String, dynamic>)['url'] as String,
+          'source': row['source'] as String,
+        },
+    ];
   }
 
   static final OnlineMetadataService instance =
@@ -78,111 +115,15 @@ class OnlineMetadataService {
   final Map<String, String> _artistImageCache = {};
   final Map<String, String> _albumImageCache = {};
 
-  // Last.fm HTML scraping regexes (artist/album images)
-  static final _lastfmAnyImageRegex = RegExp(
-    r'src="([^"]*?lastfm[^"]*?fastly[^"]*?/i/u/[^/]+/([a-f0-9]+)[^"]*)"',
-    caseSensitive: false,
-  );
-  static final _lastfmOgImageRegex = RegExp(
-    r'<meta\s+[^>]*?property="og:image"\s+[^>]*?content="([^"]+)"',
-    caseSensitive: false,
-  );
-  static final _lastfmOgImageAltRegex = RegExp(
-    r'<meta\s+[^>]*?content="([^"]+)"\s+[^>]*?property="og:image"',
-    caseSensitive: false,
-  );
-  static final _lastfmGifImageRegex = RegExp(
-    r'src="([^"]*?lastfm[^"]*?fastly[^"]*?/i/u/[^/]+/([a-f0-9]+)[^"]*)"(?=[^>]*?alt="gif")',
-    caseSensitive: false,
-  );
-
-  static final Set<String> _lastfmDummyHashes = {
-    '2a96cbd8b46e442fc41c2b86b821562f',
-    'c6f59c1e5e7240a4c0d427abd71f3dbb',
-    '8c82560e57b2707f670149fcd45b7c4e',
-    '4128a60920044723ba0790b513b2a068',
-  };
-
-  static final List<RegExp> _lastfmRegexes = [
-    _lastfmGifImageRegex,
-    _lastfmOgImageRegex,
-    _lastfmOgImageAltRegex,
-    _lastfmAnyImageRegex,
-  ];
-
-  static String? cleanTag(String? value) {
-    final v = value?.trim() ?? '';
-    if (v.isEmpty) return null;
-    final lower = v.toLowerCase();
-    if (lower == 'unknown title' ||
-        lower == 'unknown artist' ||
-        lower == 'unknown album' ||
-        lower == 'unknown') {
-      return null;
-    }
-    return v;
-  }
+  static String? cleanTag(String? value) =>
+      _core('clean_tag', {'value': value})['value'] as String?;
 
   /// Cleans titles of extra noise such as "(Official Video)", "ft. Artist", etc.
-  static String cleanSearchTitle(String rawTitle, {String? artist}) {
-    var title = rawTitle.trim();
-    if (title.isEmpty) return '';
-
-    // Remove file extensions if present
-    final ext = p.extension(title).toLowerCase();
-    final validAudioExts = {
-      '.mp3',
-      '.m4a',
-      '.flac',
-      '.wav',
-      '.aac',
-      '.ogg',
-      '.opus',
-      '.wma',
-      '.alac',
-      '.aiff',
-    };
-    if (validAudioExts.contains(ext)) {
-      title = p.basenameWithoutExtension(title);
-    }
-
-    // Strip common YouTube/video tag patterns
-    title = title.replaceAll(
-      RegExp(
-        r'\([^)]*(official|lyric|music|video|audio|visualizer|hd|4k)[^)]*\)',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    title = title.replaceAll(
-      RegExp(
-        r'\[[^\]]*(official|lyric|music|video|audio|visualizer|hd|4k)[^\]]*\]',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    // Strip leading "Artist - " if present
-    if (artist != null &&
-        artist.isNotEmpty &&
-        title.toLowerCase().startsWith('${artist.toLowerCase()} - ')) {
-      title = title.substring(artist.length + 3).trim();
-    } else if (title.contains(' - ')) {
-      // Common format "Artist - Title"
-      final parts = title.split(' - ');
-      if (parts.length >= 2) {
-        title = parts.sublist(1).join(' - ').trim();
-      }
-    }
-
-    // Strip featured artist markers from title
-    title = title.replaceAll(
-      RegExp(r'\b(ft|feat|featuring)[\.\s].*', caseSensitive: false),
-      '',
-    );
-
-    return title.replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
+  static String cleanSearchTitle(String rawTitle, {String? artist}) =>
+      _core('clean_search_title', {
+        'title': rawTitle,
+        'artist': artist,
+      })['value'] as String;
 
   /// Searches both Deezer and iTunes in parallel for [song] or custom query.
   Future<List<OnlineSearchResult>> searchParallelForSong(
@@ -217,27 +158,13 @@ class OnlineMetadataService {
       searchITunesTrack(query),
     ]);
 
-    final deezerHits = results[0];
-    final iTunesHits = results[1];
-    final combined = <OnlineSearchResult>[];
-    final seenKeys = <String>{};
-
-    void addUnique(OnlineSearchResult res) {
-      final key = '${res.title.toLowerCase()}|${res.artist.toLowerCase()}';
-      if (!seenKeys.contains(key)) {
-        seenKeys.add(key);
-        combined.add(res);
-      }
-    }
-
-    final maxLen = iTunesHits.length > deezerHits.length
-        ? iTunesHits.length
-        : deezerHits.length;
-    for (int i = 0; i < maxLen; i++) {
-      if (i < iTunesHits.length) addUnique(iTunesHits[i]);
-      if (i < deezerHits.length) addUnique(deezerHits[i]);
-    }
-    return combined;
+    final reply = _core('merge_results', {
+      'groups': [
+        for (final group in [results[1], results[0]])
+          [for (final result in group) _resultWire(result)],
+      ],
+    });
+    return _resultsFromWire(reply['results']);
   }
 
   Future<List<OnlineSearchResult>> _searchMusicUtilsMetadata({
@@ -250,37 +177,9 @@ class OnlineMetadataService {
       'limit': '20',
     });
     if (decoded is! List) return const [];
-
-    final results = <OnlineSearchResult>[];
-    for (final entry in decoded) {
-      if (entry is! Map<String, dynamic>) continue;
-      final result = _mapMusicUtilsResult(entry);
-      if (result.title.isEmpty || result.artist.isEmpty) continue;
-      results.add(result);
-    }
-    return results;
-  }
-
-  OnlineSearchResult _mapMusicUtilsResult(Map<String, dynamic> json) {
-    final durationSeconds = (json['duration'] as num?)?.toDouble();
-    final source =
-        (json['metadataSource'] ?? json['coverUrlSource'] ?? 'music-utils')
-            .toString();
-    return OnlineSearchResult(
-      title: (json['trackName'] ?? '').toString(),
-      artist: (json['artistName'] ?? '').toString(),
-      album: (json['albumName'] ?? '').toString(),
-      coverUrl: _nonEmptyString(json['coverUrl']),
-      source: source,
-      duration: durationSeconds == null || durationSeconds <= 0
-          ? null
-          : Duration(milliseconds: (durationSeconds * 1000).round()),
+    return _resultsFromWire(
+      _core('music_utils_results', {'json': decoded})['results'],
     );
-  }
-
-  static String? _nonEmptyString(Object? value) {
-    if (value is! String) return null;
-    return value.trim().isEmpty ? null : value;
   }
 
   /// Search Deezer for track
@@ -289,41 +188,9 @@ class OnlineMetadataService {
     if (trimmed.isEmpty) return const [];
 
     final decoded = await _getJson(_deezerHost, '/search', {'q': trimmed});
-    if (decoded is! Map<String, dynamic> || decoded['data'] is! List) {
-      return const [];
-    }
-
-    final results = <OnlineSearchResult>[];
-    for (final item in decoded['data'] as List) {
-      if (item is! Map<String, dynamic>) continue;
-      final title =
-          item['title'] as String? ?? item['title_short'] as String? ?? '';
-      final artistMap = item['artist'] as Map<String, dynamic>?;
-      final albumMap = item['album'] as Map<String, dynamic>?;
-
-      final artist = artistMap?['name'] as String? ?? '';
-      final album = albumMap?['title'] as String? ?? '';
-      final coverUrl = albumMap?['cover_xl'] as String? ??
-          albumMap?['cover_big'] as String? ??
-          albumMap?['cover_medium'] as String?;
-
-      final durationSec = item['duration'] as int?;
-
-      if (title.isNotEmpty) {
-        results.add(
-          OnlineSearchResult(
-            title: title,
-            artist: artist,
-            album: album,
-            coverUrl: coverUrl,
-            source: 'deezer',
-            duration:
-                durationSec != null ? Duration(seconds: durationSec) : null,
-          ),
-        );
-      }
-    }
-    return results;
+    return _resultsFromWire(
+      _core('deezer_tracks', {'json': decoded})['results'],
+    );
   }
 
   /// Resolves artist artwork through music-utils, then direct providers.
@@ -358,22 +225,10 @@ class OnlineMetadataService {
     if (clean == null) return null;
 
     final decoded = await _getJson(_deezerHost, '/search/artist', {'q': clean});
-    if (decoded is! Map<String, dynamic> || decoded['data'] is! List) {
-      return null;
-    }
-
-    final list = decoded['data'] as List;
-    if (list.isEmpty) return null;
-
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final picture = item['picture_xl'] as String? ??
-            item['picture_big'] as String? ??
-            item['picture_medium'] as String?;
-        if (picture != null && picture.isNotEmpty) return picture;
-      }
-    }
-    return null;
+    return _core('deezer_image', {
+      'json': decoded,
+      'kind': 'artist',
+    })['url'] as String?;
   }
 
   /// Returns artist artwork candidates from music-utils, then direct providers.
@@ -404,23 +259,11 @@ class OnlineMetadataService {
       searchLastfmArtistImage(clean),
     ]);
 
-    final deezer = directHits[0];
-    final itunes = directHits[1];
-    final lastfm = directHits[2];
-
-    final candidates = <Map<String, String>>[];
-    if (deezer != null && deezer.isNotEmpty) {
-      candidates.add({'url': deezer, 'source': 'Deezer'});
-    }
-    if (itunes != null && itunes.isNotEmpty && itunes != deezer) {
-      candidates.add({'url': itunes, 'source': 'iTunes'});
-    }
-    if (lastfm != null &&
-        lastfm.isNotEmpty &&
-        lastfm != deezer &&
-        lastfm != itunes) {
-      candidates.add({'url': lastfm, 'source': 'Last.fm'});
-    }
+    final candidates = _distinctCandidates(
+      directHits[0],
+      directHits[1],
+      directHits[2],
+    );
     if (_artistCandidatesCache.length > 200) _artistCandidatesCache.clear();
     _artistCandidatesCache[cacheKey] = candidates;
     return candidates;
@@ -474,22 +317,10 @@ class OnlineMetadataService {
 
     final query = cleanArtist != null ? '$cleanArtist $cleanAlbum' : cleanAlbum;
     final decoded = await _getJson(_deezerHost, '/search/album', {'q': query});
-    if (decoded is! Map<String, dynamic> || decoded['data'] is! List) {
-      return null;
-    }
-
-    final list = decoded['data'] as List;
-    if (list.isEmpty) return null;
-
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final cover = item['cover_xl'] as String? ??
-            item['cover_big'] as String? ??
-            item['cover_medium'] as String?;
-        if (cover != null && cover.isNotEmpty) return cover;
-      }
-    }
-    return null;
+    return _core('deezer_image', {
+      'json': decoded,
+      'kind': 'album',
+    })['url'] as String?;
   }
 
   /// Search iTunes for track (with rate-limiting pause)
@@ -505,38 +336,9 @@ class OnlineMetadataService {
       'limit': '10',
     });
 
-    if (decoded is! Map<String, dynamic> || decoded['results'] is! List) {
-      return const [];
-    }
-
-    final results = <OnlineSearchResult>[];
-    for (final item in decoded['results'] as List) {
-      if (item is! Map<String, dynamic>) continue;
-      final title = item['trackName'] as String? ?? '';
-      final artist = item['artistName'] as String? ?? '';
-      final album = item['collectionName'] as String? ?? '';
-      var artwork = item['artworkUrl100'] as String?;
-
-      if (artwork != null && artwork.isNotEmpty) {
-        artwork = _upgradeITunesArtworkUrl(artwork);
-      }
-
-      final millis = item['trackTimeMillis'] as int?;
-
-      if (title.isNotEmpty) {
-        results.add(
-          OnlineSearchResult(
-            title: title,
-            artist: artist,
-            album: album,
-            coverUrl: artwork,
-            source: 'itunes',
-            duration: millis != null ? Duration(milliseconds: millis) : null,
-          ),
-        );
-      }
-    }
-    return results;
+    return _resultsFromWire(
+      _core('itunes_tracks', {'json': decoded})['results'],
+    );
   }
 
   /// Search iTunes for artist image (fetches top album or artist entity artwork)
@@ -552,20 +354,7 @@ class OnlineMetadataService {
       'limit': '5',
     });
 
-    if (decoded is! Map<String, dynamic> || decoded['results'] is! List) {
-      return null;
-    }
-
-    final list = decoded['results'] as List;
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final artwork = item['artworkUrl100'] as String?;
-        if (artwork != null && artwork.isNotEmpty) {
-          return _upgradeITunesArtworkUrl(artwork);
-        }
-      }
-    }
-    return null;
+    return _core('itunes_image', {'json': decoded})['url'] as String?;
   }
 
   /// Search iTunes for album image
@@ -586,20 +375,7 @@ class OnlineMetadataService {
       'limit': '5',
     });
 
-    if (decoded is! Map<String, dynamic> || decoded['results'] is! List) {
-      return null;
-    }
-
-    final list = decoded['results'] as List;
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final artwork = item['artworkUrl100'] as String?;
-        if (artwork != null && artwork.isNotEmpty) {
-          return _upgradeITunesArtworkUrl(artwork);
-        }
-      }
-    }
-    return null;
+    return _core('itunes_image', {'json': decoded})['url'] as String?;
   }
 
   Future<String?> _searchDirectArtistImage(String artistName) async {
@@ -700,23 +476,11 @@ class OnlineMetadataService {
       searchLastfmAlbumImage(cleanAlbum, artistName: cleanArtist),
     ]);
 
-    final deezer = directHits[0];
-    final itunes = directHits[1];
-    final lastfm = directHits[2];
-
-    final candidates = <Map<String, String>>[];
-    if (deezer != null && deezer.isNotEmpty) {
-      candidates.add({'url': deezer, 'source': 'Deezer'});
-    }
-    if (itunes != null && itunes.isNotEmpty && itunes != deezer) {
-      candidates.add({'url': itunes, 'source': 'iTunes'});
-    }
-    if (lastfm != null &&
-        lastfm.isNotEmpty &&
-        lastfm != deezer &&
-        lastfm != itunes) {
-      candidates.add({'url': lastfm, 'source': 'Last.fm'});
-    }
+    final candidates = _distinctCandidates(
+      directHits[0],
+      directHits[1],
+      directHits[2],
+    );
     if (_albumCandidatesCache.length > 200) _albumCandidatesCache.clear();
     _albumCandidatesCache[cacheKey] = candidates;
     return candidates;
@@ -799,19 +563,24 @@ class OnlineMetadataService {
   }
 
   List<Map<String, String>> _coverCandidatesFromResponse(Object? decoded) {
-    final entries = decoded is List ? decoded : [decoded];
-    final candidates = <Map<String, String>>[];
-    final seen = <String>{};
-    for (final entry in entries) {
-      if (entry is! Map<String, dynamic>) continue;
-      final url = _nonEmptyString(entry['coverUrl']);
-      if (url == null || !seen.add(url)) continue;
-      candidates.add({
-        'url': url,
-        'source': (entry['coverUrlSource'] ?? 'music-utils').toString(),
-      });
-    }
-    return candidates;
+    final reply = _core('cover_candidates', {'json': decoded});
+    return _candidateMaps(reply['candidates']);
+  }
+
+  /// Deezer, iTunes and Last.fm in priority order, without repeats.
+  List<Map<String, String>> _distinctCandidates(
+    String? deezer,
+    String? itunes,
+    String? lastfm,
+  ) {
+    final reply = _core('candidates', {
+      'entries': [
+        if (deezer != null) {'url': deezer, 'source': 'Deezer'},
+        if (itunes != null) {'url': itunes, 'source': 'iTunes'},
+        if (lastfm != null) {'url': lastfm, 'source': 'Last.fm'},
+      ],
+    });
+    return _candidateMaps(reply['candidates']);
   }
 
   /// Fetches a Last.fm page and extracts the best image URL from its HTML.
@@ -855,35 +624,9 @@ class OnlineMetadataService {
     }
   }
 
-  /// Runs the ordered regexes against [html] and validates the result.
-  String? _extractLastfmImageUrl(String html) {
-    for (final regex in _lastfmRegexes) {
-      final match = regex.firstMatch(html);
-      if (match == null) continue;
-      final url = match.group(1);
-      if (url == null || url.isEmpty) continue;
-
-      final isDummy = _lastfmDummyHashes.any((hash) => url.contains(hash));
-      if (!isDummy) return _upgradeLastfmArtworkUrl(url);
-    }
-    return null;
-  }
-
-  /// Upgrades Last.fm low-res CDN segments to higher resolution
-  String _upgradeLastfmArtworkUrl(String url) {
-    return url
-        .replaceAll('/avatar170s/', '/300x300/')
-        .replaceAll('/174s/', '/300x300/')
-        .replaceAll('/64s/', '/300x300/')
-        .replaceAll('/300x300s/', '/300x300/');
-  }
-
-  /// Upgrades iTunes 100x100 artwork URL to 600x600 or 1000x1000
-  String _upgradeITunesArtworkUrl(String url) {
-    return url
-        .replaceAll('100x100bb', '600x600bb')
-        .replaceAll('100x100', '600x600');
-  }
+  /// Runs the ordered rules against [html] and validates the result.
+  String? _extractLastfmImageUrl(String html) =>
+      _core('lastfm_image', {'html': html})['url'] as String?;
 
   Future<void> _enforceITunesRateLimit() async {
     final now = DateTime.now();
