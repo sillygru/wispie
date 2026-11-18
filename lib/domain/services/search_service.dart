@@ -4,6 +4,7 @@ import '../models/search_result.dart';
 import '../../data/repositories/search_index_repository.dart';
 import 'search_fuzzy.dart';
 import 'search_ranking.dart';
+import 'native_accel.dart';
 import 'search_taste.dart';
 
 /// Service for performing searches across the music library
@@ -184,37 +185,41 @@ class SearchService {
   /// check rather than a database round trip, and lyrics a track gained since are
   /// picked up by [updateSong] at the moment they are saved.
   Future<void> syncRemoteLibrary(Iterable<Song> songs) async {
+    final list = songs.toList(growable: false);
+    final payload = [
+      for (final song in list)
+        {'filename': song.filename, 'isLocal': song.isLocal},
+    ];
+    final previous = _syncedRemote?.toList(growable: false);
+
+    // A search after a play must cost one set check, not a database round trip.
+    final quick = NativeAccel.searchIndexRemotePlan(
+      indexed: const [],
+      songs: payload,
+      previous: previous,
+    );
+    if (quick['unchanged'] as bool) return;
     final wanted = {
-      for (final song in songs)
-        if (!song.isLocal && song.filename.startsWith(Song.youtubePrefix))
-          song.filename,
+      for (final filename in quick['wanted'] as List) filename as String,
     };
-    final previous = _syncedRemote;
-    if (previous != null &&
-        previous.length == wanted.length &&
-        previous.containsAll(wanted)) {
-      return;
-    }
     _syncedRemote = wanted;
     await init();
 
     final indexed = await _indexRepository.indexedFilenames();
-    final stale = [
-      for (final filename in indexed)
-        if (!wanted.contains(filename) &&
-            filename.startsWith(Song.youtubePrefix))
-          filename,
-    ];
-    for (final filename in stale) {
-      await _indexRepository.removeSong(filename);
+    final plan = NativeAccel.searchIndexRemotePlan(
+      indexed: indexed.toList(growable: false),
+      songs: payload,
+      previous: previous,
+    );
+    for (final filename in plan['stale'] as List) {
+      await _indexRepository.removeSong(filename as String);
     }
     // Only rows that were not indexed before: adding one track to the library
     // must not re-read the cached lyrics of every other one.
+    final byFilename = {for (final song in list) song.filename: song};
     await _indexRepository.upsertRemoteSongs([
-      for (final song in songs)
-        if (wanted.contains(song.filename) &&
-            (previous == null || !previous.contains(song.filename)))
-          song,
+      for (final filename in plan['upsert'] as List)
+        if (byFilename[filename] != null) byFilename[filename]!,
     ]);
   }
 

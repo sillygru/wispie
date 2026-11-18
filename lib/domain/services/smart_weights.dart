@@ -92,6 +92,11 @@ List<Map<String, Object?>> _poolNative<T>(List<SmartCandidate<T>> pool) => [
         },
     ];
 
+/// The snapshot in the native wire shape, for callers that hand it straight to
+/// another native command.
+Map<String, Object?> nativeTasteSnapshot(TasteSnapshot taste) =>
+    _tasteNative(taste);
+
 Map<String, Object?> _tasteNative(TasteSnapshot taste) => {
       'songs': {
         for (final entry in taste.songs.entries)

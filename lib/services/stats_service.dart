@@ -2,9 +2,13 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../data/rust/wispie_core.dart';
 import 'database_service.dart';
 import 'sync_service.dart';
 
+/// Stamps play events with this install's session metadata and batches them
+/// into the stats database. The stamp shape, the pending cap and the flush gate
+/// are native rules; the database write is the platform adapter.
 class StatsService {
   final String _sessionId;
   late final String _platform;
@@ -36,26 +40,33 @@ class StatsService {
     }
   }
 
-  // Cap on the in-memory pending list. If repeated flushes fail we
-  // would otherwise grow unbounded; the cap is high enough that brief
-  // outages don't drop events.
-  static const int _maxPendingStats = 500;
-
   Future<void> trackStats(Map<String, dynamic> stats) async {
-    final statsWithMeta = Map<String, dynamic>.from(stats);
-    statsWithMeta['platform'] = _platform;
-    statsWithMeta['session_id'] = _sessionId;
-    statsWithMeta['device_id'] = SyncService.instance.deviceId;
-    statsWithMeta['timestamp'] = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    final event = WispieCore.helper({
+      'action': 'stats_stamp',
+      'stats': stats,
+      'platform': _platform,
+      'sessionId': _sessionId,
+      'deviceId': SyncService.instance.deviceId,
+      'timestamp': DateTime.now().millisecondsSinceEpoch / 1000.0,
+    })['event'] as Map<String, dynamic>;
 
-    _pendingStats.add(statsWithMeta);
+    _pendingStats.add(event);
 
     // Drop oldest events if we are in a sustained flush-failure state.
-    if (_pendingStats.length > _maxPendingStats) {
-      _pendingStats.removeRange(0, _pendingStats.length - _maxPendingStats);
+    final drop = WispieCore.helper({
+      'action': 'stats_trim',
+      'pending': _pendingStats.length,
+    })['drop'] as int;
+    if (drop > 0) {
+      _pendingStats.removeRange(0, drop);
     }
 
-    if (!_isBackground || _pendingStats.length >= 50) {
+    final shouldFlush = WispieCore.helper({
+      'action': 'stats_flush',
+      'background': _isBackground,
+      'pending': _pendingStats.length,
+    })['flush'] as bool;
+    if (shouldFlush) {
       await flush();
     }
   }

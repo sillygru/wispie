@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../../models/song.dart';
+import '../../domain/services/native_accel.dart';
 import '../../services/wispie_cache.dart';
 import '../../services/ffmpeg_service.dart';
 import '../../services/lyrics_files_service.dart';
@@ -13,7 +14,8 @@ import '../models/search_index_entry.dart';
 ///
 /// The search index is stored in a separate SQLite database file that is
 /// explicitly excluded from backups. This allows for fast full-text search
-/// across song metadata and lyrics.
+/// across song metadata and lyrics. SQLite access lives here; the predicates,
+/// lyric text extraction and every refresh decision come from the native core.
 class SearchIndexRepository {
   static const String _tableName = 'search_index';
   static const String _metadataTable = 'search_metadata';
@@ -105,7 +107,6 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
-    // 1. Fetch existing index state to determine what needs updating
     final List<Map<String, dynamic>> existingEntries = await _database!.query(
       _tableName,
       columns: [
@@ -118,121 +119,65 @@ class SearchIndexRepository {
       ],
     );
 
-    final Map<String, Map<String, dynamic>> existingMap = {
-      for (final entry in existingEntries) entry['filename'] as String: entry
-    };
-
     // One native pass over the sidecar files, rather than one probe per song.
     final sidecarLyrics = <String, String>{};
     final sidecars = await LyricsFilesService.instance.textsFor(songs);
     for (final entry in sidecars.entries) {
       final text = entry.value.text;
       if (text == null) continue;
-      final plain = LyricLine.extractPlainText(text).toLowerCase().trim();
+      final plain = NativeAccel.plainLyricsText(text).toLowerCase().trim();
       if (plain.isNotEmpty) sidecarLyrics[entry.key] = plain;
     }
 
-    await _database!.transaction((txn) async {
-      final Set<String> newFilenames = songs.map((s) => s.filename).toSet();
-      final List<String> toRemove = existingMap.keys
-          .where((filename) => !newFilenames.contains(filename))
-          // Streamed rows are owned by SearchService.syncRemoteLibrary: a
-          // library scan knows nothing about them and must not drop them.
-          .where((filename) => !filename.startsWith(Song.youtubePrefix))
-          .toList();
+    final remoteLyrics = <String, String>{};
+    for (final song in songs) {
+      if (song.isLocal) continue;
+      final lyrics = await _cachedRemoteLyrics(song);
+      if (lyrics != null) remoteLyrics[song.filename] = lyrics;
+    }
 
+    final plan = NativeAccel.searchIndexPlan(
+      songs: [for (final song in songs) _songRow(song)],
+      existing: existingEntries,
+      sidecar: sidecarLyrics,
+      remote: remoteLyrics,
+    );
+    final decisions = plan['decisions'] as List;
+    final toRemove = [
+      for (final name in plan['remove'] as List) name as String
+    ];
+
+    await _database!.transaction((txn) async {
       // Remove songs no longer in the library
-      if (toRemove.isNotEmpty) {
-        for (int i = 0; i < toRemove.length; i += 999) {
-          final chunk =
-              toRemove.sublist(i, (i + 999).clamp(0, toRemove.length));
-          await txn.delete(
-            _tableName,
-            where: 'filename IN (${chunk.map((_) => '?').join(',')})',
-            whereArgs: chunk,
-          );
-        }
+      for (var i = 0; i < toRemove.length; i += 999) {
+        final chunk = toRemove.sublist(i, (i + 999).clamp(0, toRemove.length));
+        await txn.delete(
+          _tableName,
+          where: 'filename IN (${chunk.map((_) => '?').join(',')})',
+          whereArgs: chunk,
+        );
       }
 
-      // Batch update/insert all songs
       final batch = txn.batch();
       int updateCount = 0;
 
       var done = 0;
-      for (final song in songs) {
+      for (var index = 0; index < songs.length; index++) {
         if (isCancelled?.call() ?? false) break;
         onProgress?.call(++done, songs.length);
-        final existing = existingMap[song.filename];
-        final int songMtime =
-            (song.mtime != null) ? (song.mtime! * 1000).round() : 0;
-        final int existingMtime = (existing?['last_modified'] as int?) ?? -1;
-
-        String? lyricsContent;
-
-        final bool metadataMatches = existing != null &&
-            (existing['title'] as String?) == song.title.toLowerCase() &&
-            (existing['artist'] as String?) == song.artist.toLowerCase() &&
-            (existing['album'] as String?) == song.album.toLowerCase();
-
-        // A streamed row has no file to stat, so what decides whether it is
-        // still current is whether it has cached lyrics now and did not before.
-        final String? remoteLyrics =
-            song.isLocal ? null : await _cachedRemoteLyrics(song);
-        final String? sidecar = sidecarLyrics[song.filename];
-        final bool lyricsUnchanged = song.isLocal
-            ? songMtime == existingMtime
-            : (remoteLyrics != null) == (existing?['lyrics_content'] != null);
-
-        // A sidecar the row has not indexed yet forces a refresh: its file may
-        // not have changed, but what the library can show has.
-        final bool sidecarPending =
-            sidecar != null && existing?['lyrics_content'] == null;
-
-        // Optimization: Skip extraction if file mtime and metadata haven't changed
-        if (existing != null &&
-            lyricsUnchanged &&
-            metadataMatches &&
-            !sidecarPending) {
-          continue;
-        }
+        final song = songs[index];
+        final decision = decisions[index] as Map<String, dynamic>;
+        if (decision['skip'] as bool) continue;
 
         updateCount++;
-
-        // Reuse lyrics if available, otherwise extract if song has them
-        if (sidecar != null) {
-          lyricsContent = sidecar;
-        } else if (song.isLocal) {
-          if (existing != null && existing['lyrics_content'] != null) {
-            lyricsContent = existing['lyrics_content'] as String;
-          } else if (song.hasLyrics) {
-            try {
-              final lyrics = await _ffmpegService.getLyrics(song.url);
-              if (lyrics != null && lyrics.isNotEmpty) {
-                lyricsContent =
-                    LyricLine.extractPlainText(lyrics).toLowerCase();
-              }
-            } catch (e) {
-              debugPrint('Error reading lyrics for ${song.filename}: $e');
-            }
-          }
-        } else {
-          lyricsContent = remoteLyrics;
-        }
+        final lyricsContent = await _lyricsFor(song, decision);
 
         batch.insert(
           _tableName,
-          {
-            'filename': song.filename,
-            'title': song.title.toLowerCase(),
-            'artist': song.artist.toLowerCase(),
-            'album': song.album.toLowerCase(),
-            'lyrics_content': lyricsContent,
-            'title_length': song.title.length,
-            'artist_length': song.artist.length,
-            'album_length': song.album.length,
-            'lyrics_length': lyricsContent?.length ?? 0,
-            'last_modified': songMtime,
-          },
+          NativeAccel.searchIndexRow(
+            song: song.toJson(),
+            lyrics: lyricsContent,
+          ),
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
@@ -241,7 +186,6 @@ class SearchIndexRepository {
         await batch.commit(noResult: true);
       }
 
-      // Update metadata
       await txn.insert(
         _metadataTable,
         {
@@ -259,9 +203,25 @@ class SearchIndexRepository {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     });
+  }
 
-    // Only vacuum if significant changes occurred (e.g. library cleared or many removals)
-    // VACUUM is expensive and shouldn't run on every refresh.
+  /// The lyrics a decision already resolved, or an extraction when it did not.
+  Future<String?> _lyricsFor(
+    Song song,
+    Map<String, dynamic> decision,
+  ) async {
+    final known = decision['lyrics'] as String?;
+    if (known != null) return known;
+    if (decision['source'] != 'extract') return null;
+
+    try {
+      final lyrics = await _ffmpegService.getLyrics(song.url);
+      if (lyrics == null || lyrics.isEmpty) return null;
+      return NativeAccel.plainLyricsText(lyrics).toLowerCase();
+    } catch (e) {
+      debugPrint('Error reading lyrics for ${song.filename}: $e');
+      return null;
+    }
   }
 
   Future<Set<String>> indexedFilenames() async {
@@ -276,45 +236,37 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
-    // A streamed row's lyrics live in the player's cache, so they are read
-    // fresh every time: the listener may just have picked different ones.
     if (!song.isLocal) {
       await _upsertRow(song, await _cachedRemoteLyrics(song));
       return;
     }
 
     final sidecar = await LyricsFilesService.instance.textFor(song);
-    if (sidecar != null) {
-      final plain = LyricLine.extractPlainText(sidecar).toLowerCase().trim();
-      if (plain.isNotEmpty) {
-        await _upsertRow(song, plain);
-        return;
-      }
-    }
-
-    // Check if we already have lyrics for this file to avoid re-extraction
-    String? lyricsContent;
     final existing = await _database!.query(
       _tableName,
-      columns: ['lyrics_content'],
+      columns: ['title', 'artist', 'album', 'last_modified', 'lyrics_content'],
       where: 'filename = ?',
       whereArgs: [song.filename],
+      limit: 1,
     );
 
-    if (existing.isNotEmpty && existing.first['lyrics_content'] != null) {
-      lyricsContent = existing.first['lyrics_content'] as String;
-    } else if (song.hasLyrics) {
-      try {
-        final lyrics = await _ffmpegService.getLyrics(song.url);
-        if (lyrics != null && lyrics.isNotEmpty) {
-          lyricsContent = LyricLine.extractPlainText(lyrics).toLowerCase();
-        }
-      } catch (e) {
-        debugPrint('Error reading lyrics for ${song.filename}: $e');
-      }
+    final decision = NativeAccel.searchIndexRefresh(
+      song: _songRow(song),
+      existing: existing.isEmpty ? null : existing.first,
+      sidecar: sidecar,
+    );
+    final source = decision['source'] as String;
+    String? lyrics;
+    if (source == 'sidecar' && sidecar != null) {
+      final plain = NativeAccel.plainLyricsText(sidecar).toLowerCase().trim();
+      lyrics = plain.isEmpty ? null : plain;
+    } else if (source == 'existing') {
+      lyrics = existing.first['lyrics_content'] as String?;
+    } else if (source == 'extract') {
+      lyrics = await _lyricsFor(song, decision);
     }
 
-    await _upsertRow(song, lyricsContent);
+    await _upsertRow(song, lyrics);
   }
 
   /// Writes one index row, replacing any previous one for the same filename.
@@ -323,47 +275,44 @@ class SearchIndexRepository {
     if (database == null || !database.isOpen) return;
     await database.insert(
       _tableName,
-      _rowFor(song, lyricsContent),
+      NativeAccel.searchIndexRow(song: song.toJson(), lyrics: lyricsContent),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
   /// Writes the streamed half of the index in one transaction.
-  ///
-  /// A first search after importing a playlist reconciles every saved track at
-  /// once, and one autocommit per row would turn that into a visible stall.
   Future<void> upsertRemoteSongs(Iterable<Song> songs) async {
     await init();
     final database = _database;
     if (database == null || !database.isOpen) return;
 
-    final batch = database.batch();
-    var rows = 0;
+    final rows = <Map<String, Object?>>[];
     for (final song in songs) {
       if (song.isLocal) continue;
-      batch.insert(
-        _tableName,
-        _rowFor(song, await _cachedRemoteLyrics(song)),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      rows++;
+      rows.add(NativeAccel.searchIndexRow(
+        song: song.toJson(),
+        lyrics: await _cachedRemoteLyrics(song),
+      ));
     }
-    if (rows == 0) return;
+    if (rows.isEmpty) return;
+
+    final batch = database.batch();
+    for (final row in rows) {
+      batch.insert(_tableName, row,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
     await batch.commit(noResult: true);
   }
 
-  Map<String, Object?> _rowFor(Song song, String? lyricsContent) => {
+  /// The native refresh decision's input for one song.
+  Map<String, Object?> _songRow(Song song) => {
         'filename': song.filename,
-        'title': song.title.toLowerCase(),
-        'artist': song.artist.toLowerCase(),
-        'album': song.album.toLowerCase(),
-        'lyrics_content': lyricsContent,
-        'title_length': song.title.length,
-        'artist_length': song.artist.length,
-        'album_length': song.album.length,
-        'lyrics_length': lyricsContent?.length ?? 0,
-        'last_modified':
-            (song.mtime != null) ? (song.mtime! * 1000).round() : 0,
+        'title': song.title,
+        'artist': song.artist,
+        'album': song.album,
+        if (song.mtime != null) 'mtime': song.mtime,
+        'hasLyrics': song.hasLyrics,
+        'isLocal': song.isLocal,
       };
 
   /// Lyrics already chosen for a streamed track, as searchable text.
@@ -377,7 +326,7 @@ class SearchIndexRepository {
       if (!await file.exists()) return null;
       final text = (await file.readAsString()).trim();
       if (text.isEmpty) return null;
-      final plain = LyricLine.extractPlainText(text).toLowerCase().trim();
+      final plain = NativeAccel.plainLyricsText(text).toLowerCase().trim();
       return plain.isEmpty ? null : plain;
     } on Object catch (error) {
       debugPrint(
@@ -402,14 +351,8 @@ class SearchIndexRepository {
   /// Points index rows at new filenames without re-deriving anything.
   ///
   /// A rename changes the key and nothing else — not the title, artist, album,
-  /// nor the lyrics we already extracted and stored. So the row is moved as-is
-  /// rather than passed back through [upsertSong], which looks the lyrics up by
-  /// the *new* filename, finds nothing, and shells out to ffprobe to re-read
-  /// them from the file. Over a large batch that was one process per song.
-  ///
-  /// A target that already has its own row is dropped in favour of the
-  /// incoming one, matching the merge [DatabaseService.renameFile] applies to
-  /// the song row itself.
+  /// nor the lyrics we already extracted and stored. A target that already has
+  /// its own row is dropped in favour of the incoming one.
   Future<void> renameFiles(List<({String from, String to})> renames) async {
     await init();
     if (_database == null || !_database!.isOpen || renames.isEmpty) return;
@@ -439,8 +382,6 @@ class SearchIndexRepository {
   }
 
   /// Searches for songs matching the query in specified fields
-  ///
-  /// Returns a list of filenames that match the search criteria
   Future<List<SearchMatch>> search({
     required String query,
     required bool searchTitles,
@@ -454,159 +395,65 @@ class SearchIndexRepository {
     }
 
     final lowerQuery = query.toLowerCase();
-    // Word order should not decide whether a row is found: "sweet child" and
-    // "child sweet" both have to reach "Sweet Child O' Mine". Every token must
-    // appear in the field, checked in one pass because SQLite evaluates the
-    // whole predicate per row.
-    final tokens = lowerQuery
-        .split(RegExp(r'\s+'))
-        .where((token) => token.isNotEmpty)
-        .toList();
-    final Map<String, SearchMatch> bestMatches = {};
+    final titles = <Map<String, Object?>>[];
+    final artists = <Map<String, Object?>>[];
+    final albums = <Map<String, Object?>>[];
+    final lyrics = <Map<String, Object?>>[];
 
-    ({String where, List<String> args}) allTokens(String column) => (
-          where: List.filled(tokens.length, '$column LIKE ?').join(' AND '),
-          args: [for (final token in tokens) '%$token%'],
-        );
-
-    int rankForType(SearchMatchType type) {
-      switch (type) {
-        case SearchMatchType.title:
-          return 0;
-        case SearchMatchType.artist:
-          return 1;
-        case SearchMatchType.album:
-          return 2;
-        case SearchMatchType.lyrics:
-          return 3;
-      }
-    }
-
-    void considerMatch(SearchMatch candidate) {
-      final existing = bestMatches[candidate.filename];
-      if (existing == null ||
-          rankForType(candidate.matchType) < rankForType(existing.matchType)) {
-        bestMatches[candidate.filename] = candidate;
-      }
-    }
-
-    // Search titles
-    if (searchTitles) {
-      final criteria = allTokens('title');
-      final titleResults = await _database!.query(
-        _tableName,
-        columns: ['filename', 'title'],
-        where: criteria.where,
-        whereArgs: criteria.args,
+    Future<bool> collect(
+      String column,
+      List<Map<String, Object?>> into,
+    ) async {
+      final criteria = NativeAccel.searchIndexCriteria(
+        query: lowerQuery,
+        column: column,
+        whole: column == 'lyrics_content',
       );
-      for (final row in titleResults) {
-        final filename = row['filename'] as String;
-        considerMatch(SearchMatch(
-          filename: filename,
-          matchType: SearchMatchType.title,
-          matchedText: _extractMatchText(row['title'] as String, lowerQuery),
-        ));
-      }
-    }
-
-    // Search artists
-    if (searchArtists) {
-      final criteria = allTokens('artist');
-      final artistResults = await _database!.query(
+      final rows = await _database!.query(
         _tableName,
-        columns: ['filename', 'artist'],
-        where: criteria.where,
-        whereArgs: criteria.args,
+        columns: ['filename', column],
+        where: criteria['where'] as String,
+        whereArgs: (criteria['args'] as List).cast<String>(),
       );
-      for (final row in artistResults) {
-        final filename = row['filename'] as String;
-        considerMatch(SearchMatch(
-          filename: filename,
-          matchType: SearchMatchType.artist,
-          matchedText: _extractMatchText(row['artist'] as String, lowerQuery),
-        ));
+      for (final row in rows) {
+        into.add({
+          'filename': row['filename'],
+          'text': row[column],
+        });
       }
+      return rows.isNotEmpty;
     }
 
-    // Search albums
-    if (searchAlbums) {
-      final criteria = allTokens('album');
-      final albumResults = await _database!.query(
-        _tableName,
-        columns: ['filename', 'album'],
-        where: criteria.where,
-        whereArgs: criteria.args,
-      );
-      for (final row in albumResults) {
-        final filename = row['filename'] as String;
-        considerMatch(SearchMatch(
-          filename: filename,
-          matchType: SearchMatchType.album,
-          matchedText: _extractMatchText(row['album'] as String, lowerQuery),
-        ));
-      }
-    }
+    if (searchTitles) await collect('title', titles);
+    if (searchArtists) await collect('artist', artists);
+    if (searchAlbums) await collect('album', albums);
+    if (searchLyrics) await collect('lyrics_content', lyrics);
 
-    // Search lyrics
-    if (searchLyrics) {
-      final lyricsResults = await _database!.query(
-        _tableName,
-        columns: ['filename', 'lyrics_content'],
-        where: 'lyrics_content LIKE ?',
-        whereArgs: ['%$lowerQuery%'],
-      );
-      for (final row in lyricsResults) {
-        final filename = row['filename'] as String;
-        final lyrics = row['lyrics_content'] as String?;
-        if (lyrics != null) {
-          final match = _findLyricsMatch(lyrics, lowerQuery);
-          if (match != null) {
-            considerMatch(SearchMatch(
-              filename: filename,
-              matchType: SearchMatchType.lyrics,
-              matchedText: match.matchedText,
-              fullLine: match.fullLine,
-            ));
-          }
-        }
-      }
-    }
+    final reply = NativeAccel.searchIndexMatches(
+      query: lowerQuery,
+      titles: titles,
+      artists: artists,
+      albums: albums,
+      lyrics: lyrics,
+    );
 
-    return bestMatches.values.toList();
+    return [
+      for (final match in reply['matches'] as List)
+        SearchMatch(
+          filename: (match as Map<String, dynamic>)['filename'] as String,
+          matchType: _matchType(match['field'] as String),
+          matchedText: match['matchedText'] as String,
+          fullLine: match['fullLine'] as String?,
+        ),
+    ];
   }
 
-  /// Extracts the matching portion of text with surrounding context
-  String _extractMatchText(String text, String query) {
-    final index = text.indexOf(query);
-    if (index == -1) return text;
-
-    // Return the matched portion
-    return query;
-  }
-
-  /// Finds the lyrics match with context
-  /// Returns the plain text line without timestamps for display
-  LyricsMatchResult? _findLyricsMatch(String lyrics, String query) {
-    final lines = lyrics.split('\n');
-    for (final line in lines) {
-      if (line.contains(query)) {
-        // Remove timestamps from the display line
-        final plainLine = _removeTimestamps(line.trim());
-        return LyricsMatchResult(
-          matchedText: query,
-          fullLine: plainLine,
-        );
-      }
-    }
-    return null;
-  }
-
-  /// Removes LRC timestamps from a line
-  String _removeTimestamps(String line) {
-    // Match timestamp format [mm:ss.xx] or [mm:ss.xxx] or [mm:ss]
-    final timestampExp = RegExp(r'\[([0-9]+):([0-9]+\.?[0-9]*)\]');
-    return line.replaceAll(timestampExp, '').trim();
-  }
+  static SearchMatchType _matchType(String field) => switch (field) {
+        'artist' => SearchMatchType.artist,
+        'album' => SearchMatchType.album,
+        'lyrics' => SearchMatchType.lyrics,
+        _ => SearchMatchType.title,
+      };
 
   /// Gets statistics about the search index
   Future<SearchIndexStats> getStats() async {
@@ -711,15 +558,4 @@ enum SearchMatchType {
   artist,
   album,
   lyrics,
-}
-
-/// Internal class for lyrics match results
-class LyricsMatchResult {
-  final String matchedText;
-  final String fullLine;
-
-  LyricsMatchResult({
-    required this.matchedText,
-    required this.fullLine,
-  });
 }

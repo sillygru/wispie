@@ -8,13 +8,17 @@ mod affinity;
 mod artwork;
 mod beat;
 mod bulk_rename;
+mod content_id;
 mod cover;
 mod emitter;
 mod formats;
 mod helpers;
 mod hlc;
+mod identity;
 mod image_sig;
 mod insights;
+mod library_repair;
+mod library_view;
 mod lrclib_match;
 mod lyrics_files;
 mod lyrics_view;
@@ -30,6 +34,7 @@ mod remembered_order;
 mod replacement;
 mod scan;
 mod search;
+mod search_index;
 mod settings_search;
 mod shuffle;
 mod tasks;
@@ -43,7 +48,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 6;
+pub const ABI_VERSION: u32 = 7;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -206,6 +211,77 @@ fn dispatch(
         "list_media" => tasks::list_media(parse(payload)?, emitter),
         "compact_covers" => tasks::compact_covers(parse(payload)?, emitter),
         "helpers" => helpers::run(payload, bytes, emitter),
+        "content_ids" => content_id::emit_probe(&payload, emitter),
+        "identity_prepare" => {
+            emitter.emit(Emit::Json(identity::prepare_json(&payload)));
+            Ok(())
+        }
+        "identity_resolve" => {
+            emitter.emit(Emit::Json(identity::resolve_json(&payload)?));
+            Ok(())
+        }
+        "identity_heals" => {
+            emitter.emit(Emit::Json(identity::heals_json(&payload)?));
+            Ok(())
+        }
+        "library_repair" => {
+            emitter.emit(Emit::Json(library_repair::plan(&payload)));
+            Ok(())
+        }
+        "library_view" => {
+            emitter.emit(Emit::Json(library_view::run(payload)));
+            Ok(())
+        }
+        "search_index_criteria" => {
+            let query = payload
+                .get("query")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let column = payload
+                .get("column")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let whole = payload
+                .get("whole")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let (clause, args) = search_index::criteria(query, column, whole);
+            emitter.emit(Emit::Json(serde_json::json!({
+                "where": clause,
+                "args": args,
+            })));
+            Ok(())
+        }
+        "search_index_matches" => {
+            emitter.emit(Emit::Json(search_index::matches_json(&payload)));
+            Ok(())
+        }
+        "search_index_plan" => {
+            emitter.emit(Emit::Json(search_index::plan_json(&payload)));
+            Ok(())
+        }
+        "search_index_refresh" => {
+            emitter.emit(Emit::Json(search_index::refresh_json(&payload)));
+            Ok(())
+        }
+        "search_index_remote_plan" => {
+            emitter.emit(Emit::Json(search_index::remote_plan_json(&payload)));
+            Ok(())
+        }
+        "search_index_row" => {
+            emitter.emit(Emit::Json(search_index::row_json(&payload)));
+            Ok(())
+        }
+        "lyrics_plain" => {
+            let text = payload
+                .get("text")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            emitter.emit(Emit::Json(serde_json::json!({
+                "text": search_index::plain_text(text),
+            })));
+            Ok(())
+        }
         "prosody" => prosody::run(parse::<ProsodyRequest>(payload)?.lines, emitter),
         "rank_search" => search::rank(parse(payload)?, emitter),
         "search_prepare" => search::prepare(parse(payload)?, emitter),

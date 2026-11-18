@@ -235,6 +235,103 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
             let bars = waveform_bars(bytes.unwrap_or(&[]));
             emitter.emit(Emit::Json(json!({ "bars": bars })));
         }
+        "repair_placeholder" => {
+            let song: crate::model::SongJson = serde_json::from_value(
+                request
+                    .get("song")
+                    .cloned()
+                    .ok_or_else(|| "repair_placeholder needs song".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            emitter.emit(Emit::Json(json!({
+                "value": crate::library_repair::is_placeholder(&song),
+            })));
+        }
+        "repair_merge" => {
+            let local: crate::model::SongJson = serde_json::from_value(
+                request
+                    .get("local")
+                    .cloned()
+                    .ok_or_else(|| "repair_merge needs local".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            let imported: crate::model::SongJson = serde_json::from_value(
+                request
+                    .get("imported")
+                    .cloned()
+                    .ok_or_else(|| "repair_merge needs imported".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            emitter.emit(Emit::Json(json!(crate::library_repair::merge_song_rows(
+                &local, &imported
+            ))));
+        }
+        "repair_decide" => {
+            let current: crate::model::SongJson = serde_json::from_value(
+                request
+                    .get("current")
+                    .cloned()
+                    .ok_or_else(|| "repair_decide needs current".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            let probe: crate::library_repair::ProbeInput = serde_json::from_value(
+                request
+                    .get("probe")
+                    .cloned()
+                    .ok_or_else(|| "repair_decide needs probe".to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            let drop = request
+                .get("dropUnresolvable")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let decision = crate::library_repair::decide_repair(&current, &probe.into(), drop);
+            emitter.emit(Emit::Json(json!({
+                "action": decision.action,
+                "row": decision.row,
+                "coverRepointed": decision.cover_repointed,
+                "coverCleared": decision.cover_cleared,
+                "urlReresolved": decision.url_reresolved,
+            })));
+        }
+        "stats_stamp" => {
+            let stats = request
+                .get("stats")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let mut event = stats;
+            event.insert(
+                "platform".to_string(),
+                Value::String(text(&request, "platform")?.to_string()),
+            );
+            event.insert(
+                "session_id".to_string(),
+                Value::String(text(&request, "sessionId")?.to_string()),
+            );
+            event.insert(
+                "device_id".to_string(),
+                Value::String(text(&request, "deviceId")?.to_string()),
+            );
+            event.insert(
+                "timestamp".to_string(),
+                json!(number(&request, "timestamp")?),
+            );
+            emitter.emit(Emit::Json(json!({ "event": event })));
+        }
+        "stats_flush" => {
+            let background = request
+                .get("background")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let pending = integer(&request, "pending")?.max(0);
+            emitter.emit(Emit::Json(json!({ "flush": !background || pending >= 50 })));
+        }
+        "stats_trim" => {
+            let pending = integer(&request, "pending")?.max(0);
+            let max = integer(&request, "max").unwrap_or(500).max(0);
+            emitter.emit(Emit::Json(json!({ "drop": (pending - max).max(0) })));
+        }
         "taste_scores" => {
             let items = request
                 .get("items")

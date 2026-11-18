@@ -6,6 +6,7 @@ import '../../models/song.dart';
 import '../../services/database_service.dart';
 import '../../services/lingva_translate_service.dart';
 import '../models/rich_lyrics.dart';
+import 'lyrics_text.dart';
 
 /// Deep module behind the lyrics pane.
 ///
@@ -243,8 +244,8 @@ class LyricsSession extends ChangeNotifier {
     String normalize(String s) =>
         s.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
     if (normalize(response.text) == normalize(original)) return true;
-    if (LyricLine.extractPlainText(response.text).trim() ==
-        LyricLine.extractPlainText(original).trim()) {
+    if (lyricsPlainText(response.text).trim() ==
+        lyricsPlainText(original).trim()) {
       return true;
     }
     return false;

@@ -1,3 +1,5 @@
+import 'native_accel.dart';
+
 /// Pure identity logic: which filename on this device does a song seen
 /// elsewhere (or earlier) correspond to?
 ///
@@ -43,6 +45,13 @@ class IdentityRow {
         mtime: mtime ?? this.mtime,
         status: status ?? this.status,
       );
+
+  Map<String, Object?> toJson() => {
+        'filename': filename,
+        'cid': cid,
+        if (mtime != null) 'mtime': mtime,
+        'status': status.name,
+      };
 }
 
 class IdentityMove {
@@ -51,38 +60,38 @@ class IdentityMove {
   const IdentityMove(this.from, this.to);
 }
 
+/// A staged copy of the identity table. The rows cross the boundary once when
+/// the index is built, so a sync record costs a small lookup afterwards.
 class IdentityIndex {
-  final Map<String, IdentityRow> byFilename = {};
-  final Map<String, List<String>> _liveByCid = {};
-
-  IdentityIndex(Iterable<IdentityRow> rows) {
-    for (final r in rows) {
-      byFilename[r.filename] = r;
-    }
-    _rebuildLive();
+  IdentityIndex(Iterable<IdentityRow> rows)
+      : byFilename = {for (final row in rows) row.filename: row} {
+    _stage();
   }
 
-  void _rebuildLive() {
-    _liveByCid.clear();
-    for (final r in byFilename.values) {
-      if (r.status == IdentityStatus.live) {
-        (_liveByCid[r.cid] ??= []).add(r.filename);
-      }
-    }
-    for (final list in _liveByCid.values) {
-      list.sort();
-    }
+  static int _generations = 0;
+
+  /// The known rows, in the shape callers read them (the cid of a name).
+  final Map<String, IdentityRow> byFilename;
+  int _generation = 0;
+
+  void _stage() {
+    _generation = ++_generations;
+    NativeAccel.identityPrepare(
+      [for (final row in byFilename.values) row.toJson()],
+      generation: _generation,
+    );
   }
 
-  /// Adds a name known only by id (never live) without a rebuild.
+  /// Adds a name known only by id (never live).
   void addOrphan(String filename, String cid) {
-    byFilename.putIfAbsent(
-        filename,
-        () => IdentityRow(
-            filename: filename, cid: cid, status: IdentityStatus.orphan));
+    if (byFilename.containsKey(filename)) return;
+    byFilename[filename] = IdentityRow(
+      filename: filename,
+      cid: cid,
+      status: IdentityStatus.orphan,
+    );
+    _stage();
   }
-
-  List<String> liveFilesFor(String cid) => _liveByCid[cid] ?? const [];
 
   /// Maps a filename named by another device (or an older name) to the file
   /// that holds the same audio here.
@@ -91,40 +100,32 @@ class IdentityIndex {
   /// filename when the audio is present under another name, and null when the
   /// name is taken by a different recording locally and the audio itself is
   /// absent: applying the record would attach it to the wrong song.
-  String? resolve(String filename, {String? remoteCid}) {
-    final local = byFilename[filename];
-    final cid = remoteCid ?? local?.cid;
-    if (cid == null) return filename;
+  String? resolve(String filename, {String? remoteCid}) =>
+      NativeAccel.identityResolve(
+        generation: _generation,
+        filename: filename,
+        remoteCid: remoteCid,
+      )['filename'] as String?;
 
-    final live = _liveByCid[cid];
-    if (live != null && live.contains(filename)) return filename;
-
-    final nameTakenByOther = local != null &&
-        local.status == IdentityStatus.live &&
-        local.cid != cid;
-    if (live != null && live.isNotEmpty) return live.first;
-    return nameTakenByOther ? null : filename;
-  }
+  List<String> liveFilesFor(String cid) => [
+        for (final name in NativeAccel.identityResolve(
+          generation: _generation,
+          filename: '',
+          remoteCid: cid,
+        )['live'] as List)
+          name as String,
+      ];
 
   /// Orphans whose audio is now present exactly once. Several orphans of one
   /// content id collapse onto that file (they were all the same audio); two or
   /// more present copies make the target ambiguous, so nothing moves.
-  List<IdentityMove> planHeals() {
-    final orphansByCid = <String, List<String>>{};
-    for (final r in byFilename.values) {
-      if (r.status == IdentityStatus.orphan) {
-        (orphansByCid[r.cid] ??= []).add(r.filename);
-      }
-    }
-    final moves = <IdentityMove>[];
-    orphansByCid.forEach((cid, orphans) {
-      final live = _liveByCid[cid];
-      if (live == null || live.length != 1) return;
-      orphans.sort();
-      for (final o in orphans) {
-        moves.add(IdentityMove(o, live.first));
-      }
-    });
-    return moves;
-  }
+  List<IdentityMove> planHeals() => [
+        for (final move
+            in NativeAccel.identityHeals(generation: _generation)['moves']
+                as List)
+          IdentityMove(
+            (move as Map<String, dynamic>)['from'] as String,
+            move['to'] as String,
+          ),
+      ];
 }

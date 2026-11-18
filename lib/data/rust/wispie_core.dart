@@ -13,7 +13,7 @@ class WispieCore {
   WispieCore._();
 
   /// Must match `ABI_VERSION` in `rust/wispie_core/src/lib.rs`.
-  static const int abiVersion = 6;
+  static const int abiVersion = 7;
 
   /// Event kinds sent by the native core.
   static const int eventItems = 0;

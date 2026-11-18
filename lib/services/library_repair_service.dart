@@ -1,12 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
 
-import '../domain/services/embedded_cover_bytes.dart';
-import '../domain/services/library_repair_policy.dart';
+import '../domain/services/native_accel.dart';
 import '../models/song.dart';
 import 'wispie_cache.dart';
 import 'cover_refresh_service.dart';
@@ -71,10 +68,8 @@ class LibraryRepairReport {
 /// current, and the lazy cover path gives up the moment a song's `url` doesn't
 /// stat — so the covers simply stay missing.
 ///
-/// What makes this cheap to undo is that a cover's cache filename is
-/// `sha1(basename)` (see [ScannerService.coverKeyForFilename]), which is
-/// identical on every device. A cover whose file survived can be found again by
-/// recomputing the key; only genuinely absent art needs re-extracting.
+/// Probing and every merge/drop decision are native; this class owns the
+/// database writes and the image-cache invalidation around them.
 class LibraryRepairService {
   static final LibraryRepairService instance = LibraryRepairService._();
 
@@ -94,11 +89,10 @@ class LibraryRepairService {
   }) async {
     onProgress?.call(0, 'Reading library…');
 
-    final merged = await _mergedTargetRows(
-      preImportSongs: preImportSongs,
-      importedRows: importedRows,
-    );
-    if (merged.isEmpty) {
+    final rows = await DatabaseService.instance.getAllSongs();
+    if (rows.isEmpty &&
+        (preImportSongs?.isEmpty ?? true) &&
+        (importedRows?.isEmpty ?? true)) {
       return const LibraryRepairReport();
     }
 
@@ -106,54 +100,32 @@ class LibraryRepairService {
 
     onProgress?.call(0.05, 'Locating music files…');
     final folders = await _readableMusicFolders();
-    // Never prune against a filesystem we couldn't see. An unmounted card or a
-    // permission we haven't been granted yet would otherwise read as a library
-    // that no longer exists.
-    final canPrune = dropUnresolvable && folders.isNotEmpty;
 
-    final probes = await _probeRows(
-      rows: merged,
-      coversDirPath: coversDir.path,
+    final plan = NativeAccel.libraryRepairPlan(
+      rows: [for (final row in rows) row.toJson()],
+      preImportSongs: [
+        for (final row in preImportSongs ?? const <Song>[]) row.toJson()
+      ],
+      importedRows: [
+        for (final row in importedRows ?? const <Song>[]) row.toJson()
+      ],
+      coversDir: coversDir.path,
       musicFolders: folders,
-      onProgress: (fraction) =>
-          onProgress?.call(0.1 + fraction * 0.8, 'Re-linking album art…'),
+      dropUnresolvable: dropUnresolvable,
     );
 
     onProgress?.call(0.9, 'Saving…');
 
-    final updates = <Song>[];
-    final dropped = <String>[];
-    final changedCovers = <String>[];
-    var coversRepointed = 0;
-    var coversCleared = 0;
-    var urlsReresolved = 0;
-
-    for (final row in merged) {
-      final probe = probes[row.filename];
-      if (probe == null) continue;
-
-      final decision = decideRepair(
-        current: row,
-        probe: probe,
-        dropUnresolvable: canPrune,
-      );
-
-      switch (decision.action) {
-        case RepairAction.keep:
-          break;
-        case RepairAction.drop:
-          dropped.add(row.filename);
-        case RepairAction.update:
-          updates.add(decision.row!);
-          if (decision.coverRepointed) {
-            coversRepointed++;
-            final path = decision.row!.coverUrl;
-            if (path != null) changedCovers.add(path);
-          }
-          if (decision.coverCleared) coversCleared++;
-          if (decision.urlReresolved) urlsReresolved++;
-      }
-    }
+    final updates = [
+      for (final row in plan['updates'] as List)
+        Song.fromJson(Map<String, dynamic>.from(row as Map)),
+    ];
+    final dropped = [
+      for (final name in plan['dropped'] as List) name as String
+    ];
+    final changedCovers = [
+      for (final path in plan['changedCovers'] as List) path as String
+    ];
 
     if (updates.isNotEmpty) {
       // The one caller allowed to null a cover: here a null is a considered
@@ -184,44 +156,18 @@ class LibraryRepairService {
 
     onProgress?.call(1.0, 'Done');
 
+    final rowsExamined = (plan['rowsExamined'] as num).toInt();
+    if (rowsExamined == 0) return const LibraryRepairReport();
     return LibraryRepairReport(
-      rowsExamined: merged.length,
-      coversRepointed: coversRepointed,
-      coversCleared: coversCleared,
-      urlsReresolved: urlsReresolved,
+      rowsExamined: rowsExamined,
+      coversRepointed: (plan['coversRepointed'] as num).toInt(),
+      coversCleared: (plan['coversCleared'] as num).toInt(),
+      urlsReresolved: (plan['urlsReresolved'] as num).toInt(),
       rowsDropped: dropped.length,
       coverMissesCleared: missesCleared,
       changedCoverPaths: changedCovers,
-      pruningSkipped: dropUnresolvable && !canPrune,
+      pruningSkipped: plan['pruningSkipped'] as bool,
     );
-  }
-
-  /// The rows to repair: what's in the database, reconciled with anything an
-  /// import staged and anything a wholesale database replacement overwrote.
-  Future<List<Song>> _mergedTargetRows({
-    List<Song>? preImportSongs,
-    List<Song>? importedRows,
-  }) async {
-    final byFilename = <String, Song>{
-      for (final song in await DatabaseService.instance.getAllSongs())
-        song.filename: song,
-    };
-
-    for (final imported in importedRows ?? const <Song>[]) {
-      final existing = byFilename[imported.filename];
-      byFilename[imported.filename] = existing == null
-          ? imported
-          : mergeSongRows(local: existing, imported: imported);
-    }
-
-    for (final local in preImportSongs ?? const <Song>[]) {
-      final current = byFilename[local.filename];
-      byFilename[local.filename] = current == null
-          ? local
-          : mergeSongRows(local: local, imported: current);
-    }
-
-    return byFilename.values.toList();
   }
 
   Future<List<String>> _readableMusicFolders() async {
@@ -242,192 +188,4 @@ class LibraryRepairService {
       return const [];
     }
   }
-
-  /// Probes every row against the filesystem, off the UI thread.
-  ///
-  /// This is thousands of `stat` calls on a real library, so it runs in an
-  /// isolate; only plain `dart:io` is used inside, no plugins.
-  Future<Map<String, SongProbe>> _probeRows({
-    required List<Song> rows,
-    required String coversDirPath,
-    required List<String> musicFolders,
-    void Function(double fraction)? onProgress,
-  }) async {
-    final payload = [
-      for (final row in rows)
-        _ProbeRequest(
-          filename: row.filename,
-          url: row.url,
-          coverUrl: row.coverUrl,
-        ),
-    ];
-
-    final receivePort = ReceivePort();
-    final completer = Completer<Map<String, SongProbe>>();
-    receivePort.listen((message) {
-      if (message is double) {
-        onProgress?.call(message);
-      } else if (message is Map) {
-        receivePort.close();
-        completer.complete(Map<String, SongProbe>.from(message));
-      } else {
-        receivePort.close();
-        completer.completeError(message ?? 'probe failed');
-      }
-    });
-
-    await Isolate.spawn(
-      _probeIsolate,
-      _ProbeParams(
-        requests: payload,
-        coversDirPath: coversDirPath,
-        musicFolders: musicFolders,
-        sendPort: receivePort.sendPort,
-      ),
-    );
-
-    return completer.future;
-  }
-
-  static Future<void> _probeIsolate(_ProbeParams params) async {
-    try {
-      // Only pay for the directory walk if something actually went missing.
-      Map<String, String>? basenameIndex;
-
-      final results = <String, SongProbe>{};
-      for (var i = 0; i < params.requests.length; i++) {
-        final request = params.requests[i];
-        final audioExists = await File(request.url).exists();
-
-        String? reresolved;
-        double? mtime;
-        if (audioExists) {
-          try {
-            mtime = (await File(request.url).stat())
-                    .modified
-                    .millisecondsSinceEpoch /
-                1000.0;
-          } catch (_) {
-            // Existed a moment ago; treat the mtime as simply unknown.
-          }
-        } else {
-          basenameIndex ??= await _buildBasenameIndex(params.musicFolders);
-          reresolved = basenameIndex[request.filename];
-          if (reresolved != null) {
-            try {
-              mtime = (await File(reresolved).stat())
-                      .modified
-                      .millisecondsSinceEpoch /
-                  1000.0;
-            } catch (_) {}
-          }
-        }
-
-        results[request.filename] = SongProbe(
-          audioExists: audioExists,
-          reresolvedUrl: reresolved,
-          validCoverPath: await _resolveCover(
-            storedPath: request.coverUrl,
-            coversDirPath: params.coversDirPath,
-            filename: request.filename,
-          ),
-          mtime: mtime,
-        );
-
-        if (i % 200 == 0) {
-          params.sendPort.send((i + 1) / params.requests.length);
-        }
-      }
-
-      params.sendPort.send(results);
-    } catch (e) {
-      params.sendPort.send('$e');
-    }
-  }
-
-  /// The cover backing [filename], preferring the stored path and falling back
-  /// to the hash-derived name in the current covers directory.
-  static Future<String?> _resolveCover({
-    required String? storedPath,
-    required String coversDirPath,
-    required String filename,
-  }) async {
-    if (storedPath != null &&
-        storedPath.isNotEmpty &&
-        await _isUsableCover(File(storedPath))) {
-      return storedPath;
-    }
-
-    for (final candidate
-        in ScannerService.coverCandidatePaths(coversDirPath, filename)) {
-      if (candidate == storedPath) continue;
-      if (await _isUsableCover(File(candidate))) return candidate;
-    }
-    return null;
-  }
-
-  static Future<bool> _isUsableCover(File file) async {
-    RandomAccessFile? handle;
-    try {
-      if (!await file.exists()) return false;
-      if (await file.length() <= 0) return false;
-      handle = await file.open();
-      return hasImageSignature(await handle.read(imageSignatureProbeLength));
-    } catch (_) {
-      return false;
-    } finally {
-      await handle?.close();
-    }
-  }
-
-  /// basename -> absolute path for everything playable under [folders].
-  ///
-  /// Last one wins on a collision, matching the `song` table's own basename
-  /// primary key.
-  static Future<Map<String, String>> _buildBasenameIndex(
-      List<String> folders) async {
-    final index = <String, String>{};
-    for (final folder in folders) {
-      try {
-        final dir = Directory(folder);
-        if (!await dir.exists()) continue;
-        await for (final entity
-            in dir.list(recursive: true, followLinks: false)) {
-          if (entity is! File) continue;
-          if (!ScannerService.isSupportedMediaPath(entity.path)) continue;
-          index[p.basename(entity.path)] = entity.path;
-        }
-      } catch (_) {
-        // A folder we can't walk contributes nothing; the caller already
-        // refuses to prune when folders are unreadable.
-      }
-    }
-    return index;
-  }
-}
-
-class _ProbeRequest {
-  final String filename;
-  final String url;
-  final String? coverUrl;
-
-  const _ProbeRequest({
-    required this.filename,
-    required this.url,
-    this.coverUrl,
-  });
-}
-
-class _ProbeParams {
-  final List<_ProbeRequest> requests;
-  final String coversDirPath;
-  final List<String> musicFolders;
-  final SendPort sendPort;
-
-  const _ProbeParams({
-    required this.requests,
-    required this.coversDirPath,
-    required this.musicFolders,
-    required this.sendPort,
-  });
 }

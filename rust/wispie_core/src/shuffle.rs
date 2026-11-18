@@ -348,7 +348,7 @@ pub fn diversified_top(request: &Value) -> Value {
     json!({"indices": chosen})
 }
 
-fn score(candidate: &Value, weights: &Value) -> f64 {
+pub(crate) fn score(candidate: &Value, weights: &Value) -> f64 {
     let affinity = number(candidate, "affinity").clamp(0.0, 1.0);
     let mut score = affinity.powf(number(weights, "affinityExponent"));
     score += number(weights, "noveltyBoost") / (1.0 + number(candidate, "playCount"));

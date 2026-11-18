@@ -724,6 +724,133 @@ class NativeAccel {
     ];
   }
 
+  static Map<String, dynamic> libraryView(Map<String, Object?> request) =>
+      _ask({'command': 'library_view', ...request});
+
+  static Map<String, dynamic> libraryRepairPlan({
+    required List<Map<String, Object?>> rows,
+    required List<Map<String, Object?>> preImportSongs,
+    required List<Map<String, Object?>> importedRows,
+    required String coversDir,
+    required List<String> musicFolders,
+    required bool dropUnresolvable,
+  }) =>
+      _ask({
+        'command': 'library_repair',
+        'rows': rows,
+        'preImportSongs': preImportSongs,
+        'importedRows': importedRows,
+        'coversDir': coversDir,
+        'musicFolders': musicFolders,
+        'dropUnresolvable': dropUnresolvable,
+      });
+
+  static int identityPrepare(
+    List<Map<String, Object?>> rows, {
+    required int generation,
+  }) =>
+      _ask({
+        'command': 'identity_prepare',
+        'generation': generation,
+        'rows': rows,
+      })['count'] as int;
+
+  static Map<String, dynamic> identityResolve({
+    required int generation,
+    required String filename,
+    String? remoteCid,
+  }) =>
+      _ask({
+        'command': 'identity_resolve',
+        'generation': generation,
+        'filename': filename,
+        if (remoteCid != null) 'remoteCid': remoteCid,
+      });
+
+  static Map<String, dynamic> identityHeals({required int generation}) =>
+      _ask({'command': 'identity_heals', 'generation': generation});
+
+  static Map<String, dynamic> searchIndexCriteria({
+    required String query,
+    required String column,
+    bool whole = false,
+  }) =>
+      _ask({
+        'command': 'search_index_criteria',
+        'query': query,
+        'column': column,
+        if (whole) 'whole': true,
+      });
+
+  static Map<String, dynamic> searchIndexMatches({
+    required String query,
+    required List<Map<String, Object?>> titles,
+    required List<Map<String, Object?>> artists,
+    required List<Map<String, Object?>> albums,
+    required List<Map<String, Object?>> lyrics,
+  }) =>
+      _ask({
+        'command': 'search_index_matches',
+        'query': query,
+        'titles': titles,
+        'artists': artists,
+        'albums': albums,
+        'lyrics': lyrics,
+      });
+
+  static Map<String, dynamic> searchIndexPlan({
+    required List<Map<String, Object?>> songs,
+    required List<Map<String, Object?>> existing,
+    required Map<String, String> sidecar,
+    required Map<String, String> remote,
+  }) =>
+      _ask({
+        'command': 'search_index_plan',
+        'songs': songs,
+        'existing': existing,
+        'sidecar': sidecar,
+        'remote': remote,
+      });
+
+  static Map<String, dynamic> searchIndexRefresh({
+    required Map<String, Object?> song,
+    Map<String, Object?>? existing,
+    String? sidecar,
+    String? remoteLyrics,
+  }) =>
+      _ask({
+        'command': 'search_index_refresh',
+        'song': song,
+        if (existing != null) 'existing': existing,
+        if (sidecar != null) 'sidecar': sidecar,
+        if (remoteLyrics != null) 'remoteLyrics': remoteLyrics,
+      });
+
+  static Map<String, dynamic> searchIndexRemotePlan({
+    required List<String> indexed,
+    required List<Map<String, Object?>> songs,
+    List<String>? previous,
+  }) =>
+      _ask({
+        'command': 'search_index_remote_plan',
+        'indexed': indexed,
+        'songs': songs,
+        if (previous != null) 'previous': previous,
+      });
+
+  static Map<String, dynamic> searchIndexRow({
+    required Map<String, Object?> song,
+    String? lyrics,
+  }) =>
+      _ask({
+        'command': 'search_index_row',
+        'song': song,
+        if (lyrics != null) 'lyrics': lyrics,
+      });
+
+  static String plainLyricsText(String text) =>
+      _ask({'command': 'lyrics_plain', 'text': text})['text'] as String;
+
   static Map<String, dynamic> _askBytes(
     Map<String, Object?> request,
     Uint8List bytes,

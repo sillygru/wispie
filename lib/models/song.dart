@@ -404,32 +404,6 @@ class LyricLine extends Equatable {
     ];
   }
 
-  /// Extracts plain text content from LRC format (removes all timestamps)
-  /// This is used for search indexing to avoid indexing timestamps
-  static String extractPlainText(String content) {
-    final RegExp timeExp = RegExp(r'\[([0-9]+):([0-9]+\.?[0-9]*)\]');
-    final lines = content.split('\n');
-    final List<String> plainLines = [];
-
-    for (var line in lines) {
-      line = line.trim();
-      if (line.isEmpty) continue;
-
-      // Skip metadata lines like [ar:Artist], [ti:Title], etc.
-      if (RegExp(r'^\[[a-z]+:.+\]$').hasMatch(line)) {
-        continue;
-      }
-
-      // Remove all timestamps from the line
-      String plainText = line.replaceAll(timeExp, '').trim();
-      if (plainText.isNotEmpty) {
-        plainLines.add(plainText);
-      }
-    }
-
-    return plainLines.join('\n');
-  }
-
   @override
   List<Object?> get props => [time, text, isSynced];
 }

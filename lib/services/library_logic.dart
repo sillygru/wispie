@@ -1,7 +1,6 @@
-import 'package:path/path.dart' as p;
 import '../models/song.dart';
 import '../models/shuffle_config.dart';
-import '../domain/services/cover_path.dart';
+import '../domain/services/native_accel.dart';
 import '../domain/services/shuffle_selector.dart';
 import '../domain/services/smart_weights.dart';
 import '../domain/services/song_affinity.dart';
@@ -22,84 +21,25 @@ class LibraryFolderContent {
   });
 }
 
+/// Library view math — folder roots, folder trees, sorting and grouping.
+///
+/// Rust owns the rules; this class maps `Song` rows in and filenames back out.
 class LibraryLogic {
   /// Picks the folder the "Folders" tab should be rooted at.
   ///
-  /// The library tree used to be rooted at the *first* configured music folder,
-  /// which made songs disappear from the tab whenever that folder was not the
-  /// one holding them — extra folders added later, or a root whose absolute
-  /// path drifted (iOS re-resolves its container path on reinstall, Android SAF
-  /// can hand back a different mount). Home kept showing those songs because it
-  /// never filters by path, so the library looked empty for no visible reason.
-  ///
-  /// The root is therefore derived from what is actually in the library:
-  /// configured folders that hold songs win, several of them collapse to their
-  /// common ancestor, and if none of them match the scanned paths we fall back
-  /// to the common ancestor of the songs themselves. Only sub-folders that
-  /// contain songs are ever listed, so a shallow root adds at most a level of
-  /// drill-down — it never exposes unrelated directories.
-  ///
-  /// Returns `null` only when there is nothing to show at all.
+  /// Configured folders that hold songs win, several of them collapse to their
+  /// common ancestor, and if none match the scanned paths the root is the common
+  /// ancestor of the songs themselves. Only sub-folders with songs are listed,
+  /// so a shallow root never exposes unrelated directories.
   static String? resolveLibraryRoot({
     required List<Song> allSongs,
     required List<String> configuredFolders,
-  }) {
-    final roots = <String>[];
-    for (final folder in configuredFolders) {
-      final normalized = normalizePath(folder);
-      if (normalized.isEmpty || roots.contains(normalized)) continue;
-      roots.add(normalized);
-    }
-
-    final matching = roots
-        .where((root) => allSongs.any((song) => isUnder(root, song.url)))
-        .toList();
-
-    if (matching.length == 1) return matching.first;
-    if (matching.length > 1) return _commonAncestor(matching);
-
-    if (allSongs.isEmpty) return roots.isEmpty ? null : roots.first;
-
-    return _commonAncestor(allSongs.map((song) => p.dirname(song.url)));
-  }
-
-  static String normalizePath(String path) {
-    final trimmed = path.trim();
-    if (trimmed.isEmpty) return '';
-    return p.normalize(trimmed);
-  }
-
-  /// Whether [songUrl] is [root] itself or lives somewhere below it.
-  static bool isUnder(String root, String songUrl) {
-    if (root.isEmpty || songUrl.isEmpty) return false;
-    final normalized = normalizePath(songUrl);
-    return normalized == root || p.isWithin(root, normalized);
-  }
-
-  /// Deepest directory containing every path in [paths], or `null` if they
-  /// share nothing (different drives on Windows, empty input).
-  static String? _commonAncestor(Iterable<String> paths) {
-    List<String>? common;
-
-    for (final path in paths) {
-      final parts = p.split(normalizePath(path));
-      if (common == null) {
-        common = parts;
-        continue;
-      }
-
-      final limit = common.length < parts.length ? common.length : parts.length;
-      var shared = 0;
-      while (shared < limit && common[shared] == parts[shared]) {
-        shared++;
-      }
-      common = common.sublist(0, shared);
-      if (common.isEmpty) return null;
-    }
-
-    if (common == null || common.isEmpty) return null;
-    return p.joinAll(common);
-  }
+  }) =>
+      _view({
+        'op': 'root',
+        'songs': _rows(allSongs),
+        'configuredFolders': configuredFolders,
+      })['root'] as String?;
 
   static List<Song> sortSongs(
     List<Song> songs,
@@ -111,179 +51,18 @@ class LibraryLogic {
     Map<String, SongAffinity>? affinities,
     TasteSnapshot? tasteSnapshot,
   }) {
-    final sorted = List<Song>.from(songs);
-
-    // Pre-compute lowercase title/artist/album strings once per sort to avoid
-    // calling toLowerCase() O(N log N) times during comparator evaluations.
-    final lowerTitle = <String, String>{};
-    final lowerArtist = <String, String>{};
-    final lowerAlbum = <String, String>{};
-    for (final s in sorted) {
-      lowerTitle[s.filename] = s.title.toLowerCase();
-      lowerArtist[s.filename] = s.artist.toLowerCase();
-      lowerAlbum[s.filename] = s.album.toLowerCase();
-    }
-
-    switch (sortOrder) {
-      case SongSortOrder.title:
-        sorted.sort((a, b) =>
-            lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!));
-
-        break;
-
-      case SongSortOrder.artist:
-        sorted.sort((a, b) {
-          int artistCompare =
-              lowerArtist[a.filename]!.compareTo(lowerArtist[b.filename]!);
-
-          if (artistCompare != 0) return artistCompare;
-
-          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-        });
-
-        break;
-
-      case SongSortOrder.album:
-        sorted.sort((a, b) {
-          int albumCompare =
-              lowerAlbum[a.filename]!.compareTo(lowerAlbum[b.filename]!);
-
-          if (albumCompare != 0) return albumCompare;
-
-          // Compilations and live albums mix tracks from different years, so
-          // fall back to release order before title when both are tagged.
-          final dateA = a.songDateEpochSec;
-          final dateB = b.songDateEpochSec;
-          if (dateA != null && dateB != null) return dateA.compareTo(dateB);
-
-          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-        });
-
-        break;
-
-      case SongSortOrder.dateAdded:
-        sorted.sort((a, b) {
-          final dateAddedA = a.createdEpochSec ?? a.mtime ?? 0;
-          final dateAddedB = b.createdEpochSec ?? b.mtime ?? 0;
-          return dateAddedB.compareTo(dateAddedA); // Newest first
-        });
-
-        break;
-
-      case SongSortOrder.playCount:
-        sorted.sort((a, b) {
-          final countA = playCounts?[a.filename] ?? a.playCount;
-          final countB = playCounts?[b.filename] ?? b.playCount;
-          return countB.compareTo(countA);
-        });
-        break;
-
-      case SongSortOrder.recommended:
-        // Same two-stage model shuffle draws from, so "Recommended" and shuffle
-        // agree about taste.
-        if (userData == null || shuffleConfig == null) {
-          sorted.sort((a, b) {
-            final titleA = lowerTitle[a.filename]!;
-            final titleB = lowerTitle[b.filename]!;
-            return titleA.compareTo(titleB);
-          });
-          break;
-        }
-
-        if (tasteSnapshot != null) {
-          final ranked = smartRecommendedOrder(
-            sorted,
-            tasteSnapshot,
-            shuffleConfig,
-            userData,
-          );
-          sorted
-            ..clear()
-            ..addAll(ranked);
-          break;
-        }
-
-        if (affinities == null) {
-          sorted.sort((a, b) {
-            final titleA = lowerTitle[a.filename]!;
-            final titleB = lowerTitle[b.filename]!;
-            return titleA.compareTo(titleB);
-          });
-          break;
-        }
-
-        final playlistFilenames = _userPlaylistFilenames(userData);
-        final weights = ShuffleWeights.fallback(shuffleConfig);
-
-        // Score once per song rather than inside the comparator, which would
-        // recompute it O(N log N) times.
-        final scores = <String, double>{
-          for (final song in sorted)
-            song.filename: scoreCandidate(
-              ShuffleCandidate<Song>(
-                payload: song,
-                artist: song.artist,
-                album: song.album,
-                affinity: affinities[song.filename] ?? SongAffinity.unknown,
-                isFavorite: userData.isFavorite(song.filename),
-                isSuggestLess: userData.isSuggestLess(song.filename),
-                isInPlaylist: playlistFilenames.contains(song.filename),
-              ),
-              weights,
-            ),
-        };
-
-        sorted.sort((a, b) {
-          final compare = scores[b.filename]!.compareTo(scores[a.filename]!);
-          if (compare != 0) return compare;
-          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-        });
-        break;
-
-      case SongSortOrder.songDateNewOld:
-      case SongSortOrder.songDateOldNew:
-        // Untagged tracks sink to the bottom in both directions so they don't
-        // interrupt a dated album.
-        final newestFirst = sortOrder == SongSortOrder.songDateNewOld;
-        sorted.sort((a, b) {
-          final dateA = a.songDateEpochSec;
-          final dateB = b.songDateEpochSec;
-          if (dateA == null && dateB == null) {
-            return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-          }
-          if (dateA == null) return 1;
-          if (dateB == null) return -1;
-          final compare =
-              newestFirst ? dateB.compareTo(dateA) : dateA.compareTo(dateB);
-          if (compare != 0) return compare;
-          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-        });
-        break;
-
-      case SongSortOrder.recentlyPlayed:
-        sorted.sort((a, b) {
-          final lastPlayedA = lastPlayedTimestamps?[a.filename];
-          final lastPlayedB = lastPlayedTimestamps?[b.filename];
-
-          if (lastPlayedA != null && lastPlayedB != null) {
-            return lastPlayedB.compareTo(lastPlayedA);
-          }
-          if (lastPlayedA != null) return -1;
-          if (lastPlayedB != null) return 1;
-
-          return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-        });
-        break;
-    }
-
-    return sorted;
+    final request = _sortRequest(
+      songs,
+      sortOrder,
+      userData: userData,
+      shuffleConfig: shuffleConfig,
+      playCounts: playCounts,
+      lastPlayedTimestamps: lastPlayedTimestamps,
+      affinities: affinities,
+      tasteSnapshot: tasteSnapshot,
+    );
+    return _applyOrder(songs, _view(request)['order'] as List);
   }
-
-  static Set<String> _userPlaylistFilenames(UserDataState userData) => {
-        for (final playlist in userData.playlists)
-          if (!playlist.isRecommendation)
-            for (final song in playlist.songs) song.songFilename,
-      };
 
   /// Smart "Recommended" order: the shuffle's sort-context weights, then the
   /// per-artist diversity cap so one artist cannot fill the top of the list.
@@ -292,30 +71,14 @@ class LibraryLogic {
     TasteSnapshot taste,
     ShuffleConfig config,
     UserDataState userData,
-  ) {
-    final playlistFilenames = _userPlaylistFilenames(userData);
-    final pool = [
-      for (final song in songs)
-        SmartCandidate<Song>(
-          item: song,
-          filenames: [song.filename],
-          artistKey: tasteArtistKey(song.artist, song.filename),
-          albumKey: song.album.trim().toLowerCase(),
-          isFavorite: userData.isFavorite(song.filename),
-          isSuggestLess: userData.isSuggestLess(song.filename),
-          isInPlaylist: playlistFilenames.contains(song.filename),
-        ),
-    ];
-    final weights = computeSmartWeights<Song>(
-      pool: pool,
-      taste: taste,
-      familiarity: 1 - config.discoveryLevel,
-      context: ShuffleContext.sort,
-      favoriteMultiplier: config.favoriteMultiplier,
-      suggestLessMultiplier: config.suggestLessMultiplier,
-    );
-    return diversifiedTop<Song>(pool, weights, count: pool.length);
-  }
+  ) =>
+      sortSongs(
+        songs,
+        SongSortOrder.recommended,
+        userData: userData,
+        shuffleConfig: config,
+        tasteSnapshot: taste,
+      );
 
   static LibraryFolderContent getFolderContent({
     required List<Song> allSongs,
@@ -328,240 +91,111 @@ class LibraryLogic {
     Map<String, SongAffinity>? affinities,
     TasteSnapshot? tasteSnapshot,
   }) {
-    // Filter songs in the current path (or subpaths)
-
-    final root = normalizePath(currentFullPath);
-    final allSongsInFolder =
-        allSongs.where((s) => isUnder(root, s.url)).toList();
-
-    final Set<String> subFolders = {};
-
-    final List<Song> immediateSongs = [];
-
-    final Map<String, List<Song>> subFolderSongsMap = {};
-
-    for (var song in allSongsInFolder) {
-      final relativeToCurrent = p.relative(normalizePath(song.url), from: root);
-
-      final parts = p.split(relativeToCurrent);
-
-      if (parts.length == 1) {
-        // It's a song in the current folder
-
-        immediateSongs.add(song);
-      } else {
-        // It's in a subfolder
-
-        final subFolderName = parts[0];
-
-        subFolders.add(subFolderName);
-
-        subFolderSongsMap.putIfAbsent(subFolderName, () => []).add(song);
-      }
-    }
-
-    final sortedSubFolders = subFolders.toList()..sort();
-
-    final sortedImmediateSongs = sortSongs(
-      immediateSongs,
-      sortOrder,
-      userData: userData,
-      shuffleConfig: shuffleConfig,
-      playCounts: playCounts,
-      lastPlayedTimestamps: lastPlayedTimestamps,
-      affinities: affinities,
-      tasteSnapshot: tasteSnapshot,
-    );
+    final reply = _view({
+      'op': 'folder',
+      'root': currentFullPath,
+      ..._sortRequest(
+        allSongs,
+        sortOrder,
+        userData: userData,
+        shuffleConfig: shuffleConfig,
+        playCounts: playCounts,
+        lastPlayedTimestamps: lastPlayedTimestamps,
+        affinities: affinities,
+        tasteSnapshot: tasteSnapshot,
+      ),
+      // Folder membership reads every path, not only the sort fields.
+      'songs': _rows(allSongs),
+    });
 
     return LibraryFolderContent(
-      subFolders: sortedSubFolders,
-      immediateSongs: sortedImmediateSongs,
-      allSongsInFolder: allSongsInFolder,
-      subFolderSongs: subFolderSongsMap,
+      subFolders: [
+        for (final name in reply['subFolders'] as List) name as String
+      ],
+      immediateSongs: _applyOrder(allSongs, reply['immediate'] as List),
+      allSongsInFolder: _applyOrder(allSongs, reply['all'] as List),
+      subFolderSongs: {
+        for (final entry
+            in (reply['subFolderSongs'] as Map<String, dynamic>).entries)
+          entry.key: _applyOrder(allSongs, entry.value as List),
+      },
     );
   }
 
-  /// Splits a multi-artist string into individual artist names.
-  /// Handles formats like:
-  /// - "Artist 1 & Artist 2"
-  /// - "Artist 1 ft. Artist 2"
-  /// - "Artist 1 feat. Artist 2"
-  /// - "Artist 1, Artist 2 and Artist 3"
-  /// - "Artist 1 / Artist 2"
-  /// - "Artist 1 x Artist 2"
-  static final RegExp _splitRegex = RegExp(
-    r'\s*(?:,|&|/|;|\b(?:and|featuring|x)\b|\b(?:ft|feat|vs)\b\.?)\s*',
-    caseSensitive: false,
-  );
+  /// Splits a multi-artist string into individual artist names, handling
+  /// `&`, `/`, `;`, commas, `and`, `x`, `ft.`, `feat.` and `vs.`.
+  static List<String> splitArtistNames(String artistField) => [
+        for (final name
+            in _view({'op': 'splitArtists', 'artist': artistField})['artists']
+                as List)
+          name as String,
+      ];
 
-  /// Splits a multi-artist string into individual artist names.
-  /// Handles formats like:
-  /// - "Artist 1 & Artist 2"
-  /// - "Artist 1 ft. Artist 2"
-  /// - "Artist 1 feat. Artist 2"
-  /// - "Artist 1, Artist 2 and Artist 3"
-  /// - "Artist 1 / Artist 2"
-  /// - "Artist 1 x Artist 2"
-  static List<String> splitArtistNames(String artistField) {
-    final trimmed = artistField.trim();
-    if (trimmed.isEmpty) return [];
+  static bool looksLikeArtist(List<Song> songs, String title) => _view({
+        'op': 'looksLikeArtist',
+        'songs': _rowsOf(songs, const ['artist']),
+        'title': title,
+      })['value'] as bool;
 
-    final parts = trimmed
-        .split(_splitRegex)
-        .map((part) => part.trim())
-        .where((part) => part.isNotEmpty)
-        .toList();
+  static Map<String, List<Song>> groupByArtist(List<Song> songs) => _groups(
+        _view({
+          'op': 'groupArtist',
+          'songs': _rowsOf(songs, const ['artist', 'title', 'album']),
+        }),
+        songs,
+      );
 
-    if (parts.isEmpty && trimmed.isNotEmpty) {
-      return [trimmed];
-    }
-
-    return parts;
-  }
-
-  static bool looksLikeArtist(List<Song> songs, String title) {
-    if (songs.isEmpty) return false;
-    final lowerTitle = title.toLowerCase();
-    return songs.any((song) {
-      final lowerArtist = song.artist.toLowerCase();
-      return lowerArtist.contains(lowerTitle) ||
-          lowerTitle.contains(lowerArtist);
-    });
-  }
-
-  static Map<String, List<Song>> groupByArtist(List<Song> songs) {
-    final Map<String, List<Song>> artistMap = {};
-    final Map<String, String> canonicalNames = {};
-    final Map<String, Set<Song>> songsByArtist = {};
-
-    for (final song in songs) {
-      final rawArtist = song.artist.trim();
-      final parsedArtists = splitArtistNames(rawArtist);
-      final artists =
-          parsedArtists.isEmpty ? ['Unknown Artist'] : parsedArtists;
-
-      for (final artist in artists) {
-        final cleanArtist = artist.trim();
-        final lowerKey = cleanArtist.toLowerCase();
-        final canonicalName =
-            canonicalNames.putIfAbsent(lowerKey, () => cleanArtist);
-
-        final list = artistMap.putIfAbsent(canonicalName, () => []);
-        final seen = songsByArtist.putIfAbsent(canonicalName, () => <Song>{});
-        if (seen.add(song)) {
-          list.add(song);
-        }
-      }
-    }
-
-    for (final artist in artistMap.keys) {
-      final songsList = artistMap[artist]!;
-      final lowerAlbum = <String, String>{};
-      final lowerTitle = <String, String>{};
-      for (final s in songsList) {
-        lowerAlbum[s.filename] = s.album.toLowerCase();
-        lowerTitle[s.filename] = s.title.toLowerCase();
-      }
-      songsList.sort((a, b) {
-        int albumCompare =
-            lowerAlbum[a.filename]!.compareTo(lowerAlbum[b.filename]!);
-        if (albumCompare != 0) return albumCompare;
-        return lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!);
-      });
-    }
-
-    return artistMap;
-  }
-
-  static Map<String, List<Song>> groupByAlbum(List<Song> songs) {
-    final Map<String, List<Song>> albumMap = {};
-    for (var song in songs) {
-      final album = song.album.isEmpty ? 'Unknown Album' : song.album;
-      albumMap.putIfAbsent(album, () => []).add(song);
-    }
-    for (var album in albumMap.keys) {
-      final songs = albumMap[album]!;
-      final lowerTitle = <String, String>{};
-      for (final s in songs) {
-        lowerTitle[s.filename] = s.title.toLowerCase();
-      }
-      songs.sort(
-          (a, b) => lowerTitle[a.filename]!.compareTo(lowerTitle[b.filename]!));
-    }
-    return albumMap;
-  }
+  static Map<String, List<Song>> groupByAlbum(List<Song> songs) => _groups(
+        _view({
+          'op': 'groupAlbum',
+          'songs': _rowsOf(songs, const ['album', 'title']),
+        }),
+        songs,
+      );
 
   /// Returns sorted album names from [albumMap] with most tracks first.
-  static List<String> sortAlbumsByTrackCount(Map<String, List<Song>> albumMap) {
-    final keys = albumMap.keys.toList();
-    keys.sort((a, b) {
-      final countCompare =
-          (albumMap[b]?.length ?? 0).compareTo(albumMap[a]?.length ?? 0);
-      if (countCompare != 0) return countCompare;
-      return a.toLowerCase().compareTo(b.toLowerCase());
-    });
-    return keys;
-  }
+  static List<String> sortAlbumsByTrackCount(
+          Map<String, List<Song>> albumMap) =>
+      _namesByCount(albumMap, 'namesByTracks');
 
   /// Returns sorted artist names from [artistMap] with most tracks first.
   static List<String> sortArtistsByTrackCount(
-      Map<String, List<Song>> artistMap) {
-    final keys = artistMap.keys.toList();
-    keys.sort((a, b) {
-      final countCompare =
-          (artistMap[b]?.length ?? 0).compareTo(artistMap[a]?.length ?? 0);
-      if (countCompare != 0) return countCompare;
-      return a.toLowerCase().compareTo(b.toLowerCase());
-    });
-    return keys;
-  }
+          Map<String, List<Song>> artistMap) =>
+      _namesByCount(artistMap, 'namesByTracks');
 
   /// Display name for a song's album, collapsing blank tags so every song
   /// lands in exactly one group.
-  static String albumDisplayName(Song song) {
-    final trimmed = song.album.trim();
-    return trimmed.isEmpty ? 'Unknown Album' : trimmed;
-  }
+  static String albumDisplayName(Song song) =>
+      _view({'op': 'albumName', 'album': song.album})['name'] as String;
 
   /// Groups [songs] by album, case-insensitively, preserving the first-seen
   /// casing as the display name.
-  static Map<String, List<Song>> groupSongsByAlbum(List<Song> songs) {
-    final groups = <String, List<Song>>{};
-    final canonical = <String, String>{};
-    for (final song in songs) {
-      final display = albumDisplayName(song);
-      final name = canonical.putIfAbsent(display.toLowerCase(), () => display);
-      groups.putIfAbsent(name, () => []).add(song);
-    }
-    return groups;
-  }
+  static Map<String, List<Song>> groupSongsByAlbum(List<Song> songs) => _groups(
+        _view({
+          'op': 'groupSongsByAlbum',
+          'songs': _rowsOf(songs, const ['album']),
+        }),
+        songs,
+      );
 
-  /// Whether [songs] span more than one album. Drives the artist detail view:
-  /// multi-album artists get the All-songs-plus-albums layout, everyone else
-  /// keeps the flat list.
-  static bool hasMultipleAlbums(List<Song> songs) {
-    String? first;
-    for (final song in songs) {
-      final key = albumDisplayName(song).toLowerCase();
-      if (first == null) {
-        first = key;
-      } else if (key != first) {
-        return true;
-      }
-    }
-    return false;
-  }
+  /// Whether [songs] span more than one album.
+  static bool hasMultipleAlbums(List<Song> songs) => _view({
+        'op': 'multipleAlbums',
+        'songs': _rowsOf(songs, const ['album']),
+      })['value'] as bool;
 
   /// Total plays across [songs], preferring live [playCounts] over the
   /// snapshot on each song.
   static int totalPlaysForSongs(
-      List<Song> songs, Map<String, int>? playCounts) {
-    var total = 0;
-    for (final song in songs) {
-      total += playCounts?[song.filename] ?? song.playCount;
-    }
-    return total;
-  }
+    List<Song> songs, [
+    Map<String, int>? playCounts,
+  ]) =>
+      (_view({
+        'op': 'totalPlays',
+        'songs': _rowsOf(songs, const ['play_count']),
+        if (playCounts != null) 'playCounts': playCounts,
+      })['value'] as num)
+          .toInt();
 
   /// Returns album names ordered by total plays (descending), then track
   /// count, then name — so an artist's biggest albums lead the chip row.
@@ -569,19 +203,9 @@ class LibraryLogic {
     Map<String, List<Song>> albumGroups, {
     Map<String, int>? playCounts,
   }) {
-    final keys = albumGroups.keys.toList();
-    keys.sort((a, b) {
-      final playsCompare = totalPlaysForSongs(
-        albumGroups[b]!,
-        playCounts,
-      ).compareTo(totalPlaysForSongs(albumGroups[a]!, playCounts));
-      if (playsCompare != 0) return playsCompare;
-      final countCompare =
-          albumGroups[b]!.length.compareTo(albumGroups[a]!.length);
-      if (countCompare != 0) return countCompare;
-      return a.toLowerCase().compareTo(b.toLowerCase());
-    });
-    return keys;
+    final request = _groupsRequest(albumGroups, 'namesByPlays');
+    if (playCounts != null) request['playCounts'] = playCounts;
+    return [for (final name in _view(request)['names'] as List) name as String];
   }
 
   /// Most-listened ordering with a title tiebreak, so unplayed songs still
@@ -589,64 +213,185 @@ class LibraryLogic {
   static List<Song> sortSongsByPlayCount(
     List<Song> songs, {
     Map<String, int>? playCounts,
-  }) {
-    final sorted = List<Song>.from(songs);
-    sorted.sort((a, b) {
-      final countA = playCounts?[a.filename] ?? a.playCount;
-      final countB = playCounts?[b.filename] ?? b.playCount;
-      final playsCompare = countB.compareTo(countA);
-      if (playsCompare != 0) return playsCompare;
-      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-    });
-    return sorted;
-  }
+  }) =>
+      _applyOrder(
+        songs,
+        _view({
+          'op': 'byPlayCount',
+          'songs': _rowsOf(songs, const ['title', 'play_count']),
+          if (playCounts != null) 'playCounts': playCounts,
+        })['order'] as List,
+      );
 
   /// The song whose cover represents a whole collection — an album, an artist,
-  /// a playlist or a folder. Picks the most-listened track, falling back to the
-  /// title tiebreak in [sortSongsByPlayCount] when nothing has been played.
-  ///
-  /// Songs without a readable cover are skipped rather than winning and then
-  /// rendering blank, so an album still shows art when only its top track is
-  /// missing one. Returns null when no song has a cover at all.
+  /// a playlist or a folder. Picks the most-listened track with a cover,
+  /// preferring file-backed art over streamed URLs.
   static Song? pickCoverSong(
     List<Song> songs, {
     Map<String, int>? playCounts,
   }) {
-    Song? bestLocal;
-    Song? bestAny;
-    var bestLocalPlays = -1;
-    var bestAnyPlays = -1;
-    var bestLocalTitle = '';
-    var bestAnyTitle = '';
+    final index = _view({
+      'op': 'coverSong',
+      'songs': _rowsOf(songs, const ['title', 'play_count', 'cover_url']),
+      if (playCounts != null) 'playCounts': playCounts,
+    })['index'] as int?;
+    return index == null ? null : songs[index];
+  }
 
-    bool comesBefore(
-            int plays, String title, int currentPlays, String currentTitle) =>
-        plays > currentPlays ||
-        (plays == currentPlays && title.compareTo(currentTitle) < 0);
-
-    for (final song in songs) {
-      final cover = song.coverUrl;
-      final isLocal = CoverPath.isLocal(cover);
-      if (!isLocal && (cover == null || cover.isEmpty)) continue;
-
-      final plays = playCounts?[song.filename] ?? song.playCount;
-      final title = song.title.toLowerCase();
-      if (bestAny == null ||
-          comesBefore(plays, title, bestAnyPlays, bestAnyTitle)) {
-        bestAny = song;
-        bestAnyPlays = plays;
-        bestAnyTitle = title;
-      }
-      if (isLocal &&
-          (bestLocal == null ||
-              comesBefore(plays, title, bestLocalPlays, bestLocalTitle))) {
-        bestLocal = song;
-        bestLocalPlays = plays;
-        bestLocalTitle = title;
-      }
+  static Map<String, Object?> _sortRequest(
+    List<Song> songs,
+    SongSortOrder sortOrder, {
+    UserDataState? userData,
+    ShuffleConfig? shuffleConfig,
+    Map<String, int>? playCounts,
+    Map<String, double>? lastPlayedTimestamps,
+    Map<String, SongAffinity>? affinities,
+    TasteSnapshot? tasteSnapshot,
+  }) {
+    final request = <String, Object?>{
+      'songs': _rowsOf(songs, _sortFields(sortOrder)),
+      'order': sortOrder.name,
+    };
+    if (playCounts != null) request['playCounts'] = playCounts;
+    if (lastPlayedTimestamps != null) {
+      request['lastPlayed'] = lastPlayedTimestamps;
+    }
+    if (affinities != null) {
+      request['affinities'] = {
+        for (final entry in affinities.entries)
+          entry.key: {
+            'affinity': entry.value.affinity,
+            'playCount': entry.value.playCount,
+            'skipRate': entry.value.skipRate,
+            'recentSaturation': entry.value.recentSaturation,
+          },
+      };
+    }
+    if (sortOrder != SongSortOrder.recommended ||
+        userData == null ||
+        shuffleConfig == null) {
+      return request;
     }
 
-    // Streamed tracks have no file: their art URL is the fallback.
-    return bestLocal ?? bestAny;
+    request['weights'] = ShuffleWeights.fallback(shuffleConfig).toNative();
+    if (tasteSnapshot == null) return request;
+
+    request['taste'] = nativeTasteSnapshot(tasteSnapshot);
+    request['familiarity'] = 1 - shuffleConfig.discoveryLevel;
+    request['favoriteMultiplier'] = shuffleConfig.favoriteMultiplier;
+    request['suggestLessMultiplier'] = shuffleConfig.suggestLessMultiplier;
+    request['artistKeys'] = {
+      for (final song in songs)
+        song.filename: tasteArtistKey(song.artist, song.filename),
+    };
+    final playlists = _userPlaylistFilenames(userData);
+    request['favorites'] = [
+      for (final song in songs)
+        if (userData.isFavorite(song.filename)) song.filename
+    ];
+    request['suggestLess'] = [
+      for (final song in songs)
+        if (userData.isSuggestLess(song.filename)) song.filename
+    ];
+    request['playlist'] = playlists.toList();
+    return request;
+  }
+
+  static Set<String> _userPlaylistFilenames(UserDataState userData) => {
+        for (final playlist in userData.playlists)
+          if (!playlist.isRecommendation)
+            for (final song in playlist.songs) song.songFilename,
+      };
+
+  static Map<String, dynamic> _view(Map<String, Object?> request) =>
+      NativeAccel.libraryView(request);
+
+  static List<Map<String, Object?>> _rows(List<Song> songs) =>
+      [for (final song in songs) song.toJson()];
+
+  /// Only the fields the requested rule reads: a sort of a large library
+  /// should not pay to encode artwork URLs and durations it never looks at.
+  static List<Map<String, Object?>> _rowsOf(
+    List<Song> songs,
+    List<String> fields,
+  ) =>
+      [
+        for (final song in songs)
+          {
+            'filename': song.filename,
+            for (final field in fields) field: _field(song, field),
+          }
+      ];
+
+  static Object? _field(Song song, String field) => switch (field) {
+        'title' => song.title,
+        'artist' => song.artist,
+        'album' => song.album,
+        'url' => song.url,
+        'play_count' => song.playCount,
+        'mtime' => song.mtime,
+        'created_epoch_sec' => song.createdEpochSec,
+        'song_date_epoch_sec' => song.songDateEpochSec,
+        'cover_url' => song.coverUrl,
+        _ => throw ArgumentError('unknown row field: $field'),
+      };
+
+  static List<String> _sortFields(SongSortOrder order) => switch (order) {
+        SongSortOrder.title => const ['title'],
+        SongSortOrder.artist => const ['title', 'artist'],
+        SongSortOrder.album => const ['title', 'album', 'song_date_epoch_sec'],
+        SongSortOrder.dateAdded => const ['created_epoch_sec', 'mtime'],
+        SongSortOrder.playCount => const ['play_count'],
+        SongSortOrder.recommended => const ['title', 'album', 'play_count'],
+        SongSortOrder.songDateNewOld || SongSortOrder.songDateOldNew => const [
+            'title',
+            'song_date_epoch_sec'
+          ],
+        SongSortOrder.recentlyPlayed => const ['title'],
+      };
+
+  static List<Song> _applyOrder(List<Song> songs, List<dynamic> order) => [
+        for (final index in order) songs[(index as num).toInt()],
+      ];
+
+  static Map<String, List<Song>> _groups(
+    Map<String, dynamic> reply,
+    List<Song> songs,
+  ) =>
+      {
+        for (final group in reply['groups'] as List)
+          (group as Map<String, dynamic>)['name'] as String: _applyOrder(
+            songs,
+            group['indices'] as List,
+          ),
+      };
+
+  static Map<String, Object?> _groupsRequest(
+    Map<String, List<Song>> groups,
+    String op,
+  ) {
+    final songs = <Song>[];
+    final definitions = <Map<String, Object?>>[];
+    for (final entry in groups.entries) {
+      final indices = <int>[];
+      for (final song in entry.value) {
+        indices.add(songs.length);
+        songs.add(song);
+      }
+      definitions.add({'name': entry.key, 'indices': indices});
+    }
+    return {
+      'op': op,
+      'songs': _rowsOf(songs, const ['play_count']),
+      'groups': definitions,
+    };
+  }
+
+  static List<String> _namesByCount(
+    Map<String, List<Song>> groups,
+    String op,
+  ) {
+    final request = _groupsRequest(groups, op);
+    return [for (final name in _view(request)['names'] as List) name as String];
   }
 }
