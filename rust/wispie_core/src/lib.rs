@@ -28,6 +28,7 @@ mod media;
 mod merge_finder;
 mod meta;
 mod model;
+mod music_feed;
 mod palette;
 mod palette_jpeg;
 mod prosody;
@@ -237,6 +238,7 @@ fn dispatch(
         "media_decode" => media::run(&payload, emitter),
         "db" => db::run(&payload, emitter),
         "youtube" => youtube::run(&payload, emitter),
+        "music_feed" => music_feed::run(&payload, emitter),
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

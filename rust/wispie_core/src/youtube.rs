@@ -35,18 +35,18 @@ const LIKED_BROWSE_PLAYLIST_ID: &str = "LL";
 /// A playable row. Durations cross the wire as milliseconds because that is
 /// what `Duration` holds on the Dart side.
 #[derive(Serialize, Clone)]
-struct Item {
-    video_id: String,
-    title: String,
-    artist: String,
-    duration_ms: Option<i64>,
-    thumbnail_url: Option<String>,
-    position: usize,
-    view_count_text: Option<String>,
+pub(crate) struct Item {
+    pub(crate) video_id: String,
+    pub(crate) title: String,
+    pub(crate) artist: String,
+    pub(crate) duration_ms: Option<i64>,
+    pub(crate) thumbnail_url: Option<String>,
+    pub(crate) position: usize,
+    pub(crate) view_count_text: Option<String>,
 }
 
 impl Item {
-    fn new(video_id: String, title: String, artist: String) -> Self {
+    pub(crate) fn new(video_id: String, title: String, artist: String) -> Self {
         Self {
             video_id,
             title,
@@ -293,7 +293,7 @@ fn strip_vl(raw: &str) -> String {
 }
 
 /// `Artist - Topic` is YouTube's auto-generated artist channel.
-fn strip_topic_suffix(raw: &str) -> String {
+pub(crate) fn strip_topic_suffix(raw: &str) -> String {
     const SUFFIX: &str = " - topic";
     let value = raw.trim();
     if value.to_lowercase().ends_with(SUFFIX) {
@@ -1487,7 +1487,7 @@ fn next_continuation(json: Option<&Value>) -> Option<String> {
 // Import planning
 // ---------------------------------------------------------------------------
 
-fn item_from_wire(value: &Value) -> Option<Item> {
+pub(crate) fn item_from_wire(value: &Value) -> Option<Item> {
     let map = map_of(Some(value))?;
     let video_id = map.get("video_id").map(stringify)?;
     let mut item = Item::new(

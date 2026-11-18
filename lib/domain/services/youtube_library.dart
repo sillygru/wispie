@@ -3,7 +3,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../../data/rust/wispie_core.dart';
+import '../../data/rust/native_command.dart';
+import 'youtube_item_wire.dart';
 import 'youtube_session.dart';
 
 /// Read-only InnerTube client for the signed-in account, authenticated with the
@@ -1065,49 +1066,8 @@ class _JsonResponse {
 /// One parsing request to the core, which owns every catalogue rule: the
 /// containers move around often, and one walker that ignores unfamiliar shapes
 /// is easier to keep alive in one place than in two languages.
-Map<String, dynamic> _parse(String action, Map<String, Object?> request) {
-  Map<String, dynamic>? reply;
-  String? error;
-  final code = WispieCore.run(
-    {'command': 'youtube', 'action': action, ...request},
-    onEvent: (kind, payload) {
-      if (kind == WispieCore.eventItems) {
-        final decoded = jsonDecode(payload);
-        if (decoded is Map<String, dynamic>) reply = decoded;
-      } else if (kind == WispieCore.eventError) {
-        error =
-            (jsonDecode(payload) as Map<String, dynamic>)['message'] as String?;
-      }
-    },
-  );
-  if (code != 0 || reply == null) {
-    throw StateError('youtube $action failed: ${error ?? 'code $code'}');
-  }
-  return reply!;
-}
-
-YouTubePlaylistItem _itemFromCore(Map<String, dynamic> row) {
-  final millis = (row['duration_ms'] as num?)?.toInt();
-  return YouTubePlaylistItem(
-    videoId: row['video_id'] as String? ?? '',
-    title: row['title'] as String? ?? '',
-    artist: row['artist'] as String? ?? '',
-    duration: millis == null ? null : Duration(milliseconds: millis),
-    thumbnailUrl: row['thumbnail_url'] as String?,
-    position: (row['position'] as num?)?.toInt() ?? 0,
-    viewCountText: row['view_count_text'] as String?,
-  );
-}
-
-Map<String, Object?> _itemToCore(YouTubePlaylistItem item) => {
-      'video_id': item.videoId,
-      'title': item.title,
-      'artist': item.artist,
-      'duration_ms': item.duration?.inMilliseconds,
-      'thumbnail_url': item.thumbnailUrl,
-      'position': item.position,
-      'view_count_text': item.viewCountText,
-    };
+Map<String, dynamic> _parse(String action, Map<String, Object?> request) =>
+    runCoreCommand('youtube', {'action': action, ...request});
 
 YouTubeContainerKind _containerKindFromCore(Object? raw) => switch (raw) {
       'album' => YouTubeContainerKind.album,
@@ -1127,7 +1087,7 @@ YouTubeContainer _containerFromCore(Map<String, dynamic> row) =>
 
 List<YouTubePlaylistItem> _itemsFromCore(Object? rows) => [
       for (final row in rows as List? ?? const [])
-        _itemFromCore(row as Map<String, dynamic>),
+        youtubeItemFromWire(row as Map<String, dynamic>),
     ];
 
 List<YouTubeContainer> _containersFromCore(Object? rows) => [
@@ -1285,7 +1245,7 @@ YouTubePlaylistImportPlan planPlaylistImport({
   int maxNewItems = 600,
 }) {
   final reply = _parse('import_plan', {
-    'items': [for (final item in remoteItems) _itemToCore(item)],
+    'items': [for (final item in remoteItems) youtubeItemToWire(item)],
     'local_ids': localVideoIds.toList(),
     'max_new_items': maxNewItems,
   });
