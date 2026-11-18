@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart';
+import '../rust/native_database.dart';
 
 import '../../domain/services/song_identity.dart';
 

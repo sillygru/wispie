@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import '../data/migrations.dart';
+import '../data/rust/native_database.dart';
 import '../data/repositories/song_identity_repository.dart';
 import '../data/repositories/song_library_repository.dart';
 import '../domain/models/listening_insights.dart';
@@ -59,35 +58,13 @@ class DatabaseService {
   Future<void> _initAsync() async {
     try {
       await Hlc.instance.load();
-      _statsDatabase = await _openDatabaseWithMigrations(
+      _statsDatabase = await _openDatabase(
         'wispie_stats.db',
-        version: kStatsDbVersion,
-        onCreate: (db, v) async => createStatsSchema(db),
-        onUpgrade: (db, oldV, newV) async {
-          if (oldV < 2) await upgradeStatsFrom1To2(db);
-          if (oldV < 3) await upgradeStatsFrom2To3(db);
-          if (oldV < 4) await upgradeStatsFrom3To4(db);
-          if (oldV < 5) await upgradeStatsFrom4To5(db);
-          if (oldV < 6) await upgradeStatsFrom5To6(db);
-        },
+        schema: DatabaseSchema.stats,
       );
-      _userDataDatabase = await _openDatabaseWithMigrations(
+      _userDataDatabase = await _openDatabase(
         'wispie_data.db',
-        version: kUserDataDbVersion,
-        onCreate: (db, v) async => createUserDataSchema(db),
-        onUpgrade: (db, oldV, newV) async {
-          if (oldV < 2) await upgradeUserDataFrom1To2(db);
-          if (oldV < 3) await upgradeUserDataFrom2To3(db);
-          if (oldV < 4) await upgradeUserDataFrom3To4(db);
-          if (oldV < 5) await upgradeUserDataFrom4To5(db);
-          if (oldV < 6) await upgradeUserDataFrom5To6(db);
-          if (oldV < 7) await upgradeUserDataFrom6To7(db);
-          if (oldV < 8) await upgradeUserDataFrom7To8(db);
-          if (oldV < 9) await upgradeUserDataFrom8To9(db);
-          if (oldV < 10) await upgradeUserDataFrom9To10(db);
-          if (oldV < 11) await upgradeUserDataFrom10To11(db);
-          if (oldV < 12) await upgradeUserDataFrom11To12(db);
-        },
+        schema: DatabaseSchema.userData,
       );
     } catch (e) {
       debugPrint('Database initialization failed: $e');
@@ -95,8 +72,8 @@ class DatabaseService {
     }
   }
 
-  // Schema is canonical in lib/data/migrations.dart; legacy imperative
-  // ensure helpers removed.
+  // Schema is canonical in rust/wispie_core/src/db.rs; the core runs the
+  // create path and the upgrade ladder when a file is opened.
 
   // ==========================================================================
   // SYNC CHANGE TRACKING HELPERS
@@ -205,35 +182,26 @@ class DatabaseService {
     return _userDataDatabase;
   }
 
-  Future<Database> _openDatabaseWithMigrations(
+  Future<Database> _openDatabase(
     String name, {
-    required int version,
-    required Future<void> Function(Database, int) onCreate,
-    required Future<void> Function(Database, int, int) onUpgrade,
+    required DatabaseSchema schema,
   }) async {
     final wispieDir = await getWispieDirectory();
     final path = join(wispieDir.path, name);
-    return openDatabase(
-      path,
-      version: version,
-      onCreate: onCreate,
-      onUpgrade: onUpgrade,
-    );
+    // Creation and the version ladder run in the core; the clock is passed in
+    // because only the app knows its hybrid-logical-clock position.
+    return openDatabase(path, schema: schema, hlc: Hlc.instance.now());
   }
 
   // Kept for tests that open temp DBs directly
   @visibleForTesting
   Future<Database> openTestDatabase(String path, String schema) async {
-    return openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, v) async {
-        for (final s in schema.split(';')) {
-          final t = s.trim();
-          if (t.isNotEmpty) await db.execute(t);
-        }
-      },
-    );
+    final db = await openDatabase(path);
+    for (final statement in schema.split(';')) {
+      final trimmed = statement.trim();
+      if (trimmed.isNotEmpty) await db.execute(trimmed);
+    }
+    return db;
   }
 
   // ==========================================================================
@@ -1010,7 +978,7 @@ class DatabaseService {
     if (_userDataDatabase == null) return 0;
     final result =
         await _userDataDatabase!.rawQuery('SELECT COUNT(*) as count FROM song');
-    return Sqflite.firstIntValue(result) ?? 0;
+    return (result.first['count'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> clearSongs() async {
@@ -2916,7 +2884,7 @@ class DatabaseService {
             await txn.insert('playevent', eventMap);
           }
         }
-        await backfillPlayEventUids(txn);
+        await txn.backfillPlayEventUids();
         await _markRestoredDirty(txn, 'playsession');
         await _markRestoredDirty(txn, 'playevent');
       });
@@ -3172,7 +3140,7 @@ class DatabaseService {
           await txn.insert('playevent', eventMap);
         }
       }
-      await backfillPlayEventUids(txn);
+      await txn.backfillPlayEventUids();
       await _markRestoredDirty(txn, 'playsession');
       await _markRestoredDirty(txn, 'playevent');
     });

@@ -24,7 +24,6 @@ dependencies:
   file_picker: ^12.3.0
   crypto: ^3.0.7
   path: ^1.9.1
-  sqflite: ^2.3.0
   audio_metadata_reader: ^1.4.2
   permission_handler: ^13.0.2
   archive: ^4.2.0
@@ -40,8 +39,6 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_windows_audio: ^1.0.9
-  sqflite_common_ffi: ^2.3.0
-  sqlite3: ^3.5.2
   window_manager: ^0.5.2
   cryptography: ^2.9.0
   flutter_secure_storage: ^11.2.0

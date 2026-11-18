@@ -9,9 +9,6 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:sqflite/sqflite.dart' show databaseFactory;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart'
-    show createDatabaseFactoryFfi, sqfliteFfiInit;
 import 'dart:async';
 import 'dart:io';
 import 'presentation/components/popup_scroll_dismiss.dart';
@@ -49,14 +46,11 @@ Future<void> main() async {
   await DebugSandbox.init();
 
   // Linux and Windows have no platform implementations for audio_session or
-  // audio_service; playback goes through just_audio_media_kit instead, and
-  // sqlite goes through sqflite_common_ffi.
+  // audio_service; playback goes through just_audio_media_kit instead. SQLite
+  // needs no per-platform setup: the core bundles it.
   final isMediaKitDesktop = Platform.isLinux || Platform.isWindows;
 
   if (isMediaKitDesktop) {
-    sqfliteFfiInit();
-    // In-process ffi factory (no separate sqlite worker isolate).
-    databaseFactory = createDatabaseFactoryFfi(noIsolate: true);
     JustAudioMediaKit.ensureInitialized();
   }
 

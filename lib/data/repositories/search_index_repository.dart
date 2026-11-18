@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import '../rust/native_database.dart';
 import 'package:path/path.dart';
 import '../../models/song.dart';
 import '../../domain/services/native_accel.dart';
@@ -48,13 +48,10 @@ class SearchIndexRepository {
 
     final dbPath = await _getDbPath();
 
-    _database = await openDatabase(
-      dbPath,
-      version: 1,
-      onCreate: (db, version) async {
-        await _createTables(db);
-      },
-    );
+    // This file has its own schema, created with IF NOT EXISTS, so opening it
+    // needs no version ladder of its own.
+    _database = await openDatabase(dbPath);
+    await _createTables(_database!);
   }
 
   /// Creates the necessary tables for the search index
@@ -464,11 +461,11 @@ class SearchIndexRepository {
 
     final countResult =
         await _database!.rawQuery('SELECT COUNT(*) as count FROM $_tableName');
-    final totalEntries = Sqflite.firstIntValue(countResult) ?? 0;
+    final totalEntries = firstIntValue(countResult) ?? 0;
 
     final lyricsCountResult = await _database!.rawQuery(
         'SELECT COUNT(*) as count FROM $_tableName WHERE lyrics_content IS NOT NULL');
-    final entriesWithLyrics = Sqflite.firstIntValue(lyricsCountResult) ?? 0;
+    final entriesWithLyrics = firstIntValue(lyricsCountResult) ?? 0;
 
     final lyricsLengthResult = await _database!
         .rawQuery('SELECT SUM(lyrics_length) as total FROM $_tableName');

@@ -572,9 +572,8 @@ class ScannerService {
 
   /// Enriches minimal song records and fills in their missing cover art.
   ///
-  /// Both come from one open of each file on the native core's workers; only
-  /// the DB write and the progress callback stay on this isolate, since sqflite
-  /// is not usable from a spawned one.
+  /// Both come from one open of each file on the native core's workers; the DB
+  /// write and the progress callback stay on this isolate.
   static Future<List<Song>> enrichAllMetadata(
     List<Song> songs, {
     void Function(double progress)? onProgress,

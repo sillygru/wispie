@@ -1,4 +1,4 @@
-import 'package:sqflite/sqlite_api.dart';
+import '../rust/native_database.dart';
 
 import '../../models/song.dart';
 

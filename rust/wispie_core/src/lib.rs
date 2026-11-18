@@ -10,6 +10,7 @@ mod beat;
 mod bulk_rename;
 mod content_id;
 mod cover;
+mod db;
 mod emitter;
 mod formats;
 mod helpers;
@@ -233,6 +234,7 @@ fn dispatch(
             sync::Reply::Bytes(out) => emitter.emit(Emit::Bytes(out)),
         }),
         "media_decode" => media::run(&payload, emitter),
+        "db" => db::run(&payload, emitter),
         "content_ids" => content_id::emit_probe(&payload, emitter),
         "identity_prepare" => {
             emitter.emit(Emit::Json(identity::prepare_json(&payload)));

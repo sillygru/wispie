@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:sqflite/sqflite.dart';
+import '../data/rust/native_database.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/services/search_service.dart';

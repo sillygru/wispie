@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import '../data/rust/native_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'backup_manifest.dart';
@@ -1041,7 +1041,7 @@ class BackupService {
               if (tables.isNotEmpty) {
                 final result = await db
                     .rawQuery('SELECT COUNT(*) as count FROM playevent');
-                statsRows = Sqflite.firstIntValue(result) ?? 0;
+                statsRows = firstIntValue(result) ?? 0;
               }
             } finally {
               await db.close();

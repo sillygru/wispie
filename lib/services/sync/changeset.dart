@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
+import '../../data/rust/native_database.dart';
 
 import '../../data/repositories/song_identity_repository.dart';
 import '../../domain/services/song_identity.dart';

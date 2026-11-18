@@ -55,13 +55,13 @@ Every user-data table (`favorite`, `suggestless`, `hidden`, `playlist_song`, `me
 
 `DatabaseService` (`lib/services/database_service.dart`, `.instance`) owns `wispie_stats.db` (play sessions/events) and `wispie_data.db` (library, playlists, favorites, merged groups, queue snapshots).
 
-Schema is canonical in `lib/data/migrations.dart` only: `_userDataTableStmts` / `_createUserDataIndexes` for fresh creates, plus explicit `upgradeUserDataFromNToM` steps wired into `DatabaseService._initAsync`'s `onUpgrade`. Versions are `kStatsDbVersion` / `kUserDataDbVersion`. Adding a table or column means touching both the create path and the upgrade path.
+Schema and the upgrade ladder are canonical in `rust/wispie_core/src/db.rs`: `DATA_TABLES` / `DATA_INDEXES` (and the `STATS_` equivalents) for fresh creates, plus one `if from < N` block per historical version inside `upgrade()`. Versions are `STATS_VERSION` / `DATA_VERSION`, stamped as `PRAGMA user_version`. Adding a table or column means touching the create path and adding a ladder step; never rewrite an existing step, since a file on some device is sitting at that version. `lib/data/rust/native_database.dart` is the sqflite-shaped adapter every repository talks to.
 
 ### Playback
 
 `AudioPlayerManager` (~3900 lines) wraps `just_audio` + `just_audio_background`, owns queue/shuffle/crossfade/volume/stats. Hot-path state is exposed via `ValueNotifier`s rather than Riverpod, deliberately, to keep rebuilds narrow — don't convert those to providers. Queue mutations serialize through `_queueMutationChain`; keep new queue mutations on that chain.
 
-Linux/Windows swap in `just_audio_media_kit` + `sqflite_common_ffi` (see the `isMediaKitDesktop` branch in `main.dart`); they have no `audio_session`/`audio_service` implementation.
+Linux/Windows swap in `just_audio_media_kit` (see the `isMediaKitDesktop` branch in `main.dart`); they have no `audio_session`/`audio_service` implementation. SQLite needs no per-platform setup: the core links its own copy.
 
 ### Shuffle
 
@@ -115,7 +115,7 @@ Before returning UI code: no borders used for separation, no gradients outside t
 | Playback | `lib/services/audio_player_manager.dart` |
 | Library state | `lib/providers/providers.dart` -> `songsProvider` |
 | User data | `lib/providers/user_data_provider.dart` |
-| Schema + migrations | `lib/data/migrations.dart` |
+| Schema + migrations | `rust/wispie_core/src/db.rs` |
 | Database access | `lib/services/database_service.dart` |
 | Search | `lib/domain/services/search_service.dart` |
 | Library logic | `lib/services/library_logic.dart` |
