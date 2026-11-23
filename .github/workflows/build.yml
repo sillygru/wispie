@@ -85,6 +85,15 @@ jobs:
           done
           exit 1
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Flutter to use Java 17
+        # Flutter otherwise prefers Android Studio's bundled JDK over JAVA_HOME.
+        run: flutter config --jdk-dir="$JAVA_HOME"
+
       - name: Decode keystore and configure signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
