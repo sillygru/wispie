@@ -1701,6 +1701,48 @@ abstract class AppLocalizations {
   /// **'Now Playing'**
   String get appearanceGroupNowPlaying;
 
+  /// No description provided for @appearanceGroupNavigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Navigation'**
+  String get appearanceGroupNavigation;
+
+  /// No description provided for @appearanceBottomNavShapeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Bottom navigation shape'**
+  String get appearanceBottomNavShapeTitle;
+
+  /// No description provided for @appearanceBottomNavShapeDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get appearanceBottomNavShapeDefault;
+
+  /// No description provided for @appearanceBottomNavShapeScreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Match screen'**
+  String get appearanceBottomNavShapeScreen;
+
+  /// No description provided for @appearanceBottomNavShapeCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get appearanceBottomNavShapeCustom;
+
+  /// No description provided for @appearanceBottomNavRadiusTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Corner radius'**
+  String get appearanceBottomNavRadiusTitle;
+
+  /// No description provided for @appearanceBottomNavRadiusValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{radius} dp'**
+  String appearanceBottomNavRadiusValue(int radius);
+
   /// No description provided for @appearanceGroupScrolling.
   ///
   /// In en, this message translates to:

@@ -335,6 +335,14 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
 
     // ------------------------------------------------------------- appearance
     SettingsDestination(
+      anchorId: 'appearance.bottom_nav_shape',
+      icon: AppIcons.gridView,
+      title: l.appearanceBottomNavShapeTitle,
+      breadcrumb: l.settingsPageAppearanceTitle,
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.bottom_nav_shape'),
+    ),
+    SettingsDestination(
       anchorId: 'appearance.curved_scrollbar',
       icon: AppIcons.swapVert,
       title: l.appearanceCurvedScrollbarTitle,

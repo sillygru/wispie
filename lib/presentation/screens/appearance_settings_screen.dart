@@ -290,6 +290,55 @@ class _AppearanceSettingsScreenState
           ],
         ),
         AppSettingsGroup(
+          label: l10n.appearanceGroupNavigation,
+          icon: AppIcons.gridView,
+          children: [
+            AppSettingsAnchor(
+              id: 'appearance.bottom_nav_shape',
+              child: AppListRow(
+                dense: true,
+                title: l10n.appearanceBottomNavShapeTitle,
+                trailing: DropdownButton<BottomNavCornerStyle>(
+                  value: settings.bottomNavCornerStyle,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppTokens.brMd,
+                  onChanged: (style) {
+                    if (style != null) notifier.setBottomNavCornerStyle(style);
+                  },
+                  items: [
+                    for (final style in BottomNavCornerStyle.values)
+                      DropdownMenuItem(
+                        value: style,
+                        child: Text(switch (style) {
+                          BottomNavCornerStyle.standard =>
+                            l10n.appearanceBottomNavShapeDefault,
+                          BottomNavCornerStyle.screen =>
+                            l10n.appearanceBottomNavShapeScreen,
+                          BottomNavCornerStyle.custom =>
+                            l10n.appearanceBottomNavShapeCustom,
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            if (settings.bottomNavCornerStyle == BottomNavCornerStyle.custom)
+              AppSettingsSlider(
+                icon: AppIcons.gridView,
+                title: l10n.appearanceBottomNavRadiusTitle,
+                valueLabel: l10n.appearanceBottomNavRadiusValue(
+                  settings.bottomNavCornerRadius,
+                ),
+                value: settings.bottomNavCornerRadius.toDouble(),
+                min: 0,
+                max: SettingsState.maxBottomNavCornerRadius.toDouble(),
+                divisions: SettingsState.maxBottomNavCornerRadius,
+                onChanged: (value) =>
+                    notifier.setBottomNavCornerRadius(value.round()),
+              ),
+          ],
+        ),
+        AppSettingsGroup(
           label: l10n.appearanceGroupScrolling,
           icon: AppIcons.swapVert,
           children: [

@@ -1210,6 +1210,21 @@
   "@appearanceGroupNowPlaying": {
     "description": "Group header label for Now Playing appearance options"
   },
+  "appearanceGroupNavigation": "Navigation",
+  "appearanceBottomNavShapeTitle": "Bottom navigation shape",
+  "appearanceBottomNavShapeDefault": "Default",
+  "appearanceBottomNavShapeScreen": "Match screen",
+  "appearanceBottomNavShapeCustom": "Custom",
+  "appearanceBottomNavRadiusTitle": "Corner radius",
+  "appearanceBottomNavRadiusValue": "{radius} dp",
+  "@appearanceBottomNavRadiusValue": {
+    "placeholders": {
+      "radius": {
+        "type": "int",
+        "format": "decimalPattern"
+      }
+    }
+  },
   "appearanceGroupScrolling": "Scrolling",
   "appearanceCurvedScrollbarTitle": "Curved scrollbar",
   "appearanceCurvedScrollbarSubtitle": "Follow the display corners when a list reaches the screen edge",

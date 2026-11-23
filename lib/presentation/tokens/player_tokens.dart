@@ -167,10 +167,13 @@ class PlayerTokens {
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;
 
-  static const double scrollbarThicknessIdle = 3;
-  static const double scrollbarThickness = 4;
+  static const double scrollbarThicknessIdle = 5;
+  static const double scrollbarThickness = 7;
+  static const double scrollbarHeldThickness = 10;
+  static const double scrollbarHitRadius = 15;
+  static const double scrollbarHitVisibility = 0.2;
   static const double scrollbarInset = 4;
-  static const double scrollbarTrackInset = 6;
+  static const double scrollbarTrackInset = 8;
   static const double scrollbarMinLength = 40;
   static const double scrollbarMaxAlpha = 0.75;
   static const double scrollbarEdgeTolerance = 6;
@@ -179,7 +182,7 @@ class PlayerTokens {
   static const Duration dScrollbarRelease = MotionTokens.medium;
   static const Duration dScrollbarFadeIn = MotionTokens.fast;
   static const Duration dScrollbarFadeOut = MotionTokens.medium;
-  static const Duration dScrollbarIdle = Duration(milliseconds: 900);
+  static const Duration dScrollbarIdle = Duration(milliseconds: 1500);
 
   /// Song row height when the row carries title, artist and a meta line.
   static const double rowHeightTall = 80;

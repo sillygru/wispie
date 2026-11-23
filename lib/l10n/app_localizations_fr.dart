@@ -978,6 +978,33 @@ class AppLocalizationsFr extends AppLocalizations {
   String get appearanceGroupNowPlaying => 'Lecture en cours';
 
   @override
+  String get appearanceGroupNavigation => 'Navigation';
+
+  @override
+  String get appearanceBottomNavShapeTitle => 'Bottom navigation shape';
+
+  @override
+  String get appearanceBottomNavShapeDefault => 'Default';
+
+  @override
+  String get appearanceBottomNavShapeScreen => 'Match screen';
+
+  @override
+  String get appearanceBottomNavShapeCustom => 'Custom';
+
+  @override
+  String get appearanceBottomNavRadiusTitle => 'Corner radius';
+
+  @override
+  String appearanceBottomNavRadiusValue(int radius) {
+    final intl.NumberFormat radiusNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String radiusString = radiusNumberFormat.format(radius);
+
+    return '$radiusString dp';
+  }
+
+  @override
   String get appearanceGroupScrolling => 'Scrolling';
 
   @override

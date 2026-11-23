@@ -259,7 +259,7 @@ class _WispieAppState extends ConsumerState<WispieApp>
     with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _updateDialogShown = false;
-  BorderRadius _displayCorners = BorderRadius.zero;
+  BorderRadius? _displayCorners;
 
   @override
   void initState() {
@@ -491,7 +491,9 @@ class _WispieAppState extends ConsumerState<WispieApp>
       // One scroll feel for every scrollable in the app. Screens opt out only
       // when they need a different physical metaphor, not per platform.
       scrollBehavior: MotionScrollBehavior(
-        displayCorners: curvedScrollbar ? _displayCorners : BorderRadius.zero,
+        displayCorners: curvedScrollbar
+            ? _displayCorners ?? BorderRadius.zero
+            : BorderRadius.zero,
         cornerRadiusOverride:
             curvedScrollbar ? scrollbarRadius.logicalPixels?.toDouble() : null,
       ),
@@ -526,7 +528,7 @@ class _WispieAppState extends ConsumerState<WispieApp>
             isNeutral: themeState.isNeutralCover,
             child: (!isSetupComplete || !authState.isAuthenticated)
                 ? const SetupScreen()
-                : const MainScreen(),
+                : MainScreen(displayCorners: _displayCorners),
           ),
         ),
       ),

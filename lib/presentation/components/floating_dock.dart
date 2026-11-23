@@ -41,6 +41,7 @@ class FloatingDock extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final List<AppNavItem> items;
+  final BorderRadius? displayCorners;
 
   /// When false the dock stays expanded and ignores scrolling.
   final bool autoCollapse;
@@ -71,6 +72,7 @@ class FloatingDock extends StatefulWidget {
     required this.onSelected,
     required this.items,
     required this.autoCollapse,
+    this.displayCorners,
   });
 
   static final SpringDescription _spring =
@@ -166,6 +168,7 @@ class FloatingDockState extends State<FloatingDock>
           selectedIndex: widget.selectedIndex,
           onSelected: widget.onSelected,
           items: widget.items,
+          displayCorners: widget.displayCorners,
           collapse: _c.value,
         ),
       ),
@@ -178,13 +181,32 @@ class _DockBody extends ConsumerWidget {
   final ValueChanged<int> onSelected;
   final List<AppNavItem> items;
   final double collapse;
+  final BorderRadius? displayCorners;
 
   const _DockBody({
     required this.selectedIndex,
     required this.onSelected,
     required this.items,
     required this.collapse,
+    required this.displayCorners,
   });
+
+  BorderRadius _screenPillCorners(double gutter, double bottomInset) {
+    final corners = displayCorners;
+    if (corners == null) return AppTokens.brPill;
+
+    const maxRadius = FloatingDock.pillHeight / 2;
+    // Keep the arc centered on the display corner as the pill sits inside it.
+    Radius inset(Radius radius) => Radius.elliptical(
+          (radius.x - gutter).clamp(0.0, maxRadius),
+          (radius.y - bottomInset).clamp(0.0, maxRadius),
+        );
+
+    return BorderRadius.horizontal(
+      left: inset(corners.bottomLeft),
+      right: inset(corners.bottomRight),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -198,6 +220,25 @@ class _DockBody extends ConsumerWidget {
     final double gutter = AppTokens.s5;
     final double gap = AppTokens.s2;
     final double pillBottom = bottomInset > 0 ? bottomInset : AppTokens.s4;
+    final (cornerStyle, customRadius) = ref.watch(
+      settingsProvider.select(
+        (settings) =>
+            (settings.bottomNavCornerStyle, settings.bottomNavCornerRadius),
+      ),
+    );
+    final pillCorners = switch (cornerStyle) {
+      BottomNavCornerStyle.standard => AppTokens.brPill,
+      BottomNavCornerStyle.screen => _screenPillCorners(
+          gutter,
+          math.max(pillBottom, MediaQuery.viewPaddingOf(context).bottom),
+        ),
+      BottomNavCornerStyle.custom => BorderRadius.all(
+          Radius.elliptical(
+            customRadius.toDouble(),
+            math.min(customRadius.toDouble(), pillHeight / 2),
+          ),
+        ),
+    };
     final Color canvas = Theme.of(context).colorScheme.surface;
     final Color fill = Color.alphaBlend(
       accent.withValues(alpha: 0.10),
@@ -299,6 +340,7 @@ class _DockBody extends ConsumerWidget {
                       onSelected: onSelected,
                       accent: accent,
                       fill: fill,
+                      borderRadius: pillCorners,
                     ),
                   ),
                   if (hasSong)
@@ -358,6 +400,7 @@ class _NavPill extends StatefulWidget {
   final ValueChanged<int> onSelected;
   final Color accent;
   final Color fill;
+  final BorderRadius borderRadius;
 
   const _NavPill({
     required this.items,
@@ -365,6 +408,7 @@ class _NavPill extends StatefulWidget {
     required this.onSelected,
     required this.accent,
     required this.fill,
+    required this.borderRadius,
   });
 
   @override
@@ -404,7 +448,7 @@ class _NavPillState extends State<_NavPill>
     return DecoratedBox(
       decoration: BoxDecoration(
         color: widget.fill,
-        borderRadius: AppTokens.brPill,
+        borderRadius: widget.borderRadius,
         boxShadow: AppTokens.shadowFloating,
       ),
       child: LayoutBuilder(

@@ -34,6 +34,7 @@ class MotionScrollBehavior extends MaterialScrollBehavior {
       return child;
     }
     return AppScrollbar(
+      controller: details.controller,
       displayCorners: displayCorners,
       cornerRadiusOverride: cornerRadiusOverride,
       child: child,

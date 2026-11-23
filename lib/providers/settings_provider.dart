@@ -17,7 +17,12 @@ enum ScrollbarCornerRadius {
   final int? logicalPixels;
 }
 
+enum BottomNavCornerStyle { standard, screen, custom }
+
 class SettingsState {
+  static const int defaultBottomNavCornerRadius = 18;
+  static const int maxBottomNavCornerRadius = 64;
+
   final VisualizerMode visualizerMode;
   final bool autoHideBottomBarOnScroll;
   final bool autoPauseOnVolumeZero;
@@ -69,6 +74,8 @@ class SettingsState {
   final bool fullBleedDesignEnabled;
   final bool curvedScrollbarEnabled;
   final ScrollbarCornerRadius scrollbarCornerRadius;
+  final BottomNavCornerStyle bottomNavCornerStyle;
+  final int bottomNavCornerRadius;
   final bool playerSwipeChangesPane;
   final AppIconStyle appIconStyle;
   final bool spinArtworkWhilePlaying;
@@ -122,6 +129,8 @@ class SettingsState {
     this.fullBleedDesignEnabled = true,
     this.curvedScrollbarEnabled = true,
     this.scrollbarCornerRadius = ScrollbarCornerRadius.automatic,
+    this.bottomNavCornerStyle = BottomNavCornerStyle.standard,
+    this.bottomNavCornerRadius = defaultBottomNavCornerRadius,
     this.playerSwipeChangesPane = true,
     this.appIconStyle = AppIconStyle.newIcon,
     this.spinArtworkWhilePlaying = false,
@@ -182,6 +191,8 @@ class SettingsState {
     bool? fullBleedDesignEnabled,
     bool? curvedScrollbarEnabled,
     ScrollbarCornerRadius? scrollbarCornerRadius,
+    BottomNavCornerStyle? bottomNavCornerStyle,
+    int? bottomNavCornerRadius,
     bool? playerSwipeChangesPane,
     AppIconStyle? appIconStyle,
     bool? spinArtworkWhilePlaying,
@@ -265,6 +276,9 @@ class SettingsState {
           curvedScrollbarEnabled ?? this.curvedScrollbarEnabled,
       scrollbarCornerRadius:
           scrollbarCornerRadius ?? this.scrollbarCornerRadius,
+      bottomNavCornerStyle: bottomNavCornerStyle ?? this.bottomNavCornerStyle,
+      bottomNavCornerRadius:
+          bottomNavCornerRadius ?? this.bottomNavCornerRadius,
       appIconStyle: appIconStyle ?? this.appIconStyle,
       spinArtworkWhilePlaying:
           spinArtworkWhilePlaying ?? this.spinArtworkWhilePlaying,
@@ -326,6 +340,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const String _keyAppIconStyle = 'app_icon_style';
   static const String _keyCurvedScrollbarEnabled = 'curved_scrollbar_enabled';
   static const String _keyScrollbarCornerRadius = 'scrollbar_corner_radius';
+  static const String _keyBottomNavCornerStyle = 'bottom_nav_corner_style';
+  static const String _keyBottomNavCornerRadius = 'bottom_nav_corner_radius';
   static const String _keyFullBleedDesignEnabled = 'full_bleed_design_enabled';
   static const String _keySpinArtworkWhilePlaying =
       'spin_artwork_while_playing';
@@ -383,6 +399,7 @@ class SettingsNotifier extends Notifier<SettingsState> {
               .clamp(0.0, 1.0);
     }
 
+    final bottomNavCornerRadius = prefs.get(_keyBottomNavCornerRadius);
     state = SettingsState(
       visualizerMode: _readVisualizerMode(prefs),
       autoHideBottomBarOnScroll:
@@ -455,6 +472,14 @@ class SettingsNotifier extends Notifier<SettingsState> {
         (radius) => radius.name == prefs.get(_keyScrollbarCornerRadius),
         orElse: () => ScrollbarCornerRadius.automatic,
       ),
+      bottomNavCornerStyle: BottomNavCornerStyle.values.firstWhere(
+        (style) => style.name == prefs.get(_keyBottomNavCornerStyle),
+        orElse: () => BottomNavCornerStyle.standard,
+      ),
+      bottomNavCornerRadius: bottomNavCornerRadius is int
+          ? bottomNavCornerRadius.clamp(
+              0, SettingsState.maxBottomNavCornerRadius)
+          : SettingsState.defaultBottomNavCornerRadius,
       appIconStyle: AppIconStyle.fromId(prefs.getString(_keyAppIconStyle)),
       spinArtworkWhilePlaying:
           prefs.getBool(_keySpinArtworkWhilePlaying) ?? false,
@@ -815,6 +840,19 @@ class SettingsNotifier extends Notifier<SettingsState> {
     state = state.copyWith(scrollbarCornerRadius: radius);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyScrollbarCornerRadius, radius.name);
+  }
+
+  Future<void> setBottomNavCornerStyle(BottomNavCornerStyle style) async {
+    state = state.copyWith(bottomNavCornerStyle: style);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyBottomNavCornerStyle, style.name);
+  }
+
+  Future<void> setBottomNavCornerRadius(int radius) async {
+    final clamped = radius.clamp(0, SettingsState.maxBottomNavCornerRadius);
+    state = state.copyWith(bottomNavCornerRadius: clamped);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyBottomNavCornerRadius, clamped);
   }
 
   Future<void> setFullBleedDesignEnabled(bool enabled) async {

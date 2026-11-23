@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-Future<BorderRadius> readDisplayCorners() async {
-  if (!Platform.isAndroid && !Platform.isIOS) return BorderRadius.zero;
+Future<BorderRadius?> readDisplayCorners() async {
+  if (!Platform.isAndroid && !Platform.isIOS) return null;
   try {
     const channel = MethodChannel('wispie/display_corners');
     final corners = await channel.invokeListMethod<num>('getRoundedCorners');
-    if (corners == null || corners.length != 4) return BorderRadius.zero;
+    if (corners == null || corners.length != 4) return null;
     return BorderRadius.only(
       topLeft: Radius.circular(corners[0].toDouble()),
       topRight: Radius.circular(corners[1].toDouble()),
@@ -16,8 +16,8 @@ Future<BorderRadius> readDisplayCorners() async {
       bottomRight: Radius.circular(corners[3].toDouble()),
     );
   } on PlatformException {
-    return BorderRadius.zero;
+    return null;
   } on MissingPluginException {
-    return BorderRadius.zero;
+    return null;
   }
 }

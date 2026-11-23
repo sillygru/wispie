@@ -63,7 +63,9 @@ class _ShellTab {
 }
 
 class MainScreen extends ConsumerStatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, this.displayCorners});
+
+  final BorderRadius? displayCorners;
 
   @override
   ConsumerState<MainScreen> createState() => _MainScreenState();
@@ -410,6 +412,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           onSelected: _onTabSelected,
                           items: [for (final tab in tabs) tab.nav],
                           key: _dockKey,
+                          displayCorners: widget.displayCorners,
                           autoCollapse: settings.autoHideBottomBarOnScroll,
                         ),
             ),
