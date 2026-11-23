@@ -109,12 +109,7 @@ class MotionDragArea extends StatefulWidget {
   final bool axisLock;
 
   /// Width of the left-edge strip, in logical pixels, where a horizontal drag
-  /// is claimed a few pixels in instead of after full touch slop.
-  ///
-  /// A horizontal scroller in the content is deeper in the hit-test path, so it
-  /// sees the movement first and takes the gesture the moment it crosses its
-  /// own slop. Claiming early inside the edge strip is what makes an edge swipe
-  /// open the drawer over a carousel rather than scrolling the carousel.
+  /// can claim the gesture ahead of a horizontal scroller in the content.
   final double edgePriorityWidth;
 
   @override
@@ -123,6 +118,7 @@ class MotionDragArea extends StatefulWidget {
 
 class _MotionDragAreaState extends State<MotionDragArea> {
   final MotionDragTracker _tracker = MotionDragTracker();
+  _AxisLockedHorizontalDragGestureRecognizer? _horizontalRecognizer;
   bool _ignorePointer = false;
   bool _dragging = false;
 
@@ -140,6 +136,9 @@ class _MotionDragAreaState extends State<MotionDragArea> {
   void _onPointerMove(PointerMoveEvent event) {
     if (_ignorePointer) return;
     _tracker.add(event);
+    // The binding routes this move to recognizers after the hit-test listeners.
+    // Claim here so a fast first move cannot go to a child scroller first.
+    _horizontalRecognizer?.considerEdgeSwipe(event);
   }
 
   void _start(DragStartDetails details) {
@@ -183,6 +182,7 @@ class _MotionDragAreaState extends State<MotionDragArea> {
   @override
   void didUpdateWidget(MotionDragArea oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.enabled || _isVertical) _horizontalRecognizer = null;
     // A recognizer dropped mid-gesture (axis or enabled changed) never reports
     // its end, which would leave the caller stuck in a dragging state forever.
     // Deferred: the callback usually rebuilds, and this runs mid-build.
@@ -229,6 +229,7 @@ class _MotionDragAreaState extends State<MotionDragArea> {
           edgePriorityWidth: widget.edgePriorityWidth,
         ),
         (instance) {
+          _horizontalRecognizer = instance;
           instance
             ..edgePriorityWidth = widget.edgePriorityWidth
             ..dragStartBehavior = widget.dragStartBehavior
@@ -275,36 +276,42 @@ class _AxisLockedHorizontalDragGestureRecognizer
 
   Offset _origin = Offset.zero;
   bool _decided = false;
-  bool _startedInEdgeStrip = false;
+  int? _edgePointer;
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
     _origin = event.position;
     _decided = false;
-    _startedInEdgeStrip =
-        edgePriorityWidth > 0 && event.position.dx <= edgePriorityWidth;
+    _edgePointer =
+        edgePriorityWidth > 0 && event.localPosition.dx <= edgePriorityWidth
+            ? event.pointer
+            : null;
     super.addAllowedPointer(event);
+  }
+
+  void considerEdgeSwipe(PointerMoveEvent event) {
+    if (_decided || event.pointer != _edgePointer) return;
+    final delta = event.position - _origin;
+    if (delta.dx.abs() >= _edgeSlop && delta.dx.abs() > delta.dy.abs()) {
+      _decided = true;
+      resolvePointer(event.pointer, GestureDisposition.accepted);
+    }
   }
 
   @override
   void handleEvent(PointerEvent event) {
-    if (!_decided && event is PointerMoveEvent) {
+    if (axisLock && !_decided && event is PointerMoveEvent) {
       final Offset delta = event.position - _origin;
       final double dx = delta.dx.abs();
       final double dy = delta.dy.abs();
       final double slop = computeHitSlop(event.kind, gestureSettings);
-      if (axisLock && dy > dx && dy > slop) {
+      if (dy > dx && dy > slop) {
         _decided = true;
         resolve(GestureDisposition.rejected);
         stopTrackingPointer(event.pointer);
         return;
       }
-      if (_startedInEdgeStrip && dx > dy && dx >= _edgeSlop) {
-        // Claim it before the scroller under the content crosses its own slop
-        // and takes the gesture, which left the drawer unopenable there.
-        _decided = true;
-        resolve(GestureDisposition.accepted);
-      } else if (axisLock && dx > dy && dx > slop) {
+      if (dx > dy && dx > slop) {
         _decided = true;
       }
     }
