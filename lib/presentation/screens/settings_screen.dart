@@ -574,6 +574,7 @@ class LibrarySettingsScreen extends ConsumerWidget {
                       await ref
                           .read(storageServiceProvider)
                           .setPullToRefreshEnabled(val);
+                      ref.invalidate(pullToRefreshEnabledProvider);
                       setState(() {});
                     },
                   ),

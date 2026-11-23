@@ -413,6 +413,10 @@ final storageServiceProvider = Provider<StorageService>((ref) {
   return StorageService();
 });
 
+final pullToRefreshEnabledProvider = FutureProvider<bool>((ref) {
+  return ref.watch(storageServiceProvider).getPullToRefreshEnabled();
+});
+
 final statsServiceProvider = Provider<StatsService>((ref) {
   return StatsService();
 });

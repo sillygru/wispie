@@ -515,6 +515,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    final pullToRefreshEnabled =
+        ref.watch(pullToRefreshEnabledProvider).value ?? false;
     final songsAsyncValue = ref.watch(songsProvider);
     final audioManager = ref.watch(audioPlayerManagerProvider);
     final accent = AppTokens.accentOf(context, ref);
@@ -568,6 +570,223 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               .toList();
           final quickPickColumns = WideLayout.gridColumns(context, base: 2);
 
+          final libraryContent = NotificationListener<ScrollNotification>(
+            onNotification: handleScrollNotification,
+            child: WideContentCenter(
+              child: CustomScrollView(
+                controller: widget.scrollController,
+                physics: const MotionScrollPhysics(),
+                slivers: [
+                  AppSliverHeader(
+                    title: 'wispie',
+                    isScrolled: isScrolled,
+                    actions: [
+                      HeaderShuffleButton(
+                        tooltip: context.l10n.actionShuffleAll,
+                        color: accent,
+                        onShufflePressed: () =>
+                            audioManager.shuffleAndPlay(songs),
+                        onShuffleAfterSong: () =>
+                            audioManager.shuffleAfterCurrentSong(songs),
+                        onShuffleAfterQueue: () =>
+                            audioManager.shuffleAfterCurrentQueue(songs),
+                      ),
+                      IconButton(
+                        tooltip: context.l10n.actionSearch,
+                        icon: const AppIcon(AppIcons.search),
+                        onPressed: () => context.pushApp(const SearchScreen()),
+                      ),
+                    ],
+                  ),
+
+                  // Quick Picks
+                  if (settings.showQuickPicks &&
+                      topRecommendations.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: AppSectionHeader(
+                        label: context.l10n.homeQuickPicks,
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppTokens.s5,
+                        0,
+                        AppTokens.s5,
+                        AppTokens.s2,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: quickPickColumns,
+                          mainAxisExtent: 64,
+                          crossAxisSpacing: AppTokens.s3,
+                          mainAxisSpacing: AppTokens.s3,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) => _buildQuickPickTile(
+                            topRecommendations[index],
+                            audioManager,
+                            sortedSongs,
+                          ),
+                          childCount: topRecommendations.length.clamp(0, 6),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Recent Queues
+                  if (settings.showRecentQueues &&
+                      displayQueues.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: AppSectionHeader(
+                        label: context.l10n.homeRecentQueues,
+                        actionLabel: context.l10n.actionSeeAll,
+                        onActionTap: () => PlayerPanel.open(
+                          initialPane: PlayerPane.queue,
+                          queueShowsHistory: true,
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: _computeMediaCarouselHeight(
+                          context,
+                          _queueCardSize,
+                        ),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.s5,
+                          ),
+                          itemCount: displayQueues.length,
+                          itemBuilder: (context, index) => _buildQueueCard(
+                            context,
+                            ref,
+                            displayQueues[index],
+                            audioManager,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Your playlists, including the ones imported from
+                  // YouTube, which live here rather than in the song grid.
+                  if (userPlaylists.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                      child: AppSectionHeader(
+                        label: context.l10n.homePlaylists,
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: _computeMediaCarouselHeight(
+                          context,
+                          _cardSize,
+                        ),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.s5,
+                          ),
+                          itemCount: userPlaylists.length,
+                          itemBuilder: (context, index) => _buildPlaylistCard(
+                            context,
+                            ref,
+                            userPlaylists[index],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // For You
+                  if (settings.showForYou) ...[
+                    SliverToBoxAdapter(
+                      child: AppSectionHeader(
+                        label: context.l10n.homeForYou,
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: _computeMediaCarouselHeight(
+                          context,
+                          _cardSize,
+                        ),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.s5,
+                          ),
+                          itemCount: mixedPlaylists.length,
+                          itemBuilder: (context, index) {
+                            if (index < mixedPlaylists.length) {
+                              return _buildAutoPlaylistCard(
+                                mixedPlaylists[index],
+                                audioManager,
+                                ref,
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Library
+                  if (sortedSongs.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: AppSectionHeader(
+                              label: context.l10n.libraryTitle,
+                            ),
+                          ),
+                          SortMenu(
+                            sortOrder: _homeSort,
+                            onSelected: (order) =>
+                                setState(() => _homeSort = order),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              left: AppTokens.s2,
+                              right: AppTokens.s5,
+                              top: AppTokens.s2,
+                            ),
+                            child: Text(
+                              context.l10n.libraryTrackCount(songs.length),
+                              style: AppTokens.meta(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final song = sortedSongs[index];
+                      return SongListItem(
+                        song: song,
+                        heroTagPrefix: 'all_songs',
+                        onTap: () => audioManager.playSong(
+                          song,
+                          contextQueue: sortedSongs,
+                          playlistId: audioManager.currentPlaylistId,
+                        ),
+                      );
+                    }, childCount: sortedSongs.length),
+                  ),
+                  const SliverPadding(
+                    padding:
+                        EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+          if (!pullToRefreshEnabled) return libraryContent;
+
           return RefreshIndicator(
             onRefresh: () async {
               await Future.wait([
@@ -575,222 +794,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ref.read(userDataProvider.notifier).refresh(force: true),
               ]);
             },
-            child: NotificationListener<ScrollNotification>(
-              onNotification: handleScrollNotification,
-              child: WideContentCenter(
-                child: CustomScrollView(
-                  controller: widget.scrollController,
-                  physics: const MotionScrollPhysics(),
-                  slivers: [
-                    AppSliverHeader(
-                      title: 'wispie',
-                      isScrolled: isScrolled,
-                      actions: [
-                        HeaderShuffleButton(
-                          tooltip: context.l10n.actionShuffleAll,
-                          color: accent,
-                          onShufflePressed: () =>
-                              audioManager.shuffleAndPlay(songs),
-                          onShuffleAfterSong: () =>
-                              audioManager.shuffleAfterCurrentSong(songs),
-                          onShuffleAfterQueue: () =>
-                              audioManager.shuffleAfterCurrentQueue(songs),
-                        ),
-                        IconButton(
-                          tooltip: context.l10n.actionSearch,
-                          icon: const AppIcon(AppIcons.search),
-                          onPressed: () =>
-                              context.pushApp(const SearchScreen()),
-                        ),
-                      ],
-                    ),
-
-                    // Quick Picks
-                    if (settings.showQuickPicks &&
-                        topRecommendations.isNotEmpty) ...[
-                      SliverToBoxAdapter(
-                        child: AppSectionHeader(
-                          label: context.l10n.homeQuickPicks,
-                        ),
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(
-                          AppTokens.s5,
-                          0,
-                          AppTokens.s5,
-                          AppTokens.s2,
-                        ),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: quickPickColumns,
-                            mainAxisExtent: 64,
-                            crossAxisSpacing: AppTokens.s3,
-                            mainAxisSpacing: AppTokens.s3,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _buildQuickPickTile(
-                              topRecommendations[index],
-                              audioManager,
-                              sortedSongs,
-                            ),
-                            childCount: topRecommendations.length.clamp(0, 6),
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    // Recent Queues
-                    if (settings.showRecentQueues &&
-                        displayQueues.isNotEmpty) ...[
-                      SliverToBoxAdapter(
-                        child: AppSectionHeader(
-                          label: context.l10n.homeRecentQueues,
-                          actionLabel: context.l10n.actionSeeAll,
-                          onActionTap: () => PlayerPanel.open(
-                            initialPane: PlayerPane.queue,
-                            queueShowsHistory: true,
-                          ),
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: _computeMediaCarouselHeight(
-                            context,
-                            _queueCardSize,
-                          ),
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTokens.s5,
-                            ),
-                            itemCount: displayQueues.length,
-                            itemBuilder: (context, index) => _buildQueueCard(
-                              context,
-                              ref,
-                              displayQueues[index],
-                              audioManager,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    // Your playlists, including the ones imported from
-                    // YouTube, which live here rather than in the song grid.
-                    if (userPlaylists.isNotEmpty) ...[
-                      SliverToBoxAdapter(
-                        child: AppSectionHeader(
-                          label: context.l10n.homePlaylists,
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: _computeMediaCarouselHeight(
-                            context,
-                            _cardSize,
-                          ),
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTokens.s5,
-                            ),
-                            itemCount: userPlaylists.length,
-                            itemBuilder: (context, index) => _buildPlaylistCard(
-                              context,
-                              ref,
-                              userPlaylists[index],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    // For You
-                    if (settings.showForYou) ...[
-                      SliverToBoxAdapter(
-                        child: AppSectionHeader(
-                          label: context.l10n.homeForYou,
-                        ),
-                      ),
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: _computeMediaCarouselHeight(
-                            context,
-                            _cardSize,
-                          ),
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTokens.s5,
-                            ),
-                            itemCount: mixedPlaylists.length,
-                            itemBuilder: (context, index) {
-                              if (index < mixedPlaylists.length) {
-                                return _buildAutoPlaylistCard(
-                                  mixedPlaylists[index],
-                                  audioManager,
-                                  ref,
-                                );
-                              }
-                              return const SizedBox.shrink();
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    // Library
-                    if (sortedSongs.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: AppSectionHeader(
-                                label: context.l10n.libraryTitle,
-                              ),
-                            ),
-                            SortMenu(
-                              sortOrder: _homeSort,
-                              onSelected: (order) =>
-                                  setState(() => _homeSort = order),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                left: AppTokens.s2,
-                                right: AppTokens.s5,
-                                top: AppTokens.s2,
-                              ),
-                              child: Text(
-                                context.l10n.libraryTrackCount(songs.length),
-                                style: AppTokens.meta(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final song = sortedSongs[index];
-                        return SongListItem(
-                          song: song,
-                          heroTagPrefix: 'all_songs',
-                          onTap: () => audioManager.playSong(
-                            song,
-                            contextQueue: sortedSongs,
-                            playlistId: audioManager.currentPlaylistId,
-                          ),
-                        );
-                      }, childCount: sortedSongs.length),
-                    ),
-                    const SliverPadding(
-                      padding:
-                          EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: libraryContent,
           );
         },
       ),
