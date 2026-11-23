@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -104,7 +104,7 @@ class _AppScrollbarState extends State<AppScrollbar>
     return positions?.length == 1 ? positions!.single : null;
   }
 
-  void _grab(DragDownDetails details) {
+  void _grab(DragStartDetails details) {
     final position = _currentPosition();
     final geometry = _geometry;
     if (position == null ||
@@ -237,14 +237,19 @@ class _AppScrollbarState extends State<AppScrollbar>
               cursor: _drag == null
                   ? SystemMouseCursors.grab
                   : SystemMouseCursors.grabbing,
-              child: GestureDetector(
+              child: RawGestureDetector(
                 behavior: HitTestBehavior.deferToChild,
                 excludeFromSemantics: true,
-                dragStartBehavior: DragStartBehavior.down,
-                onPanDown: _grab,
-                onPanUpdate: _move,
-                onPanEnd: (_) => _release(),
-                onPanCancel: _release,
+                gestures: {
+                  _ThumbDragRecognizer: GestureRecognizerFactoryWithHandlers<
+                      _ThumbDragRecognizer>(
+                    _ThumbDragRecognizer.new,
+                    (recognizer) => recognizer
+                      ..onStart = _grab
+                      ..onUpdate = _move
+                      ..onEnd = (_) => _release(),
+                  ),
+                },
                 child: RepaintBoundary(
                   child: CustomPaint(
                     painter: _ThumbPainter(
@@ -265,6 +270,15 @@ class _AppScrollbarState extends State<AppScrollbar>
         ],
       ),
     );
+  }
+}
+
+class _ThumbDragRecognizer extends VerticalDragGestureRecognizer {
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    // The thumb already won the hit test, so claim the drag before page swipes.
+    resolve(GestureDisposition.accepted);
   }
 }
 
