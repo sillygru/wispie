@@ -16,7 +16,7 @@ import 'online_audio_cache.dart';
 
 /// Produces and caches the [BeatMap] for a song.
 ///
-/// Decodes with FFmpeg, runs the Rust analyzer in an isolate, and caches the
+/// Decodes and runs the Rust analyzer in an isolate, and caches the
 /// result so playback never does DSP.
 class BeatAnalysisService {
   static const int _analysisSampleRate = 22050;
@@ -219,8 +219,7 @@ class BeatAnalysisService {
           seconds * _analysisSampleRate * 2 < length;
           seconds *= 3) {
         final limit = seconds * _analysisSampleRate * 2;
-        final partial =
-            await Isolate.run(() => _analyzeRawFile(rawPath, limit));
+        final partial = await _isolateAnalyzeRawFile(rawPath, limit);
         if (partial != null && partial.hasBands) {
           _publishPartial(filename, partial);
         }
@@ -258,9 +257,8 @@ class BeatAnalysisService {
 
       final Uint8List bytes;
       try {
-        bytes = await Isolate.run(
-          () => NativeAccel.decodePcm(path, _analysisSampleRate),
-        );
+        bytes =
+            await NativeAccel.decodePcmInBackground(path, _analysisSampleRate);
       } on NativeCommandException catch (error) {
         debugPrint(
             'BeatAnalysisService: decode failed for $path: ${error.message}');
@@ -303,9 +301,8 @@ class BeatAnalysisService {
 ///
 /// The file is read here rather than in the caller so the main isolate never
 /// holds the ~10 MB sample buffer.
-Future<BeatMap?> _isolateAnalyzeRawFile(String rawPath) {
-  return Isolate.run(() => _analyzeRawFile(rawPath));
-}
+Future<BeatMap?> _isolateAnalyzeRawFile(String rawPath, [int? maxBytes]) =>
+    Isolate.run(() => _analyzeRawFile(rawPath, maxBytes));
 
 BeatMap? _analyzeRawFile(String rawPath, [int? maxBytes]) {
   try {

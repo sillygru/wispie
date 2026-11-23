@@ -26,13 +26,7 @@ class WaveformService {
   /// PCM bytes the decode writes per second: 4000 Hz, mono, 16-bit.
   static const int _pcmBytesPerSecond = _waveformSampleRate * 2;
 
-  /// One decode at a time. Parallel FFmpeg sessions fight the audio thread.
-  Future<void> _chain = Future.value();
-
-  final Map<String, Future<List<double>>> _inFlight = {};
-
-  /// Progressive decodes keyed by filename, so re-subscribing mid-decode shares
-  /// one decode instead of starting a second FFmpeg session for the same song.
+  /// Warmup and the visible bars share one decode per filename.
   final Map<String, _ProgressiveWaveform> _progressive = {};
 
   /// Completed waveforms keyed by filename, so an already-decoded song renders
@@ -74,51 +68,18 @@ class WaveformService {
   /// Playback calls this so the seek bar already has its bars the first time
   /// the player is opened, instead of decoding while the user watches. Errors
   /// are swallowed: a waveform is decoration, never a reason to fail a play.
-  Future<void> warm(String filename, String path) async {
+  Future<void> warm(String filename, String path, {Duration? duration}) async {
     if (filename.isEmpty || path.isEmpty) return;
     try {
-      await getWaveform(filename, path);
+      await getWaveformProgressive(filename, path, duration ?? Duration.zero)
+          .last;
     } on Object catch (error) {
       debugPrint('WaveformService: warm failed for $filename: $error');
     }
   }
 
-  Future<List<double>> getWaveform(String filename, String path) {
-    if (path.isEmpty || path.startsWith('http')) {
-      return Future.value(const []);
-    }
-
-    final existing = _inFlight[filename];
-    if (existing != null) return existing;
-
-    final work = _chain.then((_) => _getWaveform(filename, path));
-    _chain = work.then((_) {}, onError: (_) {});
-    _inFlight[filename] = work;
-    work.whenComplete(() => _inFlight.remove(filename));
-    return work;
-  }
-
-  Future<List<double>> _getWaveform(String filename, String path) async {
-    final cached = _memoryCache[filename];
-    if (cached != null) return cached;
-
-    final cacheFile = await _cacheService.waveformFile(filename);
-    final onDisk = _readCache(cacheFile);
-    if (onDisk != null) {
-      _memoryCache[filename] = onDisk;
-      return onDisk;
-    }
-
-    final samples = await _extractWaveformFast(path);
-    if (samples.isEmpty) return const [];
-
-    _memoryCache[filename] = samples;
-    if (!await _isolateWriteWaveformCache(cacheFile.path, samples)) {
-      debugPrint('WaveformService: could not cache $filename');
-    }
-
-    return samples;
-  }
+  Future<List<double>> getWaveform(String filename, String path) =>
+      getWaveformProgressive(filename, path, Duration.zero).last;
 
   /// Emits the waveform for [filename] as it is produced: a cached song yields
   /// its full list once, an uncached one yields partial lists then the whole.
@@ -173,38 +134,18 @@ class WaveformService {
       return;
     }
 
-    final samples = await _extractWaveformProgressive(
-      path,
-      total,
-      state.add,
+    final samples = await _extractWaveformStream(
+      path: path,
+      total: total,
+      onPartial: state.add,
     );
+    state.add(samples);
     if (samples.isEmpty) return;
     _memoryCache[filename] = samples;
-    state.add(samples);
 
     if (!await _isolateWriteWaveformCache(cacheFile.path, samples)) {
       debugPrint('WaveformService: could not cache $filename');
     }
-  }
-
-  Future<List<double>> _extractWaveformFast(String path) {
-    return _extractWaveformStream(
-      path: path,
-      total: Duration.zero,
-      onPartial: null,
-    );
-  }
-
-  Future<List<double>> _extractWaveformProgressive(
-    String path,
-    Duration total,
-    void Function(List<double>) onPartial,
-  ) {
-    return _extractWaveformStream(
-      path: path,
-      total: total,
-      onPartial: onPartial,
-    );
   }
 
   /// Decodes straight to the bar rate inside the native core: no subprocess on
@@ -237,21 +178,13 @@ class WaveformService {
       if (message is List) onPartial?.call(message.cast<double>());
     });
     try {
-      final bytes = await Isolate.run(
-        () => NativeAccel.decodePcm(
-          path,
-          _waveformSampleRate,
-          peakSamples: targetSamples,
-          expectedBytes: expectedBytes,
-          onPartial:
-              onPartial == null ? null : (bars) => port.sendPort.send(bars),
-        ),
+      return await NativeAccel.decodeWaveformInBackground(
+        path,
+        sampleRate: _waveformSampleRate,
+        targetSamples: targetSamples,
+        expectedBytes: expectedBytes,
+        partial: onPartial == null || expectedBytes == 0 ? null : port.sendPort,
       );
-      if (bytes.length < 2) return const [];
-      return NativeAccel.waveformPeaks(bytes, targetSamples: targetSamples);
-    } on NativeCommandException catch (error) {
-      debugPrint('WaveformService: decode failed for $path: ${error.message}');
-      return const [];
     } finally {
       await subscription.cancel();
       port.close();

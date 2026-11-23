@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import '../models/song.dart';
 import '../models/shuffle_config.dart';
 import '../domain/services/native_accel.dart';
@@ -51,35 +53,68 @@ class LibraryLogic {
     Map<String, SongAffinity>? affinities,
     TasteSnapshot? tasteSnapshot,
   }) {
-    final request = _sortRequest(
-      songs,
-      sortOrder,
-      userData: userData,
-      shuffleConfig: shuffleConfig,
-      playCounts: playCounts,
-      lastPlayedTimestamps: lastPlayedTimestamps,
-      affinities: affinities,
-      tasteSnapshot: tasteSnapshot,
-    );
     return _applyOrder(
-        songs, _view({'op': 'sort', ...request})['order'] as List);
+      songs,
+      _sortedIndices(
+        songs,
+        sortOrder,
+        userData: userData,
+        shuffleConfig: shuffleConfig,
+        playCounts: playCounts,
+        lastPlayedTimestamps: lastPlayedTimestamps,
+        affinities: affinities,
+        tasteSnapshot: tasteSnapshot,
+      ),
+    );
   }
 
-  /// Smart "Recommended" order: the shuffle's sort-context weights, then the
-  /// per-artist diversity cap so one artist cannot fill the top of the list.
-  static List<Song> smartRecommendedOrder(
+  static Future<List<Song>> sortSongsInBackground(
     List<Song> songs,
-    TasteSnapshot taste,
-    ShuffleConfig config,
-    UserDataState userData,
-  ) =>
-      sortSongs(
+    SongSortOrder sortOrder, {
+    UserDataState? userData,
+    ShuffleConfig? shuffleConfig,
+    Map<String, double>? lastPlayedTimestamps,
+    Map<String, SongAffinity>? affinities,
+    TasteSnapshot? tasteSnapshot,
+  }) async {
+    if (songs.length < 2) return songs;
+    final indices = await Isolate.run(
+      () => _sortedIndices(
         songs,
-        SongSortOrder.recommended,
+        sortOrder,
         userData: userData,
-        shuffleConfig: config,
-        tasteSnapshot: taste,
-      );
+        shuffleConfig: shuffleConfig,
+        lastPlayedTimestamps: lastPlayedTimestamps,
+        affinities: affinities,
+        tasteSnapshot: tasteSnapshot,
+      ),
+    );
+    return _applyOrder(songs, indices);
+  }
+
+  static List<dynamic> _sortedIndices(
+    List<Song> songs,
+    SongSortOrder sortOrder, {
+    UserDataState? userData,
+    ShuffleConfig? shuffleConfig,
+    Map<String, int>? playCounts,
+    Map<String, double>? lastPlayedTimestamps,
+    Map<String, SongAffinity>? affinities,
+    TasteSnapshot? tasteSnapshot,
+  }) =>
+      _view({
+        'op': 'sort',
+        ..._sortRequest(
+          songs,
+          sortOrder,
+          userData: userData,
+          shuffleConfig: shuffleConfig,
+          playCounts: playCounts,
+          lastPlayedTimestamps: lastPlayedTimestamps,
+          affinities: affinities,
+          tasteSnapshot: tasteSnapshot,
+        ),
+      })['order'] as List;
 
   static LibraryFolderContent getFolderContent({
     required List<Song> allSongs,

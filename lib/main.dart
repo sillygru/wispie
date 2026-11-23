@@ -56,12 +56,6 @@ Future<void> main() async {
     JustAudioMediaKit.ensureInitialized();
   }
 
-  // Parallel initialization
-  await Future.wait([
-    if (!isMediaKitDesktop) _setupAudioSession(),
-    if (!isMediaKitDesktop) _setupJustAudioBackground(),
-  ], eagerError: false);
-
   PaintingBinding.instance.imageCache.maximumSize = 250;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 40 * 1024 * 1024;
 
@@ -70,7 +64,7 @@ Future<void> main() async {
   unawaited(PowerStateService.instance.initialize());
 
   final storage = StorageService();
-  bool isSetupComplete = await storage.getIsSetupComplete();
+  final isSetupComplete = await storage.getIsSetupComplete();
 
   final prefs = await SharedPreferences.getInstance();
   final username = prefs.getString('username');
@@ -79,16 +73,17 @@ Future<void> main() async {
         AppIconStyle.fromId(prefs.getString('app_icon_style'))));
   }
 
-  // Single user mode: always init database
-  await DatabaseService.instance.init();
+  final packageInfoFuture = PackageInfo.fromPlatform();
+  await Future.wait([
+    if (!isMediaKitDesktop) _setupAudioSession(),
+    if (!isMediaKitDesktop) _setupJustAudioBackground(),
+    DatabaseService.instance.init(),
+    storage.setIsLocalMode(true),
+    _initDesktopWindow(prefs),
+    packageInfoFuture,
+  ]);
+  final packageInfo = await packageInfoFuture;
 
-  unawaited(SyncService.instance.init());
-
-  await storage.setIsLocalMode(true);
-
-  await _initDesktopWindow(prefs);
-
-  final packageInfo = await PackageInfo.fromPlatform();
   final versionChange =
       await VersionTracker.evaluate(prefs, packageInfo.version);
 
@@ -101,6 +96,7 @@ Future<void> main() async {
     ],
     child: const WispieApp(),
   ));
+  unawaited(SyncService.instance.init());
 }
 
 const _kWindowWidthKey = 'desktop_window_width_v1';

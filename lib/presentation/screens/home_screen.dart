@@ -38,6 +38,33 @@ import '../widgets/header_shuffle_button.dart';
 import '../tokens/app_icons.dart';
 import '../utils/wide_layout.dart';
 
+final _homeSortedSongsProvider = FutureProvider.autoDispose
+    .family<({List<Song> source, List<Song> sorted}), SongSortOrder>(
+  (ref, order) async {
+    final songs = ref.watch(songsProvider).value ?? const <Song>[];
+    final recommended = order == SongSortOrder.recommended;
+    final sorted = await LibraryLogic.sortSongsInBackground(
+      songs,
+      order,
+      userData: recommended ? ref.watch(userDataProvider) : null,
+      shuffleConfig: recommended
+          ? ref
+              .watch(audioPlayerManagerProvider)
+              .shuffleStateNotifier
+              .value
+              .config
+          : null,
+      lastPlayedTimestamps: order == SongSortOrder.recentlyPlayed
+          ? ref.watch(lastPlayedTimestampsProvider).value
+          : null,
+      affinities: recommended ? ref.watch(songAffinitiesProvider).value : null,
+      tasteSnapshot:
+          recommended ? ref.watch(tasteSnapshotProvider).value : null,
+    );
+    return (source: songs, sorted: sorted);
+  },
+);
+
 class HomeScreen extends ConsumerStatefulWidget {
   final ScrollController? scrollController;
 
@@ -528,26 +555,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             );
           }
 
-          final shuffleState =
-              ref.watch(audioPlayerManagerProvider).shuffleStateNotifier.value;
-          final playCounts = ref.watch(playCountsProvider);
-          final lastPlayedAsync = ref.watch(lastPlayedTimestampsProvider);
-          final lastPlayedTimestamps =
-              lastPlayedAsync.asData?.value ?? const {};
-
-          final affinities = ref.watch(songAffinitiesProvider).asData?.value;
-          final tasteSnapshot = ref.watch(tasteSnapshotProvider).asData?.value;
-
-          final sortedSongs = LibraryLogic.sortSongs(
-            songs,
-            _homeSort,
-            userData: userData,
-            shuffleConfig: shuffleState.config,
-            playCounts: playCounts,
-            lastPlayedTimestamps: lastPlayedTimestamps,
-            affinities: affinities,
-            tasteSnapshot: tasteSnapshot,
-          );
+          final sort = ref.watch(_homeSortedSongsProvider(_homeSort)).value;
+          final sortedSongs =
+              identical(sort?.source, songs) ? sort!.sorted : songs;
 
           final topRecommendations = ref.watch(recommendationsProvider);
           final mixedPlaylists = ref.watch(mixedPlaylistsProvider);

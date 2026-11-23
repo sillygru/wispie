@@ -1117,26 +1117,28 @@ class UserDataNotifier extends Notifier<UserDataState> {
 
   // --- Recommendation Playlist Logic ---
 
-  List<Song> _generateSongsForRecommendation(
+  Future<List<Song>> _generateSongsForRecommendation(
     String id,
     List<Song> allSongs,
     Map<String, int> playCounts,
     List<PlaySession> sessions, {
     TasteSnapshot? taste,
     ShuffleConfig? config,
-  }) {
+  }) async {
     if (allSongs.isEmpty) return [];
     final random = Random();
 
     switch (id) {
       case 'quick_picks':
         if (taste != null && config != null) {
-          return LibraryLogic.smartRecommendedOrder(
+          final sorted = await LibraryLogic.sortSongsInBackground(
             allSongs,
-            taste,
-            config,
-            state,
-          ).take(10).toList();
+            SongSortOrder.recommended,
+            userData: state,
+            shuffleConfig: config,
+            tasteSnapshot: taste,
+          );
+          return sorted.take(10).toList();
         }
         final recommendations = List<Song>.from(allSongs);
         recommendations.sort((a, b) {
@@ -1289,7 +1291,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
       }
 
       if (shouldUpdate) {
-        final recomSongs = _generateSongsForRecommendation(
+        final recomSongs = await _generateSongsForRecommendation(
           type.id,
           songs,
           playCounts,
@@ -1297,6 +1299,7 @@ class UserDataNotifier extends Notifier<UserDataState> {
           taste: taste,
           config: shuffleConfig,
         );
+        if (!ref.mounted) return;
         if (recomSongs.isNotEmpty) {
           final playlist = Playlist(
             id: type.id,

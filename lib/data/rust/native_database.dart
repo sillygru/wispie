@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'wispie_core.dart';
@@ -91,16 +92,14 @@ abstract class DatabaseExecutor {
 
 /// An open database file.
 class Database implements DatabaseExecutor {
-  Database._(this.path, this._id, {required bool inTransaction}) {
-    _inTransaction = inTransaction;
-  }
+  Database._(this.path, this._id);
 
   /// Path of the file this connection has open.
   final String path;
 
   final int _id;
   bool _closed = false;
-  bool _inTransaction = false;
+  final Object _transactionZoneKey = Object();
 
   /// Serializes statements the way sqflite did: one at a time, in call order.
   Future<void> _tail = Future.value();
@@ -112,14 +111,14 @@ class Database implements DatabaseExecutor {
     int? hlc,
     bool readOnly = false,
   }) async {
-    final reply = _call({
+    final reply = await _call({
       'action': 'open',
       'path': path,
       if (schema != null) 'schema': _schemaNames[schema],
       if (hlc != null) 'hlc': hlc,
       if (readOnly) 'read_only': true,
     });
-    return Database._(path, (reply['id'] as num).toInt(), inTransaction: false);
+    return Database._(path, (reply['id'] as num).toInt());
   }
 
   bool get isOpen => !_closed;
@@ -133,57 +132,57 @@ class Database implements DatabaseExecutor {
 
   /// Runs one core request without touching the queue. Only callers already
   /// holding the queue (a transaction body) use this.
-  Map<String, Object?> _dispatch(Map<String, Object?> request) {
+  Future<Map<String, Object?>> _dispatch(Map<String, Object?> request) {
     if (_closed) throw StateError('database $path is closed');
     return _call({...request, 'id': _id});
   }
 
-  Future<T> _run<T>(Map<String, Object?> request) {
-    // The transaction body holds the queue, so a statement queued behind it
-    // would wait on the transaction that is waiting on it. Transactions queue
-    // as usual; only a statement out of scope is a mistake.
-    if (_inTransaction) {
+  void _checkTransactionScope() {
+    if (Zone.current[_transactionZoneKey] == true) {
       throw DatabaseException(
           'database $path is in a transaction; pass the transaction handle');
     }
-    return _serialized(() async => _dispatch(request) as T);
   }
 
-  /// Begins, runs [action], then commits or rolls back. The queue is held for
-  /// the whole body, so nothing else writes into the transaction.
+  Future<T> _run<T>(Map<String, Object?> request) {
+    _checkTransactionScope();
+    return _serialized(() async => await _dispatch(request) as T);
+  }
+
+  /// Holds the connection queue until the body commits or rolls back.
   Future<T> transaction<T>(
     Future<T> Function(Transaction txn) action, {
     bool? exclusive,
   }) {
+    _checkTransactionScope();
     return _serialized(() async {
-      if (_inTransaction) {
-        throw StateError('database $path is already in a transaction');
-      }
-      _dispatch({'action': 'begin'});
-      _inTransaction = true;
+      await _dispatch({'action': 'begin'});
       final txn = Transaction._(this);
       try {
-        final result = await action(txn);
-        _dispatch({'action': 'commit'});
-        _inTransaction = false;
+        final result = await runZoned(
+          () => action(txn),
+          zoneValues: {_transactionZoneKey: true},
+        );
+        txn._active = false;
+        await _dispatch({'action': 'commit'});
         return result;
       } catch (_) {
+        txn._active = false;
         try {
-          _dispatch({'action': 'rollback'});
+          await _dispatch({'action': 'rollback'});
         } catch (_) {
-          // A failed rollback leaves the connection as it was; the error that
-          // caused it is what the caller needs to see.
+          // Preserve the original failure.
         }
-        _inTransaction = false;
         rethrow;
       }
     });
   }
 
   Future<void> close() async {
-    if (_closed) return;
+    _checkTransactionScope();
     await _serialized(() async {
-      _dispatch({'action': 'close'});
+      if (_closed) return;
+      await _dispatch({'action': 'close'});
       _closed = true;
     });
   }
@@ -328,7 +327,10 @@ class Database implements DatabaseExecutor {
       'noResult': !batch._wantsResults,
       'continueOnError': batch._continueOnError,
     };
-    final reply = _inTransaction ? _dispatch(request) : await _run(request);
+    final transaction = batch._transaction;
+    final reply = transaction == null
+        ? await _run<Map<String, Object?>>(request)
+        : await transaction._dispatch(request);
     final error = reply['error'] as String?;
     if (error != null && !batch._continueOnError) throw StateError(error);
     final results = reply['results'] as List<Object?>? ?? const [];
@@ -338,7 +340,10 @@ class Database implements DatabaseExecutor {
 
 /// Statements that run as one transaction when committed.
 class Batch {
-  Batch._(this._database);
+  Batch._(this._database, {Transaction? transaction})
+      : _transaction = transaction;
+
+  final Transaction? _transaction;
 
   final Database _database;
   final List<Map<String, Object?>> _operations = [];
@@ -410,11 +415,15 @@ class Transaction implements DatabaseExecutor {
 
   final Database _database;
 
-  Map<String, Object?> _dispatch(Map<String, Object?> request) =>
-      _database._dispatch(request);
+  bool _active = true;
+
+  Future<Map<String, Object?>> _dispatch(Map<String, Object?> request) {
+    if (!_active) throw DatabaseException('transaction has finished');
+    return _database._dispatch(request);
+  }
 
   Future<T> _run<T>(Map<String, Object?> request) async =>
-      _dispatch(request) as T;
+      await _dispatch(request) as T;
 
   @override
   Future<List<Map<String, Object?>>> query(
@@ -538,7 +547,7 @@ class Transaction implements DatabaseExecutor {
   }
 
   @override
-  Batch batch() => Batch._(_database);
+  Batch batch() => Batch._(_database, transaction: this);
 
   @override
   Future<void> backfillPlayEventUids() async {
@@ -568,7 +577,58 @@ int? firstIntValue(List<Map<String, Object?>> rows) {
   return (rows.first.values.first as num?)?.toInt();
 }
 
-Map<String, Object?> _call(Map<String, Object?> request) {
+// Keep FFI and JSON work off Flutter's isolate without spawning per statement.
+final Future<SendPort> _databaseWorker = _startDatabaseWorker();
+
+Future<SendPort> _startDatabaseWorker() async {
+  final ready = ReceivePort();
+  try {
+    await Isolate.spawn(_serveDatabaseRequests, ready.sendPort,
+        debugName: 'wispie-sqlite');
+    return await ready.first as SendPort;
+  } finally {
+    ready.close();
+  }
+}
+
+void _serveDatabaseRequests(SendPort ready) {
+  final requests = ReceivePort();
+  ready.send(requests.sendPort);
+  requests.listen((message) {
+    final (request, reply) = message as (Map<String, Object?>, SendPort);
+    try {
+      reply.send((_callCore(request), null));
+    } catch (error, stack) {
+      reply.send((
+        null,
+        (
+          error is DatabaseException
+              ? error
+              : DatabaseException(error.toString()),
+          stack
+        )
+      ));
+    }
+  });
+}
+
+Future<Map<String, Object?>> _call(Map<String, Object?> request) async {
+  final worker = await _databaseWorker;
+  final response = ReceivePort();
+  try {
+    worker.send((request, response.sendPort));
+    final (reply, failure) = await response.first as (
+      Map<String, Object?>?,
+      (DatabaseException, StackTrace)?
+    );
+    if (failure != null) Error.throwWithStackTrace(failure.$1, failure.$2);
+    return reply!;
+  } finally {
+    response.close();
+  }
+}
+
+Map<String, Object?> _callCore(Map<String, Object?> request) {
   Map<String, Object?>? reply;
   String? error;
   final code = WispieCore.run(

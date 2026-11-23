@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import '../../data/rust/wispie_core.dart';
@@ -665,6 +666,28 @@ class NativeAccel {
     }
     return decoded;
   }
+
+  static Future<Uint8List> decodePcmInBackground(String path, int sampleRate) =>
+      Isolate.run(() => decodePcm(path, sampleRate));
+
+  static Future<List<double>> decodeWaveformInBackground(
+    String path, {
+    required int sampleRate,
+    required int targetSamples,
+    required int expectedBytes,
+    SendPort? partial,
+  }) =>
+      Isolate.run(() {
+        final bytes = decodePcm(
+          path,
+          sampleRate,
+          peakSamples: partial == null ? null : targetSamples,
+          expectedBytes: expectedBytes,
+          onPartial: partial?.send,
+        );
+        if (bytes.length < 2) return const <double>[];
+        return waveformPeaks(bytes, targetSamples: targetSamples);
+      });
 
   /// Decodes [path] to little-endian mono 16-bit PCM at [sampleRate].
   ///

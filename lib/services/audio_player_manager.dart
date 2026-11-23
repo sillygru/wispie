@@ -1589,7 +1589,8 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     void warmSong(Song? song) {
       if (song == null) return;
       if (song.isLocal) {
-        unawaited(service.warm(song.filename, song.url));
+        unawaited(
+            service.warm(song.filename, song.url, duration: song.duration));
         return;
       }
       // A streamed track has no file of its own. Its download only becomes
@@ -1603,7 +1604,7 @@ class AudioPlayerManager extends WidgetsBindingObserver {
           id,
         );
         if (file == null) return;
-        await service.warm(song.filename, file.path);
+        await service.warm(song.filename, file.path, duration: song.duration);
       }());
     }
 
@@ -2162,7 +2163,9 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         final ref = _ref;
         if (ref != null && ref.read(settingsProvider).showWaveform) {
           unawaited(
-            ref.read(waveformServiceProvider).warm(song.filename, cached.path),
+            ref
+                .read(waveformServiceProvider)
+                .warm(song.filename, cached.path, duration: song.duration),
           );
         }
       } else {
