@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use walkdir::WalkDir;
 
@@ -31,6 +32,7 @@ struct LinkRequest {
     #[serde(rename = "excludedFolders")]
     excluded_folders: Vec<String>,
     text: bool,
+    paths: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -251,6 +253,10 @@ pub fn ttml_to_lrc(xml: &str) -> String {
 
 /// `hh:mm:ss.mmm`, `mm:ss.mmm` or plain seconds, as centiseconds.
 fn timestamp_centis(raw: &str) -> Option<i64> {
+    timestamp_seconds(raw).map(|seconds| (seconds * 100.0).round() as i64)
+}
+
+fn timestamp_seconds(raw: &str) -> Option<f64> {
     let parts: Vec<&str> = raw.trim().split(':').collect();
     let total = match parts.as_slice() {
         [seconds] => seconds.parse::<f64>().ok()?,
@@ -265,7 +271,7 @@ fn timestamp_centis(raw: &str) -> Option<i64> {
     if !total.is_finite() || total < 0.0 {
         return None;
     }
-    Some((total * 100.0).round() as i64)
+    Some(total)
 }
 
 fn decode_entities(text: &str) -> String {
@@ -281,6 +287,12 @@ fn decode_entities(text: &str) -> String {
 pub fn run_link(payload: Value, emitter: &Emitter) -> Result<(), String> {
     let request: LinkRequest =
         serde_json::from_value(payload).map_err(|error| format!("lyrics_link: {error}"))?;
+
+    if !request.paths.is_empty() {
+        let links: Vec<_> = request.paths.into_iter().map(file_details).collect();
+        emitter.emit(Emit::Json(json!({ "links": links })));
+        return Ok(());
+    }
 
     let index = index_for(&request.songs, &request.roots, &request.excluded_folders);
     let mut links = Vec::new();
@@ -309,6 +321,87 @@ pub fn run_link(payload: Value, emitter: &Emitter) -> Result<(), String> {
     }
 
     emitter.emit(Emit::Json(json!({ "links": links })));
+    Ok(())
+}
+
+fn file_details(path: String) -> Value {
+    static LINE: OnceLock<Regex> = OnceLock::new();
+    static WORD: OnceLock<Regex> = OnceLock::new();
+    static LENGTH: OnceLock<Regex> = OnceLock::new();
+    static TTML_WORD: OnceLock<Regex> = OnceLock::new();
+    static TTML_LENGTH: OnceLock<Regex> = OnceLock::new();
+
+    let file = Path::new(&path);
+    let Ok(bytes) = fs::read(file) else {
+        return json!({ "path": path });
+    };
+    let raw = String::from_utf8_lossy(&bytes);
+    let raw = raw.trim_start_matches('\u{feff}');
+    let (text, word, length) = if is_ttml(file) {
+        let word = TTML_WORD.get_or_init(|| {
+            Regex::new(r#"(?i)<(?:[\w.-]+:)?span\b[^>]*\sbegin\s*=\s*["'][^"']+["'][^>]*>[^<]+"#)
+                .unwrap()
+        });
+        let length = TTML_LENGTH.get_or_init(|| {
+            Regex::new(r#"(?i)<(?:[\w.-]+:)?(?:tt|body)\b[^>]*\s(?:itunes:duration|dur)\s*=\s*["']([^"']+)["']"#).unwrap()
+        });
+        (ttml_to_lrc(raw), word.is_match(raw), length.captures(raw))
+    } else {
+        let word = WORD.get_or_init(|| Regex::new(r"<\d+:\d+(?:\.\d+)?>").unwrap());
+        let length = LENGTH.get_or_init(|| Regex::new(r"(?im)^\s*\[length:([^\]]+)\]").unwrap());
+        (
+            word.replace_all(raw, "").into_owned(),
+            word.is_match(raw),
+            length.captures(raw),
+        )
+    };
+    let line = LINE.get_or_init(|| Regex::new(r"(?m)^\s*\[\d+:\d+(?:\.\d+)?\]").unwrap());
+    let sync_type = if word {
+        "word"
+    } else if line.is_match(&text) {
+        "line"
+    } else {
+        "plain"
+    };
+    let duration_ms = length.and_then(|found| {
+        let value = found[1].trim();
+        let milliseconds = if let Some(ms) = value.strip_suffix("ms") {
+            ms.trim().parse::<f64>().ok()?
+        } else {
+            timestamp_seconds(value.strip_suffix('s').unwrap_or(value))? * 1000.0
+        };
+        (milliseconds.is_finite() && milliseconds.round() > 0.0)
+            .then_some(milliseconds.round() as i64)
+    });
+    json!({ "path": path, "text": text, "syncType": sync_type, "durationMs": duration_ms })
+}
+
+pub fn run_choice(payload: Value, emitter: &Emitter) -> Result<(), String> {
+    let path = payload["path"]
+        .as_str()
+        .ok_or("missing lyrics choice path")?;
+    let path = Path::new(path);
+    if let Some(choice) = payload.get("choice") {
+        let parent = path.parent().ok_or("missing lyrics choice directory")?;
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT_WRITE.fetch_add(1, Ordering::Relaxed);
+        let temp = path.with_extension(format!("{}.{}.tmp", std::process::id(), sequence));
+        if let Err(error) =
+            fs::write(&temp, choice.to_string()).and_then(|()| fs::rename(&temp, path))
+        {
+            let _ = fs::remove_file(&temp);
+            return Err(error.to_string());
+        }
+        emitter.emit(Emit::Json(json!({ "choice": choice })));
+        return Ok(());
+    }
+    let choice = match fs::read(path) {
+        Ok(bytes) => serde_json::from_slice::<Value>(&bytes).map_err(|error| error.to_string())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+        Err(error) => return Err(error.to_string()),
+    };
+    emitter.emit(Emit::Json(json!({ "choice": choice })));
     Ok(())
 }
 

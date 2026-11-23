@@ -5108,6 +5108,20 @@
   "@lyricsUnknownLength": {
     "description": "Duration label shown when a remote lyrics result has no duration"
   },
+  "lyricsUnknownLengthWithTrack": "Lyrics length unknown · track {duration}",
+  "@lyricsUnknownLengthWithTrack": {
+    "placeholders": {
+      "duration": {"type": "String"}
+    }
+  },
+  "lyricsDurationDifference": "{duration} · track {trackDuration} ({difference})",
+  "@lyricsDurationDifference": {
+    "placeholders": {
+      "duration": {"type": "String"},
+      "trackDuration": {"type": "String"},
+      "difference": {"type": "String"}
+    }
+  },
   "lyricsDurationExactMatch": "{duration} · exact match",
   "@lyricsDurationExactMatch": {
     "description": "Duration label for a lyrics result whose length matches exactly",

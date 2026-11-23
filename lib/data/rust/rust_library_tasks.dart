@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:isolate';
 
-import 'package:path/path.dart' as p;
-
+import '../../domain/models/lrclib_result.dart';
+import '../../domain/models/rich_lyrics.dart';
 import '../../models/song.dart';
 import 'wispie_core.dart';
 
@@ -124,6 +124,26 @@ class LyricsFileLink {
         ],
         text: json['text'] as String?,
       );
+}
+
+class LyricsFileDetails {
+  LyricsFileDetails.fromJson(Map<String, dynamic> json)
+      : path = json['path'] as String,
+        text = json['text'] as String?,
+        duration = switch (json['durationMs']) {
+          final int milliseconds => Duration(milliseconds: milliseconds),
+          _ => null,
+        },
+        syncType = switch (json['syncType']) {
+          'word' => LyricsSyncType.word,
+          'line' => LyricsSyncType.line,
+          _ => LyricsSyncType.plain,
+        };
+
+  final String path;
+  final String? text;
+  final Duration? duration;
+  final LyricsSyncType syncType;
 }
 
 /// Runs library work on the native core, one background isolate per task.
@@ -257,18 +277,36 @@ class RustLibraryTasks {
     return links;
   }
 
-  /// The LRC text of one sidecar file, or null when it cannot be read.
-  static Future<String?> lyricsFileText(String path) async {
+  static Future<List<LyricsFileDetails>> lyricsFileDetails(
+    List<String> paths,
+  ) async {
+    if (paths.isEmpty) return const [];
     final result = await _collectOnce({
       'command': 'lyrics_link',
-      'songs': [
-        {'filename': p.basename(path), 'url': path},
-      ],
-      'text': true,
+      'paths': paths.toSet().toList(),
     });
-    final rows = result['links'] as List<dynamic>? ?? const [];
-    if (rows.isEmpty) return null;
-    return (rows.first as Map<String, dynamic>)['text'] as String?;
+    return [
+      for (final row in result['links'] as List<dynamic>? ?? const [])
+        LyricsFileDetails.fromJson(row as Map<String, dynamic>),
+    ];
+  }
+
+  static Future<LyricsChoice?> lyricsChoice(
+    String path, {
+    LyricsChoice? save,
+  }) async {
+    final result = await _collectOnce({
+      'command': 'lyrics_choice',
+      'path': path,
+      if (save != null)
+        'choice': {'text': save.text, 'richSync': save.richSync?.toJson()},
+    });
+    final choice = result['choice'] as Map<String, dynamic>?;
+    if (choice == null || choice['text'] is! String) return null;
+    return (
+      text: choice['text'] as String,
+      richSync: RichLyrics.fromJson(choice['richSync']),
+    );
   }
 
   /// Renames sidecar files, mapping each existing path to the song's new stem.
@@ -392,6 +430,7 @@ void _collect(_CollectJob job) {
   final links = <Map<String, dynamic>>[];
   final renames = <Map<String, dynamic>>[];
   final failures = <Map<String, dynamic>>[];
+  Map<String, dynamic>? choice;
 
   try {
     WispieCore.run(job.request, onEvent: (kind, payload) {
@@ -410,6 +449,8 @@ void _collect(_CollectJob job) {
             covers.addAll(Map<String, String>.from(map));
           } else if (decoded['links'] case final List<dynamic> list) {
             links.addAll(list.cast<Map<String, dynamic>>());
+          } else if (decoded['choice'] case final Map<String, dynamic> map) {
+            choice = map;
           } else if (decoded['renames'] case final List<dynamic> list) {
             renames.addAll(list.cast<Map<String, dynamic>>());
           } else if (decoded['failures'] case final List<dynamic> list) {
@@ -431,6 +472,7 @@ void _collect(_CollectJob job) {
       'songs': songs,
       'covers': covers,
       'links': links,
+      'choice': choice,
       'renames': renames,
       'failures': failures,
     });

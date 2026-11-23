@@ -6723,6 +6723,19 @@ abstract class AppLocalizations {
   /// **'Unknown length'**
   String get lyricsUnknownLength;
 
+  /// No description provided for @lyricsUnknownLengthWithTrack.
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics length unknown · track {duration}'**
+  String lyricsUnknownLengthWithTrack(String duration);
+
+  /// No description provided for @lyricsDurationDifference.
+  ///
+  /// In en, this message translates to:
+  /// **'{duration} · track {trackDuration} ({difference})'**
+  String lyricsDurationDifference(
+      String duration, String trackDuration, String difference);
+
   /// Duration label for a lyrics result whose length matches exactly
   ///
   /// In en, this message translates to:

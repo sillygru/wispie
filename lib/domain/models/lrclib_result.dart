@@ -9,6 +9,8 @@ enum LyricsSyncType {
   instrumental,
 }
 
+typedef LyricsChoice = ({String text, RichLyrics? richSync});
+
 /// One lyrics record from LRCLIB.
 ///
 /// Mirrors the API payload exactly — `duration` arrives as a float count of
@@ -98,6 +100,18 @@ class LrclibResult extends Equatable {
     if (instrumental) return '';
     if (preferPlain) return plainLyrics ?? syncedLyrics ?? richLyrics?.toLrc();
     return syncedLyrics ?? plainLyrics ?? richLyrics?.toLrc();
+  }
+
+  LyricsChoice? choiceFor({bool preferPlain = false}) {
+    if (instrumental) return (text: '', richSync: null);
+    final plain = plainLyrics;
+    if (preferPlain && plain != null) return (text: plain, richSync: null);
+    final rich = richLyrics;
+    if (rich != null && (rich.hasWordSync || syncedLyrics == null)) {
+      return (text: rich.toLrc(), richSync: rich);
+    }
+    final text = syncedLyrics ?? plain;
+    return text == null ? null : (text: text, richSync: null);
   }
 
   @override

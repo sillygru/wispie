@@ -479,6 +479,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   bool _loading = true;
   bool _hasSynced = false;
   String? _loadedFilename;
+  int _loadGeneration = 0;
 
   /// The playhead is followed off a subscription rather than a `StreamBuilder`
   /// around the list.
@@ -763,7 +764,10 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   }
 
   Future<void> _load() async {
-    final filename = widget.song.filename;
+    final song = widget.song;
+    final filename = song.filename;
+    final generation = ++_loadGeneration;
+    bool isCurrent() => mounted && generation == _loadGeneration;
     _gapCollapseTimer?.cancel();
     _gapCollapseTimer = null;
     setState(() {
@@ -782,19 +786,23 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _gapProgress.value = 0;
     _autoscrollPaused.value = false;
     _lyricsTimingSaveTimer?.cancel();
-    _timing.load(
-      await DatabaseService.instance.getLyricsTimingOffset(filename),
-    );
-    if (!mounted || _loadedFilename != filename) return;
+    final offset =
+        await DatabaseService.instance.getLyricsTimingOffset(filename);
+    if (!isCurrent()) return;
+    _timing.load(offset);
 
     // A streamed track has no file to read tags from, so its lyrics come from
     // the lyrics API. The repository caches to disk, so the local path only
     // costs one read on re-entry.
-    final content = widget.song.isRemote
-        ? await _fetchOnlineLyrics(widget.song)
-        : await ref.read(songRepositoryProvider).getLyrics(widget.song);
+    final repository = ref.read(songRepositoryProvider);
+    final choice = await repository.getLyricsChoice(song);
+    if (!isCurrent()) return;
+    final content = choice?.text ??
+        (song.isRemote
+            ? await _fetchOnlineLyrics(song)
+            : await repository.getAutomaticLyrics(song));
 
-    if (!mounted || _loadedFilename != filename) return;
+    if (!isCurrent()) return;
 
     final rawParsed = (content == null || content.trim().isEmpty)
         ? const <LyricLine>[]
@@ -836,7 +844,27 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       parsedLyrics: parsed,
     );
 
-    unawaited(_loadRichSync(filename, parsed));
+    final chosenSync = choice?.richSync;
+    if (choice == null) {
+      unawaited(_loadRichSync(song, generation, parsed));
+    } else if (chosenSync != null) {
+      final selectedLines = chosenSync.lines
+          .where((line) =>
+              line.text.trim().isNotEmpty && !containsMusicalSymbol(line.text))
+          .toList();
+      if (selectedLines.length == parsed.length) {
+        setState(() {
+          _wordLines = LyricsPane.mergeWordLines(
+            local: parsed,
+            trueAligned: selectedLines,
+            simulatedFallback: generatedWordLines,
+            simulateEnabled: settings.lyricsSimulatedRichSyncEnabled,
+          );
+          _richSyncAvailable = LyricsPane.hasTrueWordSync(_wordLines);
+        });
+        _rebuildTimings();
+      }
+    }
 
     if (parsed.isNotEmpty) {
       final settings = ref.read(settingsProvider);
@@ -846,7 +874,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         sourceContent: content,
       );
 
-      if (!mounted || _loadedFilename != filename) return;
+      if (!isCurrent()) return;
 
       if (cached == '[SAME_LANG]' &&
           LingvaTranslateService.lyricsNeedTranslation(
@@ -857,7 +885,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
           filename,
           settings.lyricsTargetLanguage,
         );
-        if (!mounted || _loadedFilename != filename) return;
+        if (!isCurrent()) return;
         if (settings.lyricsAutoTranslate) {
           unawaited(
             _performTranslation(settings.lyricsTargetLanguage, silent: true),
@@ -886,7 +914,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
               .deleteTranslatedLyrics(filename, settings.lyricsTargetLanguage);
           // Stale entry that duplicates the source blocks the translation UI
           // from rebuilding through the revision notifier.
-          if (!mounted) return;
+          if (!isCurrent()) return;
           ref.read(translationRevisionProvider.notifier).bump();
         }
         if (settings.lyricsAutoTranslate &&
@@ -896,7 +924,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
         } else {
           // No cache and not auto-translating — ensure the button is visible
           // until an API round-trip proves the lyrics are already in target.
-          if (mounted && _loadedFilename == filename) {
+          if (isCurrent()) {
             setState(() {
               _isSameLanguage = false;
             });
@@ -905,7 +933,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       }
     }
 
-    if (!mounted) return;
+    if (!isCurrent()) return;
     // Land on the right line straight away rather than waiting for the next
     // playhead tick.
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
@@ -953,10 +981,17 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     unawaited(ref.read(searchServiceProvider).updateSong(song));
   }
 
-  Future<void> _loadRichSync(String filename, List<LyricLine> local) async {
-    final rich = await _lrclibService.getRichSync(widget.song);
-    if (!mounted || _loadedFilename != filename || rich == null) return;
+  Future<void> _loadRichSync(
+    Song song,
+    int generation,
+    List<LyricLine> local,
+  ) async {
+    final rich = await _lrclibService.getRichSync(song);
+    if (!mounted || _loadGeneration != generation || rich == null) return;
+    _applyRichSync(rich, local);
+  }
 
+  void _applyRichSync(RichLyrics rich, List<LyricLine> local) {
     if (local.isEmpty) {
       final filteredRich = rich.lines
           .where((line) =>
@@ -1017,26 +1052,13 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _onPosition(ref.read(audioPlayerManagerProvider).player.position);
   }
 
-  /// Looks lyrics up on LRCLIB and writes the chosen result into the file.
-  ///
-  /// The write bumps `lyricsRevisionProvider`, which is what reloads this pane —
-  /// no explicit reload here, so applying from anywhere else refreshes it too.
   Future<void> _findLyricsOnline() async {
-    final chosen = await showLyricsSearchSheet(context, song: widget.song);
+    final song = widget.song;
+    final chosen = await showLyricsSearchSheet(context, song: song);
     if (chosen == null || !mounted) return;
 
     try {
-      if (widget.song.isRemote) {
-        await _lrclibService.saveForSong(widget.song, chosen);
-        _onlineLyrics.remove(widget.song.filename);
-        _indexSavedRemoteLyrics(widget.song);
-      } else {
-        await ref
-            .read(songsProvider.notifier)
-            .updateLyrics(widget.song, chosen);
-      }
-      // Both paths reload this pane through the revision counter.
-      ref.read(lyricsRevisionProvider.notifier).bump();
+      await ref.read(songsProvider.notifier).saveLyricsChoice(song, chosen);
       if (mounted) {
         appSnack(context, context.l10n.lyricsSaved, tone: AppTone.success);
       }

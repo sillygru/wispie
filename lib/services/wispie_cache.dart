@@ -140,6 +140,12 @@ class WispieCache {
       (await directory(CacheBucket.lyrics)).path,
       richLyricsCacheName(songFilename)));
 
+  Future<File> lyricsChoiceFile(String filename) async {
+    await init();
+    return File(p.join(
+        _support.path, 'lyrics_choices', '${cacheKeyFor(filename)}.json'));
+  }
+
   Future<File> songLyricsFile(String url) async => File(p.join(
       (await directory(CacheBucket.lyrics)).path, songLyricsCacheName(url)));
 
@@ -441,6 +447,8 @@ class WispieCache {
         await richLyricsFile(after.filename));
     await _move(await remoteLyricsFile(before.filename),
         await remoteLyricsFile(after.filename));
+    await _move(await lyricsChoiceFile(before.filename),
+        await lyricsChoiceFile(after.filename));
 
     final coverUrl = await _moveFfmpegCover(oldKey.hash, newKey.hash, before);
     if (coverUrl != null) {

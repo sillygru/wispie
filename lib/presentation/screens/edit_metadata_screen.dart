@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:file_picker/file_picker.dart';
+import '../../domain/models/lrclib_result.dart';
 import '../../domain/models/online_search_result.dart';
 import '../../domain/services/song_replacement_rules.dart';
 import '../../l10n/app_localizations.dart';
@@ -940,6 +941,7 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
   late TextEditingController _controller;
   bool _isLoading = true;
   bool _isSaving = false;
+  LyricsChoice? _choice;
 
   @override
   void initState() {
@@ -960,9 +962,12 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
       final currentSong =
           ref.read(songsByFilenameProvider)[widget.song.filename] ??
               widget.song;
-      final content = await repo.getLyrics(currentSong);
+      final choice = await repo.getLyricsChoice(currentSong);
+      final content =
+          choice?.text ?? await repo.getAutomaticLyrics(currentSong);
       if (mounted) {
         setState(() {
+          _choice = choice;
           _controller.text = content ?? "";
           _isLoading = false;
         });
@@ -983,9 +988,17 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
       final currentSong =
           ref.read(songsByFilenameProvider)[widget.song.filename] ??
               widget.song;
-      await ref
-          .read(songsProvider.notifier)
-          .updateLyrics(currentSong, _controller.text);
+      final songs = ref.read(songsProvider.notifier);
+      final choice = _choice;
+      final text = _controller.text;
+      if (choice == null) {
+        await songs.updateLyrics(currentSong, text);
+      } else {
+        await songs.saveLyricsChoice(
+          currentSong,
+          (text: text, richSync: text == choice.text ? choice.richSync : null),
+        );
+      }
       if (mounted) {
         Navigator.pop(context);
         appSnack(context, l10n.lyricsSaved);
@@ -1005,7 +1018,10 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
     final chosen = await showLyricsSearchSheet(context, song: widget.song);
     if (chosen == null || !mounted) return;
 
-    setState(() => _controller.text = chosen);
+    setState(() {
+      _choice = chosen;
+      _controller.text = chosen.text;
+    });
     appSnack(context, AppLocalizations.of(context).metadataLyricsLoaded);
   }
 
@@ -1019,7 +1035,7 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
           IconButton(
             icon: const AppIcon(AppIcons.travelExplore),
             tooltip: l10n.metadataSearchOnline,
-            onPressed: _isSaving ? null : _searchOnline,
+            onPressed: _isSaving || _isLoading ? null : _searchOnline,
           ),
           if (_isSaving)
             const Center(
@@ -1030,7 +1046,7 @@ class _LyricsEditorScreenState extends ConsumerState<LyricsEditorScreen> {
             )
           else
             TextButton(
-              onPressed: _save,
+              onPressed: _isLoading ? null : _save,
               child: Text(l10n.metadataSaveUpper,
                   style: const TextStyle(color: Colors.white)),
             ),

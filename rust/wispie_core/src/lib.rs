@@ -382,6 +382,7 @@ fn dispatch(
         "match_plan" => match_plan::run(payload).map(|result| emitter.emit(Emit::Json(result))),
         "bulk_rename_plan" => bulk_rename::run(payload, emitter),
         "lyrics_link" => lyrics_files::run_link(payload, emitter),
+        "lyrics_choice" => lyrics_files::run_choice(payload, emitter),
         "lyrics_rename" => lyrics_files::run_rename(payload, emitter),
         "merge_candidates" => {
             merge_finder::run(payload).map(|result| emitter.emit(Emit::Json(result)))

@@ -24,6 +24,7 @@ import '../services/update_service.dart';
 import '../services/library_logic.dart';
 import '../services/lrclib_service.dart';
 import '../services/lyrics_files_service.dart';
+import '../domain/models/lrclib_result.dart';
 import '../domain/services/song_affinity.dart';
 import '../domain/services/song_replacement_rules.dart';
 import '../domain/services/taste_model.dart';
@@ -1929,6 +1930,15 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
           .read(themeProvider.notifier)
           .updateExtractedPalette(palette, forFilename: song.filename);
     });
+  }
+
+  Future<void> saveLyricsChoice(Song song, LyricsChoice choice) async {
+    await ref.read(songRepositoryProvider).saveLyricsChoice(song, choice);
+    ref.read(lyricsRevisionProvider.notifier).bump();
+    if (song.isLocal ||
+        ref.read(userDataProvider).isInRemoteLibrary(song.filename)) {
+      unawaited(_reindexSong(song));
+    }
   }
 
   Future<void> updateLyrics(Song song, String lyricsContent) async {

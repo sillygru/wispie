@@ -132,11 +132,23 @@ class LrclibService {
 
     final album = cleanTag(song.album);
     final videoId = song.isYoutube ? song.remoteId : null;
-    final found = <int, LrclibResult>{};
+    final found = <String, LrclibResult>{};
 
     void keep(Iterable<LrclibResult> results) {
       for (final result in results) {
-        if (result.isUsable) found.putIfAbsent(result.id, () => result);
+        if (!result.isUsable) continue;
+        // Provider IDs can overlap or be missing. Keep distinct versions.
+        final key = jsonEncode([
+          result.trackName,
+          result.artistName,
+          result.albumName,
+          result.duration?.inMilliseconds,
+          result.instrumental,
+          result.plainLyrics,
+          result.syncedLyrics,
+          result.richLyrics?.toJson(),
+        ]);
+        found.putIfAbsent(key, () => result);
       }
     }
 

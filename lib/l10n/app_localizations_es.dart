@@ -4059,6 +4059,17 @@ class AppLocalizationsEs extends AppLocalizations {
   String get lyricsUnknownLength => 'Duración desconocida';
 
   @override
+  String lyricsUnknownLengthWithTrack(String duration) {
+    return 'Lyrics length unknown · track $duration';
+  }
+
+  @override
+  String lyricsDurationDifference(
+      String duration, String trackDuration, String difference) {
+    return '$duration · track $trackDuration ($difference)';
+  }
+
+  @override
   String lyricsDurationExactMatch(String duration) {
     return '$duration · coincidencia exacta';
   }

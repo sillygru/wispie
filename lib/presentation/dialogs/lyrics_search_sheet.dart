@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../../data/rust/rust_library_tasks.dart';
 import '../../domain/models/lrclib_result.dart';
 import '../../l10n/l10n.dart';
 import '../../domain/services/lrclib_match.dart';
@@ -17,14 +18,12 @@ import '../tokens/app_icons.dart';
 
 /// Opens the LRCLIB lyrics picker for [song].
 ///
-/// Returns the chosen lyrics text, or null if the user backed out. Callers
-/// decide what to do with it — the player writes it straight to the file, the
-/// lyrics editor drops it into its text field so it can be edited first.
-Future<String?> showLyricsSearchSheet(
+/// Returns the confirmed lyrics and their timing payload, if available.
+Future<LyricsChoice?> showLyricsSearchSheet(
   BuildContext context, {
   required Song song,
 }) {
-  return showAppSheet<String>(
+  return showAppSheet<LyricsChoice>(
     context,
     title: context.l10n.lyricsFindTitle,
     builder: (context) => _LyricsSearchSheet(song: song),
@@ -54,7 +53,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
 
   /// Sidecar files already on disk, primary first. Shown while the network
   /// search runs, so lyrics the user already has never wait on a provider.
-  List<String> _localPaths = const [];
+  List<LyricsFileDetails> _localFiles = const [];
 
   @override
   void initState() {
@@ -76,7 +75,8 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
     final links = await LyricsFilesService.instance.linksFor([widget.song]);
     final link = links[widget.song.filename];
     if (!mounted || link == null) return;
-    setState(() => _localPaths = link.paths);
+    final files = await LyricsFilesService.instance.detailsForPaths(link.paths);
+    if (mounted) setState(() => _localFiles = files);
   }
 
   @override
@@ -87,6 +87,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
   }
 
   Future<void> _search() async {
+    if (!mounted) return;
     final token = ++_searchToken;
     setState(() {
       _searching = true;
@@ -120,35 +121,34 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
   }
 
   Future<void> _preview(LrclibResult result) async {
-    final lyrics = result.lyricsFor(preferPlain: _preferPlain);
-    if (lyrics == null) return;
+    final choice = result.choiceFor(preferPlain: _preferPlain);
+    if (choice == null) return;
 
     final confirmed = await _confirmPreview(
       result.trackName,
       result.instrumental
           ? context.l10n.lyricsInstrumentalWarning
-          : _previewText(lyrics),
+          : _previewText(choice.text),
     );
     if (confirmed && mounted) {
-      Navigator.pop(context, lyrics);
+      Navigator.pop(context, choice);
     }
   }
 
   /// Uses a sidecar file the user already has, previewed like a remote result.
-  Future<void> _previewLocal(String path) async {
-    final lyrics = await LyricsFilesService.instance.textForPath(path);
-    if (!mounted) return;
-    if (lyrics == null) {
+  Future<void> _previewLocal(LyricsFileDetails file) async {
+    final lyrics = file.text?.trim();
+    if (lyrics == null || lyrics.isEmpty) {
       appSnack(context, context.l10n.lyricsFileUnreadable);
       return;
     }
 
     final confirmed = await _confirmPreview(
-      p.basename(path),
+      p.basename(file.path),
       _previewText(lyrics),
     );
     if (confirmed && mounted) {
-      Navigator.pop(context, lyrics);
+      Navigator.pop<LyricsChoice>(context, (text: lyrics, richSync: null));
     }
   }
 
@@ -269,7 +269,8 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
-        border: OutlineInputBorder(borderRadius: AppTokens.brSm),
+        border: InputBorder.none,
+        filled: true,
       ),
     );
   }
@@ -278,7 +279,7 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
     final l10n = context.l10n;
     final children = <Widget>[];
 
-    if (_localPaths.isNotEmpty) {
+    if (_localFiles.isNotEmpty) {
       children.add(Padding(
         padding: const EdgeInsets.fromLTRB(
           AppTokens.s5,
@@ -291,13 +292,12 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
           style: AppTokens.sectionLabel(context),
         ),
       ));
-      for (var i = 0; i < _localPaths.length; i++) {
-        final path = _localPaths[i];
+      for (final file in _localFiles) {
         children.add(_LocalFileRow(
-          path: path,
-          isDefault: i == 0,
+          file: file,
+          songDuration: widget.song.duration,
           accent: accent,
-          onTap: () => _previewLocal(path),
+          onTap: () => _previewLocal(file),
         ));
       }
       children.add(const SizedBox(height: AppTokens.s3));
@@ -351,84 +351,46 @@ class _LyricsSearchSheetState extends ConsumerState<_LyricsSearchSheet> {
 
 /// A lyric file that is already on disk, listed above the network results.
 class _LocalFileRow extends StatelessWidget {
-  final String path;
-  final bool isDefault;
+  final LyricsFileDetails file;
+  final Duration? songDuration;
   final Color accent;
   final VoidCallback onTap;
 
   const _LocalFileRow({
-    required this.path,
-    required this.isDefault,
+    required this.file,
+    required this.songDuration,
     required this.accent,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return ListTile(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s5,
-          vertical: AppTokens.s3,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    p.basename(path),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTokens.rowTitle(context),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    p.dirname(path),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTokens.rowSubtitle(context),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppTokens.s3),
-            if (isDefault) ...[
-              _badge(context.l10n.lyricsLocalFileDefaultBadge, accent),
-              const SizedBox(width: AppTokens.s1),
-            ],
-            _badge(
-              context.l10n.lyricsLocalFileBadge,
-              AppTokens.fgTertiary,
-            ),
-          ],
-        ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
+      title: Text(p.basename(file.path), style: AppTokens.rowTitle(context)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            p.dirname(file.path),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (file.text?.trim().isNotEmpty == true)
+            Text(
+              _durationLine(context.l10n, file.duration, songDuration),
+              style: AppTokens.meta(context),
+            )
+          else
+            Text(context.l10n.lyricsFileUnreadable),
+        ],
       ),
+      trailing: file.text?.trim().isNotEmpty == true
+          ? _SyncBadge(type: file.syncType, accent: accent)
+          : null,
     );
   }
-
-  Widget _badge(String label, Color color) => Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s2,
-          vertical: AppTokens.s1,
-        ),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
-          borderRadius: AppTokens.brPill,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.6,
-            color: color,
-          ),
-        ),
-      );
 }
 
 /// Switches the whole list between synced and plain, rather than asking per
@@ -494,7 +456,10 @@ class _ResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final available = result.lyricsFor(preferPlain: preferPlain) != null;
+    final available = result.isUsable;
+    final syncType = preferPlain && result.hasPlain && !result.instrumental
+        ? LyricsSyncType.plain
+        : result.syncType;
 
     return Opacity(
       opacity: available ? 1 : 0.4,
@@ -527,14 +492,15 @@ class _ResultRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _durationLine(context.l10n),
+                      _durationLine(
+                          context.l10n, result.duration, localDuration),
                       style: AppTokens.meta(context),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: AppTokens.s3),
-              _badge(context),
+              _SyncBadge(type: syncType, accent: accent),
             ],
           ),
         ),
@@ -549,32 +515,50 @@ class _ResultRow extends StatelessWidget {
     if (album.isEmpty) return artist;
     return '$artist · $album';
   }
+}
 
-  /// The remote length plus how far it is from the local file — the clearest
-  /// signal that a result is a different recording rather than a bad tag.
-  String _durationLine(AppLocalizations l10n) {
-    final remote = result.duration;
-    if (remote == null) return l10n.lyricsUnknownLength;
-
-    final formatted = _format(remote);
-    final local = localDuration;
-    if (local == null) return formatted;
-
-    final deltaSeconds = (remote - local).inSeconds;
-    if (deltaSeconds == 0) return l10n.lyricsDurationExactMatch(formatted);
-
-    final sign = deltaSeconds > 0 ? '+' : '−';
-    return '$formatted · $sign${deltaSeconds.abs()}s';
+String _durationLine(
+  AppLocalizations l10n,
+  Duration? lyricsDuration,
+  Duration? songDuration,
+) {
+  final local = songDuration?.inMilliseconds ?? 0;
+  final remote = lyricsDuration?.inMilliseconds ?? 0;
+  if (remote <= 0) {
+    return local <= 0
+        ? l10n.lyricsUnknownLength
+        : l10n.lyricsUnknownLengthWithTrack(_formatDuration(local));
   }
+  final formatted = _formatDuration(remote);
+  if (local <= 0) return formatted;
+  final delta = remote - local;
+  if (delta == 0) return l10n.lyricsDurationExactMatch(formatted);
+  final sign = delta > 0 ? '+' : '−';
+  return l10n.lyricsDurationDifference(
+    formatted,
+    _formatDuration(local),
+    '$sign${_formatDuration(delta.abs())}',
+  );
+}
 
-  static String _format(Duration duration) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
+String _formatDuration(int milliseconds) {
+  final minutes = milliseconds ~/ Duration.millisecondsPerMinute;
+  final seconds = (milliseconds ~/ 1000) % 60;
+  final whole = '$minutes:${seconds.toString().padLeft(2, '0')}';
+  final fraction = milliseconds % 1000;
+  if (fraction == 0) return whole;
+  return '$whole.${fraction.toString().padLeft(3, '0').replaceFirst(RegExp(r'0+$'), '')}';
+}
 
-  Widget _badge(BuildContext context) {
-    final (label, color) = switch (result.syncType) {
+class _SyncBadge extends StatelessWidget {
+  const _SyncBadge({required this.type, required this.accent});
+
+  final LyricsSyncType type;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = switch (type) {
       LyricsSyncType.word => (context.l10n.lyricsBadgeWordSync, accent),
       LyricsSyncType.line => (context.l10n.lyricsBadgeLineSync, accent),
       LyricsSyncType.instrumental => (
@@ -598,10 +582,8 @@ class _ResultRow extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 10,
+        style: AppTokens.meta(context).copyWith(
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
           color: color,
         ),
       ),

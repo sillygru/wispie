@@ -9,6 +9,7 @@ import '../../services/ffmpeg_service.dart';
 import '../../services/lyrics_files_service.dart';
 import '../../services/wispie_paths.dart';
 import '../models/search_index_entry.dart';
+import 'song_repository.dart';
 
 /// Repository for managing the search index database
 ///
@@ -17,6 +18,7 @@ import '../models/search_index_entry.dart';
 /// across song metadata and lyrics. SQLite access lives here; the predicates,
 /// lyric text extraction and every refresh decision come from the native core.
 class SearchIndexRepository {
+  final _songs = SongRepository();
   static const String _tableName = 'search_index';
   static const String _metadataTable = 'search_metadata';
 
@@ -167,7 +169,10 @@ class SearchIndexRepository {
         if (decision['skip'] as bool) continue;
 
         updateCount++;
-        final lyricsContent = await _lyricsFor(song, decision);
+        final choice = song.isLocal ? await _songs.getLyricsChoice(song) : null;
+        final lyricsContent = choice == null
+            ? await _lyricsFor(song, decision)
+            : _plainLyrics(choice.text);
 
         batch.insert(
           _tableName,
@@ -235,6 +240,12 @@ class SearchIndexRepository {
 
     if (!song.isLocal) {
       await _upsertRow(song, await _cachedRemoteLyrics(song));
+      return;
+    }
+
+    final chosen = await _songs.getLyricsChoice(song);
+    if (chosen != null) {
+      await _upsertRow(song, _plainLyrics(chosen.text));
       return;
     }
 
@@ -319,18 +330,24 @@ class SearchIndexRepository {
   /// cache is the only copy that exists.
   Future<String?> _cachedRemoteLyrics(Song song) async {
     try {
+      final chosen = await _songs.getLyricsChoice(song);
+      if (chosen != null) return _plainLyrics(chosen.text);
       final file = await WispieCache.instance.remoteLyricsFile(song.filename);
       if (!await file.exists()) return null;
       final text = (await file.readAsString()).trim();
       if (text.isEmpty) return null;
-      final plain = NativeAccel.plainLyricsText(text).toLowerCase().trim();
-      return plain.isEmpty ? null : plain;
+      return _plainLyrics(text);
     } on Object catch (error) {
       debugPrint(
           'Search index: could not read cached lyrics for ${song.filename}: '
           '$error');
       return null;
     }
+  }
+
+  String? _plainLyrics(String text) {
+    final plain = NativeAccel.plainLyricsText(text).toLowerCase().trim();
+    return plain.isEmpty ? null : plain;
   }
 
   /// Removes a song from the index

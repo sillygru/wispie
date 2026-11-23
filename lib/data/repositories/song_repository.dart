@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../../domain/models/lrclib_result.dart';
 import '../../domain/services/cache_policy.dart';
 import '../../models/song.dart';
 import '../../services/ffmpeg_service.dart';
 import '../../services/lyrics_files_service.dart';
 import '../../services/wispie_cache.dart';
+import '../rust/rust_library_tasks.dart';
 
 class SongRepository {
   final FFmpegService _ffmpegService = FFmpegService();
@@ -23,9 +25,30 @@ class SongRepository {
   // single failed disk/ffprobe read can't leave one of them empty.
   final Map<String, String> _resolvedLyrics = {};
 
+  Future<LyricsChoice?> getLyricsChoice(Song song) async {
+    try {
+      final file = await WispieCache.instance.lyricsChoiceFile(song.filename);
+      if (!await file.exists()) return null;
+      return await RustLibraryTasks.lyricsChoice(file.path);
+    } on Object catch (error) {
+      debugPrint('Could not read lyrics choice: $error');
+      return null;
+    }
+  }
+
+  Future<void> saveLyricsChoice(Song song, LyricsChoice choice) async {
+    final file = await WispieCache.instance.lyricsChoiceFile(song.filename);
+    await RustLibraryTasks.lyricsChoice(file.path, save: choice);
+  }
+
   /// Gets lyrics from embedded metadata in the audio file using FFmpeg.
   /// Always tries to read lyrics regardless of hasLyrics flag.
-  Future<String?> getLyrics(Song song) {
+  Future<String?> getLyrics(Song song) async {
+    final choice = await getLyricsChoice(song);
+    return choice?.text ?? await getAutomaticLyrics(song);
+  }
+
+  Future<String?> getAutomaticLyrics(Song song) {
     if (!song.isLocal) return Future.value(null);
     final resolved = _resolvedLyrics[song.url];
     if (resolved != null) return Future.value(resolved);
@@ -81,6 +104,8 @@ class SongRepository {
   /// Checks if a song has lyrics using cached data first, then the sidecar
   /// files and FFmpeg if needed.
   Future<bool> hasLyrics(Song song) async {
+    final choice = await getLyricsChoice(song);
+    if (choice != null) return choice.text.trim().isNotEmpty;
     final cacheEntry = await _readLyricsCache(song);
     if (cacheEntry != null && cacheEntry.hasLyrics) return true;
 

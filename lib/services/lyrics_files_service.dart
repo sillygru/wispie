@@ -57,14 +57,11 @@ class LyricsFilesService {
     return (text == null || text.isEmpty) ? null : text;
   }
 
-  /// One sidecar file, read and converted to LRC.
-  Future<String?> textForPath(String path) async {
-    final link = await _guard(
-      () => RustLibraryTasks.lyricsFileText(path),
-      null,
+  Future<List<LyricsFileDetails>> detailsForPaths(List<String> paths) {
+    return _guard(
+      () => RustLibraryTasks.lyricsFileDetails(paths),
+      const [],
     );
-    final text = link?.trim();
-    return (text == null || text.isEmpty) ? null : text;
   }
 
   /// Renames sidecar files, mapping each existing path to its song's new stem.
