@@ -164,13 +164,15 @@ Future<void> _buildAndroid(String root, String abi) async {
     throw StateError('NDK linker not found: $linker');
   }
 
-  final upper = triple.toUpperCase().replaceAll('-', '_');
+  final target = triple.replaceAll('-', '_');
   await _cargo(
     root,
     ['build', '--release', '--target', triple],
     environment: {
-      'CARGO_TARGET_${upper}_LINKER': linker,
-      'CARGO_TARGET_${upper}_AR': p.join(bin, 'llvm-ar'),
+      'CARGO_TARGET_${target.toUpperCase()}_LINKER': linker,
+      // Bundled SQLite uses cc-rs, which reads its own target-specific tools.
+      'CC_$target': linker,
+      'AR_$target': p.join(bin, 'llvm-ar'),
     },
   );
 

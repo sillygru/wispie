@@ -16,6 +16,7 @@ on:
     paths:
       - 'lib/**'
       - 'rust/**'
+      - 'tool/rust/**'
       - 'android/**'
       - 'ios/**'
       - 'linux/**'
