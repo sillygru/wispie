@@ -361,25 +361,6 @@ class NativeAccel {
     );
   }
 
-  static List<double> waveformPeaks(
-    Uint8List pcm, {
-    required int targetSamples,
-    int expectedBytes = 0,
-  }) {
-    final decoded = _askBytes(
-      {
-        'command': 'waveform',
-        'targetSamples': targetSamples,
-        'expectedBytes': expectedBytes,
-      },
-      pcm,
-    );
-    return [
-      for (final value in decoded['bars'] as List<dynamic>)
-        (value as num).toDouble(),
-    ];
-  }
-
   static Map<String, dynamic> matchPlan({
     required List<Map<String, Object?>> library,
     required List<Map<String, Object?>> candidates,
@@ -672,34 +653,56 @@ class NativeAccel {
 
   static Future<List<double>> decodeWaveformInBackground(
     String path, {
-    required int sampleRate,
     required int targetSamples,
-    required int expectedBytes,
+    required Duration duration,
     SendPort? partial,
   }) =>
-      Isolate.run(() {
-        final bytes = decodePcm(
-          path,
-          sampleRate,
-          peakSamples: partial == null ? null : targetSamples,
-          expectedBytes: expectedBytes,
-          onPartial: partial?.send,
-        );
-        if (bytes.length < 2) return const <double>[];
-        return waveformPeaks(bytes, targetSamples: targetSamples);
-      });
+      Isolate.run(
+        () => _readMediaWaveform(path, targetSamples, duration, partial),
+      );
+
+  static List<double> _readMediaWaveform(
+    String path,
+    int targetSamples,
+    Duration duration,
+    SendPort? partial,
+  ) {
+    List<double>? completed;
+    String? error;
+    final code = WispieCore.run(
+      {
+        'command': 'media_waveform',
+        'path': path,
+        'targetSamples': targetSamples,
+        if (partial != null) 'durationMs': duration.inMilliseconds,
+      },
+      onEvent: (kind, payload) {
+        if (kind == WispieCore.eventError) {
+          error = (jsonDecode(payload) as Map<String, dynamic>)['message']
+              as String?;
+        } else if (kind == WispieCore.eventItems) {
+          final item = jsonDecode(payload) as Map<String, dynamic>;
+          final bars = [
+            for (final value in (item['bars'] as List).cast<num>())
+              value.toDouble(),
+          ];
+          if (item['complete'] == true) {
+            completed = bars;
+          } else {
+            partial?.send(bars);
+          }
+        }
+      },
+    );
+    if (code != 0) {
+      throw NativeCommandException(error ?? 'media waveform exited with $code');
+    }
+    return completed ??
+        (throw const NativeCommandException('media waveform sent no result'));
+  }
 
   /// Decodes [path] to little-endian mono 16-bit PCM at [sampleRate].
-  ///
-  /// [onPartial] receives the waveform bars of everything decoded so far, so a
-  /// seek bar can reveal while a long track is still being read.
-  static Uint8List decodePcm(
-    String path,
-    int sampleRate, {
-    int? peakSamples,
-    int expectedBytes = 0,
-    void Function(List<double> bars)? onPartial,
-  }) {
+  static Uint8List decodePcm(String path, int sampleRate) {
     Uint8List? out;
     String? error;
     final code = WispieCore.runBytes(
@@ -707,25 +710,13 @@ class NativeAccel {
         'command': 'media_decode',
         'path': path,
         'sampleRate': sampleRate,
-        if (peakSamples != null)
-          'peaks': {'samples': peakSamples, 'expectedBytes': expectedBytes},
       },
       Uint8List(0),
       onEvent: (kind, payload) {
         if (kind == WispieCore.eventError) {
           error = (jsonDecode(payload) as Map<String, dynamic>)['message']
               as String?;
-          return;
         }
-        if (onPartial == null) return;
-        final decoded = jsonDecode(payload);
-        if (decoded is! Map) return;
-        final bars = decoded['bars'];
-        if (bars is! List) return;
-        onPartial([
-          for (final value in bars)
-            if (value is num) value.toDouble() else 0.0,
-        ]);
       },
       onBytes: (value) => out = value,
     );

@@ -12,19 +12,33 @@ pub fn run(
     if target_samples == 0 || target_samples > 8192 || bytes.len() < 2 {
         return Ok(json!({ "bars": [] }));
     }
+    let (pairs, _) = bytes.as_chunks::<2>();
+    let pcm: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
+    Ok(json!({
+        "bars": peaks_for_bytes(&pcm, target_samples, expected_bytes, bytes.len()),
+    }))
+}
+
+pub fn peaks(pcm: &[i16], target_samples: usize, expected_bytes: usize) -> Vec<f64> {
+    if target_samples == 0 || target_samples > 8192 || pcm.is_empty() {
+        return Vec::new();
+    }
+    peaks_for_bytes(pcm, target_samples, expected_bytes, pcm.len() * 2)
+}
+
+fn peaks_for_bytes(
+    pcm: &[i16],
+    target_samples: usize,
+    expected_bytes: usize,
+    bytes_read: usize,
+) -> Vec<f64> {
     let filled = if expected_bytes > 0 {
-        (((bytes.len() as f64 / expected_bytes as f64).clamp(0.0, 1.0) * target_samples as f64)
+        (((bytes_read as f64 / expected_bytes as f64).clamp(0.0, 1.0) * target_samples as f64)
             .round() as usize)
             .clamp(1, target_samples)
     } else {
         target_samples
     };
-    let usable = bytes.len() & !1;
-    let (pairs, _) = bytes[..usable].as_chunks::<2>();
-    let pcm: Vec<i16> = pairs.iter().map(|v| i16::from_le_bytes(*v)).collect();
-    if pcm.is_empty() {
-        return Ok(json!({ "bars": [] }));
-    }
     let mut db = vec![f64::NEG_INFINITY; filled];
     for (i, value) in db.iter_mut().enumerate() {
         let start = i * pcm.len() / filled;
@@ -55,7 +69,7 @@ pub fn run(
     audible.sort_by(f64::total_cmp);
     let mut bars = vec![0.0; filled];
     if audible.is_empty() {
-        return Ok(json!({ "bars": bars }));
+        return bars;
     }
     let at = |q: f64| audible[((audible.len() as f64 * q).floor() as usize).min(audible.len() - 1)];
     let hi = at(0.99);
@@ -74,5 +88,5 @@ pub fn run(
         }
         bars[i] = 0.04 + 0.96 * ((*value - lo) / range).clamp(0.0, 1.0);
     }
-    Ok(json!({ "bars": bars }))
+    bars
 }

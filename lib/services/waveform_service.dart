@@ -19,13 +19,6 @@ class WaveformService {
   /// should occupy, so the waveform reveals left-to-right as it decodes.
   static const int targetWaveformSamples = waveformBarCount;
 
-  /// The rate the bar decode runs at: four thousand mono samples a second is
-  /// all a few hundred bars can show.
-  static const int _waveformSampleRate = 4000;
-
-  /// PCM bytes the decode writes per second: 4000 Hz, mono, 16-bit.
-  static const int _pcmBytesPerSecond = _waveformSampleRate * 2;
-
   /// Warmup and the visible bars share one decode per filename.
   final Map<String, _ProgressiveWaveform> _progressive = {};
 
@@ -134,10 +127,9 @@ class WaveformService {
       return;
     }
 
-    final samples = await _extractWaveformStream(
-      path: path,
-      total: total,
-      onPartial: state.add,
+    final samples = await MediaDecodeGate.run(
+      () => _decodeWaveform(path, total, state.add),
+      priority: MediaDecodePriority.high,
     );
     state.add(samples);
     if (samples.isEmpty) return;
@@ -148,42 +140,28 @@ class WaveformService {
     }
   }
 
-  /// Decodes straight to the bar rate inside the native core: no subprocess on
-  /// desktop, no FFmpegKit session on mobile, no temp PCM file.
-  Future<List<double>> _extractWaveformStream({
-    required String path,
-    required Duration total,
-    void Function(List<double>)? onPartial,
-  }) {
-    return MediaDecodeGate.run(
-      () => _decodeWaveform(path: path, total: total, onPartial: onPartial),
-      priority: MediaDecodePriority.high,
-    );
-  }
-
-  Future<List<double>> _decodeWaveform({
-    required String path,
-    required Duration total,
-    void Function(List<double>)? onPartial,
-  }) async {
-    final targetSamples = targetWaveformSamples;
-    // The player's duration, when known, says how much of the song a prefix
-    // covers, so a partial reveal lands where the final shape will.
-    final expectedBytes = total.inMilliseconds > 0
-        ? (total.inMilliseconds * _pcmBytesPerSecond) ~/ 1000
-        : total.inSeconds * _pcmBytesPerSecond;
-
+  Future<List<double>> _decodeWaveform(
+    String path,
+    Duration total,
+    void Function(List<double>) onPartial,
+  ) async {
+    if (total <= Duration.zero) {
+      return NativeAccel.decodeWaveformInBackground(
+        path,
+        targetSamples: targetWaveformSamples,
+        duration: total,
+      );
+    }
     final port = ReceivePort();
     final subscription = port.listen((message) {
-      if (message is List) onPartial?.call(message.cast<double>());
+      if (message is List) onPartial(message.cast<double>());
     });
     try {
       return await NativeAccel.decodeWaveformInBackground(
         path,
-        sampleRate: _waveformSampleRate,
-        targetSamples: targetSamples,
-        expectedBytes: expectedBytes,
-        partial: onPartial == null || expectedBytes == 0 ? null : port.sendPort,
+        targetSamples: targetWaveformSamples,
+        duration: total,
+        partial: port.sendPort,
       );
     } finally {
       await subscription.cancel();

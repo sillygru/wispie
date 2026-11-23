@@ -237,6 +237,7 @@ fn dispatch(
             sync::Reply::Bytes(out) => emitter.emit(Emit::Bytes(out)),
         }),
         "media_decode" => media::run(&payload, emitter),
+        "media_waveform" => media::run_waveform(&payload, emitter),
         "db" => db::run(&payload, emitter),
         "youtube" => youtube::run(&payload, emitter),
         "music_feed" => music_feed::run(&payload, emitter),

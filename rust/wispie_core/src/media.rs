@@ -6,7 +6,7 @@
 
 use std::fs::File;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::codecs::registry::CodecRegistry;
 use symphonia::core::common::Tier;
@@ -24,12 +24,17 @@ use crate::waveform;
 /// per this much audio reveals the bar while a long track decodes without
 /// flooding the port.
 const PROGRESS_BYTES: usize = 1 << 20;
+const WAVEFORM_SAMPLE_RATE: u32 = 4_000;
 
-pub fn run(payload: &serde_json::Value, emitter: &Emitter) -> Result<(), String> {
-    let path = payload
+fn media_path(payload: &Value) -> Result<&str, String> {
+    payload
         .get("path")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| "media decode needs a path".to_string())?;
+        .and_then(Value::as_str)
+        .ok_or_else(|| "media decode needs a path".to_string())
+}
+
+pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
+    let path = media_path(payload)?;
     let sample_rate = payload
         .get("sampleRate")
         .and_then(|value| value.as_u64())
@@ -45,14 +50,37 @@ pub fn run(payload: &serde_json::Value, emitter: &Emitter) -> Result<(), String>
     });
 
     let pcm = decode_to_mono(path, sample_rate, peak_targets, emitter)?;
-    if pcm.len() < 2 {
-        return Err("media decode produced no audio".to_string());
-    }
-    emitter.emit(Emit::Bytes(pcm));
+    emitter.emit(Emit::Bytes(to_bytes(&pcm)));
     Ok(())
 }
 
-/// Decodes `path` to little-endian mono s16 at `dst_rate`.
+pub fn run_waveform(payload: &Value, emitter: &Emitter) -> Result<(), String> {
+    let path = media_path(payload)?;
+    let targets = payload
+        .get("targetSamples")
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|targets| (1..=8192).contains(targets))
+        .ok_or_else(|| "waveform needs a valid bar count".to_string())?;
+    let expected_bytes = payload
+        .get("durationMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        .saturating_mul(u64::from(WAVEFORM_SAMPLE_RATE) * 2)
+        / 1_000;
+    let progress = usize::try_from(expected_bytes)
+        .ok()
+        .filter(|bytes| *bytes > 0)
+        .map(|bytes| (targets, bytes));
+    let pcm = decode_to_mono(path, WAVEFORM_SAMPLE_RATE, progress, emitter)?;
+    emitter.emit(Emit::Json(json!({
+        "bars": waveform::peaks(&pcm, targets, 0),
+        "complete": true,
+    })));
+    Ok(())
+}
+
+/// Decodes `path` to mono s16 samples at `dst_rate`.
 ///
 /// Downsampling averages each output window rather than dropping samples: a
 /// 48 kHz kick drum point-sampled to 4 kHz aliases into noise the waveform then
@@ -62,7 +90,7 @@ fn decode_to_mono(
     dst_rate: u32,
     peak_targets: Option<(usize, usize)>,
     emitter: &Emitter,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<i16>, String> {
     let file = File::open(path).map_err(|error| format!("open media: {error}"))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -140,19 +168,19 @@ fn decode_to_mono(
         if let Some((targets, expected)) = peak_targets {
             if samples.len() * 2 - last_emit >= PROGRESS_BYTES {
                 last_emit = samples.len() * 2;
-                let bytes = to_bytes(&samples);
-                if let Ok(peaks) = waveform::run(&bytes, targets, expected) {
-                    emitter.emit(Emit::Json(json!({
-                        "bytes": bytes.len(),
-                        "bars": peaks.get("bars").cloned().unwrap_or_else(|| json!([])),
-                    })));
-                }
+                emitter.emit(Emit::Json(json!({
+                    "bytes": last_emit,
+                    "bars": waveform::peaks(&samples, targets, expected),
+                })));
             }
         }
     }
 
     resampler.flush(&mut samples);
-    Ok(to_bytes(&samples))
+    if samples.is_empty() {
+        return Err("media decode produced no audio".to_string());
+    }
+    Ok(samples)
 }
 
 fn to_bytes(samples: &[i16]) -> Vec<u8> {
