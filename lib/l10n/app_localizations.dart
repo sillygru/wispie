@@ -1701,6 +1701,48 @@ abstract class AppLocalizations {
   /// **'Now Playing'**
   String get appearanceGroupNowPlaying;
 
+  /// No description provided for @appearanceGroupScrolling.
+  ///
+  /// In en, this message translates to:
+  /// **'Scrolling'**
+  String get appearanceGroupScrolling;
+
+  /// No description provided for @appearanceCurvedScrollbarTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Curved scrollbar'**
+  String get appearanceCurvedScrollbarTitle;
+
+  /// No description provided for @appearanceCurvedScrollbarSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the display corners when a list reaches the screen edge'**
+  String get appearanceCurvedScrollbarSubtitle;
+
+  /// No description provided for @appearanceScrollbarRadiusTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Scrollbar corner radius'**
+  String get appearanceScrollbarRadiusTitle;
+
+  /// No description provided for @appearanceScrollbarRadiusAutomatic.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get appearanceScrollbarRadiusAutomatic;
+
+  /// No description provided for @appearanceScrollbarRadiusSquare.
+  ///
+  /// In en, this message translates to:
+  /// **'Square'**
+  String get appearanceScrollbarRadiusSquare;
+
+  /// No description provided for @appearanceScrollbarRadiusValue.
+  ///
+  /// In en, this message translates to:
+  /// **'{radius} dp'**
+  String appearanceScrollbarRadiusValue(int radius);
+
   /// Title for the audio visualizer style setting
   ///
   /// In en, this message translates to:

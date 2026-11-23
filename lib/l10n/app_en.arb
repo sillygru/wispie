@@ -1210,6 +1210,21 @@
   "@appearanceGroupNowPlaying": {
     "description": "Group header label for Now Playing appearance options"
   },
+  "appearanceGroupScrolling": "Scrolling",
+  "appearanceCurvedScrollbarTitle": "Curved scrollbar",
+  "appearanceCurvedScrollbarSubtitle": "Follow the display corners when a list reaches the screen edge",
+  "appearanceScrollbarRadiusTitle": "Scrollbar corner radius",
+  "appearanceScrollbarRadiusAutomatic": "Automatic",
+  "appearanceScrollbarRadiusSquare": "Square",
+  "appearanceScrollbarRadiusValue": "{radius} dp",
+  "@appearanceScrollbarRadiusValue": {
+    "placeholders": {
+      "radius": {
+        "type": "int",
+        "format": "decimalPattern"
+      }
+    }
+  },
   "appearanceVisualizerTitle": "Audio Visualizer",
   "@appearanceVisualizerTitle": {
     "description": "Title for the audio visualizer style setting"

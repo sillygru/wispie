@@ -16,10 +16,12 @@ import 'presentation/widgets/app_feedback_host.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/screens/setup_screen.dart';
 import 'presentation/motion/motion.dart';
+import 'presentation/motion/display_corners.dart';
 import 'presentation/player_panel/player_panel.dart';
 import 'presentation/widgets/orientation_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/setup_provider.dart';
+import 'providers/settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/providers.dart';
@@ -261,12 +263,14 @@ class _WispieAppState extends ConsumerState<WispieApp>
     with WidgetsBindingObserver {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   bool _updateDialogShown = false;
+  BorderRadius _displayCorners = BorderRadius.zero;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshDisplayCorners());
       unawaited(WispieCache.instance.init());
       unawaited(ColorExtractionService.init());
       unawaited(WispieCache.instance.runMaintenance());
@@ -355,6 +359,20 @@ class _WispieAppState extends ConsumerState<WispieApp>
     } catch (_) {
       // Fail silently — update dialogs are best-effort.
     }
+  }
+
+  Future<void> _refreshDisplayCorners() async {
+    final corners = await readDisplayCorners();
+    if (mounted && corners != _displayCorners) {
+      setState(() => _displayCorners = corners);
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_refreshDisplayCorners());
+    });
   }
 
   @override
@@ -456,6 +474,10 @@ class _WispieAppState extends ConsumerState<WispieApp>
 
   @override
   Widget build(BuildContext context) {
+    final (curvedScrollbar, scrollbarRadius) = ref.watch(
+      settingsProvider.select((settings) =>
+          (settings.curvedScrollbarEnabled, settings.scrollbarCornerRadius)),
+    );
     final authState = ref.watch(authProvider);
     final isSetupComplete = ref.watch(setupProvider);
     final themeState = ref.watch(themeProvider);
@@ -472,7 +494,11 @@ class _WispieAppState extends ConsumerState<WispieApp>
       navigatorObservers: [PopupScrollDismiss.observer],
       // One scroll feel for every scrollable in the app. Screens opt out only
       // when they need a different physical metaphor, not per platform.
-      scrollBehavior: const MotionScrollBehavior(),
+      scrollBehavior: MotionScrollBehavior(
+        displayCorners: curvedScrollbar ? _displayCorners : BorderRadius.zero,
+        cornerRadiusOverride:
+            curvedScrollbar ? scrollbarRadius.logicalPixels?.toDouble() : null,
+      ),
       builder: (context, child) {
         // Above the navigator: feedback posted by a screen that is closing still
         // lands, and every message uses one column from the top of the window.

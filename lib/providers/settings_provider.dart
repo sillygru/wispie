@@ -4,6 +4,19 @@ import '../models/song.dart';
 import '../services/app_icon_service.dart';
 import '../models/quick_action_config.dart';
 
+enum ScrollbarCornerRadius {
+  automatic(null),
+  square(0),
+  small(16),
+  medium(32),
+  large(48),
+  extraLarge(64);
+
+  const ScrollbarCornerRadius(this.logicalPixels);
+
+  final int? logicalPixels;
+}
+
 class SettingsState {
   final VisualizerMode visualizerMode;
   final bool autoHideBottomBarOnScroll;
@@ -54,6 +67,8 @@ class SettingsState {
   final bool autoSyncEnabled;
   final bool syncSettingsEnabled;
   final bool fullBleedDesignEnabled;
+  final bool curvedScrollbarEnabled;
+  final ScrollbarCornerRadius scrollbarCornerRadius;
   final bool playerSwipeChangesPane;
   final AppIconStyle appIconStyle;
   final bool spinArtworkWhilePlaying;
@@ -105,6 +120,8 @@ class SettingsState {
     this.autoSyncEnabled = true,
     this.syncSettingsEnabled = true,
     this.fullBleedDesignEnabled = true,
+    this.curvedScrollbarEnabled = true,
+    this.scrollbarCornerRadius = ScrollbarCornerRadius.automatic,
     this.playerSwipeChangesPane = true,
     this.appIconStyle = AppIconStyle.newIcon,
     this.spinArtworkWhilePlaying = false,
@@ -163,6 +180,8 @@ class SettingsState {
     bool? autoSyncEnabled,
     bool? syncSettingsEnabled,
     bool? fullBleedDesignEnabled,
+    bool? curvedScrollbarEnabled,
+    ScrollbarCornerRadius? scrollbarCornerRadius,
     bool? playerSwipeChangesPane,
     AppIconStyle? appIconStyle,
     bool? spinArtworkWhilePlaying,
@@ -242,6 +261,10 @@ class SettingsState {
       syncSettingsEnabled: syncSettingsEnabled ?? this.syncSettingsEnabled,
       fullBleedDesignEnabled:
           fullBleedDesignEnabled ?? this.fullBleedDesignEnabled,
+      curvedScrollbarEnabled:
+          curvedScrollbarEnabled ?? this.curvedScrollbarEnabled,
+      scrollbarCornerRadius:
+          scrollbarCornerRadius ?? this.scrollbarCornerRadius,
       appIconStyle: appIconStyle ?? this.appIconStyle,
       spinArtworkWhilePlaying:
           spinArtworkWhilePlaying ?? this.spinArtworkWhilePlaying,
@@ -301,6 +324,8 @@ class SettingsNotifier extends Notifier<SettingsState> {
   static const String _keyAutoSyncEnabled = 'auto_sync_enabled';
   static const String _keySyncSettingsEnabled = 'sync_settings_enabled';
   static const String _keyAppIconStyle = 'app_icon_style';
+  static const String _keyCurvedScrollbarEnabled = 'curved_scrollbar_enabled';
+  static const String _keyScrollbarCornerRadius = 'scrollbar_corner_radius';
   static const String _keyFullBleedDesignEnabled = 'full_bleed_design_enabled';
   static const String _keySpinArtworkWhilePlaying =
       'spin_artwork_while_playing';
@@ -425,6 +450,11 @@ class SettingsNotifier extends Notifier<SettingsState> {
       autoSyncEnabled: prefs.getBool(_keyAutoSyncEnabled) ?? true,
       syncSettingsEnabled: prefs.getBool(_keySyncSettingsEnabled) ?? true,
       fullBleedDesignEnabled: prefs.getBool(_keyFullBleedDesignEnabled) ?? true,
+      curvedScrollbarEnabled: prefs.getBool(_keyCurvedScrollbarEnabled) ?? true,
+      scrollbarCornerRadius: ScrollbarCornerRadius.values.firstWhere(
+        (radius) => radius.name == prefs.get(_keyScrollbarCornerRadius),
+        orElse: () => ScrollbarCornerRadius.automatic,
+      ),
       appIconStyle: AppIconStyle.fromId(prefs.getString(_keyAppIconStyle)),
       spinArtworkWhilePlaying:
           prefs.getBool(_keySpinArtworkWhilePlaying) ?? false,
@@ -773,6 +803,18 @@ class SettingsNotifier extends Notifier<SettingsState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyAppIconStyle, style.id);
     await AppIconService.apply(style);
+  }
+
+  Future<void> setCurvedScrollbarEnabled(bool enabled) async {
+    state = state.copyWith(curvedScrollbarEnabled: enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyCurvedScrollbarEnabled, enabled);
+  }
+
+  Future<void> setScrollbarCornerRadius(ScrollbarCornerRadius radius) async {
+    state = state.copyWith(scrollbarCornerRadius: radius);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyScrollbarCornerRadius, radius.name);
   }
 
   Future<void> setFullBleedDesignEnabled(bool enabled) async {

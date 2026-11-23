@@ -54,12 +54,6 @@ class SongRepository {
     if (resolved != null) return Future.value(resolved);
     return _inFlightLyrics.putIfAbsent(song.filename, () async {
       try {
-        if (kDebugMode) {
-          debugPrint('SongRepository: Getting lyrics for ${song.filename}');
-          debugPrint('SongRepository: File path: ${song.url}');
-          debugPrint('SongRepository: hasLyrics flag: ${song.hasLyrics}');
-        }
-
         final cacheEntry = await _readLyricsCache(song);
         if (cacheEntry != null &&
             cacheEntry.hasLyrics &&
@@ -83,15 +77,6 @@ class SongRepository {
         await _writeLyricsCache(song, normalizedLyrics);
         if (normalizedLyrics != null) {
           _resolvedLyrics[song.url] = normalizedLyrics;
-        }
-
-        if (kDebugMode) {
-          if (normalizedLyrics != null) {
-            debugPrint(
-                'SongRepository: Found lyrics (${normalizedLyrics.length} chars)');
-          } else {
-            debugPrint('SongRepository: No lyrics found');
-          }
         }
 
         return normalizedLyrics;

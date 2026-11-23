@@ -290,6 +290,51 @@ class _AppearanceSettingsScreenState
           ],
         ),
         AppSettingsGroup(
+          label: l10n.appearanceGroupScrolling,
+          icon: AppIcons.swapVert,
+          children: [
+            AppSettingsSwitch(
+              icon: AppIcons.swapVert,
+              searchId: 'appearance.curved_scrollbar',
+              title: l10n.appearanceCurvedScrollbarTitle,
+              subtitle: l10n.appearanceCurvedScrollbarSubtitle,
+              value: settings.curvedScrollbarEnabled,
+              onChanged: notifier.setCurvedScrollbarEnabled,
+            ),
+            AppSettingsAnchor(
+              id: 'appearance.scrollbar_radius',
+              child: AppListRow(
+                dense: true,
+                title: l10n.appearanceScrollbarRadiusTitle,
+                trailing: DropdownButton<ScrollbarCornerRadius>(
+                  value: settings.scrollbarCornerRadius,
+                  underline: const SizedBox.shrink(),
+                  borderRadius: AppTokens.brMd,
+                  onChanged: settings.curvedScrollbarEnabled
+                      ? (value) {
+                          if (value != null) {
+                            notifier.setScrollbarCornerRadius(value);
+                          }
+                        }
+                      : null,
+                  items: [
+                    for (final radius in ScrollbarCornerRadius.values)
+                      DropdownMenuItem(
+                        value: radius,
+                        child: Text(switch (radius.logicalPixels) {
+                          null => l10n.appearanceScrollbarRadiusAutomatic,
+                          0 => l10n.appearanceScrollbarRadiusSquare,
+                          final pixels =>
+                            l10n.appearanceScrollbarRadiusValue(pixels),
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        AppSettingsGroup(
           label: l10n.settingsLanguageTitle,
           icon: AppIcons.translate,
           children: [

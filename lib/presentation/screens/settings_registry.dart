@@ -335,6 +335,23 @@ List<SettingsDestination> buildSettingsRegistry(AppLocalizations l) {
 
     // ------------------------------------------------------------- appearance
     SettingsDestination(
+      anchorId: 'appearance.curved_scrollbar',
+      icon: AppIcons.swapVert,
+      title: l.appearanceCurvedScrollbarTitle,
+      subtitle: l.appearanceCurvedScrollbarSubtitle,
+      breadcrumb: l.settingsPageAppearanceTitle,
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.curved_scrollbar'),
+    ),
+    SettingsDestination(
+      anchorId: 'appearance.scrollbar_radius',
+      icon: AppIcons.swapVert,
+      title: l.appearanceScrollbarRadiusTitle,
+      breadcrumb: l.settingsPageAppearanceTitle,
+      open: () => const AppearanceSettingsScreen(
+          highlightId: 'appearance.scrollbar_radius'),
+    ),
+    SettingsDestination(
       anchorId: 'appearance.visualizer',
       icon: AppIcons.waves,
       title: l.appearanceVisualizerTitle,

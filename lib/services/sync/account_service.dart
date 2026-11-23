@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,7 +9,8 @@ import 'crypto.dart';
 
 class SecretStoreException implements Exception {
   final String message;
-  const SecretStoreException(this.message);
+  final bool cancelled;
+  const SecretStoreException(this.message, {this.cancelled = false});
   @override
   String toString() => 'SecretStoreException: $message';
 }
@@ -36,7 +38,12 @@ class SecureSecretStore implements SecretStore {
     try {
       return await f();
     } catch (e) {
-      throw SecretStoreException('Secure storage unavailable: $e');
+      throw SecretStoreException(
+        'Secure storage unavailable: $e',
+        cancelled: e is PlatformException &&
+            e.code == 'Unexpected security result code' &&
+            e.details == -128, // macOS Keychain errSecUserCanceled
+      );
     }
   }
 
@@ -184,12 +191,11 @@ class AccountService {
     final url = p.getString(prefServerUrl);
     final user = p.getString(prefUsername);
     final id = p.getString(prefAccountId);
+    if (url == null || user == null || id == null) return null;
     final key = await _secrets.read(_kAccountKey);
+    if (key == null) return null;
     final access = await _secrets.read(_kAccess);
     final refresh = await _secrets.read(_kRefresh);
-    if (url == null || user == null || id == null || key == null) {
-      return null;
-    }
     _accountKey = unb64u(key);
     _session = SyncSession(url, user, id);
     _client = _newClient(

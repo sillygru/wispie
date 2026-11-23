@@ -353,7 +353,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/..\" && if [ ! -f macos/Runner/Configs/libwispie_core.a ]; then \"$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart\" run tool/rust/build.dart apple macos-host; fi";
+			shellScript = "set -e\ncd \"$SRCROOT/..\"\narchive=macos/Runner/Configs/libwispie_core.a\nif [ -f \"$archive\" ]; then\n  newer=$(find rust -path rust/target -prune -o -newer \"$archive\" -print -quit)\n  if [ -z \"$newer\" ]; then\n    exit 0\n  fi\nfi\n\"$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart\" run tool/rust/build.dart apple macos-host\n";
 		};
 		24C340BBC175155FEE3FC85E /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;

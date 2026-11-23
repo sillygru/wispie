@@ -56,6 +56,39 @@ import CommonCrypto
         }
       }
 
+      let cornersChannel = FlutterMethodChannel(
+        name: "wispie/display_corners",
+        binaryMessenger: controller.binaryMessenger
+      )
+      cornersChannel.setMethodCallHandler { [weak controller] call, result in
+        guard call.method == "getRoundedCorners" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        guard let view = controller?.viewIfLoaded, view.window != nil else {
+          result(nil)
+          return
+        }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+          let sample = UIView(frame: view.bounds)
+          sample.cornerConfiguration = .corners(radius: .containerConcentric())
+          view.addSubview(sample)
+          let corners: [UIRectCorner] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+          let radii = corners.map { Double(sample.effectiveRadius(corner: $0)) }
+          sample.removeFromSuperview()
+          if radii.contains(where: { $0 > 0 }) {
+            result(radii)
+            return
+          }
+        }
+        #endif
+        // A home-indicator inset identifies rounded iPhones on older SDKs.
+        let inset = view.safeAreaInsets.bottom
+        let radius = view.traitCollection.userInterfaceIdiom == .phone && inset > 20 ? 44.0 : 0.0
+        result(Array(repeating: radius, count: 4))
+      }
+
       powerStateMonitor = PowerStateMonitor(binaryMessenger: controller.binaryMessenger)
     }
 

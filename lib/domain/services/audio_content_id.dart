@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import '../../data/rust/wispie_core.dart';
 
@@ -53,6 +54,5 @@ List<FileProbe> probeFilesSync(List<String> paths, Set<String> hashPaths) {
   ];
 }
 
-Future<List<FileProbe>> probeFiles(
-        List<String> paths, Set<String> hashPaths) async =>
-    probeFilesSync(paths, hashPaths);
+Future<List<FileProbe>> probeFiles(List<String> paths, Set<String> hashPaths) =>
+    Isolate.run(() => probeFilesSync(paths, hashPaths));

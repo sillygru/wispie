@@ -167,13 +167,16 @@ class PlayerTokens {
   /// Height of the scroll-reactive fades at the top/bottom of player lists.
   static const double edgeFadeExtent = 56;
 
-  // Scrollbar: a thin pill that swells and fades in while a list moves.
-  static const double scrollbarThicknessIdle = 2.5;
-  static const double scrollbarThickness = 3.5;
-  static const double scrollbarInset = 3;
-  static const double scrollbarTrackInset = 4;
+  static const double scrollbarThicknessIdle = 3;
+  static const double scrollbarThickness = 4;
+  static const double scrollbarInset = 4;
+  static const double scrollbarTrackInset = 6;
   static const double scrollbarMinLength = 40;
-  static const double scrollbarMaxAlpha = 0.55;
+  static const double scrollbarMaxAlpha = 0.75;
+  static const double scrollbarEdgeTolerance = 6;
+  static const double scrollbarPullResistance = 42;
+  static const double scrollbarMaxContraction = 0.62;
+  static const Duration dScrollbarRelease = MotionTokens.medium;
   static const Duration dScrollbarFadeIn = MotionTokens.fast;
   static const Duration dScrollbarFadeOut = MotionTokens.medium;
   static const Duration dScrollbarIdle = Duration(milliseconds: 900);

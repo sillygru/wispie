@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:math';
 
 import 'package:flutter/widgets.dart';
@@ -151,7 +150,7 @@ class SongIdentityService {
     for (var i = 0; i < urls.length; i += _statBatch) {
       await _waitForeground();
       final chunk = urls.sublist(i, min(i + _statBatch, urls.length));
-      final probes = await Isolate.run(() => probeFilesSync(chunk, const {}));
+      final probes = await probeFiles(chunk, const {});
       await Future<void>.delayed(const Duration(milliseconds: 10));
       for (final probe in probes) {
         if (!probe.exists) continue;
@@ -192,7 +191,7 @@ class SongIdentityService {
         if (chunk.isEmpty) return;
         final hashSet = chunk.toSet();
         final clock = Stopwatch()..start();
-        final probes = await Isolate.run(() => probeFilesSync(chunk, hashSet));
+        final probes = await probeFiles(chunk, hashSet);
         for (final probe in probes) {
           if (!probe.exists) continue;
           final cid = probe.contentId;

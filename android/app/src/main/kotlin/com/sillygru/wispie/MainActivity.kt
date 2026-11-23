@@ -15,6 +15,7 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.view.RoundedCorner
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
@@ -160,6 +161,24 @@ class MainActivity : AudioServiceActivity() {
                     // finds entries but reads are denied (SD cards, odd mounts).
                     "queryAudioMedia" -> onIoThread(result) { handleQueryAudioMedia(it) }
                     else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "wispie/display_corners")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "getRoundedCorners") {
+                    result.notImplemented()
+                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    result.success(null)
+                } else {
+                    val insets = window.decorView.rootWindowInsets
+                    val density = resources.displayMetrics.density
+                    result.success(listOf(
+                        RoundedCorner.POSITION_TOP_LEFT,
+                        RoundedCorner.POSITION_TOP_RIGHT,
+                        RoundedCorner.POSITION_BOTTOM_LEFT,
+                        RoundedCorner.POSITION_BOTTOM_RIGHT
+                    ).map { (insets?.getRoundedCorner(it)?.radius ?: 0) / density })
                 }
             }
 

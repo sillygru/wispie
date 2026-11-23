@@ -6,22 +6,22 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
-import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_session.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffprobe_session.dart';
+import 'package:ffmpeg_kit_flutter_new_min/log_redirection_strategy.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 class FFmpegExecutionResult {
   final int returnCode;
   final String output;
-  final String logs;
 
   bool get isSuccess => returnCode == 0;
 
   const FFmpegExecutionResult({
     required this.returnCode,
     this.output = '',
-    this.logs = '',
   });
 }
 
@@ -61,82 +61,71 @@ class FFmpegService {
   Future<FFmpegExecutionResult> executeFFmpeg(List<String> args) async {
     if (usesSystemProcess) {
       if (!await isFFmpegAvailable()) {
-        return const FFmpegExecutionResult(
-          returnCode: -1,
-          logs: 'ffmpeg executable not found on system',
-        );
+        return const FFmpegExecutionResult(returnCode: -1);
       }
       try {
         final res = await Process.run('ffmpeg', args);
         return FFmpegExecutionResult(
           returnCode: res.exitCode,
           output: res.stdout.toString(),
-          logs: res.stderr.toString(),
         );
-      } catch (e) {
-        return FFmpegExecutionResult(
-          returnCode: -1,
-          logs: e.toString(),
-        );
+      } catch (_) {
+        return const FFmpegExecutionResult(returnCode: -1);
       }
     }
 
     try {
-      final session = await FFmpegKit.executeWithArguments(args);
+      final session = await FFmpegSession.create(
+        args,
+        null,
+        null,
+        null,
+        LogRedirectionStrategy.neverPrintLogs,
+      );
+      await FFmpegKitConfig.ffmpegExecute(session);
       final rc = await session.getReturnCode();
-      final logs = await session.getAllLogsAsString();
       final output = await session.getOutput();
       return FFmpegExecutionResult(
         returnCode: rc?.getValue() ?? -1,
         output: output ?? '',
-        logs: logs ?? '',
       );
-    } catch (e) {
-      return FFmpegExecutionResult(
-        returnCode: -1,
-        logs: e.toString(),
-      );
+    } catch (_) {
+      return const FFmpegExecutionResult(returnCode: -1);
     }
   }
 
   Future<FFmpegExecutionResult> executeFFprobe(List<String> args) async {
     if (usesSystemProcess) {
       if (!await isFFprobeAvailable()) {
-        return const FFmpegExecutionResult(
-          returnCode: -1,
-          logs: 'ffprobe executable not found on system',
-        );
+        return const FFmpegExecutionResult(returnCode: -1);
       }
       try {
         final res = await Process.run('ffprobe', args);
         return FFmpegExecutionResult(
           returnCode: res.exitCode,
           output: res.stdout.toString(),
-          logs: res.stderr.toString(),
         );
-      } catch (e) {
-        return FFmpegExecutionResult(
-          returnCode: -1,
-          logs: e.toString(),
-        );
+      } catch (_) {
+        return const FFmpegExecutionResult(returnCode: -1);
       }
     }
 
     try {
-      final session = await FFprobeKit.executeWithArguments(args);
+      final session = await FFprobeSession.create(
+        args,
+        null,
+        null,
+        LogRedirectionStrategy.neverPrintLogs,
+      );
+      await FFmpegKitConfig.ffprobeExecute(session);
       final rc = await session.getReturnCode();
-      final logs = await session.getAllLogsAsString();
       final output = await session.getOutput();
       return FFmpegExecutionResult(
         returnCode: rc?.getValue() ?? -1,
         output: output ?? '',
-        logs: logs ?? '',
       );
-    } catch (e) {
-      return FFmpegExecutionResult(
-        returnCode: -1,
-        logs: e.toString(),
-      );
+    } catch (_) {
+      return const FFmpegExecutionResult(returnCode: -1);
     }
   }
 
@@ -188,7 +177,7 @@ class FFmpegService {
     if (!result.isSuccess) {
       if (kDebugMode) {
         debugPrint(
-            'FFmpegService: iOS audio proxy failed: ${result.returnCode}\n${result.logs}');
+            'FFmpegService: iOS audio proxy failed: ${result.returnCode}');
       }
       return null;
     }
@@ -260,8 +249,7 @@ class FFmpegService {
     final result = await executeFFmpeg(args);
     if (result.isSuccess) return true;
     if (kDebugMode) {
-      debugPrint(
-          'FFmpegService: proxy command failed: ${result.returnCode}\n${result.logs}');
+      debugPrint('FFmpegService: proxy command failed: ${result.returnCode}');
     }
     return false;
   }
@@ -324,7 +312,7 @@ class FFmpegService {
 
     final result = await executeFFmpeg(args);
     if (!result.isSuccess) {
-      throw Exception('FFmpeg failed: ${result.returnCode}\n${result.logs}');
+      throw Exception('FFmpeg failed: ${result.returnCode}');
     }
 
     final file = File(outputPath);
@@ -373,8 +361,7 @@ class FFmpegService {
 
     final result = await executeFFmpeg(args);
     if (!result.isSuccess) {
-      throw Exception(
-          'FFmpeg lyrics write failed: ${result.returnCode}\n${result.logs}');
+      throw Exception('FFmpeg lyrics write failed: ${result.returnCode}');
     }
 
     final outFile = File(outputPath);
@@ -452,7 +439,7 @@ class FFmpegService {
     final result = await executeFFmpeg(args);
     if (!result.isSuccess) {
       throw Exception(
-          'FFmpeg text metadata write failed: ${result.returnCode}\n${result.logs}');
+          'FFmpeg text metadata write failed: ${result.returnCode}');
     }
 
     final outFile = File(outputPath);
@@ -491,11 +478,7 @@ class FFmpegService {
   /// Returns the lyrics string if found, null otherwise.
   Future<String?> getLyrics(String filePath) async {
     try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        if (kDebugMode) debugPrint('FFmpegService: File not found: $filePath');
-        return null;
-      }
+      if (!await File(filePath).exists()) return null;
 
       final args = [
         '-v',
@@ -508,52 +491,17 @@ class FFmpegService {
       ];
 
       final result = await executeFFprobe(args);
-      if (!result.isSuccess) {
-        if (kDebugMode) {
-          debugPrint(
-              'FFmpegService: FFprobe failed: ${result.returnCode}\n${result.logs}');
-        }
-        return null;
-      }
+      if (!result.isSuccess) return null;
 
+      // FFprobeKit may mix stderr with the captured JSON.
       final output = result.output;
-      if (output.trim().isEmpty) {
-        if (kDebugMode) {
-          debugPrint('FFmpegService: Empty output for: $filePath');
-        }
-        return null;
-      }
-
-      // FFprobeKit can leak the banner/stderr into getOutput() (e.g.
-      // "Input #0, mp3, from ..."). Extract the JSON payload between the first
-      // '{' and the last '}'.
       final start = output.indexOf('{');
       final end = output.lastIndexOf('}');
-      if (start == -1 || end == -1 || end <= start) {
-        if (kDebugMode) {
-          debugPrint('FFmpegService: Non-JSON ffprobe output for: $filePath');
-        }
-        return null;
-      }
-      final jsonPayload = output.substring(start, end + 1);
-
-      final Map<String, dynamic> json;
-      try {
-        json = jsonDecode(jsonPayload) as Map<String, dynamic>;
-      } on FormatException catch (e) {
-        if (kDebugMode) {
-          debugPrint('FFmpegService: Malformed ffprobe JSON for $filePath: $e');
-        }
-        return null;
-      }
+      if (start == -1 || end <= start) return null;
+      final json =
+          jsonDecode(output.substring(start, end + 1)) as Map<String, dynamic>;
       final tags = json['format']?['tags'];
-
-      if (tags == null) {
-        if (kDebugMode) {
-          debugPrint('FFmpegService: No tags found in: $filePath');
-        }
-        return null;
-      }
+      if (tags is! Map) return null;
 
       String? coerceLyrics(dynamic value) {
         final text = value?.toString();
@@ -571,41 +519,25 @@ class FFmpegService {
             tags['USLT'],
       );
 
-      if (directLyrics != null) {
-        if (kDebugMode) debugPrint('FFmpegService: Found lyrics in: $filePath');
-        return directLyrics;
-      }
+      if (directLyrics != null) return directLyrics;
 
-      if (tags is Map) {
-        for (final entry in tags.entries) {
-          final key = entry.key?.toString() ?? '';
-          final normalizedKey =
-              key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-          const lyricKeys = {
-            'lyrics',
-            'lyric',
-            'unsyncedlyrics',
-            'uslt',
-            'lyr',
-          };
-          if (!lyricKeys.contains(normalizedKey)) continue;
-          final value = coerceLyrics(entry.value);
-          if (value != null) {
-            if (kDebugMode) {
-              debugPrint(
-                  'FFmpegService: Found lyrics via key "$key" in: $filePath');
-            }
-            return value;
-          }
-        }
-      }
-
-      if (kDebugMode) {
-        debugPrint('FFmpegService: No lyrics tag found in: $filePath');
+      for (final entry in tags.entries) {
+        final key = entry.key?.toString() ?? '';
+        final normalizedKey =
+            key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        const lyricKeys = {
+          'lyrics',
+          'lyric',
+          'unsyncedlyrics',
+          'uslt',
+          'lyr',
+        };
+        if (!lyricKeys.contains(normalizedKey)) continue;
+        final value = coerceLyrics(entry.value);
+        if (value != null) return value;
       }
       return null;
-    } catch (e) {
-      if (kDebugMode) debugPrint('FFmpegService: Error reading lyrics: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -814,7 +746,7 @@ class FFmpegService {
       if (kDebugMode) {
         debugPrint(
             'FFmpegService.extractVideoThumbnail: extraction failed for frame '
-            '$normalizedFrameNumber\n${selectResult.logs}');
+            '$normalizedFrameNumber (exit ${selectResult.returnCode})');
       }
     } catch (e) {
       if (kDebugMode) {

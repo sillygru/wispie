@@ -5,7 +5,18 @@ import 'scroll_physics_modified.dart';
 
 /// The app's one scroll feel: our physics, and our scrollbar on every list.
 class MotionScrollBehavior extends MaterialScrollBehavior {
-  const MotionScrollBehavior();
+  const MotionScrollBehavior({
+    this.displayCorners = BorderRadius.zero,
+    this.cornerRadiusOverride,
+  });
+
+  final BorderRadius displayCorners;
+  final double? cornerRadiusOverride;
+
+  @override
+  bool shouldNotify(covariant MotionScrollBehavior oldDelegate) =>
+      oldDelegate.displayCorners != displayCorners ||
+      oldDelegate.cornerRadiusOverride != cornerRadiusOverride;
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
@@ -22,7 +33,11 @@ class MotionScrollBehavior extends MaterialScrollBehavior {
         details.direction == AxisDirection.right) {
       return child;
     }
-    return AppScrollbar(child: child);
+    return AppScrollbar(
+      displayCorners: displayCorners,
+      cornerRadiusOverride: cornerRadiusOverride,
+      child: child,
+    );
   }
 }
 

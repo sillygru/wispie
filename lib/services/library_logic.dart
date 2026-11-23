@@ -61,7 +61,8 @@ class LibraryLogic {
       affinities: affinities,
       tasteSnapshot: tasteSnapshot,
     );
-    return _applyOrder(songs, _view(request)['order'] as List);
+    return _applyOrder(
+        songs, _view({'op': 'sort', ...request})['order'] as List);
   }
 
   /// Smart "Recommended" order: the shuffle's sort-context weights, then the

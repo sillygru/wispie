@@ -967,6 +967,34 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appearanceGroupNowPlaying => 'Tocando agora';
 
   @override
+  String get appearanceGroupScrolling => 'Scrolling';
+
+  @override
+  String get appearanceCurvedScrollbarTitle => 'Curved scrollbar';
+
+  @override
+  String get appearanceCurvedScrollbarSubtitle =>
+      'Follow the display corners when a list reaches the screen edge';
+
+  @override
+  String get appearanceScrollbarRadiusTitle => 'Scrollbar corner radius';
+
+  @override
+  String get appearanceScrollbarRadiusAutomatic => 'Automatic';
+
+  @override
+  String get appearanceScrollbarRadiusSquare => 'Square';
+
+  @override
+  String appearanceScrollbarRadiusValue(int radius) {
+    final intl.NumberFormat radiusNumberFormat =
+        intl.NumberFormat.decimalPattern(localeName);
+    final String radiusString = radiusNumberFormat.format(radius);
+
+    return '$radiusString dp';
+  }
+
+  @override
   String get appearanceVisualizerTitle => 'Visualizador de áudio';
 
   @override

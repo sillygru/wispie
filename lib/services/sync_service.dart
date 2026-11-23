@@ -151,6 +151,8 @@ class SyncService extends ChangeNotifier {
     try {
       final session = await _account.load();
       if (session != null) await _buildEngine();
+    } on SecretStoreException catch (e) {
+      if (!e.cancelled) debugPrint('SyncService: restore failed: $e');
     } catch (e) {
       debugPrint('SyncService: restore failed: $e');
     }
