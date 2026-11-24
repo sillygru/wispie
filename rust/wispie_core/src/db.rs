@@ -342,6 +342,7 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         "lyrics_offset" => lyrics_offset(payload)?,
         "art" => art(payload)?,
         "playlist_op" => playlist_op(payload)?,
+        "youtube_link_op" => youtube_link_op(payload)?,
         other => return Err(format!("unknown db action {other}")),
     };
     emitter.emit(Emit::Json(reply));
@@ -1330,6 +1331,13 @@ fn playlist_op(payload: &Value) -> Result<Value, String> {
         }),
         "save" => with(payload, |connection| playlist_save(payload, connection)),
         "delete" => with(payload, |connection| playlist_delete(payload, connection)),
+        "add_songs" => with(payload, |connection| {
+            playlist_add_songs(payload, connection)
+        }),
+        "remove_songs" => with(payload, |connection| {
+            playlist_remove_songs(payload, connection)
+        }),
+        "rename" => with(payload, |connection| playlist_rename(payload, connection)),
         other => Err(format!("unknown playlist op {other}")),
     }
 }
@@ -1486,6 +1494,225 @@ fn playlist_delete(payload: &Value, connection: &mut Connection) -> Result<Value
         }
         Ok(json!({ "deleted": true }))
     })
+}
+
+fn playlist_add_songs(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let id = payload
+        .get("playlistId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist add needs a playlistId".to_string())?
+        .to_string();
+    let filenames: Vec<String> = payload
+        .get("filenames")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    // A single add leaves the playlist untouched when the song is already in it;
+    // a bulk add always refreshes the timestamp so the UI stops calling it stale.
+    let touch_always = payload
+        .get("touchAlways")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    in_transaction(connection, |connection| {
+        let mut added = 0usize;
+        for filename in &filenames {
+            let exists: bool = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT 1 FROM playlist_song \
+                         WHERE playlist_id = ?1 AND song_filename = ?2",
+                    )
+                    .map_err(|error| format!("playlist song exists: {error}"))?;
+                let found = statement
+                    .query_row(rusqlite::params![id, filename], |_| Ok(()))
+                    .optional()
+                    .map_err(|error| format!("playlist song exists: {error}"))?;
+                found.is_some()
+            };
+            if exists {
+                continue;
+            }
+            connection
+                .execute(
+                    "INSERT INTO playlist_song \
+                     (playlist_id, song_filename, added_at, hlc, dirty) \
+                     VALUES (?1, ?2, ?3, ?4, 1)",
+                    rusqlite::params![id, filename, now, hlc],
+                )
+                .map_err(|error| format!("add playlist song: {error}"))?;
+            connection
+                .execute(
+                    "DELETE FROM sync_tombstone WHERE entity = 'playlist_songs' AND key = ?1",
+                    [format!("{id}\u{0}{filename}")],
+                )
+                .map_err(|error| format!("clear playlist song tombstone: {error}"))?;
+            added += 1;
+        }
+        if touch_always || added > 0 {
+            connection
+                .execute(
+                    "UPDATE playlist SET updated_at = ?1, hlc = ?2, dirty = 1 WHERE id = ?3",
+                    rusqlite::params![now, hlc, id],
+                )
+                .map_err(|error| format!("touch playlist: {error}"))?;
+        }
+        Ok(json!({ "added": added }))
+    })
+}
+
+fn playlist_remove_songs(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let id = payload
+        .get("playlistId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist remove needs a playlistId".to_string())?
+        .to_string();
+    let filenames: Vec<String> = payload
+        .get("filenames")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        for filename in &filenames {
+            connection
+                .execute(
+                    "DELETE FROM playlist_song WHERE playlist_id = ?1 AND song_filename = ?2",
+                    rusqlite::params![id, filename],
+                )
+                .map_err(|error| format!("remove playlist song: {error}"))?;
+            tombstone(
+                connection,
+                "playlist_songs",
+                &format!("{id}\u{0}{filename}"),
+                hlc,
+            )?;
+        }
+        connection
+            .execute(
+                "UPDATE playlist SET updated_at = ?1, hlc = ?2, dirty = 1 WHERE id = ?3",
+                rusqlite::params![now, hlc, id],
+            )
+            .map_err(|error| format!("touch playlist: {error}"))?;
+        Ok(json!({ "removed": filenames.len() }))
+    })
+}
+
+fn playlist_rename(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let id = payload
+        .get("playlistId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist rename needs a playlistId".to_string())?;
+    let name = payload
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist rename needs a name".to_string())?;
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    connection
+        .execute(
+            "UPDATE playlist SET name = ?1, updated_at = ?2, hlc = ?3, dirty = 1 WHERE id = ?4",
+            rusqlite::params![name, now, hlc, id],
+        )
+        .map_err(|error| format!("rename playlist: {error}"))?;
+    Ok(json!({ "renamed": true }))
+}
+
+/// YouTube playlist mappings. Deliberately not synced: they name a playlist on
+/// one Google account, so another device must not inherit them.
+fn youtube_link_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "list" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT remote_playlist_id, local_playlist_id, remote_title, \
+                     last_synced_at, item_count FROM youtube_playlist_link",
+                )
+                .map_err(|error| format!("link list: {error}"))?;
+            let collected = statement
+                .query_map([], |row| {
+                    Ok(json!({
+                        "remote_playlist_id": row.get::<_, Option<String>>(0)?,
+                        "local_playlist_id": row.get::<_, Option<String>>(1)?,
+                        "remote_title": row.get::<_, Option<String>>(2)?,
+                        "last_synced_at": row.get::<_, Option<f64>>(3)?,
+                        "item_count": row.get::<_, Option<i64>>(4)?,
+                    }))
+                })
+                .map_err(|error| format!("link list: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("link list: {error}"))?;
+            Ok(json!({ "links": collected }))
+        }),
+        "save" => with(payload, |connection| {
+            let link = payload
+                .get("link")
+                .ok_or_else(|| "link save needs a link".to_string())?;
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO youtube_playlist_link \
+                     (remote_playlist_id, local_playlist_id, remote_title, \
+                     last_synced_at, item_count) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![
+                        link.get("remote_playlist_id").and_then(Value::as_str),
+                        link.get("local_playlist_id").and_then(Value::as_str),
+                        link.get("remote_title").and_then(Value::as_str),
+                        link.get("last_synced_at").and_then(Value::as_f64),
+                        link.get("item_count").and_then(Value::as_i64),
+                    ],
+                )
+                .map_err(|error| format!("save link: {error}"))?;
+            Ok(json!({ "saved": true }))
+        }),
+        "delete" => with(payload, |connection| {
+            let remote = payload
+                .get("remotePlaylistId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "link delete needs a remotePlaylistId".to_string())?;
+            connection
+                .execute(
+                    "DELETE FROM youtube_playlist_link WHERE remote_playlist_id = ?1",
+                    [remote],
+                )
+                .map_err(|error| format!("delete link: {error}"))?;
+            Ok(json!({ "deleted": true }))
+        }),
+        other => Err(format!("unknown youtube link op {other}")),
+    }
 }
 
 fn tombstone(connection: &Connection, entity: &str, key: &str, hlc: i64) -> Result<(), String> {

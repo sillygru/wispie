@@ -1270,26 +1270,27 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return [];
-    final rows = await db.query('youtube_playlist_link');
-    return rows.map(YouTubePlaylistLink.fromRow).toList();
+    final reply = await db.coreCommand('youtube_link_op', {'op': 'list'});
+    return [
+      for (final row in reply['links'] as List)
+        YouTubePlaylistLink.fromRow((row as Map).cast<String, Object?>()),
+    ];
   }
 
   Future<void> upsertYouTubePlaylistLink(YouTubePlaylistLink link) async {
     await _ensureInitialized();
-    await _userDataDatabase?.insert(
-      'youtube_playlist_link',
-      link.toRow(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase?.coreCommand('youtube_link_op', {
+      'op': 'save',
+      'link': link.toRow(),
+    });
   }
 
   Future<void> deleteYouTubePlaylistLink(String remotePlaylistId) async {
     await _ensureInitialized();
-    await _userDataDatabase?.delete(
-      'youtube_playlist_link',
-      where: 'remote_playlist_id = ?',
-      whereArgs: [remotePlaylistId],
-    );
+    await _userDataDatabase?.coreCommand('youtube_link_op', {
+      'op': 'delete',
+      'remotePlaylistId': remotePlaylistId,
+    });
   }
 
   /// Drops mappings whose local playlist is gone, so a restore or a delete
@@ -1303,29 +1304,13 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-
-    await _userDataDatabase!.transaction((txn) async {
-      // Check if already exists?
-      final existing = await txn.query('playlist_song',
-          where: 'playlist_id = ? AND song_filename = ?',
-          whereArgs: [playlistId, songFilename]);
-
-      if (existing.isEmpty) {
-        await txn.insert(
-            'playlist_song',
-            _stamp({
-              'playlist_id': playlistId,
-              'song_filename': songFilename,
-              'added_at': now
-            }));
-        await _clearTombstone(
-            txn, tombPlaylistSongs, '$playlistId\u0000$songFilename');
-
-        // Update playlist timestamp
-        await txn.update('playlist', _stamp({'updated_at': now}),
-            where: 'id = ?', whereArgs: [playlistId]);
-      }
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'add_songs',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
+      'filenames': [songFilename],
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      'touchAlways': false,
     });
   }
 
@@ -1334,30 +1319,13 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-
-    await _userDataDatabase!.transaction((txn) async {
-      for (final filename in filenames) {
-        final existing = await txn.query('playlist_song',
-            where: 'playlist_id = ? AND song_filename = ?',
-            whereArgs: [playlistId, filename]);
-
-        if (existing.isEmpty) {
-          await txn.insert(
-              'playlist_song',
-              _stamp({
-                'playlist_id': playlistId,
-                'song_filename': filename,
-                'added_at': now
-              }));
-          await _clearTombstone(
-              txn, tombPlaylistSongs, '$playlistId\u0000$filename');
-        }
-      }
-
-      // Update playlist timestamp once
-      await txn.update('playlist', _stamp({'updated_at': now}),
-          where: 'id = ?', whereArgs: [playlistId]);
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'add_songs',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
+      'filenames': filenames,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      'touchAlways': true,
     });
   }
 
@@ -1366,19 +1334,12 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-
-    await _userDataDatabase!.transaction((txn) async {
-      for (final filename in filenames) {
-        await txn.delete('playlist_song',
-            where: 'playlist_id = ? AND song_filename = ?',
-            whereArgs: [playlistId, filename]);
-        await _tombstone(txn, tombPlaylistSongs, '$playlistId\u0000$filename');
-      }
-
-      // Update playlist timestamp
-      await txn.update('playlist', _stamp({'updated_at': now}),
-          where: 'id = ?', whereArgs: [playlistId]);
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'remove_songs',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
+      'filenames': filenames,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
     });
   }
 
@@ -1387,19 +1348,12 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('playlist_song',
-          where: 'playlist_id = ? AND song_filename = ?',
-          whereArgs: [playlistId, songFilename]);
-      await _tombstone(
-          txn, tombPlaylistSongs, '$playlistId\u0000$songFilename');
-      // Update playlist timestamp
-      await txn.update(
-          'playlist',
-          _stamp(
-              {'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0}),
-          where: 'id = ?',
-          whereArgs: [playlistId]);
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'remove_songs',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
+      'filenames': [songFilename],
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
     });
   }
 
@@ -1407,14 +1361,13 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.update(
-        'playlist',
-        _stamp({
-          'name': newName,
-          'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-        }),
-        where: 'id = ?',
-        whereArgs: [playlistId]);
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'rename',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
+      'name': newName,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+    });
   }
 
   /// Renames a file in all database tables.
