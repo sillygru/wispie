@@ -152,22 +152,21 @@ pub fn stats_record(request: &Value) -> Result<Value, String> {
 /// The group's priority version wins; otherwise favourites are twice as likely
 /// and suggest-less versions a fifth, which keeps every variant reachable
 /// without letting a disliked rip take over the queue.
-pub fn variant_pick(request: &Value) -> Result<Value, String> {
-    let items = rows(request, "items");
+fn pick_variant(items: &[Value], priority: Option<i64>, roll: f64) -> Option<usize> {
     if items.is_empty() {
-        return Ok(json!({ "index": Value::Null }));
+        return None;
     }
     if items.len() == 1 {
-        return Ok(json!({ "index": 0 }));
+        return Some(0);
     }
-    if let Some(priority) = opt_index(request, "priorityIndex") {
-        if priority >= 0 && (priority as usize) < items.len() {
-            return Ok(json!({ "index": priority }));
+    if let Some(index) = priority {
+        if index >= 0 && (index as usize) < items.len() {
+            return Some(index as usize);
         }
     }
 
     let mut weights = Vec::with_capacity(items.len());
-    for item in &items {
+    for item in items {
         let mut weight = 1.0;
         if flag(item, "favorite") {
             weight *= 2.0;
@@ -179,18 +178,46 @@ pub fn variant_pick(request: &Value) -> Result<Value, String> {
     }
     let total: f64 = weights.iter().sum();
     if total <= 0.0 {
-        return Ok(json!({ "index": 0 }));
+        return Some(0);
     }
 
-    let draw = number(request, "roll")?.clamp(0.0, 1.0) * total;
+    let draw = roll.clamp(0.0, 1.0) * total;
     let mut cumulative = 0.0;
     for (index, weight) in weights.iter().enumerate() {
         cumulative += weight;
         if draw <= cumulative {
-            return Ok(json!({ "index": index }));
+            return Some(index);
         }
     }
-    Ok(json!({ "index": items.len() - 1 }))
+    Some(items.len() - 1)
+}
+
+pub fn variant_pick(request: &Value) -> Result<Value, String> {
+    let items = rows(request, "items");
+    let priority = opt_index(request, "priorityIndex");
+    let roll = opt_number(request, "roll").unwrap_or(0.0);
+    Ok(json!({
+        "index": pick_variant(&items, priority, roll).map_or(Value::Null, |index| json!(index)),
+    }))
+}
+
+/// One pick per merged group in a single crossing. A shuffle of a large library
+/// is thousands of groups; asking per group would cost a round trip each.
+pub fn variant_pick_batch(request: &Value) -> Result<Value, String> {
+    let groups = rows(request, "groups");
+    let mut indices = Vec::with_capacity(groups.len());
+    for group in &groups {
+        let items = group
+            .get("items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let priority = group.get("priorityIndex").and_then(Value::as_i64);
+        let roll = group.get("roll").and_then(Value::as_f64).unwrap_or(0.0);
+        indices
+            .push(pick_variant(&items, priority, roll).map_or(Value::Null, |index| json!(index)));
+    }
+    Ok(json!({ "indices": indices }))
 }
 
 /// Original order for the upcoming section.

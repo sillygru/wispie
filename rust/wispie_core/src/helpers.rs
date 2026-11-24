@@ -27,6 +27,9 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
         "playback_tick" => emitter.emit(Emit::Json(playback::tick(&request)?)),
         "playback_stats" => emitter.emit(Emit::Json(playback::stats_record(&request)?)),
         "playback_variant" => emitter.emit(Emit::Json(playback::variant_pick(&request)?)),
+        "playback_variant_batch" => {
+            emitter.emit(Emit::Json(playback::variant_pick_batch(&request)?));
+        }
         "playback_original_order" => {
             emitter.emit(Emit::Json(playback::original_order(&request)?));
         }

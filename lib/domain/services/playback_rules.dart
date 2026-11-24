@@ -1,5 +1,17 @@
 import '../../data/rust/wispie_core.dart';
 
+typedef PlaybackVariantItem = ({
+  String filename,
+  bool favorite,
+  bool suggestLess
+});
+
+typedef PlaybackVariantGroup = ({
+  List<PlaybackVariantItem> items,
+  int? priorityIndex,
+  double roll,
+});
+
 /// Playback decisions owned by the native core.
 ///
 /// The player, its lifecycle and the platform quirks stay in the host; these are
@@ -90,7 +102,7 @@ class PlaybackRules {
 
   /// Index into [items] of the version to play, or null when there are none.
   static int? variantIndex({
-    required List<({String filename, bool favorite, bool suggestLess})> items,
+    required List<PlaybackVariantItem> items,
     int? priorityIndex,
     required double roll,
   }) {
@@ -108,6 +120,30 @@ class PlaybackRules {
       'roll': roll,
     });
     return reply['index'] as int?;
+  }
+
+  /// One pick per group in a single crossing. Used when a shuffle chooses a
+  /// version for every merged group at once.
+  static List<int?> variantIndices(List<PlaybackVariantGroup> groups) {
+    final reply = WispieCore.helper({
+      'action': 'playback_variant_batch',
+      'groups': [
+        for (final group in groups)
+          {
+            'items': [
+              for (final item in group.items)
+                {
+                  'filename': item.filename,
+                  'favorite': item.favorite,
+                  'suggestLess': item.suggestLess,
+                },
+            ],
+            'priorityIndex': group.priorityIndex,
+            'roll': group.roll,
+          },
+      ],
+    });
+    return (reply['indices'] as List<dynamic>).cast<int?>();
   }
 
   static List<int> originalOrder({

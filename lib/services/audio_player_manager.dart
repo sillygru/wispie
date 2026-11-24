@@ -3256,10 +3256,32 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       ];
     }
 
+    // A single-member group is that member; only merged groups need a pick, and
+    // they are chosen together so a large library costs one crossing.
+    final merged = [
+      for (final virtualItem in ordered)
+        if (virtualItem.items.length > 1) virtualItem,
+    ];
+    final chosen = merged.isEmpty
+        ? const <int?>[]
+        : PlaybackRules.variantIndices([
+            for (final virtualItem in merged)
+              (
+                items: _variantItems(virtualItem),
+                priorityIndex: _priorityIndexFor(virtualItem),
+                roll: Random().nextDouble(),
+              ),
+          ]);
+
     final result = <QueueItem>[];
+    var mergedIndex = 0;
     for (final virtualItem in ordered) {
-      final selected = _selectSongFromVirtualItem(virtualItem);
-      if (selected != null) result.add(selected);
+      if (virtualItem.items.length == 1) {
+        result.add(virtualItem.items.first);
+        continue;
+      }
+      final index = chosen[mergedIndex++];
+      if (index != null) result.add(virtualItem.items[index]);
     }
     return result;
   }
@@ -3268,29 +3290,30 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     return _filenameToGroupId[filename];
   }
 
-  QueueItem? _selectSongFromVirtualItem(_VirtualShuffleItem virtualItem) {
-    int? priorityIndex;
+  int? _priorityIndexFor(_VirtualShuffleItem virtualItem) {
     final groupId = virtualItem.groupId;
-    if (groupId != null) {
-      final priorityFilename = _mergedGroupPriorities[groupId];
-      if (priorityFilename != null) {
-        final index = virtualItem.items.indexWhere(
-          (item) => item.song.filename == priorityFilename,
-        );
-        if (index >= 0) priorityIndex = index;
-      }
-    }
+    if (groupId == null) return null;
+    final priorityFilename = _mergedGroupPriorities[groupId];
+    if (priorityFilename == null) return null;
+    final index = virtualItem.items.indexWhere(
+      (item) => item.song.filename == priorityFilename,
+    );
+    return index < 0 ? null : index;
+  }
 
-    final index = PlaybackRules.variantIndex(
-      items: [
+  List<PlaybackVariantItem> _variantItems(_VirtualShuffleItem virtualItem) => [
         for (final item in virtualItem.items)
           (
             filename: item.song.filename,
             favorite: _isFavorite(item.song.filename),
             suggestLess: _isSuggestLess(item.song.filename),
           ),
-      ],
-      priorityIndex: priorityIndex,
+      ];
+
+  QueueItem? _selectSongFromVirtualItem(_VirtualShuffleItem virtualItem) {
+    final index = PlaybackRules.variantIndex(
+      items: _variantItems(virtualItem),
+      priorityIndex: _priorityIndexFor(virtualItem),
       roll: Random().nextDouble(),
     );
     return index == null ? null : virtualItem.items[index];
