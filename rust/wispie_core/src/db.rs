@@ -341,6 +341,7 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         "cover_miss" => cover_miss(payload)?,
         "lyrics_offset" => lyrics_offset(payload)?,
         "art" => art(payload)?,
+        "playlist_op" => playlist_op(payload)?,
         other => return Err(format!("unknown db action {other}")),
     };
     emitter.emit(Emit::Json(reply));
@@ -1260,6 +1261,242 @@ fn user_list(payload: &Value) -> Result<Value, String> {
             other => Err(format!("unknown user_list op {other}")),
         }
     })
+}
+
+/// Playlist rows and their membership.
+///
+/// A save is a full replacement: every song that disappeared is tombstoned so
+/// it cannot resurrect from another device, and every surviving song clears its
+/// tombstone. The caller supplies the clock, as with `user_list`.
+fn playlist_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "list" => with(payload, |connection| {
+            let rows = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT id, name, description, is_recommendation, created_at, updated_at \
+                         FROM playlist ORDER BY updated_at DESC",
+                    )
+                    .map_err(|error| format!("playlist list: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok(json!({
+                            "id": row.get::<_, String>(0)?,
+                            "name": row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                            "description": row.get::<_, Option<String>>(2)?,
+                            "is_recommendation": row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                            "created_at": row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
+                            "updated_at": row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
+                        }))
+                    })
+                    .map_err(|error| format!("playlist list: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("playlist list: {error}"))?;
+                collected
+            };
+
+            let mut playlists = Vec::with_capacity(rows.len());
+            for row in rows {
+                let id = row
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let songs = {
+                    let mut statement = connection
+                        .prepare(
+                            "SELECT song_filename, added_at FROM playlist_song \
+                             WHERE playlist_id = ?1 ORDER BY added_at ASC",
+                        )
+                        .map_err(|error| format!("playlist songs: {error}"))?;
+                    let collected = statement
+                        .query_map([&id], |song| {
+                            Ok(json!({
+                                "song_filename": song.get::<_, String>(0)?,
+                                "added_at": song.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                            }))
+                        })
+                        .map_err(|error| format!("playlist songs: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("playlist songs: {error}"))?;
+                    collected
+                };
+                let mut object = row.as_object().cloned().unwrap_or_default();
+                object.insert("songs".to_string(), Value::Array(songs));
+                playlists.push(Value::Object(object));
+            }
+            Ok(json!({ "playlists": playlists }))
+        }),
+        "save" => with(payload, |connection| playlist_save(payload, connection)),
+        "delete" => with(payload, |connection| playlist_delete(payload, connection)),
+        other => Err(format!("unknown playlist op {other}")),
+    }
+}
+
+fn playlist_save(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let playlist = payload
+        .get("playlist")
+        .ok_or_else(|| "playlist save needs a playlist".to_string())?;
+    let id = playlist
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist save needs an id".to_string())?
+        .to_string();
+    let name = playlist
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let description = playlist
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let recommendation = playlist
+        .get("is_recommendation")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let created = playlist
+        .get("created_at")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let updated = playlist
+        .get("updated_at")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let songs: Vec<(String, f64)> = playlist
+        .get("songs")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    (
+                        row.get("song_filename")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        row.get("added_at").and_then(Value::as_f64).unwrap_or(0.0),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO playlist \
+                 (id, name, description, is_recommendation, created_at, updated_at, hlc, dirty) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
+                rusqlite::params![id, name, description, recommendation, created, updated, hlc],
+            )
+            .map_err(|error| format!("save playlist: {error}"))?;
+
+        let existing: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT song_filename FROM playlist_song WHERE playlist_id = ?1")
+                .map_err(|error| format!("existing songs: {error}"))?;
+            let collected = statement
+                .query_map([&id], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("existing songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("existing songs: {error}"))?;
+            collected
+        };
+        for filename in &existing {
+            if !songs.iter().any(|(kept, _)| kept == filename) {
+                tombstone(
+                    connection,
+                    "playlist_songs",
+                    &format!("{id}\u{0}{filename}"),
+                    hlc,
+                )?;
+            }
+        }
+
+        connection
+            .execute("DELETE FROM playlist_song WHERE playlist_id = ?1", [&id])
+            .map_err(|error| format!("clear playlist songs: {error}"))?;
+        for (filename, added_at) in &songs {
+            connection
+                .execute(
+                    "INSERT INTO playlist_song (playlist_id, song_filename, added_at, hlc, dirty) \
+                     VALUES (?1, ?2, ?3, ?4, 1)",
+                    rusqlite::params![id, filename, added_at, hlc],
+                )
+                .map_err(|error| format!("insert playlist song: {error}"))?;
+            connection
+                .execute(
+                    "DELETE FROM sync_tombstone WHERE entity = 'playlist_songs' AND key = ?1",
+                    [format!("{id}\u{0}{filename}")],
+                )
+                .map_err(|error| format!("clear playlist song tombstone: {error}"))?;
+        }
+        Ok(json!({ "saved": true }))
+    })
+}
+
+fn playlist_delete(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let id = payload
+        .get("playlistId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "playlist delete needs a playlistId".to_string())?
+        .to_string();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        let songs: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT song_filename FROM playlist_song WHERE playlist_id = ?1")
+                .map_err(|error| format!("delete playlist songs: {error}"))?;
+            let collected = statement
+                .query_map([&id], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("delete playlist songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("delete playlist songs: {error}"))?;
+            collected
+        };
+        connection
+            .execute("DELETE FROM playlist_song WHERE playlist_id = ?1", [&id])
+            .map_err(|error| format!("delete playlist songs: {error}"))?;
+        connection
+            .execute("DELETE FROM playlist WHERE id = ?1", [&id])
+            .map_err(|error| format!("delete playlist: {error}"))?;
+        connection
+            .execute(
+                "DELETE FROM youtube_playlist_link WHERE local_playlist_id = ?1",
+                [&id],
+            )
+            .map_err(|error| format!("delete playlist links: {error}"))?;
+        tombstone(connection, "playlists", &id, hlc)?;
+        for filename in &songs {
+            tombstone(
+                connection,
+                "playlist_songs",
+                &format!("{id}\u{0}{filename}"),
+                hlc,
+            )?;
+        }
+        Ok(json!({ "deleted": true }))
+    })
+}
+
+fn tombstone(connection: &Connection, entity: &str, key: &str, hlc: i64) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT OR REPLACE INTO sync_tombstone (entity, key, hlc, dirty) \
+             VALUES (?1, ?2, ?3, 1)",
+            rusqlite::params![entity, key, hlc],
+        )
+        .map_err(|error| format!("tombstone {entity}: {error}"))?;
+    Ok(())
 }
 
 fn required_filename<'a>(payload: &'a Value, table: &str, op: &str) -> Result<&'a str, String> {

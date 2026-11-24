@@ -1154,30 +1154,23 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
     try {
-      final plMaps = await _userDataDatabase!
-          .query('playlist', orderBy: 'updated_at DESC');
-      final playlists = <Playlist>[];
-
-      for (final plMap in plMaps) {
-        final id = plMap['id'] as String;
-        final songs = await _userDataDatabase!.query(
-          'playlist_song',
-          where: 'playlist_id = ?',
-          whereArgs: [id],
-          orderBy: 'added_at ASC',
-        );
-
-        playlists.add(Playlist(
-          id: id,
-          name: plMap['name'] as String,
-          description: plMap['description'] as String?,
-          isRecommendation: (plMap['is_recommendation'] as int? ?? 0) == 1,
-          createdAt: plMap['created_at'] as double,
-          updatedAt: plMap['updated_at'] as double,
-          songs: songs.map((s) => PlaylistSong.fromJson(s)).toList(),
-        ));
-      }
-      return playlists;
+      final reply =
+          await _userDataDatabase!.coreCommand('playlist_op', {'op': 'list'});
+      return [
+        for (final row in reply['playlists'] as List)
+          Playlist(
+            id: row['id'] as String,
+            name: row['name'] as String,
+            description: row['description'] as String?,
+            isRecommendation: (row['is_recommendation'] as int? ?? 0) == 1,
+            createdAt: (row['created_at'] as num).toDouble(),
+            updatedAt: (row['updated_at'] as num).toDouble(),
+            songs: [
+              for (final song in row['songs'] as List)
+                PlaylistSong.fromJson((song as Map).cast<String, Object?>()),
+            ],
+          ),
+      ];
     } catch (e) {
       debugPrint('Error getting playlists: $e');
       return [];
@@ -1188,50 +1181,22 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      // Upsert playlist
-      await txn.insert(
-        'playlist',
-        _stamp({
-          'id': playlist.id,
-          'name': playlist.name,
-          'description': playlist.description,
-          'is_recommendation': playlist.isRecommendation ? 1 : 0,
-          'created_at': playlist.createdAt,
-          'updated_at': playlist.updatedAt,
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-
-      // Songs removed in this save are explicit removals; tombstone them so they
-      // do not resurrect from another device.
-      final existing = await txn.query('playlist_song',
-          columns: ['song_filename'],
-          where: 'playlist_id = ?',
-          whereArgs: [playlist.id]);
-      final newFilenames = playlist.songs.map((s) => s.songFilename).toSet();
-      for (final row in existing) {
-        final fn = row['song_filename'] as String?;
-        if (fn != null && !newFilenames.contains(fn)) {
-          await _tombstone(txn, tombPlaylistSongs, '${playlist.id}\u0000$fn');
-        }
-      }
-
-      // Delete all songs and re-insert.
-      await txn.delete('playlist_song',
-          where: 'playlist_id = ?', whereArgs: [playlist.id]);
-
-      for (final song in playlist.songs) {
-        await txn.insert(
-            'playlist_song',
-            _stamp({
-              'playlist_id': playlist.id,
-              'song_filename': song.songFilename,
-              'added_at': song.addedAt,
-            }));
-        await _clearTombstone(
-            txn, tombPlaylistSongs, '${playlist.id}\u0000${song.songFilename}');
-      }
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'save',
+      'hlc': _hlcNow(),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      'playlist': {
+        'id': playlist.id,
+        'name': playlist.name,
+        'description': playlist.description,
+        'is_recommendation': playlist.isRecommendation ? 1 : 0,
+        'created_at': playlist.createdAt,
+        'updated_at': playlist.updatedAt,
+        'songs': [
+          for (final song in playlist.songs)
+            {'song_filename': song.songFilename, 'added_at': song.addedAt},
+        ],
+      },
     });
   }
 
@@ -1290,23 +1255,10 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      final songs = await txn.query('playlist_song',
-          columns: ['song_filename'],
-          where: 'playlist_id = ?',
-          whereArgs: [playlistId]);
-      await txn.delete('playlist_song',
-          where: 'playlist_id = ?', whereArgs: [playlistId]);
-      await txn.delete('playlist', where: 'id = ?', whereArgs: [playlistId]);
-      await txn.delete('youtube_playlist_link',
-          where: 'local_playlist_id = ?', whereArgs: [playlistId]);
-      await _tombstone(txn, tombPlaylists, playlistId);
-      for (final row in songs) {
-        final fn = row['song_filename'] as String?;
-        if (fn != null) {
-          await _tombstone(txn, tombPlaylistSongs, '$playlistId\u0000$fn');
-        }
-      }
+    await _userDataDatabase!.coreCommand('playlist_op', {
+      'op': 'delete',
+      'hlc': _hlcNow(),
+      'playlistId': playlistId,
     });
   }
 
