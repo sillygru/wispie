@@ -1,13 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
 import 'package:path/path.dart';
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 import '../data/rust/native_database.dart';
 import '../data/repositories/song_identity_repository.dart';
-import '../data/repositories/song_library_repository.dart';
 import '../domain/models/listening_insights.dart';
 import '../domain/models/youtube_playlist_link.dart';
 import '../domain/services/fun_stats_export.dart';
@@ -57,14 +54,20 @@ class DatabaseService {
   Future<void> _initAsync() async {
     try {
       await Hlc.instance.load();
-      _statsDatabase = await _openDatabase(
+      final stats = await _openDatabase(
         'wispie_stats.db',
         schema: DatabaseSchema.stats,
       );
-      _userDataDatabase = await _openDatabase(
-        'wispie_data.db',
-        schema: DatabaseSchema.userData,
-      );
+      try {
+        _userDataDatabase = await _openDatabase(
+          'wispie_data.db',
+          schema: DatabaseSchema.userData,
+        );
+        _statsDatabase = stats;
+      } catch (_) {
+        await stats.close();
+        rethrow;
+      }
     } catch (e) {
       debugPrint('Database initialization failed: $e');
       rethrow;
@@ -78,31 +81,9 @@ class DatabaseService {
   // SYNC CHANGE TRACKING HELPERS
   // ==========================================================================
 
-  // Tombstone entity names. These match the record/category names used by the
-  // encrypted sync payload (see plan_sync.md sec 1.4).
-  static const String tombFavorites = 'favorites';
-  static const String tombSuggestless = 'suggestless';
-  static const String tombHidden = 'hidden';
-  static const String tombPlaylists = 'playlists';
-  static const String tombPlaylistSongs = 'playlist_songs';
-  static const String tombMergedGroups = 'merged_groups';
-  static const String tombMergedSongs = 'merged_songs';
-  static const String tombArtistArt = 'artist_art';
-  static const String tombAlbumArt = 'album_art';
-  static const String tombQueueSnapshots = 'queue_snapshots';
-  static const String tombPlayEvents = 'play_events';
-  static const String tombPlaySessions = 'play_sessions';
-
   int _hlcNow() {
     SyncService.instance.notifyLocalWrite();
     return Hlc.instance.now();
-  }
-
-  /// Stamps a row map for a local, user-intent write.
-  Map<String, Object?> _stamp(Map<String, Object?> row) {
-    row['hlc'] = _hlcNow();
-    row['dirty'] = 1;
-    return row;
   }
 
   /// Runs one user-list operation in the core, which owns the statements and
@@ -161,54 +142,17 @@ class DatabaseService {
         ...fields,
       });
 
-  /// Writes one explicit-removal tombstone. A re-add later gets a newer hlc and
-  /// wins, so tombstoning is safe for toggles.
-  Future<void> _tombstone(
-      DatabaseExecutor txn, String entity, String key) async {
-    await txn.insert(
-      'sync_tombstone',
-      {'entity': entity, 'key': key, 'hlc': _hlcNow(), 'dirty': 1},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  /// Drops a tombstone when the same key is re-added locally; the re-added row
-  /// carries a newer hlc so it wins anyway, this just avoids pushing a stale
-  /// tombstone.
-  Future<void> _clearTombstone(
-      DatabaseExecutor txn, String entity, String key) async {
-    await txn.delete('sync_tombstone',
-        where: 'entity = ? AND key = ?', whereArgs: [entity, key]);
-  }
-
-  /// Public tombstone writer for maintenance that must propagate deletions
-  /// (the database optimizer). [txn] decides which database the tombstone lands
-  /// in, so stats deletions tombstone in the stats DB.
-  Future<void> writeTombstones(
-      DatabaseExecutor txn, String entity, Iterable<String> keys) async {
-    for (final key in keys) {
-      await _tombstone(txn, entity, key);
-    }
-  }
-
-  /// Marks every row of a synced table dirty after a backup restore, keeping any
-  /// clock already present. Restores never tombstone (other devices may still
-  /// hold the rows a restore happens to lack).
-  Future<void> _markRestoredDirty(DatabaseExecutor txn, String table) async {
-    await txn.rawUpdate(
-        'UPDATE $table SET dirty = 1, hlc = COALESCE(hlc, ?)', [_hlcNow()]);
-  }
-
   /// Records that a whitelisted setting changed locally so the sync engine can
   /// push it. Values stay in SharedPreferences; only the clock lives here.
   Future<void> stampSettingDirty(String key) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.insert(
-      'sync_setting_meta',
-      {'key': key, 'hlc': _hlcNow(), 'dirty': 1},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.coreCommand('sync_store', {
+      'op': 'setting_write',
+      'key': key,
+      'hlc': _hlcNow(),
+      'dirty': true,
+    });
   }
 
   Future<void> _ensureInitialized() async {
@@ -225,13 +169,13 @@ class DatabaseService {
     await _ensureInitialized();
   }
 
-  /// Gets the stats database for direct raw queries
+  /// Gets the stats database connection
   /// Returns null if not initialized
   Database? getStatsDatabase() {
     return _statsDatabase;
   }
 
-  /// Gets the user data database for direct raw queries
+  /// Gets the user data database connection
   /// Returns null if not initialized
   Database? getUserDataDatabase() {
     return _userDataDatabase;
@@ -248,46 +192,22 @@ class DatabaseService {
     return openDatabase(path, schema: schema, hlc: Hlc.instance.now());
   }
 
-  // Kept for tests that open temp DBs directly
-  @visibleForTesting
-  Future<Database> openTestDatabase(String path, String schema) async {
-    final db = await openDatabase(path);
-    for (final statement in schema.split(';')) {
-      final trimmed = statement.trim();
-      if (trimmed.isNotEmpty) await db.execute(trimmed);
-    }
-    return db;
-  }
-
-  // ==========================================================================
-  // STATS METHODS
-  // ==========================================================================
-
-  Future<void> addPlayEvent(Map<String, dynamic> stats) async {
-    await _ensureInitialized();
-    if (_statsDatabase == null) return;
-
-    final row = Map<String, Object?>.from(stats);
-    row['uid'] ??= const Uuid().v4();
-    await _statsDatabase!.insert('playevent', _stamp(row));
+  static Future<List<Map<String, dynamic>>> playbackRows(
+    Database database,
+    String op, [
+    List<Object?> args = const [],
+  ]) async {
+    final reply =
+        await database.coreCommand('playback', {'op': op, 'args': args});
+    return (reply['rows'] as List).cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getAllPlayEvents() async {
     await _ensureInitialized();
-    if (_statsDatabase == null) return [];
-    return await _statsDatabase!.query('playevent');
+    final db = _statsDatabase;
+    if (db == null) return [];
+    return playbackRows(db, 'events');
   }
-
-  Future<void> deletePlayEvent(String sessionId) async {
-    await _ensureInitialized();
-    if (_statsDatabase == null) return;
-    await _statsDatabase!
-        .delete('playevent', where: 'session_id = ?', whereArgs: [sessionId]);
-  }
-
-  // ==========================================================================
-  // SESSION HISTORY QUERIES
-  // ==========================================================================
 
   /// Gets all play sessions ordered by start time (newest first)
   /// Filters out sessions shorter than minDurationSeconds
@@ -297,22 +217,8 @@ class DatabaseService {
     if (_statsDatabase == null) return [];
 
     try {
-      final results = await _statsDatabase!.rawQuery('''
-        SELECT 
-          ps.id,
-          ps.start_time,
-          ps.end_time,
-          ps.platform,
-          COUNT(pe.id) as song_count,
-          SUM(pe.duration_played) as total_duration
-        FROM playsession ps
-        LEFT JOIN playevent pe ON ps.id = pe.session_id
-        GROUP BY ps.id
-        HAVING (ps.end_time - ps.start_time) >= ? OR song_count > 0
-        ORDER BY ps.start_time DESC
-      ''', [minDurationSeconds]);
-
-      return results;
+      return await playbackRows(
+          _statsDatabase!, 'sessions', [minDurationSeconds]);
     } catch (e) {
       debugPrint('Error getting play sessions: $e');
       return [];
@@ -326,30 +232,14 @@ class DatabaseService {
     if (_statsDatabase == null) return [];
 
     try {
-      final results = await _statsDatabase!.query(
-        'playevent',
-        where: 'session_id = ?',
-        whereArgs: [sessionId],
-        orderBy: 'timestamp ASC',
-      );
-      return results;
+      return await playbackRows(_statsDatabase!, 'session_events', [sessionId]);
     } catch (e) {
       debugPrint('Error getting play events for session: $e');
       return [];
     }
   }
 
-  /// Clears all play events and sessions
-  Future<void> clearStats() async {
-    await _ensureInitialized();
-    if (_statsDatabase == null) return;
-
-    await _statsDatabase!.transaction((txn) async {
-      await txn.delete('playevent');
-      await txn.delete('playsession');
-    });
-    debugPrint('Cleared all play stats and sessions');
-  }
+  Future<void> clearStats() => clearAllPlayStats();
 
   // ==========================================================================
   // QUEUE SNAPSHOT QUERIES
@@ -363,46 +253,14 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    final songsJson = jsonEncode(songFilenames);
-    await _userDataDatabase!.transaction((txn) async {
-      final dupes = await txn.query('queue_snapshot',
-          columns: ['id'],
-          where: 'source = ? AND songs_json = ? AND id != ?',
-          whereArgs: [source, songsJson, id]);
-      for (final r in dupes) {
-        final dupeId = r['id'] as String;
-        await txn.delete('queue_snapshot_song',
-            where: 'snapshot_id = ?', whereArgs: [dupeId]);
-        await txn
-            .delete('queue_snapshot', where: 'id = ?', whereArgs: [dupeId]);
-        await _tombstone(txn, tombQueueSnapshots, dupeId);
-      }
-      await txn.insert(
-        'queue_snapshot',
-        _stamp({
-          'id': id,
-          'name': name,
-          'created_at': createdAt,
-          'source': source,
-          'song_count': songFilenames.length,
-          'songs_json': songsJson,
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombQueueSnapshots, id);
-
-      await txn.delete('queue_snapshot_song',
-          where: 'snapshot_id = ?', whereArgs: [id]);
-
-      final batch = txn.batch();
-      for (int i = 0; i < songFilenames.length; i++) {
-        batch.insert('queue_snapshot_song', {
-          'snapshot_id': id,
-          'song_filename': songFilenames[i],
-          'position': i,
-        });
-      }
-      await batch.commit(noResult: true);
+    await _userDataDatabase!.coreCommand('queue_snapshot_op', {
+      'op': 'save',
+      'snapshotId': id,
+      'name': name,
+      'createdAt': createdAt,
+      'source': source,
+      'filenames': songFilenames,
+      'hlc': _hlcNow(),
     });
   }
 
@@ -414,36 +272,13 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return false;
 
-    final songsJson = jsonEncode(songFilenames);
-    return _userDataDatabase!.transaction((txn) async {
-      final row = await txn.query('queue_snapshot',
-          columns: ['songs_json'], where: 'id = ?', whereArgs: [id], limit: 1);
-      if (row.isEmpty) return false;
-      if (row.first['songs_json'] == songsJson) return true;
-      await txn.delete('queue_snapshot_song',
-          where: 'snapshot_id = ?', whereArgs: [id]);
-
-      final batch = txn.batch();
-      for (int i = 0; i < songFilenames.length; i++) {
-        batch.insert('queue_snapshot_song', {
-          'snapshot_id': id,
-          'song_filename': songFilenames[i],
-          'position': i,
-        });
-      }
-      await batch.commit(noResult: true);
-
-      await txn.update(
-        'queue_snapshot',
-        _stamp({
-          'song_count': songFilenames.length,
-          'songs_json': songsJson,
-        }),
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-      return true;
+    final reply = await _userDataDatabase!.coreCommand('queue_snapshot_op', {
+      'op': 'update_songs',
+      'snapshotId': id,
+      'filenames': songFilenames,
+      'hlc': _hlcNow(),
     });
+    return reply['exists'] == true;
   }
 
   Future<List<Map<String, dynamic>>> getQueueSnapshots() async {
@@ -451,10 +286,12 @@ class DatabaseService {
     if (_userDataDatabase == null) return [];
 
     try {
-      return await _userDataDatabase!.query(
-        'queue_snapshot',
-        orderBy: 'created_at DESC',
-      );
+      final reply = await _userDataDatabase!
+          .coreCommand('queue_snapshot_op', {'op': 'list'});
+      return [
+        for (final row in reply['snapshots'] as List)
+          Map<String, dynamic>.from(row as Map),
+      ];
     } catch (e) {
       debugPrint('Error getting queue snapshots: $e');
       return [];
@@ -466,75 +303,35 @@ class DatabaseService {
     if (_userDataDatabase == null) return [];
 
     try {
-      return await _userDataDatabase!.transaction((txn) async {
-        final snapshots = await txn.query(
-          'queue_snapshot',
-          orderBy: 'created_at DESC',
-        );
-        if (snapshots.isEmpty) return [];
-
-        final snapshotIds =
-            snapshots.map((row) => row['id'] as String).toList();
-        final placeholders = List.filled(snapshotIds.length, '?').join(',');
-        final songRows = await txn.rawQuery(
-          '''
-          SELECT snapshot_id, song_filename
-          FROM queue_snapshot_song
-          WHERE snapshot_id IN ($placeholders)
-          ORDER BY snapshot_id ASC, position ASC
-          ''',
-          snapshotIds,
-        );
-
-        final songsBySnapshot = <String, List<String>>{};
-        for (final row in songRows) {
-          final snapshotId = row['snapshot_id'] as String;
-          final songFilename = row['song_filename'] as String;
-          songsBySnapshot.putIfAbsent(snapshotId, () => <String>[]).add(
-                songFilename,
-              );
-        }
-
-        final seenFingerprints = <String>{};
-        final result = <QueueSnapshot>[];
-
-        for (final row in snapshots) {
-          final createdAtRaw = row['created_at'];
-          final createdAt = createdAtRaw is num
-              ? createdAtRaw.toDouble()
-              : double.tryParse(createdAtRaw?.toString() ?? '') ??
-                  DateTime.now().millisecondsSinceEpoch / 1000.0;
-          final id = row['id'] as String;
-          final nameRaw = row['name']?.toString();
-          final name = (nameRaw != null && nameRaw.trim().isNotEmpty)
-              ? nameRaw.trim()
-              : QueueSnapshot.defaultNameForTimestamp(createdAt);
-
-          final source = row['source'] as String? ?? 'unknown';
-          final filenames = songsBySnapshot[id] ?? const <String>[];
-          final fingerprint = _queueSnapshotFingerprint(source, filenames);
-          if (seenFingerprints.contains(fingerprint)) continue;
-          seenFingerprints.add(fingerprint);
-
-          result.add(QueueSnapshot(
-            id: id,
-            name: name,
-            createdAt: createdAt,
-            songFilenames: filenames,
-            source: source,
-          ));
-        }
-
-        return result;
-      });
+      final reply = await _userDataDatabase!
+          .coreCommand('queue_snapshot_op', {'op': 'history'});
+      final result = <QueueSnapshot>[];
+      for (final entry in reply['history'] as List) {
+        final row = (entry as Map).cast<String, Object?>();
+        final createdAtRaw = row['created_at'];
+        final createdAt = createdAtRaw is num
+            ? createdAtRaw.toDouble()
+            : double.tryParse(createdAtRaw?.toString() ?? '') ??
+                DateTime.now().millisecondsSinceEpoch / 1000.0;
+        final nameRaw = row['name']?.toString();
+        final name = (nameRaw != null && nameRaw.trim().isNotEmpty)
+            ? nameRaw.trim()
+            : QueueSnapshot.defaultNameForTimestamp(createdAt);
+        result.add(QueueSnapshot(
+          id: row['id'] as String,
+          name: name,
+          createdAt: createdAt,
+          songFilenames: [
+            for (final song in row['songs'] as List) song as String,
+          ],
+          source: row['source'] as String? ?? 'unknown',
+        ));
+      }
+      return result;
     } catch (e) {
       debugPrint('Error loading queue history snapshots: $e');
       return [];
     }
-  }
-
-  String _queueSnapshotFingerprint(String source, List<String> filenames) {
-    return '$source\u0000${filenames.join('\u0000')}';
   }
 
   Future<List<String>> getQueueSnapshotSongs(String snapshotId) async {
@@ -542,13 +339,11 @@ class DatabaseService {
     if (_userDataDatabase == null) return [];
 
     try {
-      final results = await _userDataDatabase!.query(
-        'queue_snapshot_song',
-        where: 'snapshot_id = ?',
-        whereArgs: [snapshotId],
-        orderBy: 'position ASC',
-      );
-      return results.map((r) => r['song_filename'] as String).toList();
+      final reply = await _userDataDatabase!.coreCommand('queue_snapshot_op', {
+        'op': 'songs',
+        'snapshotId': snapshotId,
+      });
+      return [for (final name in reply['filenames'] as List) name as String];
     } catch (e) {
       debugPrint('Error getting queue snapshot songs: $e');
       return [];
@@ -559,11 +354,10 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('queue_snapshot_song',
-          where: 'snapshot_id = ?', whereArgs: [id]);
-      await txn.delete('queue_snapshot', where: 'id = ?', whereArgs: [id]);
-      await _tombstone(txn, tombQueueSnapshots, id);
+    await _userDataDatabase!.coreCommand('queue_snapshot_op', {
+      'op': 'delete',
+      'snapshotId': id,
+      'hlc': _hlcNow(),
     });
   }
 
@@ -571,118 +365,55 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      final ids = await txn.query('queue_snapshot', columns: ['id']);
-      await txn.delete('queue_snapshot_song');
-      await txn.delete('queue_snapshot');
-      for (final r in ids) {
-        await _tombstone(txn, tombQueueSnapshots, r['id'] as String);
-      }
-    });
+    await _userDataDatabase!
+        .coreCommand('queue_snapshot_op', {'op': 'clear', 'hlc': _hlcNow()});
   }
 
-  // Keep the queue history table from growing unbounded. Caller invokes
-  // this after inserting a new snapshot. We retain the most recent N
-  // snapshots by created_at and drop older ones in a single transaction.
-  static const int _maxQueueSnapshotsRetained = 50;
-
+  /// Keeps the history bounded; the core retains the most recent entries.
   Future<void> pruneQueueSnapshots() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      final rows = await txn.rawQuery(
-        'SELECT id FROM queue_snapshot ORDER BY created_at DESC '
-        'LIMIT -1 OFFSET ?',
-        [_maxQueueSnapshotsRetained],
-      );
-      if (rows.isEmpty) return;
-      final ids = rows.map((r) => r['id'] as String).toList();
-      final placeholders = List.filled(ids.length, '?').join(',');
-      await txn.delete('queue_snapshot_song',
-          where: 'snapshot_id IN ($placeholders)', whereArgs: ids);
-      await txn.delete('queue_snapshot',
-          where: 'id IN ($placeholders)', whereArgs: ids);
-      for (final id in ids) {
-        await _tombstone(txn, tombQueueSnapshots, id);
-      }
-    });
+    await _userDataDatabase!
+        .coreCommand('queue_snapshot_op', {'op': 'prune', 'hlc': _hlcNow()});
   }
 
   Future<List<Map<String, dynamic>>> exportQueueHistory() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
 
-    final snapshots = await getQueueSnapshots();
-    final result = <Map<String, dynamic>>[];
-
-    for (final snapshot in snapshots) {
-      final snapshotId = snapshot['id'] as String;
-      final songs = await getQueueSnapshotSongs(snapshotId);
-      result.add({
-        'id': snapshotId,
-        'name': snapshot['name'],
-        'created_at': snapshot['created_at'],
-        'source': snapshot['source'],
-        'songs': songs,
-      });
-    }
-
-    return result;
+    final reply = await _userDataDatabase!
+        .coreCommand('queue_snapshot_op', {'op': 'export'});
+    return [
+      for (final row in reply['snapshots'] as List)
+        Map<String, dynamic>.from(row as Map),
+    ];
   }
 
   /// Rebuilds the synced `songs_json` mirror from `queue_snapshot_song` and
-  /// marks the snapshot dirty.
-  Future<void> _refreshSnapshotJson(
-      DatabaseExecutor txn, List<String> ids) async {
-    for (final id in ids) {
-      final rows = await txn.query('queue_snapshot_song',
-          columns: ['song_filename'],
-          where: 'snapshot_id = ?',
-          whereArgs: [id],
-          orderBy: 'position ASC');
-      await txn.update(
-          'queue_snapshot',
-          _stamp({
-            'songs_json':
-                jsonEncode([for (final r in rows) r['song_filename']]),
-          }),
-          where: 'id = ?',
-          whereArgs: [id]);
-    }
-  }
-
   // ==========================================================================
   // CURRENT QUEUE (synced)
   // ==========================================================================
-
-  static const String _currentQueueId = 'current';
 
   Future<void> saveCurrentQueue(Map<String, Object?> queue) async {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return;
-    await db.insert(
-      'current_queue',
-      _stamp({
-        'id': _currentQueueId,
-        'queue_json': jsonEncode(queue),
-        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      }),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.coreCommand('queue_snapshot_op', {
+      'op': 'current_save',
+      'queueJson': jsonEncode(queue),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      'hlc': _hlcNow(),
+    });
   }
 
   Future<Map<String, dynamic>?> loadCurrentQueue() async {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return null;
-    final rows = await db.query('current_queue',
-        columns: ['queue_json'],
-        where: 'id = ?',
-        whereArgs: [_currentQueueId],
-        limit: 1);
-    final raw = rows.isEmpty ? null : rows.first['queue_json'] as String?;
+    final reply =
+        await db.coreCommand('queue_snapshot_op', {'op': 'current_load'});
+    final raw = reply['queue_json'] as String?;
     if (raw == null) return null;
     try {
       return Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -695,48 +426,30 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('queue_snapshot_song');
-      await txn.delete('queue_snapshot');
-
-      for (final snapshot in data) {
-        final createdAtRaw = snapshot['created_at'];
-        final createdAt = createdAtRaw is num
-            ? createdAtRaw.toDouble()
-            : double.tryParse(createdAtRaw?.toString() ?? '') ??
-                DateTime.now().millisecondsSinceEpoch / 1000.0;
-        final snapshotIdRaw = snapshot['id']?.toString();
-        final snapshotId =
-            (snapshotIdRaw != null && snapshotIdRaw.trim().isNotEmpty)
-                ? snapshotIdRaw.trim()
-                : QueueSnapshot.timestampMarkerFromEpochSeconds(createdAt);
-        final nameRaw = snapshot['name']?.toString();
-        final name = (nameRaw != null && nameRaw.trim().isNotEmpty)
-            ? nameRaw.trim()
-            : QueueSnapshot.defaultNameForTimestamp(createdAt);
-        final source = snapshot['source'] as String? ?? 'imported';
-        final songs = (snapshot['songs'] as List?)
+    final snapshots = <Map<String, Object?>>[];
+    for (final snapshot in data) {
+      final createdAt = double.tryParse('${snapshot['created_at']}') ??
+          DateTime.now().millisecondsSinceEpoch / 1000;
+      final id = snapshot['id']?.toString().trim();
+      final name = snapshot['name']?.toString().trim();
+      snapshots.add({
+        'id': (id == null || id.isEmpty)
+            ? QueueSnapshot.timestampMarkerFromEpochSeconds(createdAt)
+            : id,
+        'name': (name == null || name.isEmpty)
+            ? QueueSnapshot.defaultNameForTimestamp(createdAt)
+            : name,
+        'created_at': createdAt,
+        'source': snapshot['source'] as String? ?? 'imported',
+        'songs': (snapshot['songs'] as List?)
                 ?.map((song) => song.toString())
                 .toList() ??
-            [];
-
-        await txn.insert('queue_snapshot', {
-          'id': snapshotId,
-          'name': name,
-          'created_at': createdAt,
-          'source': source,
-          'song_count': songs.length,
-          'songs_json': jsonEncode(songs),
-        });
-
-        for (int i = 0; i < songs.length; i++) {
-          await txn.insert('queue_snapshot_song', {
-            'snapshot_id': snapshotId,
-            'song_filename': songs[i],
-            'position': i,
-          });
-        }
-      }
+            <String>[],
+      });
+    }
+    await _userDataDatabase!.coreCommand('restore', {
+      'kind': 'queue_history',
+      'snapshots': snapshots,
     });
   }
 
@@ -760,24 +473,55 @@ class DatabaseService {
   Future<void> insertSongsBatch(
     List<Song> songs, {
     bool preserveCoverUrl = true,
+  }) =>
+      _writeSongs(songs, preserveCoverUrl: preserveCoverUrl);
+
+  Future<void> replaceLibrarySongs(List<Song> songs) =>
+      _writeSongs(songs, replaceLibrary: true);
+
+  Future<void> _writeSongs(
+    List<Song> songs, {
+    bool preserveCoverUrl = true,
+    bool replaceLibrary = false,
   }) async {
-    await SongLibraryRepository.writeBatch(
-      await userDataDb,
-      songs,
-      preserveCoverUrl: preserveCoverUrl,
-    );
+    await _ensureInitialized();
+    if (_userDataDatabase == null) return;
+    if (songs.isEmpty && !replaceLibrary) return;
+    await _userDataDatabase!.coreCommand('song_op', {
+      'op': 'write_batch',
+      'preserveCoverUrl': preserveCoverUrl,
+      'replaceLibrary': replaceLibrary,
+      'songs': [for (final song in songs) _songRow(song)],
+    });
   }
 
-  Future<void> replaceLibrarySongs(List<Song> songs) async {
-    await SongLibraryRepository.writeBatch(
-      await userDataDb,
-      songs,
-      replaceLibrary: true,
-    );
-  }
+  Map<String, Object?> _songRow(Song song) => {
+        'filename': song.filename,
+        'title': song.title,
+        'artist': song.artist,
+        'album': song.album,
+        'url': song.url,
+        'cover_url': song.coverUrl,
+        'has_lyrics': song.hasLyrics ? 1 : 0,
+        'play_count': song.playCount,
+        'duration_ms': song.duration?.inMilliseconds,
+        'mtime': song.mtime,
+        'created_epoch_sec': song.createdEpochSec,
+        'song_date_epoch_sec': song.songDateEpochSec,
+      };
 
-  Future<bool> updateSongCover(Song song, String path) async =>
-      SongLibraryRepository.updateCover(await userDataDb, song, path);
+  Future<bool> updateSongCover(Song song, String path) async {
+    await _ensureInitialized();
+    if (_userDataDatabase == null) return false;
+    final reply = await _userDataDatabase!.coreCommand('song_op', {
+      'op': 'update_cover',
+      'filename': song.filename,
+      'url': song.url,
+      'mtime': song.mtime,
+      'coverPath': path,
+    });
+    return reply['changed'] == true;
+  }
 
   /// Songs already probed for cover art and found to have none, keyed by
   /// filename with the file mtime at the time of the probe. A changed mtime
@@ -833,8 +577,9 @@ class DatabaseService {
   Future<int> clearCoverUrls() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return 0;
-    return _userDataDatabase!.rawUpdate(
-        'UPDATE song SET cover_url = NULL WHERE cover_url IS NOT NULL');
+    final reply = await _userDataDatabase!
+        .coreCommand('song_op', {'op': 'clear_cover_urls'});
+    return (reply['changed'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> deleteSongsByFilenames(Iterable<String> filenames) async {
@@ -842,41 +587,30 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
     final list = filenames.toList();
     if (list.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final chunk in _chunked(list)) {
-        final placeholders = List.filled(chunk.length, '?').join(', ');
-        await txn.delete('song',
-            where: 'filename IN ($placeholders)', whereArgs: chunk);
-      }
-    });
+    await _userDataDatabase!
+        .coreCommand('song_op', {'op': 'delete', 'filenames': list});
   }
 
   /// SQLite caps a statement at 999 variables by default; stay well under it.
-  static Iterable<List<String>> _chunked(List<String> values,
-      {int size = 500}) sync* {
-    for (var i = 0; i < values.length; i += size) {
-      yield values.sublist(i, min(i + size, values.length));
-    }
-  }
-
   Future<List<Song>> getAllSongs() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
-    final results = await _userDataDatabase!.query('song');
-    return results.map((r) => _mapToSong(r)).toList();
+    final reply =
+        await _userDataDatabase!.coreCommand('song_op', {'op': 'all'});
+    return [
+      for (final row in reply['songs'] as List)
+        _mapToSong(Map<String, dynamic>.from(row as Map)),
+    ];
   }
 
   Future<Song?> getSongByFilename(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return null;
-    final results = await _userDataDatabase!.query(
-      'song',
-      where: 'filename = ?',
-      whereArgs: [filename],
-      limit: 1,
-    );
-    if (results.isEmpty) return null;
-    return _mapToSong(results.first);
+    final reply = await _userDataDatabase!
+        .coreCommand('song_op', {'op': 'get', 'filename': filename});
+    final row = reply['song'];
+    if (row == null) return null;
+    return _mapToSong(Map<String, dynamic>.from(row as Map));
   }
 
   Future<void> upsertRemoteSong(Song song) async {
@@ -886,19 +620,10 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return;
-    // Membership is user data, so a metadata refresh must not overwrite it.
-    final existing = await db.query(
-      'remote_song',
-      columns: ['in_library'],
-      where: 'filename = ?',
-      whereArgs: [song.filename],
-      limit: 1,
-    );
-    final inLibrary =
-        existing.isEmpty ? 0 : (existing.first['in_library'] as int? ?? 0);
-    await db.insert(
-      'remote_song',
-      {
+    await db.coreCommand('song_op', {
+      'op': 'remote_upsert',
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+      'song': {
         'filename': song.filename,
         'remote_id': song.remoteId,
         'title': song.title,
@@ -907,11 +632,8 @@ class DatabaseService {
         'cover_url': song.coverUrl,
         'duration_ms': song.duration?.inMilliseconds,
         'is_available': song.isAvailable ? 1 : 0,
-        'in_library': inLibrary,
-        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
       },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    });
   }
 
   /// Streamed tracks the listener saved to the library, by filename.
@@ -919,12 +641,8 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return <String>{};
-    final rows = await db.query(
-      'remote_song',
-      columns: ['filename'],
-      where: 'in_library = 1',
-    );
-    return {for (final row in rows) row['filename'] as String};
+    final reply = await db.coreCommand('song_op', {'op': 'remote_library'});
+    return {for (final name in reply['filenames'] as List) name as String};
   }
 
   /// Marks a streamed track as part of the library, or drops it out again.
@@ -935,20 +653,23 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return false;
-    final updated = await db.update(
-      'remote_song',
-      {'in_library': inLibrary ? 1 : 0},
-      where: 'filename = ?',
-      whereArgs: [filename],
-    );
-    return updated > 0;
+    final reply = await db.coreCommand('song_op', {
+      'op': 'remote_set_library',
+      'filename': filename,
+      'inLibrary': inLibrary,
+    });
+    return reply['changed'] == true;
   }
 
   Future<List<Song>> getRemoteSongs() async {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return [];
-    final rows = await db.query('remote_song');
+    final reply = await db.coreCommand('song_op', {'op': 'remote_all'});
+    final rows = [
+      for (final row in reply['songs'] as List)
+        Map<String, dynamic>.from(row as Map),
+    ];
     // The source is not a column: the filename prefix already carries it, and
     // rebuilding through fromJson keeps one parser for every remote track.
     return rows
@@ -981,53 +702,36 @@ class DatabaseService {
     await _lyricsOffset('set', filename: filename, seconds: offset);
   }
 
-  Future<List<Song>> getSongs(
-      {int? limit,
-      int? offset,
-      String? orderBy,
-      String? where,
-      List<Object?>? whereArgs}) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    final results = await _userDataDatabase!.query(
-      'song',
-      limit: limit,
-      offset: offset,
-      orderBy: orderBy,
-      where: where,
-      whereArgs: whereArgs,
-    );
-    return results.map((r) => _mapToSong(r)).toList();
-  }
+  Future<List<Song>> getSongs() => getAllSongs();
 
   Future<int> getSongCount() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return 0;
-    final result =
-        await _userDataDatabase!.rawQuery('SELECT COUNT(*) as count FROM song');
-    return (result.first['count'] as num?)?.toInt() ?? 0;
+    final reply =
+        await _userDataDatabase!.coreCommand('song_op', {'op': 'count'});
+    return (reply['count'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> clearSongs() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.delete('song');
+    await _userDataDatabase!.coreCommand('song_op', {'op': 'clear'});
   }
 
   Future<List<String>> getArtists() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
-    final results = await _userDataDatabase!.rawQuery(
-        'SELECT DISTINCT artist FROM song ORDER BY artist COLLATE NOCASE');
-    return results.map((r) => r['artist'] as String).toList();
+    final reply =
+        await _userDataDatabase!.coreCommand('song_op', {'op': 'artists'});
+    return [for (final name in reply['values'] as List) name as String];
   }
 
   Future<List<String>> getAlbums() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
-    final results = await _userDataDatabase!.rawQuery(
-        'SELECT DISTINCT album FROM song ORDER BY album COLLATE NOCASE');
-    return results.map((r) => r['album'] as String).toList();
+    final reply =
+        await _userDataDatabase!.coreCommand('song_op', {'op': 'albums'});
+    return [for (final name in reply['values'] as List) name as String];
   }
 
   Song _mapToSong(Map<String, dynamic> r) {
@@ -1207,44 +911,9 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return false;
     try {
-      final plMaps = await _userDataDatabase!.query(
-        'playlist',
-        where: 'is_recommendation = 1',
-      );
-
-      if (plMaps.isEmpty) return false;
-
-      for (final plMap in plMaps) {
-        final id = plMap['id'];
-        final name = plMap['name'];
-        final isRec = plMap['is_recommendation'];
-        final createdAt = plMap['created_at'];
-        final updatedAt = plMap['updated_at'];
-
-        if (id == null || id is! String || id.isEmpty) return false;
-        if (name == null || name is! String) return false;
-        if (isRec == null || isRec is! int) return false;
-        if (createdAt == null || createdAt is! num) return false;
-        if (updatedAt == null || updatedAt is! num) return false;
-
-        final songMaps = await _userDataDatabase!.query(
-          'playlist_song',
-          where: 'playlist_id = ?',
-          whereArgs: [id],
-        );
-
-        for (final s in songMaps) {
-          final filename = s['song_filename'];
-          final addedAt = s['added_at'];
-
-          if (filename == null || filename is! String || filename.isEmpty) {
-            return false;
-          }
-          if (addedAt == null || addedAt is! num) return false;
-        }
-      }
-
-      return true;
+      final reply = await _userDataDatabase!
+          .coreCommand('playlist_op', {'op': 'validate'});
+      return reply['valid'] == true;
     } catch (e) {
       debugPrint('Recommendation DB validation error: $e');
       return false;
@@ -1291,13 +960,6 @@ class DatabaseService {
       'op': 'delete',
       'remotePlaylistId': remotePlaylistId,
     });
-  }
-
-  /// Drops mappings whose local playlist is gone, so a restore or a delete
-  /// cannot leave a link pointing at nothing.
-  Future<void> _pruneYouTubeLinks(DatabaseExecutor txn) async {
-    await txn.delete('youtube_playlist_link',
-        where: 'local_playlist_id NOT IN (SELECT id FROM playlist)');
   }
 
   Future<void> addSongToPlaylist(String playlistId, String songFilename) async {
@@ -1370,295 +1032,35 @@ class DatabaseService {
     });
   }
 
-  /// Renames a file in all database tables.
-  /// If the target filename already exists, stats are merged.
-  Future<void> renameFile(String oldFilename, String newFilename) async {
-    await _ensureInitialized();
-    if (_statsDatabase == null || _userDataDatabase == null) return;
+  Future<void> renameFile(String oldFilename, String newFilename) =>
+      renameFiles([(from: oldFilename, to: newFilename)]);
 
-    await _userDataDatabase!
-        .transaction((txn) => _renameInUserData(txn, oldFilename, newFilename));
-    await _renameInStats(_statsDatabase!, oldFilename, newFilename);
-
-    debugPrint('Renamed DB entries from $oldFilename to $newFilename');
-  }
-
-  /// Moves many songs onto new filenames in one pass.
-  ///
-  /// Same per-song rules as [renameFile] — literally the same code — but opened
-  /// as two transactions instead of two per song. Every commit is an fsync on
-  /// Android's default `synchronous = FULL`, so a 500-song rename paid 1,000 of
-  /// them and spent more time syncing the WAL than renaming files. Statement
-  /// count inside a transaction is cheap; the commit is the cost.
   Future<void> renameFiles(List<({String from, String to})> renames) async {
     await _ensureInitialized();
-    if (_statsDatabase == null || _userDataDatabase == null) return;
-    if (renames.isEmpty) return;
+    final data = _userDataDatabase;
+    final stats = _statsDatabase;
+    if (data == null || stats == null || renames.isEmpty) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      for (final entry in renames) {
-        await _renameInUserData(txn, entry.from, entry.to);
-      }
-    });
-    await _renameManyInStats(_statsDatabase!, renames);
-
-    debugPrint('Renamed DB entries for ${renames.length} songs');
+    final fields = <String, Object?>{
+      'renames': [
+        for (final entry in renames) {'from': entry.from, 'to': entry.to}
+      ],
+      'hlc': _hlcNow(),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000,
+    };
+    await data.coreCommand('song_files', {'op': 'rename_data', ...fields});
+    SongIdentityRepository.generation++;
+    await stats.coreCommand('song_files', {'op': 'rename_stats', ...fields});
   }
 
-  /// Every table that names a song has to move with it, in both databases. A
-  /// table left behind does not merely lose data — it becomes unreachable
-  /// garbage keyed to a filename nothing will ever ask about again.
-  ///
-  /// Takes the transaction rather than opening one so that [renameFile] and
-  /// [renameFiles] cannot drift apart: there is one copy of these rules.
-  Future<void> _renameInUserData(
-    DatabaseExecutor txn,
-    String oldFilename,
-    String newFilename,
-  ) async {
-    // Whether there is a row at the old name decides whether this is a rename or
-    // a replay, and the two must not look the same to the code below.
-    //
-    // Replays are real: a bulk rename journals its intent so that an interrupted
-    // sweep can be finished on the next launch, and the launch cannot tell
-    // whether the rows it is about to move were already moved by the run that
-    // died. So this gets called a second time over a pair that is already done.
-    //
-    // The ghost delete is only safe when a row at the old name is moving into the
-    // new one. Without that condition a replay finds nothing at the old name,
-    // deletes whatever is sitting at the new name — which is the very row the
-    // first run just moved there — and leaves the song's favourites, playlists
-    // and stats orphaned under a filename nothing will ask about again.
-    final sourceSong = await txn.query(
-      'song',
-      columns: ['url'],
-      where: 'filename = ?',
-      whereArgs: [oldFilename],
-      limit: 1,
-    );
-
-    if (sourceSong.isNotEmpty) {
-      final sourceUrl = sourceSong.first['url'] as String?;
-
-      // A stale row already sitting at the new name would trip the primary key.
-      // The source row is the one that describes the file actually being renamed —
-      // its cover and date-added belong to it — so the ghost goes, not the real
-      // row. That is the opposite of the merge the tables below do, and
-      // deliberately so: they carry a single user-flag, whereas here the two rows
-      // describe different files.
-      await txn.delete(
-        'song',
-        where: 'filename = ?',
-        whereArgs: [newFilename],
-      );
-
-      // The url moves in the same statement. Recovery has nothing but this call
-      // to work with, and a row renamed but still pointing at the old path is
-      // exactly the broken link the sweep is repairing.
-      await txn.update(
-        'song',
-        {
-          'filename': newFilename,
-          if (sourceUrl != null) 'url': join(dirname(sourceUrl), newFilename),
-        },
-        where: 'filename = ?',
-        whereArgs: [oldFilename],
-      );
-    }
-
-    final existingOffset = await txn.query(
-      'lyrics_timing_offset',
-      where: 'filename = ?',
-      whereArgs: [newFilename],
-    );
-    if (existingOffset.isNotEmpty) {
-      await txn.delete('lyrics_timing_offset',
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    } else {
-      await txn.update('lyrics_timing_offset', {'filename': newFilename},
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    }
-
-    // For favorites/suggestless/hidden, if target exists, we just delete the old
-    // one (effectively "merging" the fact that it is a favorite/suggestless/hidden)
-
-    // Check if new exists in favorite
-    final newFav = await txn
-        .query('favorite', where: 'filename = ?', whereArgs: [newFilename]);
-    if (newFav.isNotEmpty) {
-      await txn
-          .delete('favorite', where: 'filename = ?', whereArgs: [oldFilename]);
-    } else {
-      await txn.update('favorite', _stamp({'filename': newFilename}),
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    }
-
-    // Check if new exists in suggestless
-    final newSL = await txn
-        .query('suggestless', where: 'filename = ?', whereArgs: [newFilename]);
-    if (newSL.isNotEmpty) {
-      await txn.delete('suggestless',
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    } else {
-      await txn.update('suggestless', _stamp({'filename': newFilename}),
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    }
-
-    // Check if new exists in hidden
-    final newHidden = await txn
-        .query('hidden', where: 'filename = ?', whereArgs: [newFilename]);
-    if (newHidden.isNotEmpty) {
-      await txn
-          .delete('hidden', where: 'filename = ?', whereArgs: [oldFilename]);
-    } else {
-      await txn.update('hidden', _stamp({'filename': newFilename}),
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    }
-
-    // The negative cover cache is keyed by filename, so leaving it behind
-    // would suppress a cover lookup for the renamed song forever.
-    final newCoverMiss = await txn
-        .query('cover_miss', where: 'filename = ?', whereArgs: [newFilename]);
-    if (newCoverMiss.isNotEmpty) {
-      await txn.delete('cover_miss',
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    } else {
-      await txn.update('cover_miss', {'filename': newFilename},
-          where: 'filename = ?', whereArgs: [oldFilename]);
-    }
-
-    // Translated lyrics are keyed by (filename, language). Only the row the
-    // new name already holds for that same language is redundant — dropping
-    // every language would lose the ones the new name is missing.
-    final oldTranslations = await txn.query('translated_lyrics',
-        where: 'filename = ?', whereArgs: [oldFilename]);
-    for (final translation in oldTranslations) {
-      final targetLang = translation['target_lang'] as String?;
-      if (targetLang == null) continue;
-      final existingTranslation = await txn.query(
-        'translated_lyrics',
-        where: 'filename = ? AND target_lang = ?',
-        whereArgs: [newFilename, targetLang],
-      );
-      if (existingTranslation.isNotEmpty) {
-        await txn.delete('translated_lyrics',
-            where: 'filename = ? AND target_lang = ?',
-            whereArgs: [oldFilename, targetLang]);
-      } else {
-        await txn.update('translated_lyrics', {'filename': newFilename},
-            where: 'filename = ? AND target_lang = ?',
-            whereArgs: [oldFilename, targetLang]);
-      }
-    }
-
-    // Update Merged Songs - if old filename is in a merge group, update it
-    await txn.update('merged_song', _stamp({'filename': newFilename}),
-        where: 'filename = ?', whereArgs: [oldFilename]);
-    // Update merged_song_group priority_filename if it matches old filename
-    await txn.update(
-        'merged_song_group', _stamp({'priority_filename': newFilename}),
-        where: 'priority_filename = ?', whereArgs: [oldFilename]);
-
-    // Saved queues name the song by filename. The primary key is
-    // (snapshot_id, position), so there is nothing to collide with.
-    final touched = await txn.query('queue_snapshot_song',
-        columns: ['snapshot_id'],
-        where: 'song_filename = ?',
-        whereArgs: [oldFilename],
-        distinct: true);
-    await txn.update('queue_snapshot_song', {'song_filename': newFilename},
-        where: 'song_filename = ?', whereArgs: [oldFilename]);
-    await _refreshSnapshotJson(
-        txn, [for (final r in touched) r['snapshot_id'] as String]);
-
-    // Update Playlist Songs
-    // Get all playlist entries for old filename
-    final plSongs = await txn.query('playlist_song',
-        where: 'song_filename = ?', whereArgs: [oldFilename]);
-    for (final plSong in plSongs) {
-      final playlistId = plSong['playlist_id'] as String;
-      // Check if new filename already in this playlist
-      final existing = await txn.query('playlist_song',
-          where: 'playlist_id = ? AND song_filename = ?',
-          whereArgs: [playlistId, newFilename]);
-
-      if (existing.isNotEmpty) {
-        // Delete old (merge)
-        await txn.delete('playlist_song',
-            where: 'id = ?', whereArgs: [plSong['id']]);
-      } else {
-        // Rename
-        await txn.update(
-            'playlist_song', _stamp({'song_filename': newFilename}),
-            where: 'id = ?', whereArgs: [plSong['id']]);
-      }
-    }
-
-    await SongIdentityRepository.markRenamed(txn, oldFilename, newFilename);
-  }
-
-  /// We always update the filename in playevent. This effectively merges stats
-  /// because play count queries group by song_filename.
-  Future<void> _renameInStats(
-    DatabaseExecutor txn,
-    String oldFilename,
-    String newFilename,
-  ) =>
-      txn.update('playevent', _stamp({'song_filename': newFilename}),
-          where: 'song_filename = ?', whereArgs: [oldFilename]);
-
-  Future<void> _renameManyInStats(
-    DatabaseExecutor txn,
-    List<({String from, String to})> renames,
-  ) async {
-    for (final entry in renames) {
-      await _renameInStats(txn, entry.from, entry.to);
-    }
-  }
-
-  /// Deletes a file from user data tables only.
-  /// Removes the file from songs, favorites, suggestless, hidden, merged songs, and playlists.
-  /// Preserves play events to maintain statistics.
+  /// Preserves play history when a library file is deleted.
   Future<void> deleteFile(String filename) async {
     await _ensureInitialized();
-    if (_userDataDatabase == null) return;
-
-    // Update User Data DB (Songs, Favorites, SuggestLess, Hidden, Merged Songs, Playlists)
-    await _userDataDatabase!.transaction((txn) async {
-      // Remove from songs
-      await txn.delete('song', where: 'filename = ?', whereArgs: [filename]);
-      await SongIdentityRepository.delete(txn, filename);
-      await txn.delete('lyrics_timing_offset',
-          where: 'filename = ?', whereArgs: [filename]);
-
-      // Remove from favorites
-      await txn
-          .delete('favorite', where: 'filename = ?', whereArgs: [filename]);
-
-      // Remove from suggestless
-      await txn
-          .delete('suggestless', where: 'filename = ?', whereArgs: [filename]);
-
-      // Remove from hidden
-      await txn.delete('hidden', where: 'filename = ?', whereArgs: [filename]);
-
-      // Remove from merged songs (this will auto-delete the group if empty due to ON DELETE CASCADE)
-      await txn
-          .delete('merged_song', where: 'filename = ?', whereArgs: [filename]);
-
-      // Clean up empty merge groups
-      await txn.delete('merged_song_group',
-          where:
-              'id NOT IN (SELECT DISTINCT group_id FROM merged_song WHERE group_id IS NOT NULL)');
-
-      // Remove from all playlists
-      await txn.delete('playlist_song',
-          where: 'song_filename = ?', whereArgs: [filename]);
-    });
-
-    // Note: We DO NOT delete play events to preserve statistics
-    debugPrint(
-        'Deleted user data entries for file $filename (stats preserved)');
+    final data = _userDataDatabase;
+    if (data == null) return;
+    await data
+        .coreCommand('song_files', {'op': 'delete', 'filename': filename});
+    SongIdentityRepository.generation++;
   }
 
   /// Replaces all local suggestless with the given list
@@ -1681,39 +1083,18 @@ class DatabaseService {
     if (_userDataDatabase == null) return {};
 
     try {
-      // Get groups with priority
-      final groupResults = await _userDataDatabase!.query('merged_song_group');
-      final groupPriorities = <String, String?>{};
-      for (final row in groupResults) {
-        groupPriorities[row['id'] as String] =
-            row['priority_filename'] as String?;
-      }
-
-      // Get all songs
-      final results = await _userDataDatabase!.rawQuery('''
-        SELECT g.id as group_id, m.filename
-        FROM merged_song_group g
-        JOIN merged_song m ON g.id = m.group_id
-        ORDER BY g.id, m.added_at
-      ''');
-
-      final groups = <String, List<String>>{};
-      for (final row in results) {
-        final groupId = row['group_id'] as String;
-        final filename = row['filename'] as String;
-        groups.putIfAbsent(groupId, () => []).add(filename);
-      }
-
-      // Combine into result format
+      final reply =
+          await _userDataDatabase!.coreCommand('merged_op', {'op': 'list'});
       final result =
           <String, ({List<String> filenames, String? priorityFilename})>{};
-      for (final entry in groups.entries) {
-        if (entry.value.length >= 2) {
-          result[entry.key] = (
-            filenames: entry.value,
-            priorityFilename: groupPriorities[entry.key],
-          );
-        }
+      for (final entry in reply['groups'] as List) {
+        final row = (entry as Map).cast<String, Object?>();
+        result[row['id'] as String] = (
+          filenames: [
+            for (final filename in row['filenames'] as List) filename as String,
+          ],
+          priorityFilename: row['priority_filename'] as String?,
+        );
       }
       return result;
     } catch (e) {
@@ -1728,16 +1109,9 @@ class DatabaseService {
     if (_userDataDatabase == null) return null;
 
     try {
-      final results = await _userDataDatabase!.query(
-        'merged_song_group',
-        where: 'id = ?',
-        whereArgs: [groupId],
-        limit: 1,
-      );
-      if (results.isNotEmpty) {
-        return results.first['priority_filename'] as String?;
-      }
-      return null;
+      final reply = await _userDataDatabase!
+          .coreCommand('merged_op', {'op': 'priority', 'groupId': groupId});
+      return reply['priority_filename'] as String?;
     } catch (e) {
       debugPrint('Error fetching merged group priority: $e');
       return null;
@@ -1751,12 +1125,11 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
 
     try {
-      await _userDataDatabase!.update(
-        'merged_song_group',
-        {'priority_filename': priorityFilename},
-        where: 'id = ?',
-        whereArgs: [groupId],
-      );
+      await _userDataDatabase!.coreCommand('merged_op', {
+        'op': 'set_priority',
+        'groupId': groupId,
+        'priorityFilename': priorityFilename,
+      });
       debugPrint('Set priority for group $groupId to $priorityFilename');
     } catch (e) {
       debugPrint('Error setting merged group priority: $e');
@@ -1769,16 +1142,9 @@ class DatabaseService {
     if (_userDataDatabase == null) return null;
 
     try {
-      final results = await _userDataDatabase!.query(
-        'merged_song',
-        where: 'filename = ?',
-        whereArgs: [filename],
-        limit: 1,
-      );
-      if (results.isNotEmpty) {
-        return results.first['group_id'] as String?;
-      }
-      return null;
+      final reply = await _userDataDatabase!
+          .coreCommand('merged_op', {'op': 'group_id', 'filename': filename});
+      return reply['group_id'] as String?;
     } catch (e) {
       debugPrint('Error fetching merged group id: $e');
       return null;
@@ -1791,15 +1157,9 @@ class DatabaseService {
     if (_userDataDatabase == null) return [];
 
     try {
-      final groupId = await getMergedGroupId(filename);
-      if (groupId == null) return [];
-
-      final results = await _userDataDatabase!.query(
-        'merged_song',
-        where: 'group_id = ? AND filename != ?',
-        whereArgs: [groupId, filename],
-      );
-      return results.map((r) => r['filename'] as String).toList();
+      final reply = await _userDataDatabase!
+          .coreCommand('merged_op', {'op': 'siblings', 'filename': filename});
+      return [for (final name in reply['filenames'] as List) name as String];
     } catch (e) {
       debugPrint('Error fetching merged siblings: $e');
       return [];
@@ -1828,30 +1188,13 @@ class DatabaseService {
     final groupId = const Uuid().v4();
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
 
-    await _userDataDatabase!.transaction((txn) async {
-      // Create the group with priority
-      await txn.insert(
-          'merged_song_group',
-          _stamp({
-            'id': groupId,
-            'priority_filename': effectivePriority,
-            'created_at': now,
-          }));
-      await _clearTombstone(txn, tombMergedGroups, groupId);
-
-      // Add all songs to the group
-      for (final filename in filenames) {
-        await txn.insert(
-            'merged_song',
-            _stamp({
-              'filename': filename,
-              'group_id': groupId,
-              'added_at': now,
-            }),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        await _clearTombstone(txn, tombMergedSongs, filename);
-      }
-      await _cleanupSingleSongGroups(txn);
+    await _userDataDatabase!.coreCommand('merged_op', {
+      'op': 'create',
+      'groupId': groupId,
+      'filenames': filenames,
+      'priorityFilename': effectivePriority,
+      'now': now,
+      'hlc': _hlcNow(),
     });
 
     debugPrint(
@@ -1867,19 +1210,12 @@ class DatabaseService {
 
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
 
-    await _userDataDatabase!.transaction((txn) async {
-      for (final filename in filenames) {
-        await txn.insert(
-            'merged_song',
-            _stamp({
-              'filename': filename,
-              'group_id': groupId,
-              'added_at': now,
-            }),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        await _clearTombstone(txn, tombMergedSongs, filename);
-      }
-      await _cleanupSingleSongGroups(txn);
+    await _userDataDatabase!.coreCommand('merged_op', {
+      'op': 'add_songs',
+      'groupId': groupId,
+      'filenames': filenames,
+      'now': now,
+      'hlc': _hlcNow(),
     });
 
     debugPrint('Added ${filenames.length} songs to merged group $groupId');
@@ -1890,41 +1226,13 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn
-          .delete('merged_song', where: 'filename = ?', whereArgs: [filename]);
-      await _tombstone(txn, tombMergedSongs, filename);
-
-      await _cleanupSingleSongGroups(txn);
+    await _userDataDatabase!.coreCommand('merged_op', {
+      'op': 'remove_song',
+      'filename': filename,
+      'hlc': _hlcNow(),
     });
 
     debugPrint('Removed $filename from merged group');
-  }
-
-  Future<void> _cleanupSingleSongGroups(Transaction txn) async {
-    final results = await txn.rawQuery('''
-      SELECT group_id, COUNT(*) as song_count
-      FROM merged_song
-      GROUP BY group_id
-      HAVING song_count < 2
-    ''');
-    for (final row in results) {
-      final groupId = row['group_id'] as String;
-      final members = await txn.query('merged_song',
-          columns: ['filename'], where: 'group_id = ?', whereArgs: [groupId]);
-      await txn
-          .delete('merged_song', where: 'group_id = ?', whereArgs: [groupId]);
-      await txn
-          .delete('merged_song_group', where: 'id = ?', whereArgs: [groupId]);
-      await _tombstone(txn, tombMergedGroups, groupId);
-      for (final m in members) {
-        final fn = m['filename'] as String?;
-        if (fn != null) await _tombstone(txn, tombMergedSongs, fn);
-      }
-    }
-    await txn.delete('merged_song_group',
-        where:
-            'id NOT IN (SELECT DISTINCT group_id FROM merged_song WHERE group_id IS NOT NULL)');
   }
 
   /// Deletes an entire merge group
@@ -1932,20 +1240,10 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      final members = await txn.query('merged_song',
-          columns: ['filename'], where: 'group_id = ?', whereArgs: [groupId]);
-      // Delete all songs in the group (cascade will handle the group)
-      await txn
-          .delete('merged_song', where: 'group_id = ?', whereArgs: [groupId]);
-      // Delete the group itself
-      await txn
-          .delete('merged_song_group', where: 'id = ?', whereArgs: [groupId]);
-      await _tombstone(txn, tombMergedGroups, groupId);
-      for (final m in members) {
-        final fn = m['filename'] as String?;
-        if (fn != null) await _tombstone(txn, tombMergedSongs, fn);
-      }
+    await _userDataDatabase!.coreCommand('merged_op', {
+      'op': 'delete',
+      'groupId': groupId,
+      'hlc': _hlcNow(),
     });
 
     debugPrint('Deleted merged group $groupId');
@@ -1961,10 +1259,11 @@ class DatabaseService {
     if (_userDataDatabase == null) return {};
 
     try {
-      final results =
-          await _userDataDatabase!.query('recommendation_preference');
+      final reply = await _userDataDatabase!
+          .coreCommand('recommendation_op', {'op': 'preferences'});
       final prefs = <String, ({String? customTitle, bool isPinned})>{};
-      for (final row in results) {
+      for (final entry in reply['preferences'] as List) {
+        final row = (entry as Map).cast<String, Object?>();
         prefs[row['id'] as String] = (
           customTitle: row['custom_title'] as String?,
           isPinned: (row['is_pinned'] as int) == 1,
@@ -1982,20 +1281,12 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
-    final Map<String, dynamic> values = {'updated_at': now};
-    if (customTitle != null) values['custom_title'] = customTitle;
-    if (isPinned != null) values['is_pinned'] = isPinned ? 1 : 0;
-
-    await _userDataDatabase!.transaction((txn) async {
-      final existing = await txn
-          .query('recommendation_preference', where: 'id = ?', whereArgs: [id]);
-      if (existing.isEmpty) {
-        await txn.insert('recommendation_preference', {'id': id, ...values});
-      } else {
-        await txn.update('recommendation_preference', values,
-            where: 'id = ?', whereArgs: [id]);
-      }
+    await _userDataDatabase!.coreCommand('recommendation_op', {
+      'op': 'save_preference',
+      'recommendationId': id,
+      'customTitle': customTitle,
+      'isPinned': isPinned,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
     });
   }
 
@@ -2004,8 +1295,9 @@ class DatabaseService {
     if (_userDataDatabase == null) return [];
 
     try {
-      final results = await _userDataDatabase!.query('recommendation_removal');
-      return results.map((r) => r['id'] as String).toList();
+      final reply = await _userDataDatabase!
+          .coreCommand('recommendation_op', {'op': 'removals'});
+      return [for (final id in reply['ids'] as List) id as String];
     } catch (e) {
       debugPrint('Error getting removed recommendations: $e');
       return [];
@@ -2016,22 +1308,19 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.insert(
-      'recommendation_removal',
-      {
-        'id': id,
-        'removed_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _userDataDatabase!.coreCommand('recommendation_op', {
+      'op': 'add_removal',
+      'recommendationId': id,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+    });
   }
 
   Future<void> removeRecommendationRemoval(String id) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!
-        .delete('recommendation_removal', where: 'id = ?', whereArgs: [id]);
+    await _userDataDatabase!.coreCommand(
+        'recommendation_op', {'op': 'remove_removal', 'recommendationId': id});
   }
 
   /// Replaces all merged groups with the given data (used for import/restore)
@@ -2044,37 +1333,19 @@ class DatabaseService {
 
     final now = DateTime.now().millisecondsSinceEpoch / 1000.0;
 
-    await _userDataDatabase!.transaction((txn) async {
-      // Clear existing
-      await txn.delete('merged_song');
-      await txn.delete('merged_song_group');
-
-      // Insert new groups
-      for (final entry in groups.entries) {
-        final groupId = entry.key;
-        final filenames = entry.value.filenames;
-        final priorityFilename = entry.value.priorityFilename;
-
-        if (filenames.length < 2) continue;
-
-        await txn.insert(
-            'merged_song_group',
-            _stamp({
-              'id': groupId,
-              'priority_filename': priorityFilename,
-              'created_at': now,
-            }));
-
-        for (final filename in filenames) {
-          await txn.insert(
-              'merged_song',
-              _stamp({
-                'filename': filename,
-                'group_id': groupId,
-                'added_at': now,
-              }));
-        }
-      }
+    await _userDataDatabase!.coreCommand('merged_op', {
+      'op': 'set_all',
+      'hlc': _hlcNow(),
+      'now': now,
+      'groups': [
+        for (final entry in groups.entries)
+          if (entry.value.filenames.length >= 2)
+            {
+              'id': entry.key,
+              'priority_filename': entry.value.priorityFilename,
+              'filenames': entry.value.filenames,
+            },
+      ],
     });
 
     debugPrint('Set ${groups.length} merged groups');
@@ -2088,8 +1359,7 @@ class DatabaseService {
     await _ensureInitialized();
     if (_statsDatabase == null) return {};
     try {
-      final results = await _statsDatabase!.rawQuery(
-          'SELECT song_filename, COUNT(*) as count FROM playevent WHERE play_ratio > 0.25 GROUP BY song_filename');
+      final results = await playbackRows(_statsDatabase!, 'counts');
       return {
         for (var r in results) r['song_filename'] as String: r['count'] as int
       };
@@ -2114,11 +1384,7 @@ class DatabaseService {
     final stats = _statsDatabase;
     if (stats == null || queueId.isEmpty) return const [];
     try {
-      final rows = await stats.rawQuery(
-        'SELECT song_filename, timestamp FROM playevent '
-        'WHERE queue_id = ? ORDER BY timestamp ASC, id ASC',
-        [queueId],
-      );
+      final rows = await playbackRows(stats, 'queue_listens', [queueId]);
       return [
         for (final row in rows)
           if (row['song_filename'] is String && row['timestamp'] is num)
@@ -2137,8 +1403,7 @@ class DatabaseService {
     await _ensureInitialized();
     if (_statsDatabase == null) return {};
     try {
-      final results = await _statsDatabase!.rawQuery(
-          'SELECT song_filename, MAX(timestamp) as last_played FROM playevent WHERE play_ratio > 0.25 GROUP BY song_filename');
+      final results = await playbackRows(_statsDatabase!, 'last_played');
       return {
         for (var r in results)
           r['song_filename'] as String: r['last_played'] as double,
@@ -2164,11 +1429,7 @@ class DatabaseService {
               .subtract(Duration(days: sinceDays))
               .millisecondsSinceEpoch /
           1000.0;
-      final results = await _statsDatabase!.rawQuery(
-        'SELECT song_filename, timestamp, play_ratio, duration_played, total_length '
-        'FROM playevent WHERE timestamp >= ? ORDER BY timestamp DESC',
-        [cutoff],
-      );
+      final results = await playbackRows(_statsDatabase!, 'affinity', [cutoff]);
 
       final events =
           <({String filename, double timestamp, double playRatio})>[];
@@ -2215,12 +1476,7 @@ class DatabaseService {
               .subtract(Duration(days: sinceDays))
               .millisecondsSinceEpoch /
           1000.0;
-      final results = await _statsDatabase!.rawQuery(
-        'SELECT song_filename, timestamp, play_ratio, duration_played, total_length, '
-        'session_id, source FROM playevent WHERE timestamp >= ? '
-        'ORDER BY session_id, timestamp',
-        [cutoff],
-      );
+      final results = await playbackRows(_statsDatabase!, 'taste', [cutoff]);
 
       final events = <({
         String filename,
@@ -2261,8 +1517,7 @@ class DatabaseService {
     if (_statsDatabase == null) return {};
     try {
       // Get count of "immediate skips" and average play ratio for all songs
-      final results = await _statsDatabase!.rawQuery(
-          'SELECT song_filename, COUNT(CASE WHEN play_ratio < 0.10 THEN 1 END) as skip_count, AVG(play_ratio) as avg_ratio FROM playevent GROUP BY song_filename');
+      final results = await playbackRows(_statsDatabase!, 'skips');
       return {
         for (var r in results)
           r['song_filename'] as String: (
@@ -2277,245 +1532,20 @@ class DatabaseService {
   }
 
   Future<void> insertPlayEvent(Map<String, dynamic> event,
-      {bool isSync = false}) async {
-    await _ensureInitialized();
-    if (_statsDatabase == null) return;
-
-    await _statsDatabase!.transaction((txn) async {
-      await _insertPlayEventTxn(txn, event, isSync: isSync);
-    });
-  }
+          {bool isSync = false}) =>
+      insertPlayEventsBatch([event], isSync: isSync);
 
   Future<void> insertPlayEventsBatch(List<Map<String, dynamic>> events,
       {bool isSync = false}) async {
     await _ensureInitialized();
-    if (_statsDatabase == null || events.isEmpty) return;
-
-    await _statsDatabase!.transaction((txn) async {
-      for (final event in events) {
-        await _insertPlayEventTxn(txn, event, isSync: isSync);
-      }
+    final db = _statsDatabase;
+    if (db == null || events.isEmpty) return;
+    await db.coreCommand('playback', {
+      'op': 'write',
+      'events': events,
+      'sync': isSync,
+      'hlc': _hlcNow(),
     });
-  }
-
-  String _classifyPlayEventType(double playRatio) {
-    return playRatio < _skipRatioThreshold ? 'skip' : 'listen';
-  }
-
-  /// The row a live flush extends, or an empty list when this flush starts a
-  /// new listen. Synced rows use their own key lookup instead: they come from a
-  /// device whose flush order is unknown, and merging by key there is what
-  /// stops one listen counted twice.
-  Future<List<Map<String, Object?>>> _continuingEvent(
-    Transaction txn, {
-    required String sessionId,
-    required String songFilename,
-    required String? queueId,
-  }) async {
-    final rows = await txn.query(
-      'playevent',
-      where: 'session_id = ?',
-      whereArgs: [sessionId],
-      orderBy: 'timestamp DESC',
-      limit: 1,
-    );
-    if (rows.isEmpty) return const [];
-    final last = rows.first;
-    if (last['song_filename'] != songFilename) return const [];
-    if (last['queue_id'] != queueId) return const [];
-    return rows;
-  }
-
-  Future<void> _insertPlayEventTxn(Transaction txn, Map<String, dynamic> event,
-      {bool isSync = false}) async {
-    final sessionId = event['session_id'] as String?;
-    final songFilename = event['song_filename'] as String?;
-    final timestamp = (event['timestamp'] as num?)?.toDouble();
-    if (sessionId == null || sessionId.isEmpty) {
-      throw ArgumentError('session_id is required');
-    }
-    if (songFilename == null || songFilename.isEmpty) {
-      throw ArgumentError('song_filename is required');
-    }
-    if (timestamp == null) {
-      throw ArgumentError('timestamp is required');
-    }
-
-    final deviceId = event['device_id'] as String?;
-
-    final rowDirty = isSync ? 0 : 1;
-
-    await txn.insert(
-        'playsession',
-        {
-          'id': sessionId,
-          'start_time': timestamp,
-          'end_time': timestamp,
-          'platform': event['platform'] ?? 'unknown',
-          'device_id': deviceId,
-          'hlc': _hlcNow(),
-          'dirty': rowDirty,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore);
-
-    if (deviceId != null && deviceId.isNotEmpty) {
-      await txn.rawUpdate(
-          'UPDATE playsession SET device_id = ?, hlc = ?, dirty = ? WHERE id = ? AND (device_id IS NULL OR device_id = \'\')',
-          [deviceId, _hlcNow(), rowDirty, sessionId]);
-    }
-
-    await txn.rawUpdate(
-        'UPDATE playsession SET end_time = ?, hlc = ?, dirty = ? WHERE id = ? AND end_time < ?',
-        [timestamp, _hlcNow(), rowDirty, sessionId, timestamp]);
-
-    final incomingQueueId = event['queue_id'] as String?;
-
-    // Coalesce logic (Fix for fragmented stats): a pause, a backgrounding or a
-    // resume flush continues the listen that is already on record, so those
-    // fragments add back together instead of becoming separate rows.
-    //
-    // Only the session's latest event can be that continuation. Anything else
-    // played since means this is a new listen, so it earns its own row — which
-    // is what lets the queue's played list show a song heard twice. Same rule
-    // across queues: a replay from another queue was already separate.
-    final lastEvents = isSync
-        ? await txn.query(
-            'playevent',
-            where: 'session_id = ? AND song_filename = ? AND queue_id IS ?',
-            whereArgs: [sessionId, songFilename, incomingQueueId],
-            orderBy: 'timestamp DESC',
-            limit: 1,
-          )
-        : await _continuingEvent(
-            txn,
-            sessionId: sessionId,
-            songFilename: songFilename,
-            queueId: incomingQueueId,
-          );
-
-    final totalLength = (event['total_length'] as num?)?.toDouble() ?? 0.0;
-    final duration = (event['duration_played'] as num?)?.toDouble() ?? 0.0;
-    final incomingRatio = (event['play_ratio'] as num?)?.toDouble() ??
-        (totalLength > 0 ? duration / totalLength : 0.0);
-    final incomingFg =
-        (event['foreground_duration'] as num?)?.toDouble() ?? 0.0;
-    final incomingBg =
-        (event['background_duration'] as num?)?.toDouble() ?? 0.0;
-    final incomingSource = event['source'] as String?;
-
-    if (lastEvents.isNotEmpty) {
-      final last = lastEvents.first;
-      final lastId = last['id'] as int;
-      final lastTotalLength = (last['total_length'] as num?)?.toDouble() ?? 0.0;
-      final effectiveTotalLength =
-          totalLength > 0 ? totalLength : lastTotalLength;
-
-      if (isSync) {
-        // Synced play events are complete point-in-time snapshots, NOT incremental diffs.
-        // Take the maximum values rather than blindly adding durations which inflates stats.
-        final lastDuration =
-            (last['duration_played'] as num?)?.toDouble() ?? 0.0;
-        final lastFg = (last['foreground_duration'] as num?)?.toDouble() ?? 0.0;
-        final lastBg = (last['background_duration'] as num?)?.toDouble() ?? 0.0;
-        final lastRatio = (last['play_ratio'] as num?)?.toDouble() ?? 0.0;
-        final lastTimestamp = (last['timestamp'] as num?)?.toDouble() ?? 0.0;
-
-        double newDuration = max(lastDuration, duration);
-        if (effectiveTotalLength > 0 &&
-            newDuration > effectiveTotalLength * 1.05 + 10.0) {
-          newDuration = effectiveTotalLength;
-        }
-
-        final newFg = max(lastFg, incomingFg);
-        final newBg = max(lastBg, incomingBg);
-        final newRatio = effectiveTotalLength > 0
-            ? min(1.0, newDuration / effectiveTotalLength)
-            : max(lastRatio, incomingRatio);
-        final newTimestamp = max(lastTimestamp, timestamp);
-        final lastSource = last['source'] as String?;
-
-        await txn.update(
-            'playevent',
-            {
-              'duration_played': newDuration,
-              'foreground_duration': newFg,
-              'background_duration': newBg,
-              'total_length': effectiveTotalLength,
-              'timestamp': newTimestamp,
-              'play_ratio': newRatio,
-              'hlc': _hlcNow(),
-              'dirty': rowDirty,
-              if (lastSource == null && incomingSource != null)
-                'source': incomingSource,
-            },
-            where: 'id = ?',
-            whereArgs: [lastId]);
-      } else {
-        // Live playback incremental flush on local player
-        double newDuration =
-            (last['duration_played'] as num).toDouble() + duration;
-        double newFg =
-            ((last['foreground_duration'] as num?) ?? 0) + incomingFg;
-        double newBg =
-            ((last['background_duration'] as num?) ?? 0) + incomingBg;
-
-        if (effectiveTotalLength > 0 &&
-            newDuration > effectiveTotalLength * 1.05 + 10.0) {
-          newDuration = effectiveTotalLength;
-          if (newFg + newBg > 0) {
-            final scale = newDuration / (newFg + newBg);
-            newFg *= scale;
-            newBg *= scale;
-          }
-        }
-
-        final newRatio = effectiveTotalLength > 0
-            ? min(1.0, newDuration / effectiveTotalLength)
-            : incomingRatio;
-        final lastSource = last['source'] as String?;
-
-        await txn.update(
-            'playevent',
-            {
-              'duration_played': newDuration,
-              'foreground_duration': newFg,
-              'background_duration': newBg,
-              'total_length': effectiveTotalLength,
-              'timestamp': timestamp,
-              'play_ratio': newRatio,
-              'hlc': _hlcNow(),
-              'dirty': rowDirty,
-              if (lastSource == null && incomingSource != null)
-                'source': incomingSource,
-            },
-            where: 'id = ?',
-            whereArgs: [lastId]);
-      }
-    } else {
-      // First insert for this song/session
-      double sanitizedDuration = duration;
-      double sanitizedRatio = incomingRatio;
-      if (totalLength > 0 && sanitizedDuration > totalLength * 1.05 + 10.0) {
-        sanitizedDuration = totalLength;
-        sanitizedRatio = 1.0;
-      }
-
-      await txn.insert('playevent', {
-        'uid': (event['uid'] as String?) ?? const Uuid().v4(),
-        'session_id': sessionId,
-        'song_filename': songFilename,
-        'timestamp': timestamp,
-        'duration_played': sanitizedDuration,
-        'total_length': totalLength,
-        'play_ratio': sanitizedRatio,
-        'foreground_duration': event['foreground_duration'],
-        'background_duration': event['background_duration'],
-        'source': incomingSource,
-        'queue_id': incomingQueueId,
-        'hlc': _hlcNow(),
-        'dirty': rowDirty,
-      });
-    }
   }
 
   Future<
@@ -2537,11 +1567,7 @@ class DatabaseService {
     try {
       // Get all recent play events with their actual play ratios
       // This allows weighting logic to differentiate between barely-listened and fully-listened songs
-      final events = await _statsDatabase!.query(
-        'playevent',
-        orderBy: 'timestamp DESC',
-        limit: limit,
-      );
+      final events = await playbackRows(_statsDatabase!, 'history', [limit]);
 
       final history = <({
         String filename,
@@ -2564,7 +1590,7 @@ class DatabaseService {
           filename: filename,
           timestamp: timestamp,
           playRatio: playRatio,
-          eventType: _classifyPlayEventType(playRatio),
+          eventType: playRatio < _skipRatioThreshold ? 'skip' : 'listen',
         ));
       }
 
@@ -2581,84 +1607,21 @@ class DatabaseService {
     await _ensureInitialized();
     if (_statsDatabase == null) return 0;
 
-    int repairedCount = 0;
     try {
       final songs = await getAllSongs();
-      final songDurationMap = {
-        for (var s in songs)
-          if (s.duration != null && s.duration!.inMilliseconds > 0)
-            s.filename: s.duration!.inMilliseconds / 1000.0
-      };
-
-      final corruptedEvents = await _statsDatabase!.rawQuery('''
-        SELECT id, song_filename, duration_played, total_length, foreground_duration, background_duration
-        FROM playevent
-      ''');
-
-      await _statsDatabase!.transaction((txn) async {
-        for (final row in corruptedEvents) {
-          final id = row['id'] as int;
-          final filename = row['song_filename'] as String? ?? '';
-          final durationPlayed =
-              (row['duration_played'] as num?)?.toDouble() ?? 0.0;
-          var totalLength = (row['total_length'] as num?)?.toDouble() ?? 0.0;
-
-          if (totalLength <= 0 && songDurationMap.containsKey(filename)) {
-            totalLength = songDurationMap[filename]!;
-          }
-
-          bool needsRepair = false;
-          double targetDuration = durationPlayed;
-
-          if (totalLength > 0 && durationPlayed > totalLength * 1.01) {
-            needsRepair = true;
-            targetDuration = totalLength;
-          } else if (totalLength <= 0 && durationPlayed > 600.0) {
-            // Cap orphan songs with no length metadata at 10 minutes max per play
-            needsRepair = true;
-            targetDuration = 600.0;
-          }
-
-          if (needsRepair) {
-            repairedCount++;
-            final fg = (row['foreground_duration'] as num?)?.toDouble() ?? 0.0;
-            final bg = (row['background_duration'] as num?)?.toDouble() ?? 0.0;
-            double newFg = fg;
-            double newBg = bg;
-            if (fg + bg > 0) {
-              final scale = targetDuration / (fg + bg);
-              newFg = fg * scale;
-              newBg = bg * scale;
-            } else {
-              newFg = targetDuration;
-            }
-
-            final newRatio =
-                totalLength > 0 ? min(1.0, targetDuration / totalLength) : 1.0;
-
-            await txn.update(
-              'playevent',
-              {
-                'duration_played': targetDuration,
-                'total_length': totalLength > 0 ? totalLength : 0.0,
-                'foreground_duration': newFg,
-                'background_duration': newBg,
-                'play_ratio': newRatio,
-              },
-              where: 'id = ?',
-              whereArgs: [id],
-            );
-          }
-        }
+      final reply = await _statsDatabase!.coreCommand('playback', {
+        'op': 'repair',
+        'durations': {
+          for (final song in songs)
+            if (song.duration != null && song.duration!.inMilliseconds > 0)
+              song.filename: song.duration!.inMilliseconds / 1000,
+        },
       });
-
-      if (repairedCount > 0) {
-        debugPrint('Repaired $repairedCount corrupted playevent rows.');
-      }
+      return (reply['count'] as num).toInt();
     } catch (e) {
       debugPrint('Error repairing corrupted play stats: $e');
+      return 0;
     }
-    return repairedCount;
   }
 
   /// The lifetime stats payload backups carry, in the shape older builds wrote.
@@ -2674,17 +1637,7 @@ class DatabaseService {
 
     try {
       await repairCorruptedPlayStats();
-      final rows = await _statsDatabase!.query(
-        'playevent',
-        columns: const [
-          'song_filename',
-          'timestamp',
-          'duration_played',
-          'total_length',
-          'play_ratio',
-        ],
-        orderBy: 'timestamp ASC',
-      );
+      final rows = await playbackRows(_statsDatabase!, 'samples');
       if (rows.isEmpty) return {"stats": []};
 
       final songs = await getAllSongs();
@@ -2703,529 +1656,33 @@ class DatabaseService {
     }
   }
 
-  Future<void> importData({
-    required String statsDbPath,
-    required String dataDbPath,
-    required bool additive,
-  }) async {
-    await _ensureInitialized();
-    final importedStatsDb = await openDatabase(statsDbPath);
-    final importedDataDb = await openDatabase(dataDbPath);
-
-    try {
-      await _statsDatabase!.transaction((txn) async {
-        if (!additive) {
-          await txn.delete('playevent');
-          await txn.delete('playsession');
-        }
-
-        // Import playsession
-        final sessions = await importedStatsDb.query('playsession');
-        for (final session in sessions) {
-          await txn.insert('playsession', session,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        // Import playevent
-        final events = await importedStatsDb.query('playevent');
-        for (final event in events) {
-          final eventMap = Map<String, dynamic>.from(event);
-          eventMap.remove('id'); // Let local DB autoincrement
-
-          if (additive) {
-            // Check for duplicates: session_id, song_filename, timestamp
-            final existing = await txn.query('playevent',
-                where: 'session_id = ? AND song_filename = ? AND timestamp = ?',
-                whereArgs: [
-                  event['session_id'],
-                  event['song_filename'],
-                  event['timestamp']
-                ]);
-            if (existing.isEmpty) {
-              await txn.insert('playevent', eventMap);
-            }
-          } else {
-            await txn.insert('playevent', eventMap);
-          }
-        }
-        await txn.backfillPlayEventUids();
-        await _markRestoredDirty(txn, 'playsession');
-        await _markRestoredDirty(txn, 'playevent');
-      });
-
-      await _userDataDatabase!.transaction((txn) async {
-        if (!additive) {
-          await txn.delete('favorite');
-          await txn.delete('suggestless');
-          await txn.delete('hidden');
-          await txn.delete('userdata');
-          await txn.delete('recommendation_preference');
-          await txn.delete('recommendation_removal');
-          await txn.delete('playlist_song');
-          await txn.delete('playlist');
-        }
-
-        // Import favorites
-        final favorites = await importedDataDb.query('favorite');
-        for (final fav in favorites) {
-          await txn.insert('favorite', fav,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        // Import suggestless
-        final suggestless = await importedDataDb.query('suggestless');
-        for (final sl in suggestless) {
-          await txn.insert('suggestless', sl,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        // Import hidden
-        final hidden = await importedDataDb.query('hidden');
-        for (final h in hidden) {
-          await txn.insert('hidden', h,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        // Import userdata
-        final hasUserdata = await importedDataDb.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='userdata'");
-        if (hasUserdata.isNotEmpty) {
-          final userdata = await importedDataDb.query('userdata');
-          for (final ud in userdata) {
-            await txn.insert('userdata', ud,
-                conflictAlgorithm: ConflictAlgorithm.replace);
-          }
-        }
-
-        // Import recommendation_preference
-        final hasRecPref = await importedDataDb.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='recommendation_preference'");
-        if (hasRecPref.isNotEmpty) {
-          final recPrefs =
-              await importedDataDb.query('recommendation_preference');
-          for (final pref in recPrefs) {
-            await txn.insert('recommendation_preference', pref,
-                conflictAlgorithm: ConflictAlgorithm.replace);
-          }
-        }
-
-        // Import recommendation_removal
-        final hasRecRem = await importedDataDb.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='recommendation_removal'");
-        if (hasRecRem.isNotEmpty) {
-          final recRemovals =
-              await importedDataDb.query('recommendation_removal');
-          for (final rem in recRemovals) {
-            await txn.insert('recommendation_removal', rem,
-                conflictAlgorithm: ConflictAlgorithm.ignore);
-          }
-        }
-
-        // Import playlists
-        final playlists = await importedDataDb.query('playlist');
-        for (final pl in playlists) {
-          await txn.insert('playlist', pl,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-        await _pruneYouTubeLinks(txn);
-
-        // Import playlist_song
-        final playlistSongs = await importedDataDb.query('playlist_song');
-        for (final ps in playlistSongs) {
-          final psMap = Map<String, dynamic>.from(ps);
-          psMap.remove('id');
-          await txn.insert('playlist_song', psMap,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        for (final t in const [
-          'favorite',
-          'suggestless',
-          'hidden',
-          'playlist',
-          'playlist_song'
-        ]) {
-          await _markRestoredDirty(txn, t);
-        }
-
-        // Import queue history
-        final hasQueueSnapshot = await importedDataDb.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='queue_snapshot'");
-        if (hasQueueSnapshot.isNotEmpty) {
-          if (!additive) {
-            await txn.delete('queue_snapshot_song');
-            await txn.delete('queue_snapshot');
-          }
-
-          final queueSnapshots = await importedDataDb.query('queue_snapshot');
-          for (final snapshot in queueSnapshots) {
-            final createdAtRaw = snapshot['created_at'];
-            final createdAt = createdAtRaw is num
-                ? createdAtRaw.toDouble()
-                : double.tryParse(createdAtRaw?.toString() ?? '') ??
-                    DateTime.now().millisecondsSinceEpoch / 1000.0;
-            final snapshotIdRaw = snapshot['id']?.toString();
-            final snapshotId =
-                (snapshotIdRaw != null && snapshotIdRaw.trim().isNotEmpty)
-                    ? snapshotIdRaw.trim()
-                    : QueueSnapshot.timestampMarkerFromEpochSeconds(createdAt);
-            final nameRaw = snapshot['name']?.toString();
-            final name = (nameRaw != null && nameRaw.trim().isNotEmpty)
-                ? nameRaw.trim()
-                : QueueSnapshot.defaultNameForTimestamp(createdAt);
-            final source = snapshot['source'] as String? ?? 'imported';
-            final songCount = snapshot['song_count'] as int? ?? 0;
-
-            await txn.insert(
-                'queue_snapshot',
-                {
-                  'id': snapshotId,
-                  'name': name,
-                  'created_at': createdAt,
-                  'source': source,
-                  'song_count': songCount,
-                },
-                conflictAlgorithm: ConflictAlgorithm.ignore);
-
-            final snapshotSongs = await importedDataDb.query(
-              'queue_snapshot_song',
-              where: 'snapshot_id = ?',
-              whereArgs: [snapshotId],
-              orderBy: 'position ASC',
-            );
-
-            for (final song in snapshotSongs) {
-              await txn.insert(
-                  'queue_snapshot_song',
-                  {
-                    'snapshot_id': snapshotId,
-                    'song_filename': song['song_filename'],
-                    'position': song['position'],
-                  },
-                  conflictAlgorithm: ConflictAlgorithm.ignore);
-            }
-            await _refreshSnapshotJson(txn, [snapshotId]);
-          }
-        }
-      });
-    } finally {
-      await importedStatsDb.close();
-      await importedDataDb.close();
-    }
-  }
-
   Future<void> importWithOptions({
     required String statsDbPath,
     required String dataDbPath,
     required ImportOptions options,
   }) async {
     await _ensureInitialized();
-    final importedStatsDb = await openDatabase(statsDbPath);
-    final importedDataDb = await openDatabase(dataDbPath);
+    if (!options.hasDatabaseCategories) return;
 
-    try {
-      if (options.hasDatabaseCategories) {
-        await _importSelectedDatabases(
-            importedStatsDb, importedDataDb, options);
-      }
-    } finally {
-      await importedStatsDb.close();
-      await importedDataDb.close();
+    final fields = <String, Object?>{
+      'additive': options.additive,
+      'hlc': _hlcNow(),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000,
+    };
+    if (options.categories.contains(ImportDataCategory.playHistory)) {
+      await _statsDatabase!.coreCommand('restore', {
+        ...fields,
+        'kind': 'stats',
+        'path': statsDbPath,
+      });
     }
-  }
-
-  Future<void> _importSelectedDatabases(
-    Database importedStatsDb,
-    Database importedDataDb,
-    ImportOptions options,
-  ) async {
-    final categories = options.categories;
-    final additive = options.additive;
-
-    if (categories.contains(ImportDataCategory.playHistory)) {
-      await _importPlayHistory(importedStatsDb, additive);
-    }
-
-    if (categories.contains(ImportDataCategory.favorites)) {
-      await _importFavorites(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.suggestless)) {
-      await _importSuggestless(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.hidden)) {
-      await _importHidden(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.userdata)) {
-      await _importUserdata(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.recommendations)) {
-      await _importRecommendations(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.playlists)) {
-      await _importPlaylists(importedDataDb, additive);
-    }
-    if (categories.contains(ImportDataCategory.mergedGroups)) {
-      await _importMergedGroups(importedDataDb, additive);
-    }
-    await _importArtistAlbumArt(importedDataDb, additive);
-    await SongIdentityRepository.importFrom(importedDataDb, _userDataDatabase!);
-  }
-
-  Future<void> _importPlayHistory(Database importedDb, bool additive) async {
-    await _statsDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('playevent');
-        await txn.delete('playsession');
-      }
-
-      final sessions = await importedDb.query('playsession');
-      for (final session in sessions) {
-        await txn.insert('playsession', session,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-
-      final events = await importedDb.query('playevent');
-      for (final event in events) {
-        final eventMap = Map<String, dynamic>.from(event);
-        eventMap.remove('id');
-
-        if (additive) {
-          final existing = await txn.query('playevent',
-              where: 'session_id = ? AND song_filename = ? AND timestamp = ?',
-              whereArgs: [
-                event['session_id'],
-                event['song_filename'],
-                event['timestamp']
-              ]);
-          if (existing.isEmpty) {
-            await txn.insert('playevent', eventMap);
-          }
-        } else {
-          await txn.insert('playevent', eventMap);
-        }
-      }
-      await txn.backfillPlayEventUids();
-      await _markRestoredDirty(txn, 'playsession');
-      await _markRestoredDirty(txn, 'playevent');
+    await _userDataDatabase!.coreCommand('restore', {
+      ...fields,
+      'kind': 'userdata',
+      'path': dataDbPath,
+      'categories': [for (final category in options.categories) category.name],
     });
-  }
-
-  Future<void> _importFavorites(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('favorite');
-      }
-
-      final favorites = await importedDb.query('favorite');
-      for (final fav in favorites) {
-        await txn.insert('favorite', fav,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      await _importRemoteSongsForFilenames(
-        txn,
-        importedDb,
-        favorites.map((row) => row['filename'] as String),
-      );
-      await _markRestoredDirty(txn, 'favorite');
-    });
-  }
-
-  Future<void> _importRemoteSongsForFilenames(
-    Transaction txn,
-    Database importedDb,
-    Iterable<String> filenames,
-  ) async {
-    final remoteFilenames = filenames
-        .where((filename) => filename.startsWith(Song.youtubePrefix))
-        .toList();
-    if (remoteFilenames.isEmpty) return;
-    final table = await importedDb.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='remote_song'",
-    );
-    if (table.isEmpty) return;
-
-    for (final chunk in _chunked(remoteFilenames)) {
-      final placeholders = List.filled(chunk.length, '?').join(', ');
-      final rows = await importedDb.query(
-        'remote_song',
-        where: 'filename IN ($placeholders)',
-        whereArgs: chunk,
-      );
-      for (final row in rows) {
-        await txn.insert(
-          'remote_song',
-          row,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-    }
-  }
-
-  Future<void> _importSuggestless(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('suggestless');
-      }
-
-      final suggestless = await importedDb.query('suggestless');
-      for (final sl in suggestless) {
-        await txn.insert('suggestless', sl,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      await _markRestoredDirty(txn, 'suggestless');
-    });
-  }
-
-  Future<void> _importHidden(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('hidden');
-      }
-
-      final hidden = await importedDb.query('hidden');
-      for (final h in hidden) {
-        await txn.insert('hidden', h,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      await _markRestoredDirty(txn, 'hidden');
-    });
-  }
-
-  Future<void> _importUserdata(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('userdata');
-      }
-
-      final hasUserdata = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='userdata'");
-      if (hasUserdata.isNotEmpty) {
-        final userdata = await importedDb.query('userdata');
-        for (final ud in userdata) {
-          await txn.insert('userdata', ud,
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      }
-    });
-  }
-
-  Future<void> _importRecommendations(
-      Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('recommendation_preference');
-        await txn.delete('recommendation_removal');
-      }
-
-      final hasRecPref = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='recommendation_preference'");
-      if (hasRecPref.isNotEmpty) {
-        final recPrefs = await importedDb.query('recommendation_preference');
-        for (final pref in recPrefs) {
-          await txn.insert('recommendation_preference', pref,
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      }
-
-      final hasRecRem = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='recommendation_removal'");
-      if (hasRecRem.isNotEmpty) {
-        final recRemovals = await importedDb.query('recommendation_removal');
-        for (final rem in recRemovals) {
-          await txn.insert('recommendation_removal', rem,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-      }
-    });
-  }
-
-  Future<void> _importPlaylists(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('playlist_song');
-        await txn.delete('playlist');
-      }
-
-      final playlists = await importedDb.query('playlist');
-      for (final pl in playlists) {
-        await txn.insert('playlist', pl,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      await _pruneYouTubeLinks(txn);
-
-      final playlistSongs = await importedDb.query('playlist_song');
-      for (final ps in playlistSongs) {
-        final psMap = Map<String, dynamic>.from(ps);
-        psMap.remove('id');
-        await txn.insert('playlist_song', psMap,
-            conflictAlgorithm: ConflictAlgorithm.ignore);
-      }
-      await _importRemoteSongsForFilenames(
-        txn,
-        importedDb,
-        playlistSongs.map((row) => row['song_filename'] as String),
-      );
-      await _markRestoredDirty(txn, 'playlist');
-      await _markRestoredDirty(txn, 'playlist_song');
-    });
-  }
-
-  Future<void> _importMergedGroups(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('merged_song');
-        await txn.delete('merged_song_group');
-      }
-
-      final hasMergedGroup = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='merged_song_group'");
-      if (hasMergedGroup.isNotEmpty) {
-        final mergedGroups = await importedDb.query('merged_song_group');
-        for (final group in mergedGroups) {
-          await txn.insert('merged_song_group', group,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-
-        final mergedSongs = await importedDb.query('merged_song');
-        for (final song in mergedSongs) {
-          await txn.insert('merged_song', song,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-      }
-      await _markRestoredDirty(txn, 'merged_song_group');
-      await _markRestoredDirty(txn, 'merged_song');
-    });
-  }
-
-  Future<void> _importArtistAlbumArt(Database importedDb, bool additive) async {
-    await _userDataDatabase!.transaction((txn) async {
-      if (!additive) {
-        await txn.delete('artist_art');
-        await txn.delete('album_art');
-      }
-
-      final hasArtistArt = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='artist_art'");
-      if (hasArtistArt.isNotEmpty) {
-        final rows = await importedDb.query('artist_art');
-        for (final r in rows) {
-          await txn.insert('artist_art', r,
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      }
-
-      final hasAlbumArt = await importedDb.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='album_art'");
-      if (hasAlbumArt.isNotEmpty) {
-        final rows = await importedDb.query('album_art');
-        for (final r in rows) {
-          await txn.insert('album_art', r,
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      }
-      await _markRestoredDirty(txn, 'artist_art');
-      await _markRestoredDirty(txn, 'album_art');
-    });
+    SongIdentityRepository.generation++;
   }
 
   // --- Artist & Album Art Cache Methods ---
@@ -3316,413 +1773,22 @@ class DatabaseService {
   // SYNC DATA EXPORT METHODS
   // ==========================================================================
 
-  Future<List<Map<String, dynamic>>> getPlayEventsForSync() async {
-    await _ensureInitialized();
-    if (_statsDatabase == null) return [];
-    final currentDeviceId = SyncService.instance.deviceId;
-    final results = await _statsDatabase!.rawQuery('''
-      SELECT pe.*, COALESCE(NULLIF(ps.device_id, ''), ?) AS device_id, ps.platform
-      FROM playevent pe
-      LEFT JOIN playsession ps ON pe.session_id = ps.id
-    ''', [currentDeviceId]);
-    return results.map((r) => Map<String, dynamic>.from(r)).toList();
-  }
-
   Future<Map<String, int>> getPlayStatsDeviceBreakdown(
       String currentDeviceId) async {
     await _ensureInitialized();
     if (_statsDatabase == null) {
       return {'localPlayCount': 0, 'remotePlayCount': 0, 'totalPlayCount': 0};
     }
-    final results = await _statsDatabase!.rawQuery('''
-      SELECT 
-        COALESCE(ps.device_id, ?) AS dev_id,
-        COUNT(pe.id) AS event_count
-      FROM playevent pe
-      LEFT JOIN playsession ps ON pe.session_id = ps.id
-      GROUP BY dev_id
-    ''', [currentDeviceId]);
-
-    int localCount = 0;
-    int remoteCount = 0;
-    int totalCount = 0;
-
-    for (final row in results) {
-      final devId = row['dev_id'] as String?;
-      final count = (row['event_count'] as num?)?.toInt() ?? 0;
-      totalCount += count;
-      if (devId == null || devId == currentDeviceId || devId == 'unknown') {
-        localCount += count;
-      } else {
-        remoteCount += count;
-      }
-    }
-
-    return {
-      'localPlayCount': localCount,
-      'remotePlayCount': remoteCount,
-      'totalPlayCount': totalCount,
-    };
+    final reply = await _statsDatabase!.coreCommand('playback', {
+      'op': 'device_counts',
+      'device': currentDeviceId,
+    });
+    return reply.cast<String, int>();
   }
 
   Future<void> clearAllPlayStats() async {
     await _ensureInitialized();
-    if (_statsDatabase == null) return;
-    await _statsDatabase!.transaction((txn) async {
-      await txn.delete('playevent');
-      await txn.delete('playsession');
-    });
-  }
-
-  Future<List<Map<String, dynamic>>> getFavoritesWithTimestamps() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    return await _userDataDatabase!.query('favorite');
-  }
-
-  Future<List<Map<String, dynamic>>> getSuggestLessWithTimestamps() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    return await _userDataDatabase!.query('suggestless');
-  }
-
-  Future<List<Map<String, dynamic>>> getHiddenWithTimestamps() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    return await _userDataDatabase!.query('hidden');
-  }
-
-  Future<List<Map<String, dynamic>>> getPlaylistsForSync() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    try {
-      final plMaps = await _userDataDatabase!.query('playlist');
-      final result = <Map<String, dynamic>>[];
-      for (final pl in plMaps) {
-        final songs = await _userDataDatabase!.query(
-          'playlist_song',
-          where: 'playlist_id = ?',
-          whereArgs: [pl['id']],
-        );
-        pl['songs'] = songs;
-        result.add(pl);
-      }
-      return result;
-    } catch (e) {
-      debugPrint('Error exporting playlists for sync: $e');
-      return [];
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> getMergedGroupsForSync() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    try {
-      final groups = await _userDataDatabase!.query('merged_song_group');
-      final result = <Map<String, dynamic>>[];
-      for (final g in groups) {
-        final songs = await _userDataDatabase!.query(
-          'merged_song',
-          where: 'group_id = ?',
-          whereArgs: [g['id']],
-        );
-        g['songs'] = songs;
-        result.add(g);
-      }
-      return result;
-    } catch (e) {
-      debugPrint('Error exporting merged groups for sync: $e');
-      return [];
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> getArtistArtForSync() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    final rows = await _userDataDatabase!.query(
-      'artist_art',
-      where: "(image_url IS NOT NULL AND image_url != '') OR source = 'song'",
-    );
-    return rows.map((row) {
-      final m = Map<String, dynamic>.from(row);
-      m.remove('local_path');
-      return m;
-    }).toList();
-  }
-
-  Future<List<Map<String, dynamic>>> getAlbumArtForSync() async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null) return [];
-    final rows = await _userDataDatabase!.query(
-      'album_art',
-      where: "(image_url IS NOT NULL AND image_url != '') OR source = 'song'",
-    );
-    return rows.map((row) {
-      final m = Map<String, dynamic>.from(row);
-      m.remove('local_path');
-      return m;
-    }).toList();
-  }
-
-  // ==========================================================================
-  // SYNC DATA IMPORT/MERGE METHODS
-  // ==========================================================================
-
-  Future<void> importFavorites(List<Map<String, dynamic>> favorites) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || favorites.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final fav in favorites) {
-        final filename = fav['filename'] as String?;
-        final addedAt = (fav['added_at'] as num?)?.toDouble();
-        if (filename == null || addedAt == null) continue;
-
-        final existing = await txn.query(
-          'favorite',
-          where: 'filename = ?',
-          whereArgs: [filename],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingAddedAt =
-              (existing.first['added_at'] as num?)?.toDouble() ?? 0;
-          if (addedAt <= existingAddedAt) continue;
-        }
-        await txn.insert(
-            'favorite',
-            {
-              'filename': filename,
-              'added_at': addedAt,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
-  }
-
-  Future<void> importSuggestLess(List<Map<String, dynamic>> suggestless) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || suggestless.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final s in suggestless) {
-        final filename = s['filename'] as String?;
-        final addedAt = (s['added_at'] as num?)?.toDouble();
-        if (filename == null || addedAt == null) continue;
-
-        final existing = await txn.query(
-          'suggestless',
-          where: 'filename = ?',
-          whereArgs: [filename],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingAddedAt =
-              (existing.first['added_at'] as num?)?.toDouble() ?? 0;
-          if (addedAt <= existingAddedAt) continue;
-        }
-        await txn.insert(
-            'suggestless',
-            {
-              'filename': filename,
-              'added_at': addedAt,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
-  }
-
-  Future<void> importHidden(List<Map<String, dynamic>> hidden) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || hidden.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final h in hidden) {
-        final filename = h['filename'] as String?;
-        final hiddenAt = (h['hidden_at'] as num?)?.toDouble();
-        if (filename == null || hiddenAt == null) continue;
-
-        final existing = await txn.query(
-          'hidden',
-          where: 'filename = ?',
-          whereArgs: [filename],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingHiddenAt =
-              (existing.first['hidden_at'] as num?)?.toDouble() ?? 0;
-          if (hiddenAt <= existingHiddenAt) continue;
-        }
-        await txn.insert(
-            'hidden',
-            {
-              'filename': filename,
-              'hidden_at': hiddenAt,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
-  }
-
-  Future<void> importPlaylists(List<Map<String, dynamic>> playlists) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || playlists.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final pl in playlists) {
-        final id = pl['id'] as String?;
-        final name = pl['name'] as String?;
-        final updatedAt = (pl['updated_at'] as num?)?.toDouble();
-        if (id == null || name == null) continue;
-
-        final existing = await txn.query(
-          'playlist',
-          where: 'id = ?',
-          whereArgs: [id],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingUpdated =
-              (existing.first['updated_at'] as num?)?.toDouble() ?? 0;
-          if (updatedAt != null && updatedAt <= existingUpdated) {
-            // Remote is older or same; only merge songs
-            await _mergePlaylistSongs(txn, id, pl['songs'] as List?);
-            continue;
-          }
-        }
-
-        await txn.insert(
-            'playlist',
-            {
-              'id': id,
-              'name': name,
-              'description': pl['description'],
-              'is_recommendation': pl['is_recommendation'] ?? 0,
-              'created_at': pl['created_at'] ?? updatedAt ?? 0,
-              'updated_at': updatedAt ?? 0,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
-
-        await txn
-            .delete('playlist_song', where: 'playlist_id = ?', whereArgs: [id]);
-        await _mergePlaylistSongs(txn, id, pl['songs'] as List?);
-      }
-    });
-  }
-
-  Future<void> _mergePlaylistSongs(
-      Transaction txn, String playlistId, List? songs) async {
-    if (songs == null) return;
-    for (final s in songs) {
-      final sm = s as Map<String, dynamic>;
-      final filename = sm['song_filename'] as String?;
-      if (filename == null) continue;
-      await txn.insert(
-          'playlist_song',
-          {
-            'playlist_id': playlistId,
-            'song_filename': filename,
-            'added_at': sm['added_at'] ??
-                DateTime.now().millisecondsSinceEpoch / 1000.0,
-          },
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
-  }
-
-  Future<void> importMergedGroups(List<Map<String, dynamic>> groups) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || groups.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final g in groups) {
-        final id = g['id'] as String?;
-        if (id == null) continue;
-
-        final existing = await txn.query(
-          'merged_song_group',
-          where: 'id = ?',
-          whereArgs: [id],
-          limit: 1,
-        );
-        if (existing.isEmpty) {
-          await txn.insert(
-              'merged_song_group',
-              {
-                'id': id,
-                'priority_filename': g['priority_filename'],
-                'created_at': g['created_at'] ??
-                    DateTime.now().millisecondsSinceEpoch / 1000.0,
-              },
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-
-          final songs = g['songs'] as List?;
-          if (songs != null) {
-            for (final s in songs) {
-              final sm = s as Map<String, dynamic>;
-              await txn.insert(
-                  'merged_song',
-                  {
-                    'filename': sm['filename'],
-                    'group_id': id,
-                    'added_at': sm['added_at'] ??
-                        DateTime.now().millisecondsSinceEpoch / 1000.0,
-                  },
-                  conflictAlgorithm: ConflictAlgorithm.ignore);
-            }
-          }
-        }
-      }
-    });
-  }
-
-  Future<void> importArtistArtBatch(
-      List<Map<String, dynamic>> artistArt) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || artistArt.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final a in artistArt) {
-        final name = a['artist_name'] as String?;
-        if (name == null) continue;
-
-        final updatedAt = (a['updated_at'] as num?)?.toDouble() ?? 0;
-        final existing = await txn.query(
-          'artist_art',
-          where: 'artist_name = ?',
-          whereArgs: [name],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingUpdated =
-              (existing.first['updated_at'] as num?)?.toDouble() ?? 0;
-          if (updatedAt <= existingUpdated) continue;
-        }
-
-        await txn.insert('artist_art', a,
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
-  }
-
-  Future<void> importAlbumArtBatch(List<Map<String, dynamic>> albumArt) async {
-    await _ensureInitialized();
-    if (_userDataDatabase == null || albumArt.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final a in albumArt) {
-        final key = a['album_key'] as String?;
-        if (key == null) continue;
-
-        final updatedAt = (a['updated_at'] as num?)?.toDouble() ?? 0;
-        final existing = await txn.query(
-          'album_art',
-          where: 'album_key = ?',
-          whereArgs: [key],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final existingUpdated =
-              (existing.first['updated_at'] as num?)?.toDouble() ?? 0;
-          if (updatedAt <= existingUpdated) continue;
-        }
-
-        await txn.insert('album_art', a,
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
+    await _statsDatabase?.coreCommand('playback', {'op': 'clear'});
   }
 
   Future<String?> getTranslatedLyrics(
@@ -3731,26 +1797,13 @@ class DatabaseService {
     String? sourceContent,
   }) async {
     await _ensureInitialized();
-    final results = await _userDataDatabase!.query(
-      'translated_lyrics',
-      columns: ['translated_content', 'source_hash'],
-      where: 'filename = ? AND target_lang = ?',
-      whereArgs: [filename, targetLang.toLowerCase()],
-      limit: 1,
-    );
-    if (results.isEmpty) return null;
-
-    final storedHash = results.first['source_hash'] as String?;
-    // Entries created before source hashing are deliberately not trusted when
-    // a caller supplies the current lyrics. Otherwise an old translation can
-    // be paired with a newly fetched lyric list and appear random.
-    if (sourceContent != null &&
-        (storedHash == null ||
-            storedHash != _translatedLyricsHash(sourceContent))) {
-      return null;
-    }
-
-    return results.first['translated_content'] as String?;
+    final reply = await _userDataDatabase!.coreCommand('translated_lyrics_op', {
+      'op': 'get',
+      'filename': filename,
+      'targetLang': targetLang,
+      'sourceContent': sourceContent,
+    });
+    return reply['content'] as String?;
   }
 
   Future<void> saveTranslatedLyrics(
@@ -3760,40 +1813,24 @@ class DatabaseService {
     String? sourceContent,
   }) async {
     await _ensureInitialized();
-    await _userDataDatabase!.insert(
-      'translated_lyrics',
-      {
-        'filename': filename,
-        'target_lang': targetLang.toLowerCase(),
-        'translated_content': content,
-        if (sourceContent != null)
-          'source_hash': _translatedLyricsHash(sourceContent),
-        'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  String _translatedLyricsHash(String content) {
-    return sha256.convert(utf8.encode(content)).toString();
+    await _userDataDatabase!.coreCommand('translated_lyrics_op', {
+      'op': 'save',
+      'filename': filename,
+      'targetLang': targetLang,
+      'content': content,
+      'sourceContent': sourceContent,
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
+    });
   }
 
   Future<void> deleteTranslatedLyrics(String filename,
       [String? targetLang]) async {
     await _ensureInitialized();
-    if (targetLang != null) {
-      await _userDataDatabase!.delete(
-        'translated_lyrics',
-        where: 'filename = ? AND target_lang = ?',
-        whereArgs: [filename, targetLang.toLowerCase()],
-      );
-    } else {
-      await _userDataDatabase!.delete(
-        'translated_lyrics',
-        where: 'filename = ?',
-        whereArgs: [filename],
-      );
-    }
+    await _userDataDatabase!.coreCommand('translated_lyrics_op', {
+      'op': 'delete',
+      'filename': filename,
+      'targetLang': targetLang,
+    });
   }
 
   Future<void> close() async {

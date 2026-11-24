@@ -1,5 +1,7 @@
 import 'dart:io';
 import '../data/rust/native_database.dart';
+import 'sync/hlc.dart';
+import 'sync_service.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/services/search_service.dart';
@@ -249,9 +251,10 @@ class DatabaseOptimizerService {
       // Run integrity check via separate connection (safer for diagnostics)
       Database? checkDb;
       try {
-        checkDb = await openDatabase(dbPath, singleInstance: false);
-        final integrityCheck = await checkDb.rawQuery('PRAGMA integrity_check');
-        final isOk = integrityCheck.first.values.first == 'ok';
+        checkDb = await openDatabase(dbPath, readOnly: true);
+        final result =
+            await checkDb.coreCommand('maintenance', {'op': 'integrity'});
+        final isOk = result['ok'] == true;
 
         if (!isOk) {
           issues.add('Stats database integrity check failed');
@@ -288,8 +291,8 @@ class DatabaseOptimizerService {
       // Vacuum requires exclusive access - use separate connection
       Database? vacuumDb;
       try {
-        vacuumDb = await openDatabase(dbPath, singleInstance: false);
-        await vacuumDb.execute('VACUUM');
+        vacuumDb = await openDatabase(dbPath);
+        await vacuumDb.coreCommand('maintenance', {'op': 'vacuum'});
         fixes.add('Vacuumed stats database');
         details['vacuumed'] = true;
       } catch (e) {
@@ -318,95 +321,30 @@ class DatabaseOptimizerService {
     return await _deleteShortSessions(statsDb);
   }
 
-  /// Deletes sessions shorter than minDurationSeconds (default 60s) and their associated events.
-  /// This removes both the short sessions and all their corresponding playevent records,
-  /// as well as any orphaned play events.
-  ///
-  /// Whether this stats DB carries the sync change-tracking schema (the
-  /// `sync_tombstone` table plus `playevent.uid`). Ad-hoc test databases may
-  /// not, so optimizer tombstoning is skipped gracefully in that case.
-  Future<bool> _hasSyncTombstones(DatabaseExecutor db) async {
-    final hasTable = (await db.rawQuery(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_tombstone'"))
-        .isNotEmpty;
-    if (!hasTable) return false;
-    final cols = await db.rawQuery('PRAGMA table_info(playevent)');
-    return cols.any((c) => c['name'] == 'uid');
-  }
-
   Future<Map<String, dynamic>> _deleteShortSessions(
     Database statsDb, {
     double minDurationSeconds = 60.0,
   }) async {
-    int deletedSessions = 0;
-    int deletedEvents = 0;
-    final details = <String, dynamic>{};
-
     try {
-      final hasSync = await _hasSyncTombstones(statsDb);
-      await statsDb.transaction((txn) async {
-        const eventWhere = '''
-          WHERE session_id IN (
-            SELECT id FROM playsession 
-            WHERE (end_time - start_time) < ? 
-               OR start_time IS NULL 
-               OR end_time IS NULL
-          )
-          OR session_id NOT IN (SELECT id FROM playsession)
-          OR session_id IS NULL''';
-        const sessionWhere = '''
-          WHERE (end_time - start_time) < ? 
-             OR start_time IS NULL 
-             OR end_time IS NULL''';
-
-        // Junk removed here is maintenance that MUST propagate, so capture the
-        // sync keys before deleting and tombstone them after.
-        List<String> eventUids = const [];
-        List<String> sessionIds = const [];
-        if (hasSync) {
-          eventUids = (await txn.rawQuery(
-                  'SELECT uid FROM playevent $eventWhere',
-                  [minDurationSeconds]))
-              .map((r) => r['uid'] as String?)
-              .whereType<String>()
-              .toList();
-          sessionIds = (await txn.rawQuery(
-                  'SELECT id FROM playsession $sessionWhere',
-                  [minDurationSeconds]))
-              .map((r) => r['id'] as String?)
-              .whereType<String>()
-              .toList();
-        }
-
-        // 1. Delete associated play events for short/invalid sessions and orphaned events
-        deletedEvents = await txn.rawDelete(
-            'DELETE FROM playevent $eventWhere', [minDurationSeconds]);
-
-        // 2. Delete short/invalid sessions
-        deletedSessions = await txn.rawDelete(
-            'DELETE FROM playsession $sessionWhere', [minDurationSeconds]);
-
-        if (hasSync) {
-          await DatabaseService.instance
-              .writeTombstones(txn, DatabaseService.tombPlayEvents, eventUids);
-          await DatabaseService.instance.writeTombstones(
-              txn, DatabaseService.tombPlaySessions, sessionIds);
-        }
+      final result = await statsDb.coreCommand('maintenance', {
+        'op': 'short_sessions',
+        'minimum': minDurationSeconds,
+        'hlc': Hlc.instance.now(),
       });
-
-      details['sessions_deleted'] = deletedSessions;
-      details['events_deleted'] = deletedEvents;
-      details['min_duration_seconds'] = minDurationSeconds;
+      if ((result['deletedEvents'] as int) +
+              (result['deletedSessions'] as int) >
+          0) {
+        SyncService.instance.notifyLocalWrite();
+      }
+      return result;
     } catch (e) {
       debugPrint('Error deleting short sessions: $e');
-      details['error'] = e.toString();
+      return {
+        'deletedSessions': 0,
+        'deletedEvents': 0,
+        'details': {'error': e.toString()}
+      };
     }
-
-    return {
-      'deletedSessions': deletedSessions,
-      'deletedEvents': deletedEvents,
-      'details': details,
-    };
   }
 
   /// Deletes tiny immediate follow-up events after near-full/multi-full plays via DatabaseService.
@@ -423,99 +361,22 @@ class DatabaseOptimizerService {
 
   /// Deletes tiny immediate follow-up events after near-full/multi-full plays.
   Future<Map<String, dynamic>> _deleteShortFollowUps(Database statsDb) async {
-    int deleted = 0;
-    final details = <String, dynamic>{};
-
     try {
-      final events = await statsDb.rawQuery('''
-        SELECT id, song_filename, timestamp, duration_played, total_length
-        FROM playevent
-        ORDER BY timestamp ASC, id ASC
-      ''');
-
-      final idsToDelete = <int>[];
-
-      String? prevSong;
-      int? prevId;
-      double? prevDuration;
-      double? prevTotalLength;
-
-      for (final row in events) {
-        final currentId = row['id'] as int?;
-        final currentSong = row['song_filename'] as String?;
-        final currentTimestamp = (row['timestamp'] as num?)?.toDouble();
-        final currentDuration = (row['duration_played'] as num?)?.toDouble();
-
-        if (currentId == null ||
-            currentSong == null ||
-            currentTimestamp == null ||
-            currentDuration == null) {
-          continue;
-        }
-
-        bool shouldDelete = false;
-        if (prevId != null &&
-            prevSong == currentSong &&
-            prevDuration != null &&
-            prevTotalLength != null &&
-            prevTotalLength > 0 &&
-            currentDuration < 10.0) {
-          final multiplier = (prevDuration / prevTotalLength).round();
-          if (multiplier >= 1) {
-            final expected = multiplier * prevTotalLength;
-            final isNearFullMultiple = (prevDuration - expected).abs() <= 10.0;
-            shouldDelete = isNearFullMultiple;
-          }
-        }
-
-        if (shouldDelete) {
-          idsToDelete.add(currentId);
-          continue;
-        }
-
-        prevSong = currentSong;
-        prevId = currentId;
-        prevDuration = currentDuration;
-        prevTotalLength = (row['total_length'] as num?)?.toDouble();
+      final result = await statsDb.coreCommand('maintenance', {
+        'op': 'followups',
+        'hlc': Hlc.instance.now(),
+      });
+      if ((result['deleted'] as int) > 0) {
+        SyncService.instance.notifyLocalWrite();
       }
-
-      if (idsToDelete.isNotEmpty) {
-        final hasSync = await _hasSyncTombstones(statsDb);
-        await statsDb.transaction((txn) async {
-          List<String> uids = const [];
-          if (hasSync) {
-            final placeholders = List.filled(idsToDelete.length, '?').join(',');
-            uids = (await txn.rawQuery(
-                    'SELECT uid FROM playevent WHERE id IN ($placeholders)',
-                    idsToDelete))
-                .map((r) => r['uid'] as String?)
-                .whereType<String>()
-                .toList();
-          }
-          final batch = txn.batch();
-          for (final id in idsToDelete) {
-            batch.delete('playevent', where: 'id = ?', whereArgs: [id]);
-          }
-          await batch.commit(noResult: true);
-          if (hasSync) {
-            await DatabaseService.instance
-                .writeTombstones(txn, DatabaseService.tombPlayEvents, uids);
-          }
-        });
-        deleted = idsToDelete.length;
-      }
-
-      details['events_scanned'] = events.length;
-      details['events_deleted'] = deleted;
-      details['max_followup_duration_seconds'] = 10.0;
-      details['full_multiple_tolerance_seconds'] = 10.0;
-      details['immediate_definition'] = 'next playevent row in timestamp order';
+      return result;
     } catch (e) {
       debugPrint('Error deleting tiny short follow-up events: $e');
-      details['error'] = e.toString();
+      return {
+        'deleted': 0,
+        'details': {'error': e.toString()}
+      };
     }
-
-    return {'deleted': deleted, 'details': details};
   }
 
   /// Optimizes the user data database (orphaned records, duplicates, vacuum)
@@ -544,9 +405,10 @@ class DatabaseOptimizerService {
     // Run integrity check via separate connection (safer for diagnostics)
     Database? checkDb;
     try {
-      checkDb = await openDatabase(dbPath, singleInstance: false);
-      final integrityCheck = await checkDb.rawQuery('PRAGMA integrity_check');
-      final isOk = integrityCheck.first.values.first == 'ok';
+      checkDb = await openDatabase(dbPath, readOnly: true);
+      final result =
+          await checkDb.coreCommand('maintenance', {'op': 'integrity'});
+      final isOk = result['ok'] == true;
 
       if (!isOk) {
         issues.add('User data database integrity check failed');
@@ -592,8 +454,8 @@ class DatabaseOptimizerService {
       // Step 3: Vacuum requires exclusive access - use separate connection
       Database? vacuumDb;
       try {
-        vacuumDb = await openDatabase(dbPath, singleInstance: false);
-        await vacuumDb.execute('VACUUM');
+        vacuumDb = await openDatabase(dbPath);
+        await vacuumDb.coreCommand('maintenance', {'op': 'vacuum'});
         fixes.add('Vacuumed user data database');
         details['vacuumed'] = true;
       } catch (e) {
@@ -609,117 +471,33 @@ class DatabaseOptimizerService {
     return {'issues': issues, 'fixes': fixes, 'details': details};
   }
 
-  /// Dynamically discovers FK relationships via PRAGMA and removes orphaned rows.
-  Future<Map<String, dynamic>> _fixOrphanedRecords(Database db) async {
-    int issuesFound = 0;
-    int issuesFixed = 0;
+  Future<Map<String, dynamic>> _fixOrphanedRecords(Database db) =>
+      _repairUserData(db, 'orphans');
 
+  Future<Map<String, dynamic>> _fixDuplicateRecords(Database db) =>
+      _repairUserData(db, 'duplicates');
+
+  Future<Map<String, dynamic>> _repairUserData(Database db, String op) async {
     try {
-      final tablesResult = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-      );
-
-      for (final tableRow in tablesResult) {
-        final tableName = tableRow['name'] as String;
-        final fkList = await db.rawQuery('PRAGMA foreign_key_list($tableName)');
-
-        for (final fk in fkList) {
-          final fromCol = fk['from'] as String;
-          final parentTable = fk['table'] as String;
-          final toCol = (fk['to'] as String?) ?? 'id';
-
-          try {
-            final orphans = await db.rawQuery('''
-              SELECT t.$fromCol FROM $tableName t
-              LEFT JOIN $parentTable p ON t.$fromCol = p.$toCol
-              WHERE p.$toCol IS NULL AND t.$fromCol IS NOT NULL
-            ''');
-
-            if (orphans.isNotEmpty) {
-              issuesFound += orphans.length;
-              for (final row in orphans) {
-                final val = row[fromCol];
-                await db.delete(
-                  tableName,
-                  where: '$fromCol = ?',
-                  whereArgs: [val],
-                );
-              }
-              issuesFixed += orphans.length;
-            }
-          } catch (e) {
-            debugPrint('Error checking orphans in $tableName.$fromCol: $e');
-          }
-        }
-      }
+      return await db.coreCommand('maintenance', {'op': op});
     } catch (e) {
-      debugPrint('Error fixing orphaned records: $e');
+      debugPrint('Error repairing database ($op): $e');
+      return {'issuesFound': 0, 'issuesFixed': 0};
     }
-
-    return {'issuesFound': issuesFound, 'issuesFixed': issuesFixed};
-  }
-
-  /// Dynamically finds tables with a `filename` column and a timestamp column,
-  /// then removes duplicate rows by filename keeping the most recent.
-  Future<Map<String, dynamic>> _fixDuplicateRecords(Database db) async {
-    int issuesFound = 0;
-    int issuesFixed = 0;
-
-    try {
-      final tablesResult = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-      );
-
-      for (final tableRow in tablesResult) {
-        final tableName = tableRow['name'] as String;
-        final colInfo = await db.rawQuery('PRAGMA table_info($tableName)');
-
-        final colNames = colInfo.map((c) => c['name'] as String).toSet();
-        if (!colNames.contains('filename')) continue;
-
-        final tsCol = colInfo
-            .where((c) =>
-                (c['name'] as String).endsWith('_at') ||
-                c['name'] == 'timestamp')
-            .map((c) => c['name'] as String)
-            .firstOrNull;
-        if (tsCol == null) continue;
-
-        final duplicates = await db.rawQuery('''
-          SELECT filename, COUNT(*) as cnt, MAX($tsCol) as max_time
-          FROM $tableName
-          GROUP BY filename
-          HAVING cnt > 1
-        ''');
-
-        for (final dup in duplicates) {
-          final filename = dup['filename'] as String;
-          final maxTime = dup['max_time'];
-          if (maxTime == null) continue;
-
-          final deleted = await db.delete(
-            tableName,
-            where: 'filename = ? AND $tsCol < ?',
-            whereArgs: [filename, maxTime],
-          );
-          issuesFound += ((dup['cnt'] as num) - 1).toInt();
-          issuesFixed += deleted;
-        }
-      }
-    } catch (e) {
-      debugPrint('Error fixing duplicate records: $e');
-    }
-
-    return {'issuesFound': issuesFound, 'issuesFixed': issuesFixed};
   }
 
   /// Recovers a corrupted user data database by backing it up and creating a new one
   Future<void> _recoverCorruptedUserDataDatabase(String dbPath) async {
     final backupPath =
         '$dbPath.corrupted.${DateTime.now().millisecondsSinceEpoch}';
-    await File(dbPath).rename(backupPath);
-
-    await DatabaseService.instance.init();
+    final database = DatabaseService.instance;
+    await database.close();
+    try {
+      await databaseFileCommand('quarantine', dbPath, destination: backupPath);
+    } finally {
+      await database.init();
+      await SyncService.instance.rebuildAfterDatabaseReplace();
+    }
 
     debugPrint(
         'Recovered user data database. Corrupted file backed up to $backupPath');

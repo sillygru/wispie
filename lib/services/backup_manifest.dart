@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../data/rust/native_database.dart';
 import '../domain/services/cache_policy.dart';
 import 'wispie_cache.dart';
 import 'wispie_paths.dart';
@@ -151,6 +152,12 @@ Future<int> stageArtifact(BackupArtifact artifact, String stagingRoot) async {
   if (!artifact.stage) return 0;
   final target = p.join(stagingRoot, artifact.archivePath);
 
+  if (artifact.covers(BackupContentType.searchIndex)) {
+    final result = await databaseFileCommand('copy', artifact.sourcePath,
+        destination: target);
+    return result['copied'] == true ? 1 : 0;
+  }
+
   if (!artifact.isDirectory) {
     final source = File(artifact.sourcePath);
     if (!await source.exists()) return 0;
@@ -181,6 +188,12 @@ Future<int> stageArtifact(BackupArtifact artifact, String stagingRoot) async {
 /// live location. Existing files are overwritten; unrelated files are kept.
 Future<int> restoreArtifact(BackupArtifact artifact, String archiveRoot) async {
   final source = p.join(archiveRoot, artifact.archivePath);
+
+  if (artifact.covers(BackupContentType.searchIndex)) {
+    final result = await databaseFileCommand('copy', source,
+        destination: artifact.sourcePath);
+    return result['copied'] == true ? 1 : 0;
+  }
 
   if (!artifact.isDirectory) {
     final file = File(source);

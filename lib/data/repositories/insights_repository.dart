@@ -8,14 +8,6 @@ import '../../services/database_service.dart';
 /// `buildInsights`. The full `playevent` row carries session ids, device ids
 /// and foreground/background splits that no stats screen reads.
 class InsightsRepository {
-  static const List<String> _columns = [
-    'song_filename',
-    'timestamp',
-    'duration_played',
-    'total_length',
-    'play_ratio',
-  ];
-
   /// Every recorded play, oldest first.
   ///
   /// Loads the whole log rather than pushing a window down into SQL: streaks,
@@ -28,11 +20,7 @@ class InsightsRepository {
     final handle = database.getStatsDatabase();
     if (handle == null) return const [];
 
-    final rows = await handle.query(
-      'playevent',
-      columns: _columns,
-      orderBy: 'timestamp ASC',
-    );
+    final rows = await DatabaseService.playbackRows(handle, 'samples');
     return rows.map(PlayEventSample.fromRow).toList(growable: false);
   }
 
@@ -43,12 +31,7 @@ class InsightsRepository {
     final handle = database.getStatsDatabase();
     if (handle == null) return null;
 
-    final rows = await handle.query(
-      'playevent',
-      columns: const ['timestamp'],
-      orderBy: 'timestamp DESC',
-      limit: 1,
-    );
+    final rows = await DatabaseService.playbackRows(handle, 'last_event');
     if (rows.isEmpty) return null;
     final seconds = (rows.first['timestamp'] as num?)?.toDouble() ?? 0;
     return DateTime.fromMillisecondsSinceEpoch((seconds * 1000).round());

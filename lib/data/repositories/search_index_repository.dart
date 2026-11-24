@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../rust/native_database.dart';
 import 'package:path/path.dart';
@@ -13,14 +12,10 @@ import 'song_repository.dart';
 
 /// Repository for managing the search index database
 ///
-/// The search index is stored in a separate SQLite database file that is
-/// explicitly excluded from backups. This allows for fast full-text search
-/// across song metadata and lyrics. SQLite access lives here; the predicates,
-/// lyric text extraction and every refresh decision come from the native core.
+/// The native core stores and searches song metadata and lyrics in a
+/// separate cache database.
 class SearchIndexRepository {
   final _songs = SongRepository();
-  static const String _tableName = 'search_index';
-  static const String _metadataTable = 'search_metadata';
 
   static Database? _database;
   final FFmpegService _ffmpegService = FFmpegService();
@@ -50,52 +45,12 @@ class SearchIndexRepository {
 
     final dbPath = await _getDbPath();
 
-    // This file has its own schema, created with IF NOT EXISTS, so opening it
-    // needs no version ladder of its own.
-    _database = await openDatabase(dbPath);
-    await _createTables(_database!);
+    _database = await openDatabase(dbPath, schema: DatabaseSchema.searchIndex);
   }
 
-  /// Creates the necessary tables for the search index
-  Future<void> _createTables(Database db) async {
-    // Main search index table
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS $_tableName (
-        filename TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        artist TEXT NOT NULL,
-        album TEXT NOT NULL,
-        lyrics_content TEXT,
-        title_length INTEGER NOT NULL DEFAULT 0,
-        artist_length INTEGER NOT NULL DEFAULT 0,
-        album_length INTEGER NOT NULL DEFAULT 0,
-        lyrics_length INTEGER DEFAULT 0,
-        last_modified INTEGER NOT NULL
-      )
-    ''');
-
-    // Metadata table for tracking index stats
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS $_metadataTable (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )
-    ''');
-
-    // Create indexes for fast searching
-    await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_title ON $_tableName(title)
-    ''');
-    await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_artist ON $_tableName(artist)
-    ''');
-    await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_album ON $_tableName(album)
-    ''');
-    await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_lyrics ON $_tableName(lyrics_content)
-    ''');
-  }
+  Future<Map<String, Object?>> _index(String op,
+          [Map<String, Object?> fields = const {}]) =>
+      _database!.coreCommand('search_index', {'op': op, ...fields});
 
   /// Rebuilds the entire search index from a list of songs incrementally
   Future<void> rebuildIndex(
@@ -106,17 +61,12 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
-    final List<Map<String, dynamic>> existingEntries = await _database!.query(
-      _tableName,
-      columns: [
-        'filename',
-        'title',
-        'artist',
-        'album',
-        'last_modified',
-        'lyrics_content'
-      ],
-    );
+    final database = _database!;
+    final existingEntries = ((await database.coreCommand(
+      'search_index',
+      {'op': 'entries'},
+    ))['rows'] as List)
+        .cast<Map<String, Object?>>();
 
     // One native pass over the sidecar files, rather than one probe per song.
     final sidecarLyrics = <String, String>{};
@@ -146,64 +96,33 @@ class SearchIndexRepository {
       for (final name in plan['remove'] as List) name as String
     ];
 
-    await _database!.transaction((txn) async {
-      // Remove songs no longer in the library
-      for (var i = 0; i < toRemove.length; i += 999) {
-        final chunk = toRemove.sublist(i, (i + 999).clamp(0, toRemove.length));
-        await txn.delete(
-          _tableName,
-          where: 'filename IN (${chunk.map((_) => '?').join(',')})',
-          whereArgs: chunk,
-        );
-      }
+    final rows = <Map<String, Object?>>[];
+    for (var index = 0; index < songs.length; index++) {
+      if (isCancelled?.call() ?? false) break;
+      onProgress?.call(index + 1, songs.length);
+      final song = songs[index];
+      final decision = decisions[index] as Map<String, dynamic>;
+      if (decision['skip'] as bool) continue;
 
-      final batch = txn.batch();
-      int updateCount = 0;
+      final choice = song.isLocal ? await _songs.getLyricsChoice(song) : null;
+      final lyricsContent = choice == null
+          ? await _lyricsFor(song, decision)
+          : _plainLyrics(choice.text);
+      rows.add(NativeAccel.searchIndexRow(
+          song: song.toJson(), lyrics: lyricsContent));
+    }
 
-      var done = 0;
-      for (var index = 0; index < songs.length; index++) {
-        if (isCancelled?.call() ?? false) break;
-        onProgress?.call(++done, songs.length);
-        final song = songs[index];
-        final decision = decisions[index] as Map<String, dynamic>;
-        if (decision['skip'] as bool) continue;
-
-        updateCount++;
-        final choice = song.isLocal ? await _songs.getLyricsChoice(song) : null;
-        final lyricsContent = choice == null
-            ? await _lyricsFor(song, decision)
-            : _plainLyrics(choice.text);
-
-        batch.insert(
-          _tableName,
-          NativeAccel.searchIndexRow(
-            song: song.toJson(),
-            lyrics: lyricsContent,
-          ),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-
-      if (updateCount > 0) {
-        await batch.commit(noResult: true);
-      }
-
-      await txn.insert(
-        _metadataTable,
-        {
-          'key': 'last_updated',
-          'value': DateTime.now().millisecondsSinceEpoch.toString(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await txn.insert(
-        _metadataTable,
-        {
-          'key': 'total_entries',
-          'value': songs.length.toString(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+    final changed = {...toRemove, for (final row in rows) row['filename']};
+    await database.coreCommand('search_index', {
+      'op': 'write',
+      'remove': toRemove,
+      'rows': rows,
+      'expected': {
+        for (final row in existingEntries)
+          if (changed.contains(row['filename'])) row['filename'] as String: row,
+      },
+      'updated': DateTime.now().millisecondsSinceEpoch,
+      'total': songs.length,
     });
   }
 
@@ -229,8 +148,9 @@ class SearchIndexRepository {
   Future<Set<String>> indexedFilenames() async {
     await init();
     if (_database == null || !_database!.isOpen) return {};
-    final rows = await _database!.query(_tableName, columns: ['filename']);
-    return {for (final r in rows) r['filename'] as String};
+    return ((await _index('filenames'))['filenames'] as List)
+        .cast<String>()
+        .toSet();
   }
 
   /// Updates or inserts a single song into the index
@@ -250,13 +170,9 @@ class SearchIndexRepository {
     }
 
     final sidecar = await LyricsFilesService.instance.textFor(song);
-    final existing = await _database!.query(
-      _tableName,
-      columns: ['title', 'artist', 'album', 'last_modified', 'lyrics_content'],
-      where: 'filename = ?',
-      whereArgs: [song.filename],
-      limit: 1,
-    );
+    final existing =
+        ((await _index('entry', {'filename': song.filename}))['rows'] as List)
+            .cast<Map<String, Object?>>();
 
     final decision = NativeAccel.searchIndexRefresh(
       song: _songRow(song),
@@ -281,11 +197,11 @@ class SearchIndexRepository {
   Future<void> _upsertRow(Song song, String? lyricsContent) async {
     final database = _database;
     if (database == null || !database.isOpen) return;
-    await database.insert(
-      _tableName,
-      NativeAccel.searchIndexRow(song: song.toJson(), lyrics: lyricsContent),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _index('write', {
+      'rows': [
+        NativeAccel.searchIndexRow(song: song.toJson(), lyrics: lyricsContent)
+      ],
+    });
   }
 
   /// Writes the streamed half of the index in one transaction.
@@ -304,12 +220,7 @@ class SearchIndexRepository {
     }
     if (rows.isEmpty) return;
 
-    final batch = database.batch();
-    for (final row in rows) {
-      batch.insert(_tableName, row,
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await _index('write', {'rows': rows});
   }
 
   /// The native refresh decision's input for one song.
@@ -355,11 +266,7 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
-    await _database!.delete(
-      _tableName,
-      where: 'filename = ?',
-      whereArgs: [filename],
-    );
+    await _index('remove', {'filename': filename});
   }
 
   /// Points index rows at new filenames without re-deriving anything.
@@ -371,27 +278,10 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen || renames.isEmpty) return;
 
-    await _database!.transaction((txn) async {
-      for (final entry in renames) {
-        if (entry.from == entry.to) continue;
-        final taken = await txn.query(
-          _tableName,
-          columns: ['filename'],
-          where: 'filename = ?',
-          whereArgs: [entry.to],
-          limit: 1,
-        );
-        if (taken.isNotEmpty) {
-          await txn
-              .delete(_tableName, where: 'filename = ?', whereArgs: [entry.to]);
-        }
-        await txn.update(
-          _tableName,
-          {'filename': entry.to},
-          where: 'filename = ?',
-          whereArgs: [entry.from],
-        );
-      }
+    await _index('rename', {
+      'renames': [
+        for (final entry in renames) {'from': entry.from, 'to': entry.to}
+      ],
     });
   }
 
@@ -408,48 +298,13 @@ class SearchIndexRepository {
       return [];
     }
 
-    final lowerQuery = query.toLowerCase();
-    final titles = <Map<String, Object?>>[];
-    final artists = <Map<String, Object?>>[];
-    final albums = <Map<String, Object?>>[];
-    final lyrics = <Map<String, Object?>>[];
-
-    Future<bool> collect(
-      String column,
-      List<Map<String, Object?>> into,
-    ) async {
-      final criteria = NativeAccel.searchIndexCriteria(
-        query: lowerQuery,
-        column: column,
-        whole: column == 'lyrics_content',
-      );
-      final rows = await _database!.query(
-        _tableName,
-        columns: ['filename', column],
-        where: criteria['where'] as String,
-        whereArgs: (criteria['args'] as List).cast<String>(),
-      );
-      for (final row in rows) {
-        into.add({
-          'filename': row['filename'],
-          'text': row[column],
-        });
-      }
-      return rows.isNotEmpty;
-    }
-
-    if (searchTitles) await collect('title', titles);
-    if (searchArtists) await collect('artist', artists);
-    if (searchAlbums) await collect('album', albums);
-    if (searchLyrics) await collect('lyrics_content', lyrics);
-
-    final reply = NativeAccel.searchIndexMatches(
-      query: lowerQuery,
-      titles: titles,
-      artists: artists,
-      albums: albums,
-      lyrics: lyrics,
-    );
+    final reply = await _index('search', {
+      'query': query,
+      'titles': searchTitles,
+      'artists': searchArtists,
+      'albums': searchAlbums,
+      'lyrics': searchLyrics,
+    });
 
     return [
       for (final match in reply['matches'] as List)
@@ -476,37 +331,15 @@ class SearchIndexRepository {
       return SearchIndexStats.empty();
     }
 
-    final countResult =
-        await _database!.rawQuery('SELECT COUNT(*) as count FROM $_tableName');
-    final totalEntries = firstIntValue(countResult) ?? 0;
-
-    final lyricsCountResult = await _database!.rawQuery(
-        'SELECT COUNT(*) as count FROM $_tableName WHERE lyrics_content IS NOT NULL');
-    final entriesWithLyrics = firstIntValue(lyricsCountResult) ?? 0;
-
-    final lyricsLengthResult = await _database!
-        .rawQuery('SELECT SUM(lyrics_length) as total FROM $_tableName');
-    final totalLyricsChars =
-        (lyricsLengthResult.first['total'] as num?)?.toInt() ?? 0;
-
-    final metadataResult = await _database!.query(
-      _metadataTable,
-      where: 'key = ?',
-      whereArgs: ['last_updated'],
-    );
-    DateTime? lastUpdated;
-    if (metadataResult.isNotEmpty) {
-      final timestamp = int.tryParse(metadataResult.first['value'] as String);
-      if (timestamp != null) {
-        lastUpdated = DateTime.fromMillisecondsSinceEpoch(timestamp);
-      }
-    }
-
+    final result = await _index('stats');
+    final timestamp = result['updated'] as int?;
     return SearchIndexStats(
-      totalEntries: totalEntries,
-      entriesWithLyrics: entriesWithLyrics,
-      totalLyricsChars: totalLyricsChars,
-      lastUpdated: lastUpdated,
+      totalEntries: result['total'] as int,
+      entriesWithLyrics: result['with_lyrics'] as int,
+      totalLyricsChars: result['lyrics_chars'] as int,
+      lastUpdated: timestamp == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(timestamp),
     );
   }
 
@@ -515,10 +348,7 @@ class SearchIndexRepository {
     await init();
     if (_database == null || !_database!.isOpen) return;
 
-    await _database!.transaction((txn) async {
-      await txn.delete(_tableName);
-      await txn.delete(_metadataTable);
-    });
+    await _index('clear');
   }
 
   /// Closes the database connection
@@ -531,23 +361,9 @@ class SearchIndexRepository {
     }
   }
 
-  /// Gets the database file path (for backup exclusion)
-  Future<String?> getDatabaseFilePath() async {
-    final path = await _getDbPath();
-    final file = File(path);
-    if (await file.exists()) {
-      return path;
-    }
-    return null;
-  }
-
-  /// Deletes the search index database file
   Future<void> deleteDatabaseFile() async {
-    final path = await _getDbPath();
-    final file = File(path);
-    if (await file.exists()) {
-      await file.delete();
-    }
+    await close();
+    await databaseFileCommand('remove', await _getDbPath());
   }
 }
 

@@ -914,34 +914,6 @@ class NativeAccel {
   static Map<String, dynamic> identityHeals({required int generation}) =>
       _ask({'command': 'identity_heals', 'generation': generation});
 
-  static Map<String, dynamic> searchIndexCriteria({
-    required String query,
-    required String column,
-    bool whole = false,
-  }) =>
-      _ask({
-        'command': 'search_index_criteria',
-        'query': query,
-        'column': column,
-        if (whole) 'whole': true,
-      });
-
-  static Map<String, dynamic> searchIndexMatches({
-    required String query,
-    required List<Map<String, Object?>> titles,
-    required List<Map<String, Object?>> artists,
-    required List<Map<String, Object?>> albums,
-    required List<Map<String, Object?>> lyrics,
-  }) =>
-      _ask({
-        'command': 'search_index_matches',
-        'query': query,
-        'titles': titles,
-        'artists': artists,
-        'albums': albums,
-        'lyrics': lyrics,
-      });
-
   static Map<String, dynamic> searchIndexPlan({
     required List<Map<String, Object?>> songs,
     required List<Map<String, Object?>> existing,

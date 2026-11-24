@@ -11,6 +11,15 @@
 //! A final idempotent reconcile then repairs anything a half-finished upgrade
 //! left behind, since the ladder only ever runs once per version.
 
+mod files;
+mod identity;
+mod maintenance;
+mod playback;
+mod restore;
+mod search_index;
+mod song_files;
+mod sync_store;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -297,6 +306,19 @@ fn connections() -> &'static Mutex<HashMap<u64, Connection>> {
     CONNECTIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Converts a stored SQLite value to JSON without coercing its type, so callers
+/// see exactly what the column holds (the snapshot importer relies on it).
+fn json_from_ref(value: rusqlite::types::ValueRef<'_>) -> Value {
+    use rusqlite::types::ValueRef;
+    match value {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(number) => json!(number),
+        ValueRef::Real(number) => json!(number),
+        ValueRef::Text(bytes) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
+        ValueRef::Blob(bytes) => Value::String(String::from_utf8_lossy(bytes).into_owned()),
+    }
+}
+
 pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
     let action = payload
         .get("action")
@@ -304,6 +326,7 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         .ok_or_else(|| "db needs an action".to_string())?;
     let reply = match action {
         "open" => open(payload)?,
+        "file" => files::run(payload)?,
         "close" => {
             let id = connection_id(payload)?;
             let mut guard = lock();
@@ -334,6 +357,13 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
             backfill_play_event_uids(connection)?;
             Ok(json!({ "backfilled": true }))
         })?,
+        "playback" => playback::run(payload)?,
+        "song_files" => song_files::run(payload)?,
+        "search_index" => search_index::run(payload)?,
+        "restore" => restore::run(payload)?,
+        "maintenance" => maintenance::run(payload)?,
+        "identity" => identity::run(payload)?,
+        "sync_store" => sync_store::run(payload)?,
         "query" => query(payload)?,
         "execute" => execute(payload)?,
         "batch" => batch(payload)?,
@@ -343,6 +373,11 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         "art" => art(payload)?,
         "playlist_op" => playlist_op(payload)?,
         "youtube_link_op" => youtube_link_op(payload)?,
+        "merged_op" => merged_op(payload)?,
+        "recommendation_op" => recommendation_op(payload)?,
+        "translated_lyrics_op" => translated_lyrics_op(payload)?,
+        "queue_snapshot_op" => queue_snapshot_op(payload)?,
+        "song_op" => song_op(payload)?,
         other => return Err(format!("unknown db action {other}")),
     };
     emitter.emit(Emit::Json(reply));
@@ -382,11 +417,12 @@ fn open(payload: &Value) -> Result<Value, String> {
         .ok_or_else(|| "db open needs a path".to_string())?;
     // No schema means "open as it stands": an integrity check or a backup
     // read must not create or upgrade anything.
-    let stats = match payload.get("schema").and_then(|value| value.as_str()) {
+    let schema = payload.get("schema").and_then(Value::as_str);
+    let stats = match schema {
         Some("stats") => Some(true),
         Some("userdata") => Some(false),
+        Some("search_index") | None => None,
         Some(other) => return Err(format!("unknown schema {other}")),
-        None => None,
     };
     let read_only = payload
         .get("read_only")
@@ -427,6 +463,9 @@ fn open(payload: &Value) -> Result<Value, String> {
         .execute_batch("PRAGMA foreign_keys = OFF")
         .map_err(|error| format!("foreign keys: {error}"))?;
 
+    if schema == Some("search_index") && !read_only {
+        search_index::create(&connection)?;
+    }
     let Some(stats) = stats.filter(|_| !read_only) else {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         lock().insert(id, connection);
@@ -935,7 +974,7 @@ type PlayEventIdentity = (i64, Option<String>, Option<String>, Option<String>);
 /// Deterministic, so re-running produces the same ids: the first 32 hex digits
 /// of sha256(session_id | song_filename | ordinal), where ordinal counts rows
 /// sharing that pair in timestamp order.
-fn backfill_play_event_uids(connection: &mut Connection) -> Result<(), String> {
+fn backfill_play_event_uids(connection: &Connection) -> Result<(), String> {
     use sha2::{Digest, Sha256};
 
     let rows: Vec<PlayEventIdentity> = {
@@ -1034,32 +1073,29 @@ fn query(payload: &Value) -> Result<Value, String> {
         .ok_or_else(|| "db query needs sql".to_string())?;
     let args = arguments(payload)?;
     with(payload, |connection| {
-        let mut statement = connection
-            .prepare(sql)
-            .map_err(|error| format!("prepare query: {error}"))?;
-        let names: Vec<String> = statement
-            .column_names()
-            .iter()
-            .map(|name| (*name).to_string())
-            .collect();
-        let mut rows = statement
-            .query(rusqlite::params_from_iter(args.iter()))
-            .map_err(|error| format!("run query: {error}"))?;
-        let mut out = Vec::new();
-        loop {
-            let row = rows.next().map_err(|error| format!("read row: {error}"))?;
-            let Some(row) = row else { break };
-            let mut map = Map::with_capacity(names.len());
-            for (index, name) in names.iter().enumerate() {
-                let value = row
-                    .get::<_, SqlValue>(index)
-                    .map_err(|error| format!("read column {name}: {error}"))?;
-                map.insert(name.clone(), to_json(value));
-            }
-            out.push(Value::Object(map));
-        }
-        Ok(json!({ "rows": out }))
+        Ok(json!({"rows": read_rows(connection, sql, rusqlite::params_from_iter(args))?}))
     })
+}
+
+fn read_rows(
+    connection: &Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+) -> Result<Vec<Value>, String> {
+    let mut sql = connection
+        .prepare(sql)
+        .map_err(|error| format!("prepare query: {error}"))?;
+    let rows = sql
+        .query_map(params, |row| {
+            let mut object = Map::new();
+            for (index, name) in row.as_ref().column_names().iter().enumerate() {
+                object.insert((*name).to_string(), to_json(row.get(index)?));
+            }
+            Ok(Value::Object(object))
+        })
+        .map_err(|error| format!("run query: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("read row: {error}"))
 }
 
 fn execute(payload: &Value) -> Result<Value, String> {
@@ -1338,6 +1374,7 @@ fn playlist_op(payload: &Value) -> Result<Value, String> {
             playlist_remove_songs(payload, connection)
         }),
         "rename" => with(payload, |connection| playlist_rename(payload, connection)),
+        "validate" => with(payload, |connection| playlist_validate(payload, connection)),
         other => Err(format!("unknown playlist op {other}")),
     }
 }
@@ -1651,6 +1688,1526 @@ fn playlist_rename(payload: &Value, connection: &mut Connection) -> Result<Value
     Ok(json!({ "renamed": true }))
 }
 
+/// A merge group only ever groups queue candidates: members keep their own
+/// favourites, play counts and playlist membership.
+fn merged_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "list" => with(payload, |connection| {
+            let priorities: HashMap<String, Option<String>> = {
+                let mut statement = connection
+                    .prepare("SELECT id, priority_filename FROM merged_song_group")
+                    .map_err(|error| format!("merged groups: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                    })
+                    .map_err(|error| format!("merged groups: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("merged groups: {error}"))?;
+                collected.into_iter().collect()
+            };
+            let rows: Vec<(String, String)> = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT g.id AS group_id, m.filename FROM merged_song_group g \
+                         JOIN merged_song m ON g.id = m.group_id \
+                         ORDER BY g.id, m.added_at",
+                    )
+                    .map_err(|error| format!("merged members: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|error| format!("merged members: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("merged members: {error}"))?;
+                collected
+            };
+
+            // Group in first-seen order, which is the order the JOIN returns.
+            let mut order: Vec<String> = Vec::new();
+            let mut members: HashMap<String, Vec<String>> = HashMap::new();
+            for (group, filename) in rows {
+                if !members.contains_key(&group) {
+                    order.push(group.clone());
+                }
+                members.entry(group).or_default().push(filename);
+            }
+            let groups: Vec<Value> = order
+                .into_iter()
+                .filter_map(|group| {
+                    let filenames = members.remove(&group)?;
+                    if filenames.len() < 2 {
+                        return None;
+                    }
+                    Some(json!({
+                        "id": group,
+                        "priority_filename": priorities.get(&group).cloned().flatten(),
+                        "filenames": filenames,
+                    }))
+                })
+                .collect();
+            Ok(json!({ "groups": groups }))
+        }),
+        "priority" => with(payload, |connection| {
+            let group = text_field(payload, "groupId")?;
+            let found = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT priority_filename FROM merged_song_group WHERE id = ?1 LIMIT 1",
+                    )
+                    .map_err(|error| format!("merged priority: {error}"))?;
+                statement
+                    .query_row([&group], |row| row.get::<_, Option<String>>(0))
+                    .optional()
+                    .map_err(|error| format!("merged priority: {error}"))?
+            };
+            Ok(json!({ "priority_filename": found.flatten() }))
+        }),
+        "group_id" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let found = {
+                let mut statement = connection
+                    .prepare("SELECT group_id FROM merged_song WHERE filename = ?1 LIMIT 1")
+                    .map_err(|error| format!("merged group id: {error}"))?;
+                statement
+                    .query_row([&filename], |row| row.get::<_, Option<String>>(0))
+                    .optional()
+                    .map_err(|error| format!("merged group id: {error}"))?
+            };
+            Ok(json!({ "group_id": found.flatten() }))
+        }),
+        "siblings" => {
+            with(payload, |connection| {
+                let filename = text_field(payload, "filename")?;
+                let group = {
+                    let mut statement = connection
+                        .prepare("SELECT group_id FROM merged_song WHERE filename = ?1 LIMIT 1")
+                        .map_err(|error| format!("merged siblings: {error}"))?;
+                    statement
+                        .query_row([&filename], |row| row.get::<_, Option<String>>(0))
+                        .optional()
+                        .map_err(|error| format!("merged siblings: {error}"))?
+                        .flatten()
+                };
+                let Some(group) = group else {
+                    return Ok(json!({ "filenames": [] }));
+                };
+                let filenames: Vec<String> = {
+                    let mut statement = connection
+                    .prepare("SELECT filename FROM merged_song WHERE group_id = ?1 AND filename != ?2")
+                    .map_err(|error| format!("merged siblings: {error}"))?;
+                    let collected = statement
+                        .query_map(rusqlite::params![group, filename], |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .map_err(|error| format!("merged siblings: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("merged siblings: {error}"))?;
+                    collected
+                };
+                Ok(json!({ "filenames": filenames }))
+            })
+        }
+        "set_priority" => with(payload, |connection| {
+            let group = text_field(payload, "groupId")?;
+            let priority = payload
+                .get("priorityFilename")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            connection
+                .execute(
+                    "UPDATE merged_song_group SET priority_filename = ?1 WHERE id = ?2",
+                    rusqlite::params![priority, group],
+                )
+                .map_err(|error| format!("set merged priority: {error}"))?;
+            Ok(json!({ "updated": true }))
+        }),
+        "create" => with(payload, |connection| {
+            let group = text_field(payload, "groupId")?;
+            merged_create(payload, connection, group)
+        }),
+        "add_songs" => with(payload, |connection| merged_add_songs(payload, connection)),
+        "remove_song" => with(payload, |connection| {
+            merged_remove_song(payload, connection)
+        }),
+        "delete" => with(payload, |connection| merged_delete(payload, connection)),
+        "set_all" => with(payload, |connection| merged_set_all(payload, connection)),
+        other => Err(format!("unknown merged op {other}")),
+    }
+}
+
+fn text_field<'a>(payload: &'a Value, key: &str) -> Result<&'a str, String> {
+    payload
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("missing {key}"))
+}
+
+fn filename_list(payload: &Value) -> Vec<String> {
+    payload
+        .get("filenames")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn merged_create(
+    payload: &Value,
+    connection: &mut Connection,
+    group: &str,
+) -> Result<Value, String> {
+    let filenames = filename_list(payload);
+    if filenames.len() < 2 {
+        return Err("need at least 2 songs to merge".to_string());
+    }
+    let priority = payload
+        .get("priorityFilename")
+        .and_then(Value::as_str)
+        .filter(|name| filenames.iter().any(|filename| filename == name))
+        .map(str::to_owned);
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        connection
+            .execute(
+                "INSERT INTO merged_song_group (id, priority_filename, created_at, hlc, dirty) \
+                 VALUES (?1, ?2, ?3, ?4, 1)",
+                rusqlite::params![group, priority, now, hlc],
+            )
+            .map_err(|error| format!("create merged group: {error}"))?;
+        clear_tombstone(connection, "merged_groups", group)?;
+        for filename in &filenames {
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO merged_song \
+                     (filename, group_id, added_at, hlc, dirty) VALUES (?1, ?2, ?3, ?4, 1)",
+                    rusqlite::params![filename, group, now, hlc],
+                )
+                .map_err(|error| format!("add merged song: {error}"))?;
+            clear_tombstone(connection, "merged_songs", filename)?;
+        }
+        cleanup_single_song_groups(connection, hlc)?;
+        Ok(json!({ "groupId": group }))
+    })
+}
+
+fn merged_add_songs(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let group = text_field(payload, "groupId")?.to_string();
+    let filenames = filename_list(payload);
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        for filename in &filenames {
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO merged_song \
+                     (filename, group_id, added_at, hlc, dirty) VALUES (?1, ?2, ?3, ?4, 1)",
+                    rusqlite::params![filename, group, now, hlc],
+                )
+                .map_err(|error| format!("add merged song: {error}"))?;
+            clear_tombstone(connection, "merged_songs", filename)?;
+        }
+        cleanup_single_song_groups(connection, hlc)?;
+        Ok(json!({ "added": filenames.len() }))
+    })
+}
+
+fn merged_remove_song(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let filename = text_field(payload, "filename")?.to_string();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        connection
+            .execute("DELETE FROM merged_song WHERE filename = ?1", [&filename])
+            .map_err(|error| format!("remove merged song: {error}"))?;
+        tombstone(connection, "merged_songs", &filename, hlc)?;
+        cleanup_single_song_groups(connection, hlc)?;
+        Ok(json!({ "removed": true }))
+    })
+}
+
+fn merged_delete(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let group = text_field(payload, "groupId")?.to_string();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        let members: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT filename FROM merged_song WHERE group_id = ?1")
+                .map_err(|error| format!("delete merged group: {error}"))?;
+            let collected = statement
+                .query_map([&group], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("delete merged group: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("delete merged group: {error}"))?;
+            collected
+        };
+        connection
+            .execute("DELETE FROM merged_song WHERE group_id = ?1", [&group])
+            .map_err(|error| format!("delete merged songs: {error}"))?;
+        connection
+            .execute("DELETE FROM merged_song_group WHERE id = ?1", [&group])
+            .map_err(|error| format!("delete merged group: {error}"))?;
+        tombstone(connection, "merged_groups", &group, hlc)?;
+        for filename in &members {
+            tombstone(connection, "merged_songs", filename, hlc)?;
+        }
+        Ok(json!({ "deleted": true }))
+    })
+}
+
+fn merged_set_all(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let groups = payload
+        .get("groups")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let now = payload
+        .get("now")
+        .and_then(Value::as_f64)
+        .unwrap_or_default();
+    let hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+
+    in_transaction(connection, |connection| {
+        connection
+            .execute("DELETE FROM merged_song", [])
+            .map_err(|error| format!("clear merged songs: {error}"))?;
+        connection
+            .execute("DELETE FROM merged_song_group", [])
+            .map_err(|error| format!("clear merged groups: {error}"))?;
+        for entry in &groups {
+            let filenames = filename_list(entry);
+            if filenames.len() < 2 {
+                continue;
+            }
+            let group = entry
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "merged group needs an id".to_string())?;
+            let priority = entry
+                .get("priority_filename")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            connection
+                .execute(
+                    "INSERT INTO merged_song_group (id, priority_filename, created_at, hlc, dirty) \
+                     VALUES (?1, ?2, ?3, ?4, 1)",
+                    rusqlite::params![group, priority, now, hlc],
+                )
+                .map_err(|error| format!("set merged group: {error}"))?;
+            for filename in &filenames {
+                connection
+                    .execute(
+                        "INSERT INTO merged_song (filename, group_id, added_at, hlc, dirty) \
+                         VALUES (?1, ?2, ?3, ?4, 1)",
+                        rusqlite::params![filename, group, now, hlc],
+                    )
+                    .map_err(|error| format!("set merged song: {error}"))?;
+            }
+        }
+        Ok(json!({ "groups": groups.len() }))
+    })
+}
+
+fn cleanup_single_song_groups(connection: &Connection, hlc: i64) -> Result<(), String> {
+    let thin_groups: Vec<String> = {
+        let mut statement = connection
+            .prepare("SELECT group_id FROM merged_song GROUP BY group_id HAVING COUNT(*) < 2")
+            .map_err(|error| format!("thin merged groups: {error}"))?;
+        let collected = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("thin merged groups: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("thin merged groups: {error}"))?;
+        collected
+    };
+    for group in thin_groups {
+        let members: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT filename FROM merged_song WHERE group_id = ?1")
+                .map_err(|error| format!("thin merged members: {error}"))?;
+            let collected = statement
+                .query_map([&group], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("thin merged members: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("thin merged members: {error}"))?;
+            collected
+        };
+        connection
+            .execute("DELETE FROM merged_song WHERE group_id = ?1", [&group])
+            .map_err(|error| format!("thin merged songs: {error}"))?;
+        connection
+            .execute("DELETE FROM merged_song_group WHERE id = ?1", [&group])
+            .map_err(|error| format!("thin merged group: {error}"))?;
+        tombstone(connection, "merged_groups", &group, hlc)?;
+        for filename in &members {
+            tombstone(connection, "merged_songs", filename, hlc)?;
+        }
+    }
+    connection
+        .execute(
+            "DELETE FROM merged_song_group WHERE id NOT IN (\
+             SELECT DISTINCT group_id FROM merged_song WHERE group_id IS NOT NULL)",
+            [],
+        )
+        .map_err(|error| format!("orphan merged groups: {error}"))?;
+    Ok(())
+}
+
+fn recommendation_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "preferences" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT id, custom_title, is_pinned FROM recommendation_preference")
+                .map_err(|error| format!("recommendation preferences: {error}"))?;
+            let collected = statement
+                .query_map([], |row| {
+                    Ok(json!({
+                        "id": row.get::<_, String>(0)?,
+                        "custom_title": row.get::<_, Option<String>>(1)?,
+                        "is_pinned": row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    }))
+                })
+                .map_err(|error| format!("recommendation preferences: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("recommendation preferences: {error}"))?;
+            Ok(json!({ "preferences": collected }))
+        }),
+        "save_preference" => with(payload, |connection| {
+            // `id` is reserved by the request envelope for the connection.
+            let id = text_field(payload, "recommendationId")?;
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            let custom_title = payload
+                .get("customTitle")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let pinned = payload
+                .get("isPinned")
+                .and_then(Value::as_bool)
+                .map(|value| if value { 1i64 } else { 0i64 });
+            let exists: bool = {
+                let mut statement = connection
+                    .prepare("SELECT 1 FROM recommendation_preference WHERE id = ?1")
+                    .map_err(|error| format!("recommendation preference: {error}"))?;
+                statement
+                    .query_row([&id], |_| Ok(()))
+                    .optional()
+                    .map_err(|error| format!("recommendation preference: {error}"))?
+                    .is_some()
+            };
+            if exists {
+                connection
+                    .execute(
+                        "UPDATE recommendation_preference SET updated_at = ?1, \
+                         custom_title = COALESCE(?2, custom_title), \
+                         is_pinned = COALESCE(?3, is_pinned) WHERE id = ?4",
+                        rusqlite::params![now, custom_title, pinned, id],
+                    )
+                    .map_err(|error| format!("save recommendation preference: {error}"))?;
+            } else {
+                connection
+                    .execute(
+                        "INSERT INTO recommendation_preference (id, updated_at, custom_title, is_pinned) \
+                         VALUES (?1, ?2, ?3, ?4)",
+                        rusqlite::params![id, now, custom_title, pinned],
+                    )
+                    .map_err(|error| format!("save recommendation preference: {error}"))?;
+            }
+            Ok(json!({ "saved": true }))
+        }),
+        "removals" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT id FROM recommendation_removal")
+                .map_err(|error| format!("recommendation removals: {error}"))?;
+            let collected = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("recommendation removals: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("recommendation removals: {error}"))?;
+            Ok(json!({ "ids": collected }))
+        }),
+        "add_removal" => with(payload, |connection| {
+            let id = text_field(payload, "recommendationId")?;
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO recommendation_removal (id, removed_at) VALUES (?1, ?2)",
+                    rusqlite::params![id, now],
+                )
+                .map_err(|error| format!("add recommendation removal: {error}"))?;
+            Ok(json!({ "added": true }))
+        }),
+        "remove_removal" => with(payload, |connection| {
+            let id = text_field(payload, "recommendationId")?;
+            connection
+                .execute("DELETE FROM recommendation_removal WHERE id = ?1", [id])
+                .map_err(|error| format!("remove recommendation removal: {error}"))?;
+            Ok(json!({ "removed": true }))
+        }),
+        other => Err(format!("unknown recommendation op {other}")),
+    }
+}
+
+/// Translations are trusted only while the source lyrics hash still matches:
+/// entries written before hashing existed must never be paired with new lyrics.
+fn translated_lyrics_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("get");
+    match op {
+        "get" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let target = text_field(payload, "targetLang")?.to_lowercase();
+            let source_hash = payload
+                .get("sourceContent")
+                .and_then(Value::as_str)
+                .map(lyrics_hash);
+            let row = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT translated_content, source_hash FROM translated_lyrics \
+                         WHERE filename = ?1 AND target_lang = ?2 LIMIT 1",
+                    )
+                    .map_err(|error| format!("translated lyrics: {error}"))?;
+                statement
+                    .query_row(rusqlite::params![filename, target], |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    })
+                    .optional()
+                    .map_err(|error| format!("translated lyrics: {error}"))?
+            };
+            let Some((content, stored_hash)) = row else {
+                return Ok(json!({ "content": Value::Null }));
+            };
+            if let Some(expected) = source_hash {
+                if stored_hash.as_deref() != Some(expected.as_str()) {
+                    return Ok(json!({ "content": Value::Null }));
+                }
+            }
+            Ok(json!({ "content": content }))
+        }),
+        "save" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let target = text_field(payload, "targetLang")?.to_lowercase();
+            let content = text_field(payload, "content")?;
+            let source_hash = payload
+                .get("sourceContent")
+                .and_then(Value::as_str)
+                .map(lyrics_hash);
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO translated_lyrics \
+                     (filename, target_lang, translated_content, source_hash, updated_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![filename, target, content, source_hash, now],
+                )
+                .map_err(|error| format!("save translated lyrics: {error}"))?;
+            Ok(json!({ "saved": true }))
+        }),
+        "delete" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            match payload.get("targetLang").and_then(Value::as_str) {
+                Some(target) => {
+                    connection
+                        .execute(
+                            "DELETE FROM translated_lyrics WHERE filename = ?1 AND target_lang = ?2",
+                            rusqlite::params![filename, target.to_lowercase()],
+                        )
+                        .map_err(|error| format!("delete translated lyrics: {error}"))?;
+                }
+                None => {
+                    connection
+                        .execute(
+                            "DELETE FROM translated_lyrics WHERE filename = ?1",
+                            [filename],
+                        )
+                        .map_err(|error| format!("delete translated lyrics: {error}"))?;
+                }
+            }
+            Ok(json!({ "deleted": true }))
+        }),
+        other => Err(format!("unknown translation op {other}")),
+    }
+}
+
+fn lyrics_hash(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn playlist_validate(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let _ = payload;
+    let rows = {
+        let mut statement = connection
+            .prepare(
+                "SELECT id, name, is_recommendation, created_at, updated_at \
+                 FROM playlist WHERE is_recommendation = 1",
+            )
+            .map_err(|error| format!("validate playlists: {error}"))?;
+        let collected = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get_ref(0).is_ok_and(|value| {
+                        matches!(value, rusqlite::types::ValueRef::Text(bytes) if !bytes.is_empty())
+                    }),
+                    row.get_ref(1).is_ok_and(|value| {
+                        matches!(value, rusqlite::types::ValueRef::Text(_))
+                    }),
+                    matches!(
+                        row.get_ref(2),
+                        Ok(rusqlite::types::ValueRef::Integer(_))
+                    ),
+                    matches!(
+                        row.get_ref(3),
+                        Ok(rusqlite::types::ValueRef::Real(_))
+                            | Ok(rusqlite::types::ValueRef::Integer(_))
+                    ),
+                    matches!(
+                        row.get_ref(4),
+                        Ok(rusqlite::types::ValueRef::Real(_))
+                            | Ok(rusqlite::types::ValueRef::Integer(_))
+                    ),
+                    row.get::<_, Option<String>>(0)?,
+                ))
+            })
+            .map_err(|error| format!("validate playlists: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("validate playlists: {error}"))?;
+        collected
+    };
+    if rows.is_empty() {
+        return Ok(json!({ "valid": false }));
+    }
+    for (id_ok, name_ok, rec_ok, created_ok, updated_ok, id) in rows {
+        if !(id_ok && name_ok && rec_ok && created_ok && updated_ok) {
+            return Ok(json!({ "valid": false }));
+        }
+        let Some(id) = id else {
+            return Ok(json!({ "valid": false }));
+        };
+        let songs = {
+            let mut statement = connection
+                .prepare("SELECT song_filename, added_at FROM playlist_song WHERE playlist_id = ?1")
+                .map_err(|error| format!("validate playlist songs: {error}"))?;
+            let collected = statement
+                .query_map([&id], |row| {
+                    Ok((
+                        row.get_ref(0).is_ok_and(|value| {
+                            matches!(value, rusqlite::types::ValueRef::Text(bytes) if !bytes.is_empty())
+                        }),
+                        matches!(
+                            row.get_ref(1),
+                            Ok(rusqlite::types::ValueRef::Real(_))
+                                | Ok(rusqlite::types::ValueRef::Integer(_))
+                        ),
+                    ))
+                })
+                .map_err(|error| format!("validate playlist songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("validate playlist songs: {error}"))?;
+            collected
+        };
+        if songs
+            .iter()
+            .any(|(name_ok, added_ok)| !name_ok || !added_ok)
+        {
+            return Ok(json!({ "valid": false }));
+        }
+    }
+    Ok(json!({ "valid": true }))
+}
+
+/// Queue history. Replaying a queue is meant to move its entry to the top, so a
+/// save first drops older snapshots with the same source and songs, and history
+/// reads collapse entries that ended up with identical fingerprints.
+fn queue_snapshot_op(payload: &Value) -> Result<Value, String> {
+    const RETAINED: i64 = 50;
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "save" => with(payload, |connection| {
+            let id = text_field(payload, "snapshotId")?.to_string();
+            let name = payload
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let created_at = payload
+                .get("createdAt")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            let source = payload
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let filenames = filename_list(payload);
+            let songs_json = serde_json::to_string(&filenames)
+                .map_err(|error| format!("snapshot songs json: {error}"))?;
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+
+            in_transaction(connection, |connection| {
+                let dupes: Vec<String> = {
+                    let mut statement = connection
+                        .prepare(
+                            "SELECT id FROM queue_snapshot \
+                             WHERE source = ?1 AND songs_json = ?2 AND id != ?3",
+                        )
+                        .map_err(|error| format!("snapshot dupes: {error}"))?;
+                    let collected = statement
+                        .query_map(rusqlite::params![source, songs_json, id], |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .map_err(|error| format!("snapshot dupes: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("snapshot dupes: {error}"))?;
+                    collected
+                };
+                for dupe in &dupes {
+                    connection
+                        .execute(
+                            "DELETE FROM queue_snapshot_song WHERE snapshot_id = ?1",
+                            [dupe],
+                        )
+                        .map_err(|error| format!("drop dupe snapshot songs: {error}"))?;
+                    connection
+                        .execute("DELETE FROM queue_snapshot WHERE id = ?1", [dupe])
+                        .map_err(|error| format!("drop dupe snapshot: {error}"))?;
+                    tombstone(connection, "queue_snapshots", dupe, hlc)?;
+                }
+                connection
+                    .execute(
+                        "INSERT OR REPLACE INTO queue_snapshot \
+                         (id, name, created_at, source, song_count, songs_json, hlc, dirty) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1)",
+                        rusqlite::params![
+                            id,
+                            name,
+                            created_at,
+                            source,
+                            filenames.len() as i64,
+                            songs_json,
+                            hlc
+                        ],
+                    )
+                    .map_err(|error| format!("save snapshot: {error}"))?;
+                clear_tombstone(connection, "queue_snapshots", &id)?;
+                connection
+                    .execute(
+                        "DELETE FROM queue_snapshot_song WHERE snapshot_id = ?1",
+                        [&id],
+                    )
+                    .map_err(|error| format!("clear snapshot songs: {error}"))?;
+                for (position, filename) in filenames.iter().enumerate() {
+                    connection
+                        .execute(
+                            "INSERT INTO queue_snapshot_song \
+                             (snapshot_id, song_filename, position) VALUES (?1, ?2, ?3)",
+                            rusqlite::params![id, filename, position as i64],
+                        )
+                        .map_err(|error| format!("save snapshot song: {error}"))?;
+                }
+                Ok(json!({ "saved": true }))
+            })
+        }),
+        "update_songs" => with(payload, |connection| {
+            let id = text_field(payload, "snapshotId")?.to_string();
+            let filenames = filename_list(payload);
+            let songs_json = serde_json::to_string(&filenames)
+                .map_err(|error| format!("snapshot songs json: {error}"))?;
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+
+            in_transaction(connection, |connection| {
+                let stored: Option<Option<String>> = {
+                    let mut statement = connection
+                        .prepare("SELECT songs_json FROM queue_snapshot WHERE id = ?1 LIMIT 1")
+                        .map_err(|error| format!("snapshot lookup: {error}"))?;
+                    statement
+                        .query_row([&id], |row| row.get::<_, Option<String>>(0))
+                        .optional()
+                        .map_err(|error| format!("snapshot lookup: {error}"))?
+                };
+                let Some(stored) = stored else {
+                    return Ok(json!({ "exists": false }));
+                };
+                if stored.as_deref() == Some(songs_json.as_str()) {
+                    return Ok(json!({ "exists": true, "changed": false }));
+                }
+                connection
+                    .execute(
+                        "DELETE FROM queue_snapshot_song WHERE snapshot_id = ?1",
+                        [&id],
+                    )
+                    .map_err(|error| format!("clear snapshot songs: {error}"))?;
+                for (position, filename) in filenames.iter().enumerate() {
+                    connection
+                        .execute(
+                            "INSERT INTO queue_snapshot_song \
+                             (snapshot_id, song_filename, position) VALUES (?1, ?2, ?3)",
+                            rusqlite::params![id, filename, position as i64],
+                        )
+                        .map_err(|error| format!("save snapshot song: {error}"))?;
+                }
+                connection
+                    .execute(
+                        "UPDATE queue_snapshot SET song_count = ?1, songs_json = ?2, \
+                         hlc = ?3, dirty = 1 WHERE id = ?4",
+                        rusqlite::params![filenames.len() as i64, songs_json, hlc, id],
+                    )
+                    .map_err(|error| format!("update snapshot: {error}"))?;
+                Ok(json!({ "exists": true, "changed": true }))
+            })
+        }),
+        "list" => with(payload, |connection| {
+            let rows = {
+                let mut statement = connection
+                    .prepare("SELECT * FROM queue_snapshot ORDER BY created_at DESC")
+                    .map_err(|error| format!("snapshot list: {error}"))?;
+                let names: Vec<String> = statement
+                    .column_names()
+                    .iter()
+                    .map(|name| (*name).to_string())
+                    .collect();
+                let collected = statement
+                    .query_map([], |row| {
+                        let mut object = Map::new();
+                        for (index, name) in names.iter().enumerate() {
+                            object.insert(name.clone(), json_from_ref(row.get_ref(index)?));
+                        }
+                        Ok(Value::Object(object))
+                    })
+                    .map_err(|error| format!("snapshot list: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot list: {error}"))?;
+                collected
+            };
+            Ok(json!({ "snapshots": rows }))
+        }),
+        "history" => with(payload, |connection| {
+            let snapshots = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT id, name, created_at, source FROM queue_snapshot \
+                         ORDER BY created_at DESC",
+                    )
+                    .map_err(|error| format!("snapshot history: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            json_from_ref(row.get_ref(2)?),
+                            row.get::<_, Option<String>>(3)?,
+                        ))
+                    })
+                    .map_err(|error| format!("snapshot history: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot history: {error}"))?;
+                collected
+            };
+            let members: Vec<(String, String)> = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT snapshot_id, song_filename FROM queue_snapshot_song \
+                         ORDER BY snapshot_id ASC, position ASC",
+                    )
+                    .map_err(|error| format!("snapshot history songs: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|error| format!("snapshot history songs: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot history songs: {error}"))?;
+                collected
+            };
+            let mut songs: HashMap<String, Vec<String>> = HashMap::new();
+            for (snapshot, filename) in members {
+                songs.entry(snapshot).or_default().push(filename);
+            }
+            let mut seen: Vec<String> = Vec::new();
+            let mut result: Vec<Value> = Vec::new();
+            for (id, name, created_at, source) in snapshots {
+                let filenames = songs.remove(&id).unwrap_or_default();
+                let source = source.unwrap_or_else(|| "unknown".to_string());
+                let mut fingerprint = source.clone();
+                for filename in &filenames {
+                    fingerprint.push('\u{0}');
+                    fingerprint.push_str(filename);
+                }
+                if seen.iter().any(|entry| entry == &fingerprint) {
+                    continue;
+                }
+                seen.push(fingerprint);
+                result.push(json!({
+                    "id": id,
+                    "name": name,
+                    "created_at": created_at,
+                    "source": source,
+                    "songs": filenames,
+                }));
+            }
+            Ok(json!({ "history": result }))
+        }),
+        "songs" => with(payload, |connection| {
+            let id = text_field(payload, "snapshotId")?;
+            let filenames: Vec<String> = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT song_filename FROM queue_snapshot_song \
+                         WHERE snapshot_id = ?1 ORDER BY position ASC",
+                    )
+                    .map_err(|error| format!("snapshot songs: {error}"))?;
+                let collected = statement
+                    .query_map([&id], |row| row.get::<_, String>(0))
+                    .map_err(|error| format!("snapshot songs: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot songs: {error}"))?;
+                collected
+            };
+            Ok(json!({ "filenames": filenames }))
+        }),
+        "delete" => with(payload, |connection| {
+            let id = text_field(payload, "snapshotId")?.to_string();
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            in_transaction(connection, |connection| {
+                connection
+                    .execute(
+                        "DELETE FROM queue_snapshot_song WHERE snapshot_id = ?1",
+                        [&id],
+                    )
+                    .map_err(|error| format!("delete snapshot songs: {error}"))?;
+                connection
+                    .execute("DELETE FROM queue_snapshot WHERE id = ?1", [&id])
+                    .map_err(|error| format!("delete snapshot: {error}"))?;
+                tombstone(connection, "queue_snapshots", &id, hlc)?;
+                Ok(json!({ "deleted": true }))
+            })
+        }),
+        "clear" => with(payload, |connection| {
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            in_transaction(connection, |connection| {
+                let ids: Vec<String> = {
+                    let mut statement = connection
+                        .prepare("SELECT id FROM queue_snapshot")
+                        .map_err(|error| format!("clear snapshots: {error}"))?;
+                    let collected = statement
+                        .query_map([], |row| row.get::<_, String>(0))
+                        .map_err(|error| format!("clear snapshots: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("clear snapshots: {error}"))?;
+                    collected
+                };
+                connection
+                    .execute("DELETE FROM queue_snapshot_song", [])
+                    .map_err(|error| format!("clear snapshot songs: {error}"))?;
+                connection
+                    .execute("DELETE FROM queue_snapshot", [])
+                    .map_err(|error| format!("clear snapshot rows: {error}"))?;
+                for id in &ids {
+                    tombstone(connection, "queue_snapshots", id, hlc)?;
+                }
+                Ok(json!({ "cleared": ids.len() }))
+            })
+        }),
+        "prune" => with(payload, |connection| {
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            in_transaction(connection, |connection| {
+                let ids: Vec<String> = {
+                    let mut statement = connection
+                        .prepare(
+                            "SELECT id FROM queue_snapshot ORDER BY created_at DESC \
+                             LIMIT -1 OFFSET ?1",
+                        )
+                        .map_err(|error| format!("prune snapshots: {error}"))?;
+                    let collected = statement
+                        .query_map([RETAINED], |row| row.get::<_, String>(0))
+                        .map_err(|error| format!("prune snapshots: {error}"))?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("prune snapshots: {error}"))?;
+                    collected
+                };
+                for id in &ids {
+                    connection
+                        .execute(
+                            "DELETE FROM queue_snapshot_song WHERE snapshot_id = ?1",
+                            [id],
+                        )
+                        .map_err(|error| format!("prune snapshot songs: {error}"))?;
+                    connection
+                        .execute("DELETE FROM queue_snapshot WHERE id = ?1", [id])
+                        .map_err(|error| format!("prune snapshot: {error}"))?;
+                    tombstone(connection, "queue_snapshots", id, hlc)?;
+                }
+                Ok(json!({ "pruned": ids.len() }))
+            })
+        }),
+        "export" => with(payload, |connection| {
+            let snapshots: Vec<(String, Option<String>, Value, Option<String>)> = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT id, name, created_at, source FROM queue_snapshot \
+                         ORDER BY created_at DESC",
+                    )
+                    .map_err(|error| format!("snapshot export: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            json_from_ref(row.get_ref(2)?),
+                            row.get::<_, Option<String>>(3)?,
+                        ))
+                    })
+                    .map_err(|error| format!("snapshot export: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot export: {error}"))?;
+                collected
+            };
+            let members = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT snapshot_id, song_filename FROM queue_snapshot_song \
+                         ORDER BY snapshot_id ASC, position ASC",
+                    )
+                    .map_err(|error| format!("snapshot export songs: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|error| format!("snapshot export songs: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("snapshot export songs: {error}"))?;
+                collected
+            };
+            let mut songs: HashMap<String, Vec<String>> = HashMap::new();
+            for (snapshot, filename) in members {
+                songs.entry(snapshot).or_default().push(filename);
+            }
+            let result: Vec<Value> = snapshots
+                .into_iter()
+                .map(|(id, name, created_at, source)| {
+                    let filenames = songs.remove(&id).unwrap_or_default();
+                    json!({
+                        "id": id,
+                        "name": name,
+                        "created_at": created_at,
+                        "source": source,
+                        "songs": filenames,
+                    })
+                })
+                .collect();
+            Ok(json!({ "snapshots": result }))
+        }),
+        "current_save" => with(payload, |connection| {
+            let queue_json = text_field(payload, "queueJson")?;
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO current_queue (id, queue_json, updated_at, hlc, dirty) \
+                     VALUES ('current', ?1, ?2, ?3, 1)",
+                    rusqlite::params![queue_json, now, hlc],
+                )
+                .map_err(|error| format!("save current queue: {error}"))?;
+            Ok(json!({ "saved": true }))
+        }),
+        "current_load" => with(payload, |connection| {
+            let raw: Option<Option<String>> = {
+                let mut statement = connection
+                    .prepare("SELECT queue_json FROM current_queue WHERE id = 'current' LIMIT 1")
+                    .map_err(|error| format!("load current queue: {error}"))?;
+                statement
+                    .query_row([], |row| row.get::<_, Option<String>>(0))
+                    .optional()
+                    .map_err(|error| format!("load current queue: {error}"))?
+            };
+            Ok(json!({ "queue_json": raw.flatten() }))
+        }),
+        other => Err(format!("unknown queue snapshot op {other}")),
+    }
+}
+
+fn row_to_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    let mut object = Map::new();
+    for (index, name) in row.as_ref().column_names().iter().enumerate() {
+        object.insert((*name).to_string(), json_from_ref(row.get_ref(index)?));
+    }
+    Ok(Value::Object(object))
+}
+
+struct SongRow {
+    filename: String,
+    title: String,
+    artist: String,
+    album: String,
+    url: String,
+    cover_url: Option<String>,
+    has_lyrics: i64,
+    play_count: i64,
+    duration_ms: Option<i64>,
+    mtime: Option<f64>,
+    created: Option<f64>,
+    song_date: Option<f64>,
+}
+
+impl SongRow {
+    fn from_json(value: &Value) -> Result<Self, String> {
+        let text = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        Ok(Self {
+            filename: text("filename"),
+            title: text("title"),
+            artist: text("artist"),
+            album: text("album"),
+            url: text("url"),
+            cover_url: value
+                .get("cover_url")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            has_lyrics: value.get("has_lyrics").and_then(Value::as_i64).unwrap_or(0),
+            play_count: value.get("play_count").and_then(Value::as_i64).unwrap_or(0),
+            duration_ms: value.get("duration_ms").and_then(Value::as_i64),
+            mtime: value.get("mtime").and_then(Value::as_f64),
+            created: value.get("created_epoch_sec").and_then(Value::as_f64),
+            song_date: value.get("song_date_epoch_sec").and_then(Value::as_f64),
+        })
+    }
+}
+
+/// Library and remote-song rows. The cover guard lives here: a null incoming
+/// cover never erases working art, because a scan that could not read a file, a
+/// failed cover rebuild and an import from another device all look like that.
+fn song_op(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    match op {
+        "write_batch" => with(payload, |connection| song_write_batch(payload, connection)),
+        "all" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT * FROM song")
+                .map_err(|error| format!("songs: {error}"))?;
+            let collected = statement
+                .query_map([], row_to_json)
+                .map_err(|error| format!("songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("songs: {error}"))?;
+            Ok(json!({ "songs": collected }))
+        }),
+        "get" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let found = {
+                let mut statement = connection
+                    .prepare("SELECT * FROM song WHERE filename = ?1 LIMIT 1")
+                    .map_err(|error| format!("song lookup: {error}"))?;
+                statement
+                    .query_row([filename], row_to_json)
+                    .optional()
+                    .map_err(|error| format!("song lookup: {error}"))?
+            };
+            Ok(json!({ "song": found }))
+        }),
+        "list" => with(payload, |connection| {
+            let mut sql = String::from("SELECT * FROM song");
+            let mut args: Vec<Value> = Vec::new();
+            if let Some(clause) = payload.get("where").and_then(Value::as_str) {
+                sql.push_str(" WHERE ");
+                sql.push_str(clause);
+                args.extend(
+                    payload
+                        .get("whereArgs")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
+            }
+            if let Some(order) = payload.get("orderBy").and_then(Value::as_str) {
+                sql.push_str(" ORDER BY ");
+                sql.push_str(order);
+            }
+            if let Some(limit) = payload.get("limit").and_then(Value::as_i64) {
+                sql.push_str(&format!(" LIMIT {limit}"));
+            }
+            if let Some(offset) = payload.get("offset").and_then(Value::as_i64) {
+                sql.push_str(&format!(" OFFSET {offset}"));
+            }
+            let mut statement = connection
+                .prepare(&sql)
+                .map_err(|error| format!("song list: {error}"))?;
+            let bound: Vec<Box<dyn rusqlite::ToSql>> = args
+                .iter()
+                .map(|value| match value {
+                    Value::Null => Box::new(Option::<String>::None) as Box<dyn rusqlite::ToSql>,
+                    Value::Bool(flag) => Box::new(*flag as i64),
+                    Value::Number(number) => match number.as_i64() {
+                        Some(integer) => Box::new(integer) as Box<dyn rusqlite::ToSql>,
+                        None => Box::new(number.as_f64().unwrap_or_default()),
+                    },
+                    Value::String(text) => Box::new(text.clone()),
+                    other => Box::new(other.to_string()),
+                })
+                .collect();
+            let references: Vec<&dyn rusqlite::ToSql> =
+                bound.iter().map(|value| value.as_ref()).collect();
+            let collected = statement
+                .query_map(references.as_slice(), row_to_json)
+                .map_err(|error| format!("song list: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("song list: {error}"))?;
+            Ok(json!({ "songs": collected }))
+        }),
+        "count" => with(payload, |connection| {
+            let count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM song", [], |row| row.get(0))
+                .map_err(|error| format!("song count: {error}"))?;
+            Ok(json!({ "count": count }))
+        }),
+        "clear" => with(payload, |connection| {
+            connection
+                .execute("DELETE FROM song", [])
+                .map_err(|error| format!("clear songs: {error}"))?;
+            Ok(json!({ "cleared": true }))
+        }),
+        "delete" => with(payload, |connection| {
+            let filenames = filename_list(payload);
+            in_transaction(connection, |connection| {
+                let mut removed = 0usize;
+                for chunk in filenames.chunks(500) {
+                    let placeholders = vec!["?"; chunk.len()].join(", ");
+                    let sql = format!("DELETE FROM song WHERE filename IN ({placeholders})");
+                    let params: Vec<&dyn rusqlite::ToSql> = chunk
+                        .iter()
+                        .map(|name| name as &dyn rusqlite::ToSql)
+                        .collect();
+                    removed += connection
+                        .execute(&sql, params.as_slice())
+                        .map_err(|error| format!("delete songs: {error}"))?;
+                }
+                Ok(json!({ "removed": removed }))
+            })
+        }),
+        "clear_cover_urls" => with(payload, |connection| {
+            let changed = connection
+                .execute(
+                    "UPDATE song SET cover_url = NULL WHERE cover_url IS NOT NULL",
+                    [],
+                )
+                .map_err(|error| format!("clear cover urls: {error}"))?;
+            Ok(json!({ "changed": changed }))
+        }),
+        "artists" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT DISTINCT artist FROM song ORDER BY artist COLLATE NOCASE")
+                .map_err(|error| format!("artists: {error}"))?;
+            let collected = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("artists: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("artists: {error}"))?;
+            Ok(json!({ "values": collected }))
+        }),
+        "albums" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT DISTINCT album FROM song ORDER BY album COLLATE NOCASE")
+                .map_err(|error| format!("albums: {error}"))?;
+            let collected = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("albums: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("albums: {error}"))?;
+            Ok(json!({ "values": collected }))
+        }),
+        "update_cover" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let url = text_field(payload, "url")?;
+            let cover = text_field(payload, "coverPath")?;
+            let mtime = payload.get("mtime").and_then(Value::as_f64);
+            let changed = connection
+                .execute(
+                    "UPDATE song SET cover_url = ?1 WHERE filename = ?2 AND url = ?3 AND mtime IS ?4",
+                    rusqlite::params![cover, filename, url, mtime],
+                )
+                .map_err(|error| format!("update cover: {error}"))?;
+            Ok(json!({ "changed": changed > 0 }))
+        }),
+        "remote_upsert" => with(payload, |connection| {
+            let song = payload
+                .get("song")
+                .ok_or_else(|| "remote upsert needs a song".to_string())?;
+            let filename = text_field(song, "filename")?.to_string();
+            // Membership is user data, so a metadata refresh must not overwrite it.
+            let in_library: i64 = {
+                let mut statement = connection
+                    .prepare("SELECT in_library FROM remote_song WHERE filename = ?1 LIMIT 1")
+                    .map_err(|error| format!("remote membership: {error}"))?;
+                statement
+                    .query_row([&filename], |row| row.get::<_, Option<i64>>(0))
+                    .optional()
+                    .map_err(|error| format!("remote membership: {error}"))?
+                    .flatten()
+                    .unwrap_or(0)
+            };
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO remote_song (filename, remote_id, title, artist, \
+                     album, cover_url, duration_ms, is_available, in_library, updated_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    rusqlite::params![
+                        filename,
+                        song.get("remote_id").and_then(Value::as_str),
+                        song.get("title").and_then(Value::as_str),
+                        song.get("artist").and_then(Value::as_str),
+                        song.get("album").and_then(Value::as_str),
+                        song.get("cover_url").and_then(Value::as_str),
+                        song.get("duration_ms").and_then(Value::as_i64),
+                        song.get("is_available")
+                            .and_then(Value::as_i64)
+                            .unwrap_or(1),
+                        in_library,
+                        now
+                    ],
+                )
+                .map_err(|error| format!("remote upsert: {error}"))?;
+            Ok(json!({ "saved": true }))
+        }),
+        "remote_library" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT filename FROM remote_song WHERE in_library = 1")
+                .map_err(|error| format!("remote library: {error}"))?;
+            let collected = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("remote library: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("remote library: {error}"))?;
+            Ok(json!({ "filenames": collected }))
+        }),
+        "remote_set_library" => with(payload, |connection| {
+            let filename = text_field(payload, "filename")?;
+            let in_library = payload
+                .get("inLibrary")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let changed = connection
+                .execute(
+                    "UPDATE remote_song SET in_library = ?1 WHERE filename = ?2",
+                    rusqlite::params![if in_library { 1i64 } else { 0i64 }, filename],
+                )
+                .map_err(|error| format!("remote membership: {error}"))?;
+            Ok(json!({ "changed": changed > 0 }))
+        }),
+        "remote_all" => with(payload, |connection| {
+            let mut statement = connection
+                .prepare("SELECT * FROM remote_song")
+                .map_err(|error| format!("remote songs: {error}"))?;
+            let collected = statement
+                .query_map([], row_to_json)
+                .map_err(|error| format!("remote songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("remote songs: {error}"))?;
+            Ok(json!({ "songs": collected }))
+        }),
+        other => Err(format!("unknown song op {other}")),
+    }
+}
+
+fn song_write_batch(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    let songs: Vec<SongRow> = payload
+        .get("songs")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .map(SongRow::from_json)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let preserve_cover = payload
+        .get("preserveCoverUrl")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let replace_library = payload
+        .get("replaceLibrary")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if songs.is_empty() && !replace_library {
+        return Ok(json!({ "written": 0 }));
+    }
+
+    in_transaction(connection, |connection| {
+        let mut existing: HashMap<String, (Option<String>, Option<f64>)> = HashMap::new();
+        if preserve_cover {
+            for chunk in songs.chunks(500) {
+                let placeholders = vec!["?"; chunk.len()].join(", ");
+                let sql = format!(
+                    "SELECT filename, cover_url, created_epoch_sec FROM song \
+                     WHERE filename IN ({placeholders})"
+                );
+                let params: Vec<&dyn rusqlite::ToSql> = chunk
+                    .iter()
+                    .map(|song| &song.filename as &dyn rusqlite::ToSql)
+                    .collect();
+                let mut statement = connection
+                    .prepare(&sql)
+                    .map_err(|error| format!("existing songs: {error}"))?;
+                let rows = statement
+                    .query_map(params.as_slice(), |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<f64>>(2)?,
+                        ))
+                    })
+                    .map_err(|error| format!("existing songs: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("existing songs: {error}"))?;
+                for (filename, cover, created) in rows {
+                    existing.insert(filename, (cover, created));
+                }
+            }
+        }
+
+        if replace_library {
+            let scanned: Vec<&str> = songs.iter().map(|song| song.filename.as_str()).collect();
+            let known: Vec<String> = {
+                let mut statement = connection
+                    .prepare("SELECT filename FROM song")
+                    .map_err(|error| format!("known songs: {error}"))?;
+                let collected = statement
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map_err(|error| format!("known songs: {error}"))?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| format!("known songs: {error}"))?;
+                collected
+            };
+            for filename in known {
+                if !scanned.contains(&filename.as_str()) {
+                    connection
+                        .execute("DELETE FROM song WHERE filename = ?1", [&filename])
+                        .map_err(|error| format!("drop unscanned song: {error}"))?;
+                }
+            }
+        }
+
+        for song in &songs {
+            let prior = existing.get(&song.filename);
+            let cover = if preserve_cover && song.cover_url.is_none() {
+                prior.and_then(|entry| entry.0.clone())
+            } else {
+                song.cover_url.clone()
+            };
+            let created = prior.and_then(|entry| entry.1).or(song.created);
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO song (filename, title, artist, album, url, \
+                     cover_url, has_lyrics, play_count, duration_ms, mtime, \
+                     created_epoch_sec, song_date_epoch_sec) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    rusqlite::params![
+                        song.filename,
+                        song.title,
+                        song.artist,
+                        song.album,
+                        song.url,
+                        cover,
+                        song.has_lyrics,
+                        song.play_count,
+                        song.duration_ms,
+                        song.mtime,
+                        created,
+                        song.song_date
+                    ],
+                )
+                .map_err(|error| format!("write song: {error}"))?;
+            if preserve_cover {
+                existing.insert(song.filename.clone(), (cover, created));
+            }
+        }
+        Ok(json!({ "written": songs.len() }))
+    })
+}
+
+fn clear_tombstone(connection: &Connection, entity: &str, key: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM sync_tombstone WHERE entity = ?1 AND key = ?2",
+            rusqlite::params![entity, key],
+        )
+        .map_err(|error| format!("clear tombstone {entity}: {error}"))?;
+    Ok(())
+}
+
 /// YouTube playlist mappings. Deliberately not synced: they name a playlist on
 /// one Google account, so another device must not inherit them.
 fn youtube_link_op(payload: &Value) -> Result<Value, String> {
@@ -1739,21 +3296,14 @@ fn in_transaction<T>(
     connection: &mut Connection,
     body: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
-    connection
-        .execute_batch("BEGIN")
+    let transaction = connection
+        .transaction()
         .map_err(|error| format!("begin: {error}"))?;
-    match body(connection) {
-        Ok(value) => {
-            connection
-                .execute_batch("COMMIT")
-                .map_err(|error| format!("commit: {error}"))?;
-            Ok(value)
-        }
-        Err(error) => {
-            let _ = connection.execute_batch("ROLLBACK");
-            Err(error)
-        }
-    }
+    let result = body(&transaction)?;
+    transaction
+        .commit()
+        .map_err(|error| format!("commit: {error}"))?;
+    Ok(result)
 }
 
 /// Negative cover cache: filenames already probed and found to have no art.

@@ -5,6 +5,8 @@ import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/rust/native_database.dart';
+import '../data/repositories/search_index_repository.dart';
 import '../domain/services/cache_policy.dart';
 import 'backup_service.dart';
 import 'cover_refresh_service.dart';
@@ -26,10 +28,9 @@ class StorageAnalysisService {
       final docDir = await getWispieDirectory();
       var total = 0;
       for (final name in ['wispie_stats', 'wispie_data']) {
-        for (final suffix in ['', '-journal', '-wal', '-shm']) {
-          final file = File(p.join(docDir.path, '$name$suffix'));
-          if (await file.exists()) total += await file.length();
-        }
+        final result =
+            await databaseFileCommand('size', p.join(docDir.path, '$name.db'));
+        total += result['size'] as int;
       }
       return total;
     } catch (error) {
@@ -53,16 +54,15 @@ class StorageAnalysisService {
   }
 
   Future<int> getSearchIndexSize() async {
-    for (final suffix in ['', '-journal', '-wal', '-shm']) {
-      try {
-        final docDir = await getWispieDirectory();
-        final file = File(p.join(docDir.path, 'wispie_search_index.db$suffix'));
-        if (await file.exists()) return await file.length();
-      } catch (error) {
-        debugPrint('Error calculating search index size: $error');
-      }
+    try {
+      final docDir = await getWispieDirectory();
+      final result = await databaseFileCommand(
+          'first_size', p.join(docDir.path, 'wispie_search_index.db'));
+      return result['size'] as int;
+    } catch (error) {
+      debugPrint('Error calculating search index size: $error');
+      return 0;
     }
-    return 0;
   }
 
   Future<CacheUsage> getCacheUsage({bool refresh = false}) =>
@@ -124,11 +124,7 @@ class StorageAnalysisService {
 
   Future<void> clearSearchIndex() async {
     try {
-      final docDir = await getWispieDirectory();
-      for (final suffix in ['', '-journal', '-wal', '-shm']) {
-        final file = File(p.join(docDir.path, 'wispie_search_index.db$suffix'));
-        if (await file.exists()) await file.delete();
-      }
+      await SearchIndexRepository().deleteDatabaseFile();
     } catch (error) {
       debugPrint('Error clearing search index: $error');
       rethrow;
@@ -141,10 +137,7 @@ class StorageAnalysisService {
       await DatabaseService.instance.close();
       final docDir = await getWispieDirectory();
       for (final name in ['wispie_stats', 'wispie_data']) {
-        for (final suffix in ['', '-journal', '-wal', '-shm']) {
-          final file = File(p.join(docDir.path, '$name$suffix'));
-          if (await file.exists()) await file.delete();
-        }
+        await databaseFileCommand('remove', p.join(docDir.path, '$name.db'));
       }
     } catch (error) {
       debugPrint('Error clearing database: $error');

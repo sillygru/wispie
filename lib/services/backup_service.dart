@@ -217,18 +217,15 @@ class BackupService {
     final appDir = await getWispieDirectory();
     final storage = StorageService();
 
-    if (options.includeUserStats) {
-      final statsDb = File(p.join(appDir.path, statsDbName));
-      if (await statsDb.exists()) {
-        await statsDb.copy(p.join(stagingDir.path, statsDbName));
-      }
-    }
-
-    if (options.includeUserData) {
-      final dataDb = File(p.join(appDir.path, dataDbName));
-      if (await dataDb.exists()) {
-        await dataDb.copy(p.join(stagingDir.path, dataDbName));
-      }
+    for (final name in [
+      if (options.includeUserStats) statsDbName,
+      if (options.includeUserData) dataDbName,
+    ]) {
+      await databaseFileCommand(
+        'copy',
+        p.join(appDir.path, name),
+        destination: p.join(stagingDir.path, name),
+      );
     }
 
     if (options.includeUserStats || options.includeUserData) {
@@ -394,16 +391,13 @@ class BackupService {
   Future<bool> _checkTableHasData(String dbPath, String tableName) async {
     try {
       final db = await openDatabase(dbPath, readOnly: true);
-      final tableCheck = await db.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-          [tableName]);
-      if (tableCheck.isEmpty) {
+      try {
+        final result = await db
+            .coreCommand('maintenance', {'op': 'has_rows', 'table': tableName});
+        return result['count'] == 1;
+      } finally {
         await db.close();
-        return false;
       }
-      final rows = await db.rawQuery("SELECT 1 FROM $tableName LIMIT 1");
-      await db.close();
-      return rows.isNotEmpty;
     } catch (e) {
       return false;
     }
@@ -787,6 +781,9 @@ class BackupService {
 
       for (final artifact in artifacts) {
         if (!artifact.coversAny(wantedTypes)) continue;
+        if (artifact.covers(BackupContentType.searchIndex)) {
+          await SearchIndexRepository().close();
+        }
         await restoreArtifact(artifact, importPath);
       }
     }
@@ -902,8 +899,8 @@ class BackupService {
           }
         }
 
-        String? statsDbPath = foundStatsDb?.path;
-        String? dataDbPath = foundDataDb?.path;
+        final statsDbPath = foundStatsDb?.path;
+        final dataDbPath = foundDataDb?.path;
 
         // Wholesale file replacement only makes sense when the archive
         // actually carries databases; otherwise fall through and restore the
@@ -929,35 +926,21 @@ class BackupService {
           }
 
           await DatabaseService.instance.close();
-          const dbSuffixes = ['', '-journal', '-wal', '-shm'];
-          for (final suffix in dbSuffixes) {
-            if (foundStatsDb != null) {
-              final statsFile =
-                  File(p.join(appDir.path, '$statsDbName$suffix'));
-              if (await statsFile.exists()) await statsFile.delete();
+          try {
+            for (final (source, name) in [
+              (foundStatsDb, statsDbName),
+              (foundDataDb, dataDbName),
+            ]) {
+              if (source == null) continue;
+              await databaseFileCommand(
+                'copy',
+                source.path,
+                destination: p.join(appDir.path, name),
+              );
             }
-            if (foundDataDb != null) {
-              final dataFile = File(p.join(appDir.path, '$dataDbName$suffix'));
-              if (await dataFile.exists()) await dataFile.delete();
-            }
+          } finally {
+            await DatabaseService.instance.init();
           }
-
-          if (foundStatsDb != null) {
-            await foundStatsDb.copy(p.join(appDir.path, statsDbName));
-          }
-          if (foundDataDb != null) {
-            await foundDataDb.copy(p.join(appDir.path, dataDbName));
-          }
-
-          // statsDbPath/dataDbPath deliberately keep pointing at the extracted
-          // copies rather than the files we just wrote. The category import
-          // below opens them as a second connection, and pointing it at the
-          // live database means opening the file DatabaseService already holds
-          // — which deadlocks the moment either side starts a transaction. The
-          // extracted copies are byte-identical, so the import reads the same
-          // rows from a file nothing else has open.
-
-          await DatabaseService.instance.init();
         }
 
         onProgress?.call(0.08, 'Replacing local data…');
@@ -1036,13 +1019,9 @@ class BackupService {
           try {
             final db = await openDatabase(dbPath, readOnly: true);
             try {
-              final tables = await db.rawQuery(
-                  "SELECT name FROM sqlite_master WHERE type='table' AND name='playevent'");
-              if (tables.isNotEmpty) {
-                final result = await db
-                    .rawQuery('SELECT COUNT(*) as count FROM playevent');
-                statsRows = firstIntValue(result) ?? 0;
-              }
+              final result = await db.coreCommand(
+                  'maintenance', {'op': 'count', 'table': 'playevent'});
+              statsRows = result['count'] as int;
             } finally {
               await db.close();
             }
