@@ -8,6 +8,7 @@
 use crate::artwork;
 use crate::emitter::{Emit, Emitter};
 use crate::lyrics_view::{self, Precision, StyleLine, StyleSong};
+use crate::playback;
 use serde_json::{json, Value};
 
 const WAVEFORM_MAGIC: [u8; 4] = [0x57, 0x53, 0x50, 0x33];
@@ -22,6 +23,17 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
         .to_string();
 
     match action.as_str() {
+        "playback_fade" => emitter.emit(Emit::Json(playback::fade_volume(&request)?)),
+        "playback_tick" => emitter.emit(Emit::Json(playback::tick(&request)?)),
+        "playback_stats" => emitter.emit(Emit::Json(playback::stats_record(&request)?)),
+        "playback_variant" => emitter.emit(Emit::Json(playback::variant_pick(&request)?)),
+        "playback_original_order" => {
+            emitter.emit(Emit::Json(playback::original_order(&request)?));
+        }
+        "playback_sleep" => emitter.emit(Emit::Json(playback::sleep_decision(&request)?)),
+        "playback_queue_original" => {
+            emitter.emit(Emit::Json(playback::queue_original(&request)?));
+        }
         "timing_window" => {
             let current = number(&request, "current")?;
             let precision = precision(&request)?;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import '../domain/services/playback_rules.dart';
 import 'audio_player_manager.dart';
 
 /// Enum representing the different sleep timer modes
@@ -128,13 +129,20 @@ class SleepTimerService extends ChangeNotifier {
         final stopwatch = _elapsedTimeStopwatch;
         if (stopwatch == null) return;
 
-        final remaining = targetDuration - stopwatch.elapsed;
-        if (remaining > Duration.zero) {
-          arm(remaining);
+        final decision = PlaybackRules.sleepDecision(
+          mode: _currentMode == SleepTimerMode.loopCurrent
+              ? 'loopCurrent'
+              : 'playForTime',
+          elapsedMs: stopwatch.elapsed.inMilliseconds.toDouble(),
+          durationMs: targetDuration.inMilliseconds.toDouble(),
+          finishCurrent: finishCurrent,
+        );
+        if (!decision.end) {
+          arm(Duration(milliseconds: decision.remainingMs.ceil()));
           return;
         }
 
-        unawaited(_end(audioManager, finishCurrent: finishCurrent));
+        unawaited(_end(audioManager, finishCurrent: decision.finishCurrent));
       });
     }
 
@@ -151,17 +159,29 @@ class SleepTimerService extends ChangeNotifier {
     _indexSub = audioManager.settledCurrentIndexStream.listen((_) {
       if (_isShuttingDown) return;
       _tracksHeard++;
-      if (_tracksHeard < target) return;
+      final decision = PlaybackRules.sleepDecision(
+        mode: 'stopAfterTracks',
+        tracksHeard: _tracksHeard,
+        targetTracks: target,
+      );
+      if (!decision.end) return;
       _indexSub?.cancel();
       _indexSub = null;
-      unawaited(_end(audioManager, finishCurrent: true));
+      unawaited(_end(audioManager, finishCurrent: decision.finishCurrent));
     });
 
     // A queue shorter than the request still has to end the timer.
     _stateSub = audioManager.player.playerStateStream.listen((state) {
       if (_isShuttingDown) return;
-      if (state.processingState == ProcessingState.completed) {
-        unawaited(_end(audioManager, finishCurrent: false));
+      final completed = state.processingState == ProcessingState.completed;
+      final decision = PlaybackRules.sleepDecision(
+        mode: 'stopAfterTracks',
+        tracksHeard: _tracksHeard,
+        targetTracks: target,
+        completed: completed,
+      );
+      if (completed && decision.end) {
+        unawaited(_end(audioManager, finishCurrent: decision.finishCurrent));
       }
     });
   }

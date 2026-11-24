@@ -32,6 +32,7 @@ mod music_feed;
 mod online_meta;
 mod palette;
 mod palette_jpeg;
+mod playback;
 mod prosody;
 pub(crate) mod queue_ops;
 mod remembered_order;

@@ -13,6 +13,7 @@ import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
 import '../models/shuffle_config.dart';
 import '../domain/models/play_source.dart';
+import '../domain/services/playback_rules.dart';
 import '../domain/services/remembered_order.dart';
 import '../domain/services/shuffle_selector.dart';
 import '../domain/services/smart_weights.dart';
@@ -937,42 +938,33 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     final totalDuration = _player.duration;
     if (totalDuration == null) return;
 
-    // Minimum 30 second song for any transitions
-    if (totalDuration.inSeconds < 30) return;
-
     final remaining = totalDuration - position;
 
     _skipStalledTail(position, remaining);
 
-    // Handle gap mode - pause before end, resume after delay. A park owns the
-    // end of the track, so no gap may cut it short.
-    if (settings.delayDuration > 0 &&
-        !_parkPending &&
-        !_isInGap &&
-        _player.playing &&
-        _gapTimer == null) {
+    final decision = PlaybackRules.tick(
+      positionMs: position.inMilliseconds.toDouble(),
+      durationMs: totalDuration.inMilliseconds.toDouble(),
+      playing: _player.playing,
+      isFadingOut: _isFadingOut,
+      parkPending: _parkPending,
+      isInGap: _isInGap,
+      gapTimerActive: _gapTimer != null,
+      delayDuration: settings.delayDuration.toDouble(),
+      fadeOutDuration: settings.fadeOutDuration.toDouble(),
+    );
+
+    if (decision.gap) {
       _handleGapTrigger(
         remaining: remaining,
-        delayDuration: settings.delayDuration,
+        delayDuration: settings.delayDuration.toDouble(),
       );
     }
-
-    // Handle fade out trigger
-    if (settings.fadeOutDuration > 0 &&
-        _player.playing &&
-        !_isFadingOut &&
-        remaining.inMilliseconds <= settings.fadeOutDuration * 1000 &&
-        remaining.inMilliseconds > 0) {
-      _startFadeOut(settings.fadeOutDuration);
+    if (decision.fadeOut) {
+      _startFadeOut(settings.fadeOutDuration.toDouble());
     }
-
-    // Reset fade if user seeks back. The +500 ms hysteresis matches the
-    // original duplicate listener that lived in _initStatsListeners.
-    if (_isFadingOut) {
-      final fadeOutMs = settings.fadeOutDuration * 1000;
-      if (fadeOutMs > 0 && remaining.inMilliseconds > fadeOutMs + 500) {
-        _cancelTransitions();
-      }
+    if (decision.cancelFade) {
+      _cancelTransitions();
     }
   }
 
@@ -1164,22 +1156,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     _player.play();
   }
 
-  // Exponential fade out curve (sounds natural to human ears)
-  double _fadeOutCurve(double linearProgress) {
-    // Exponential decay: volume drops faster at the end
-    // linearProgress: 1.0 -> 0.0 (remaining time ratio)
-    // Returns: curved volume from 1.0 -> 0.0
-    return pow(linearProgress, 2.0).toDouble();
-  }
-
-  // Exponential fade in curve (sounds natural to human ears)
-  double _fadeInCurve(double linearProgress) {
-    // Exponential growth: volume rises slower at the start
-    // linearProgress: 0.0 -> 1.0 (elapsed time ratio)
-    // Returns: curved volume from 0.0 -> 1.0
-    return pow(linearProgress, 1.5).toDouble();
-  }
-
   void _startFadeIn(double duration) {
     _fadeTimer?.cancel();
     _fadeDurationMs = duration * 1000;
@@ -1203,9 +1179,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         _fadeDurationMs = null;
         timer.cancel();
       } else {
-        final linearProgress = elapsed / targetMs;
-        final curvedVolume = _fadeInCurve(linearProgress);
-        _setVolumeWithSafety(curvedVolume * userVolumeNotifier.value);
+        _setVolumeWithSafety(PlaybackRules.fadeVolume(
+          fadeIn: true,
+          progress: elapsed / targetMs,
+          userVolume: userVolumeNotifier.value,
+        ));
       }
     });
   }
@@ -1234,9 +1212,11 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         _fadeDurationMs = null;
         timer.cancel();
       } else {
-        final linearProgress = 1.0 - (elapsed / targetMs);
-        final curvedVolume = _fadeOutCurve(linearProgress.clamp(0.0, 1.0));
-        _setVolumeWithSafety(curvedVolume * userVolumeNotifier.value);
+        _setVolumeWithSafety(PlaybackRules.fadeVolume(
+          fadeIn: false,
+          progress: 1.0 - (elapsed / targetMs),
+          userVolume: userVolumeNotifier.value,
+        ));
       }
     });
   }
@@ -1761,11 +1741,10 @@ class AudioPlayerManager extends WidgetsBindingObserver {
         'current': current,
         'position_ms': posMs,
         'effective': eff,
-        'original': listEquals(eff.toSet().toList()..sort(),
-                    orig.toSet().toList()..sort()) &&
-                eff.length == orig.length
-            ? null
-            : orig,
+        'original': PlaybackRules.originalForSync(
+          effective: eff,
+          original: orig,
+        ),
         'playlist_id': _currentPlaylistId,
       });
     } catch (e) {
@@ -1838,42 +1817,33 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     if (_playStartTime != null) _updateDurations();
 
     final song = _resolveSong(_currentSongFilename!);
-    final totalLength =
-        (song?.duration?.inMilliseconds.toDouble() ?? 0.0) / 1000.0;
-    double effectiveTotalLength = totalLength;
-    final firstSongStartSec = _sessionFirstSongStartSec;
-    final isFirstSongMidStart =
-        _currentSongFilename == _sessionFirstSongFilename &&
-            firstSongStartSec != null &&
-            firstSongStartSec > 0;
-    if (isFirstSongMidStart && totalLength > 0) {
-      final adjustedLength = max(0.0, totalLength - firstSongStartSec);
-      if (adjustedLength > 0) {
-        effectiveTotalLength = adjustedLength;
-      }
-    }
+    final record = PlaybackRules.statsRecord(
+      filename: _currentSongFilename!,
+      isExternal: isExternalSongFilename(_currentSongFilename!),
+      totalLength: (song?.duration?.inMilliseconds.toDouble() ?? 0.0) / 1000.0,
+      foreground: _foregroundDuration,
+      background: _backgroundDuration,
+      firstSongFilename: _sessionFirstSongFilename,
+      firstSongStartSec: _sessionFirstSongStartSec,
+    );
 
-    double finalDuration = _foregroundDuration + _backgroundDuration;
-
-    if (finalDuration > 0.5 && !isExternalSongFilename(_currentSongFilename!)) {
+    // Transient open-with plays leave no stats rows: their cache-path keys
+    // could never rejoin the library entry they may later be imported as.
+    if (record.emit) {
       _tasteDirty = true;
-      final completed = effectiveTotalLength > 0 &&
-          finalDuration / effectiveTotalLength >= 0.85;
       final artist = song?.artist ?? '';
-      if (completed && artist.isNotEmpty) {
+      if (record.completed && artist.isNotEmpty) {
         _recentCompletedArtists.add(artist);
         if (_recentCompletedArtists.length > _sessionArtistWindow) {
           _recentCompletedArtists.removeAt(0);
         }
       }
-      // Transient open-with plays leave no stats rows: their cache-path keys
-      // could never rejoin the library entry they may later be imported as.
       unawaited(_statsService.trackStats({
         'song_filename': _currentSongFilename!,
-        'duration_played': finalDuration,
-        'foreground_duration': _foregroundDuration,
-        'background_duration': _backgroundDuration,
-        'total_length': effectiveTotalLength,
+        'duration_played': record.durationPlayed,
+        'foreground_duration': record.foreground,
+        'background_duration': record.background,
+        'total_length': record.totalLength,
         'source': _sourceFor(_currentQueueId)?.dbValue,
         'queue_id': _currentSongQueueSnapshotId ??= _currentQueueSnapshotId,
       }));
@@ -2892,36 +2862,20 @@ class AudioPlayerManager extends WidgetsBindingObserver {
     List<QueueItem> upcoming,
     QueueItem current,
   ) {
-    final byQueueId = <String, int>{};
-    final byFilename = <String, int>{};
-    for (int i = 0; i < _originalQueue.length; i++) {
-      byQueueId[_originalQueue[i].queueId] = i;
-      byFilename.putIfAbsent(_originalQueue[i].song.filename, () => i);
-    }
-
-    // Duplicated entries carry a fresh queueId, so fall back to the filename.
-    int? positionOf(QueueItem item) =>
-        byQueueId[item.queueId] ?? byFilename[item.song.filename];
-
-    final anchor = positionOf(current) ?? -1;
-    final length = _originalQueue.length;
-
-    // Entries the original queue never had — added via Play Next, or generated
-    // on the fly — have no natural position, so they keep their relative order
-    // at the end rather than being dropped.
-    final known = <QueueItem>[];
-    final unknown = <QueueItem>[];
-    for (final item in upcoming) {
-      (positionOf(item) == null ? unknown : known).add(item);
-    }
-
-    int rank(QueueItem item) {
-      final position = positionOf(item)!;
-      return position > anchor ? position : position + length;
-    }
-
-    known.sort((a, b) => rank(a).compareTo(rank(b)));
-    return [...known, ...unknown];
+    // Duplicated entries carry a fresh queueId, so the core also matches on
+    // filename when a queueId is not in the original list.
+    final order = PlaybackRules.originalOrder(
+      upcoming: [
+        for (final item in upcoming)
+          (queueId: item.queueId, filename: item.song.filename),
+      ],
+      original: [
+        for (final item in _originalQueue)
+          (queueId: item.queueId, filename: item.song.filename),
+      ],
+      current: (queueId: current.queueId, filename: current.song.filename),
+    );
+    return [for (final index in order) upcoming[index]];
   }
 
   /// Loads (and caches) the listening model shuffle scores against.
@@ -3315,46 +3269,31 @@ class AudioPlayerManager extends WidgetsBindingObserver {
   }
 
   QueueItem? _selectSongFromVirtualItem(_VirtualShuffleItem virtualItem) {
-    if (virtualItem.items.length == 1) {
-      return virtualItem.items.first;
-    }
-
-    if (virtualItem.groupId != null) {
-      final priorityFilename = _mergedGroupPriorities[virtualItem.groupId];
+    int? priorityIndex;
+    final groupId = virtualItem.groupId;
+    if (groupId != null) {
+      final priorityFilename = _mergedGroupPriorities[groupId];
       if (priorityFilename != null) {
-        for (final item in virtualItem.items) {
-          if (item.song.filename == priorityFilename) {
-            return item;
-          }
-        }
+        final index = virtualItem.items.indexWhere(
+          (item) => item.song.filename == priorityFilename,
+        );
+        if (index >= 0) priorityIndex = index;
       }
     }
 
-    final weights = virtualItem.items.map((item) {
-      double weight = 1.0;
-      if (_isFavorite(item.song.filename)) {
-        weight *= 2.0;
-      }
-      if (_isSuggestLess(item.song.filename)) {
-        weight *= 0.2;
-      }
-      return weight;
-    }).toList();
-
-    final totalWeight = weights.fold(0.0, (a, b) => a + b);
-    if (totalWeight <= 0) {
-      return virtualItem.items.first;
-    }
-
-    double randomValue = Random().nextDouble() * totalWeight;
-    double cumulative = 0.0;
-    for (int i = 0; i < weights.length; i++) {
-      cumulative += weights[i];
-      if (randomValue <= cumulative) {
-        return virtualItem.items[i];
-      }
-    }
-    return virtualItem.items.last;
+    final index = PlaybackRules.variantIndex(
+      items: [
+        for (final item in virtualItem.items)
+          (
+            filename: item.song.filename,
+            favorite: _isFavorite(item.song.filename),
+            suggestLess: _isSuggestLess(item.song.filename),
+          ),
+      ],
+      priorityIndex: priorityIndex,
+      roll: Random().nextDouble(),
+    );
+    return index == null ? null : virtualItem.items[index];
   }
 
   Future<void> _rebuildQueue({
