@@ -8,6 +8,7 @@ import '../../services/database_service.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
 import '../components/app_list_row.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_section_header.dart';
 import '../tokens/app_icons.dart';
@@ -35,12 +36,12 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     _loadHistory();
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _loadHistory({bool inPlace = false}) async {
     if (!mounted) return;
     try {
       if (mounted) {
         setState(() {
-          _isLoading = true;
+          if (!inPlace) _isLoading = true;
           _error = null;
         });
       }
@@ -103,11 +104,17 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
                       title: context.l10n.playHistoryEmptyTitle,
                       message: context.l10n.playHistoryEmptyMessage,
                     )
-                  : Column(
-                      children: [
-                        _buildLegend(context),
-                        Expanded(child: _buildHistoryList(context, songsAsync)),
-                      ],
+                  : AppPullToRefresh(
+                      onRefresh: () => _loadHistory(inPlace: true),
+                      builder: (physics) => Column(
+                        children: [
+                          _buildLegend(context),
+                          Expanded(
+                            child:
+                                _buildHistoryList(context, songsAsync, physics),
+                          ),
+                        ],
+                      ),
                     ),
     );
   }
@@ -145,8 +152,8 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     );
   }
 
-  Widget _buildHistoryList(
-      BuildContext context, AsyncValue<List<Song>> songsAsync) {
+  Widget _buildHistoryList(BuildContext context,
+      AsyncValue<List<Song>> songsAsync, ScrollPhysics physics) {
     final songMap = songsAsync.when(
       data: (songs) => {for (var s in songs) s.filename: s},
       loading: () => <String, Song>{},
@@ -168,19 +175,17 @@ class _PlayHistoryScreenState extends ConsumerState<PlayHistoryScreen> {
     final sortedDates = groupedEvents.keys.toList()
       ..sort((a, b) => b.compareTo(a));
 
-    return RefreshIndicator(
-      onRefresh: _loadHistory,
-      child: ListView.builder(
-        padding: const EdgeInsets.only(
-          bottom: AppTokens.scrollBottomInset,
-        ),
-        itemCount: sortedDates.length,
-        itemBuilder: (context, index) {
-          final dateKey = sortedDates[index];
-          return _buildDateSection(
-              context, dateKey, groupedEvents[dateKey]!, songMap);
-        },
+    return ListView.builder(
+      physics: physics,
+      padding: const EdgeInsets.only(
+        bottom: AppTokens.scrollBottomInset,
       ),
+      itemCount: sortedDates.length,
+      itemBuilder: (context, index) {
+        final dateKey = sortedDates[index];
+        return _buildDateSection(
+            context, dateKey, groupedEvents[dateKey]!, songMap);
+      },
     );
   }
 

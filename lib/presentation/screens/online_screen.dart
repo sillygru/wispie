@@ -20,6 +20,7 @@ import '../../presentation/widgets/online_track_row.dart';
 import '../../presentation/utils/youtube_error_message.dart';
 import '../../providers/youtube_account_provider.dart';
 import '../../services/online_music_service.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_surface.dart';
 
 /// The YouTube tab: a search field, a recommendations feed and the account's
@@ -454,11 +455,11 @@ class _OnlineScreenState extends ConsumerState<OnlineScreen> {
 
     // Pulling refreshes the feed in place; the cached list stays on screen while
     // the new pools are fetched, so the indicator is the only thing that moves.
-    return RefreshIndicator(
+    return AppPullToRefresh(
       onRefresh: () => ref.read(youtubeForYouTracksProvider.notifier).refresh(),
-      child: ListView(
+      builder: (physics) => ListView(
         controller: widget.scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: physics,
         padding: const EdgeInsets.only(bottom: AppTokens.scrollBottomInset),
         children: [
           if (!signedIn) _signInPrompt(),

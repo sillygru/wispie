@@ -4,11 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/insights_provider.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_feedback.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_section_header.dart';
 import '../../domain/models/listening_insights.dart';
 import '../../l10n/l10n.dart';
-import '../motion/motion.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import '../utils/wide_layout.dart';
@@ -37,12 +37,12 @@ class StatsScreen extends ConsumerWidget {
 
     return AmbientScaffold(
       appBar: AppTopBar(title: context.l10n.statsTitle),
-      body: RefreshIndicator(
+      body: AppPullToRefresh(
         // The play log is appended by the player, so a refresh is the only way
         // to pick up a session that ended after the screen was built.
         onRefresh: () => ref.refresh(listeningInsightsProvider.future),
-        child: CustomScrollView(
-          physics: const MotionScrollPhysics(),
+        builder: (physics) => CustomScrollView(
+          physics: physics,
           slivers: [
             // SliverFillRemaining keeps the view scrollable — and so
             // refreshable — while a single message fills it, which is what

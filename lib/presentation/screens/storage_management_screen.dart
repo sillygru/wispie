@@ -13,6 +13,7 @@ import '../../services/storage_analysis_service.dart';
 import '../components/ambient_scaffold.dart';
 import '../components/app_feedback.dart';
 import '../components/app_icon.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_surface.dart';
 import '../tokens/app_icons.dart';
@@ -53,8 +54,8 @@ class _StorageManagementScreenState
     _load();
   }
 
-  Future<void> _load({bool refresh = false}) async {
-    if (mounted) setState(() => _isBusy = true);
+  Future<void> _load({bool refresh = false, bool inPlace = false}) async {
+    if (mounted && !inPlace) setState(() => _isBusy = true);
     try {
       final service = StorageAnalysisService.instance;
       final usage = await service.getCacheUsage(refresh: refresh);
@@ -70,11 +71,11 @@ class _StorageManagementScreenState
         _backupsSize = backups;
         _searchIndexSize = search;
         _backupsPath = backupsDir.path;
-        _isBusy = false;
+        if (!inPlace) _isBusy = false;
       });
     } catch (error) {
       debugPrint('Error loading storage sizes: $error');
-      if (mounted) setState(() => _isBusy = false);
+      if (mounted && !inPlace) setState(() => _isBusy = false);
     }
   }
 
@@ -400,11 +401,12 @@ class _StorageManagementScreenState
       appBar: AppTopBar(title: l10n.storageManageTitle),
       body: _isBusy
           ? const Center(child: CircularProgressIndicator())
-          : WideContentCenter(
-              maxWidth: WideLayout.maxNarrowWidth,
-              child: RefreshIndicator(
-                onRefresh: () => _load(refresh: true),
+          : AppPullToRefresh(
+              onRefresh: () => _load(refresh: true, inPlace: true),
+              builder: (physics) => WideContentCenter(
+                maxWidth: WideLayout.maxNarrowWidth,
                 child: ListView(
+                  physics: physics,
                   padding: const EdgeInsets.all(AppTokens.s4),
                   children: [
                     _buildRepairCard(),

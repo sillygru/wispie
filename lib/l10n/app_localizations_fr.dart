@@ -4724,6 +4724,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get actionRefresh => 'Actualiser';
 
   @override
+  String get refreshPull => 'Pull to refresh';
+
+  @override
+  String get refreshRelease => 'Release to refresh';
+
+  @override
+  String get refreshLoading => 'Refreshing…';
+
+  @override
   String get sessionDetailTitle => 'Détails de la session';
 
   @override

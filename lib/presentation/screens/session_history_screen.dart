@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/play_session.dart';
 import '../../providers/session_history_provider.dart';
 import 'session_detail_screen.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_surface.dart';
 import '../tokens/app_tokens.dart';
 import '../components/app_icon.dart';
@@ -23,7 +24,8 @@ class SessionHistoryScreen extends ConsumerWidget {
         title: Text(context.l10n.sessionHistoryTitle),
         actions: [
           IconButton(
-            onPressed: () => ref.refresh(sessionHistoryProvider),
+            onPressed: () => ref.invalidate(sessionHistoryProvider),
+            tooltip: context.l10n.actionRefresh,
             icon: const AppIcon(AppIcons.refresh),
           ),
         ],
@@ -33,7 +35,8 @@ class SessionHistoryScreen extends ConsumerWidget {
           if (sessions.isEmpty) {
             return _buildEmptyState(context, colorScheme);
           }
-          return _buildSessionList(context, sessions, colorScheme);
+          return _buildSessionList(context, sessions, colorScheme,
+              onRefresh: () => ref.refresh(sessionHistoryProvider.future));
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(
@@ -98,15 +101,15 @@ class SessionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSessionList(BuildContext context, List<PlaySession> sessions,
-      ColorScheme colorScheme) {
+  Widget _buildSessionList(
+      BuildContext context, List<PlaySession> sessions, ColorScheme colorScheme,
+      {required RefreshCallback onRefresh}) {
     final grouped = sessions.groupByDate();
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        // Trigger refresh
-      },
-      child: ListView.builder(
+    return AppPullToRefresh(
+      onRefresh: onRefresh,
+      builder: (physics) => ListView.builder(
+        physics: physics,
         padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: grouped.length,
         itemBuilder: (context, groupIndex) {

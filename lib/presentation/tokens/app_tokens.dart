@@ -338,4 +338,11 @@ class AppTokens {
   /// and the bottom dock.
   // Clears the floating dock: nav pill plus the expanded mini player above it.
   static const double scrollBottomInset = 180;
+
+  static const double refreshTrigger = s6 * 5;
+  static const double refreshRestExtent = s6 * 3 + s5;
+  static const double refreshWaveWidth = s6 * 2;
+  static const double refreshTrackAlpha = 0.22;
+  static const double refreshOverpull = 0.4;
+  static const double refreshOvershoot = 0.2;
 }

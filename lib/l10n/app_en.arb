@@ -5935,6 +5935,9 @@
   "@actionRefresh": {
     "description": "Generic refresh tooltip"
   },
+  "refreshPull": "Pull to refresh",
+  "refreshRelease": "Release to refresh",
+  "refreshLoading": "Refreshing…",
   "sessionDetailTitle": "Session Details",
   "@sessionDetailTitle": {
     "description": "App bar title on a past listening session"

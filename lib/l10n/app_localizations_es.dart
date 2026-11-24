@@ -4724,6 +4724,15 @@ class AppLocalizationsEs extends AppLocalizations {
   String get actionRefresh => 'Actualizar';
 
   @override
+  String get refreshPull => 'Pull to refresh';
+
+  @override
+  String get refreshRelease => 'Release to refresh';
+
+  @override
+  String get refreshLoading => 'Refreshing…';
+
+  @override
   String get sessionDetailTitle => 'Detalles de la sesión';
 
   @override

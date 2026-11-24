@@ -7756,6 +7756,24 @@ abstract class AppLocalizations {
   /// **'Refresh'**
   String get actionRefresh;
 
+  /// No description provided for @refreshPull.
+  ///
+  /// In en, this message translates to:
+  /// **'Pull to refresh'**
+  String get refreshPull;
+
+  /// No description provided for @refreshRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Release to refresh'**
+  String get refreshRelease;
+
+  /// No description provided for @refreshLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Refreshing…'**
+  String get refreshLoading;
+
   /// App bar title on a past listening session
   ///
   /// In en, this message translates to:

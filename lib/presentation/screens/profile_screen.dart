@@ -10,12 +10,12 @@ import '../../models/shuffle_config.dart';
 import '../components/app_dialog.dart';
 import '../components/app_feedback.dart';
 import '../components/app_list_row.dart';
+import '../components/app_pull_to_refresh.dart';
 import '../components/app_screen_header.dart';
 import '../components/app_settings.dart';
 import '../components/scroll_chrome.dart';
 import '../components/app_section_header.dart';
 import '../components/app_surface.dart';
-import '../motion/motion.dart';
 import '../routes/app_page_route.dart';
 import '../tokens/app_tokens.dart';
 import 'settings_screen.dart';
@@ -85,16 +85,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: RefreshIndicator(
+      body: AppPullToRefresh(
         onRefresh: () =>
             ref.read(userDataProvider.notifier).refresh(force: true),
-        child: NotificationListener<ScrollNotification>(
+        builder: (physics) => NotificationListener<ScrollNotification>(
           onNotification: handleScrollNotification,
           child: WideContentCenter(
             maxWidth: WideLayout.maxNarrowWidth,
             child: CustomScrollView(
               controller: widget.scrollController,
-              physics: const MotionScrollPhysics(),
+              physics: physics,
               slivers: [
                 AppSliverHeader(
                     title: l10n.profileTitle, isScrolled: isScrolled),
@@ -311,16 +311,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: RefreshIndicator(
+      body: AppPullToRefresh(
         onRefresh: () =>
             ref.read(userDataProvider.notifier).refresh(force: true),
-        child: NotificationListener<ScrollNotification>(
+        builder: (physics) => NotificationListener<ScrollNotification>(
           onNotification: handleScrollNotification,
           child: WideContentCenter(
             maxWidth: WideLayout.maxContentWidth,
             child: CustomScrollView(
               controller: widget.scrollController,
-              physics: const MotionScrollPhysics(),
+              physics: physics,
               slivers: [
                 AppSliverHeader(
                     title: l10n.profileTitle, isScrolled: isScrolled),
