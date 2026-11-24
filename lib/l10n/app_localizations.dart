@@ -1143,13 +1143,13 @@ abstract class AppLocalizations {
   /// **'Select Artwork for {name}'**
   String songListSelectArtwork(Object name);
 
-  /// Artwork picker option to revert to the generated cover grid
+  /// Artwork picker option to use the default collection artwork
   ///
   /// In en, this message translates to:
-  /// **'Use Song Cover Grid'**
-  String get songListUseSongCoverGrid;
+  /// **'Use Default Artwork'**
+  String get songListUseDefaultArtwork;
 
-  /// Subtitle of the revert-to-grid artwork option
+  /// Subtitle of the default artwork option
   ///
   /// In en, this message translates to:
   /// **'Remove custom artwork'**
@@ -1179,11 +1179,11 @@ abstract class AppLocalizations {
   /// **'No online artwork options found'**
   String get songListNoOnlineArtwork;
 
-  /// Snackbar after reverting to the song cover grid
+  /// Snackbar after restoring the default collection artwork
   ///
   /// In en, this message translates to:
-  /// **'Reset to song cover grid'**
-  String get songListResetArtwork;
+  /// **'Default artwork restored'**
+  String get songListDefaultArtworkRestored;
 
   /// Snackbar after artwork is updated for an artist or album
   ///

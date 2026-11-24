@@ -640,7 +640,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get songListUseSongCoverGrid => 'Use Song Cover Grid';
+  String get songListUseDefaultArtwork => 'Use Default Artwork';
 
   @override
   String get songListRemoveCustomArtwork => 'Remove custom artwork';
@@ -660,7 +660,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get songListNoOnlineArtwork => 'No online artwork options found';
 
   @override
-  String get songListResetArtwork => 'Reset to song cover grid';
+  String get songListDefaultArtworkRestored => 'Default artwork restored';
 
   @override
   String songListArtworkUpdated(Object name) {

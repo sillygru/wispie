@@ -649,7 +649,7 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get songListUseSongCoverGrid => 'Song-Coverraster verwenden';
+  String get songListUseDefaultArtwork => 'Standardcover verwenden';
 
   @override
   String get songListRemoveCustomArtwork =>
@@ -671,7 +671,8 @@ class AppLocalizationsDe extends AppLocalizations {
   String get songListNoOnlineArtwork => 'Keine Online-Coverbilder gefunden';
 
   @override
-  String get songListResetArtwork => 'Auf Song-Coverraster zurücksetzen';
+  String get songListDefaultArtworkRestored =>
+      'Standardcover wiederhergestellt';
 
   @override
   String songListArtworkUpdated(Object name) {

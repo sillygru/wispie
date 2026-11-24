@@ -647,7 +647,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get songListUseSongCoverGrid => 'Usar grade de capas de música';
+  String get songListUseDefaultArtwork => 'Usar capa padrão';
 
   @override
   String get songListRemoveCustomArtwork => 'Remover capa personalizada';
@@ -669,8 +669,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Nenhuma opção de capa online encontrada';
 
   @override
-  String get songListResetArtwork =>
-      'Restaurar para a grade de capas de música';
+  String get songListDefaultArtworkRestored => 'Capa padrão restaurada';
 
   @override
   String songListArtworkUpdated(Object name) {
@@ -6622,7 +6621,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
   }
 
   @override
-  String get songListUseSongCoverGrid => 'Usar grelha de capas de música';
+  String get songListUseDefaultArtwork => 'Usar capa predefinida';
 
   @override
   String get songListRemoveCustomArtwork => 'Remover capa personalizada';
@@ -6644,8 +6643,7 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
       'Nenhuma opção de capa online encontrada';
 
   @override
-  String get songListResetArtwork =>
-      'Restaurar para a grelha de capas de música';
+  String get songListDefaultArtworkRestored => 'Capa predefinida restaurada';
 
   @override
   String songListArtworkUpdated(Object name) {

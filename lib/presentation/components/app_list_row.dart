@@ -11,7 +11,7 @@ import 'app_icon.dart';
 ///
 /// Active state is an accent wash plus an accent title. Never an outline.
 class AppListRow extends StatelessWidget {
-  /// Artwork, icon or collage. Sized by the caller; [AppRowIcon] and
+  /// Artwork or icon. Sized by the caller; [AppRowIcon] and
   /// [AppRowArt] cover the common cases.
   final Widget? leading;
 

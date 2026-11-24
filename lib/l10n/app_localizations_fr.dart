@@ -655,8 +655,7 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get songListUseSongCoverGrid =>
-      'Utiliser la mosaïque des pochettes des morceaux';
+  String get songListUseDefaultArtwork => 'Utiliser la pochette par défaut';
 
   @override
   String get songListRemoveCustomArtwork =>
@@ -678,8 +677,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get songListNoOnlineArtwork => 'Aucune pochette disponible en ligne';
 
   @override
-  String get songListResetArtwork =>
-      'Rétablir la mosaïque des pochettes des morceaux';
+  String get songListDefaultArtworkRestored => 'Pochette par défaut rétablie';
 
   @override
   String songListArtworkUpdated(Object name) {

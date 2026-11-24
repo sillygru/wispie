@@ -653,8 +653,7 @@ class AppLocalizationsEs extends AppLocalizations {
   }
 
   @override
-  String get songListUseSongCoverGrid =>
-      'Usar mosaico de carátulas de canciones';
+  String get songListUseDefaultArtwork => 'Usar ilustración predeterminada';
 
   @override
   String get songListRemoveCustomArtwork => 'Quitar ilustración personalizada';
@@ -676,8 +675,8 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se encontraron ilustraciones en línea';
 
   @override
-  String get songListResetArtwork =>
-      'Restablecer al mosaico de carátulas de canciones';
+  String get songListDefaultArtworkRestored =>
+      'Se restauró la ilustración predeterminada';
 
   @override
   String songListArtworkUpdated(Object name) {

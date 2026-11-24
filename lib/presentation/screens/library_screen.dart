@@ -566,8 +566,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             );
           }
 
-          // The playlist used to be marked by a 2px accent ring; the
-          // collage now stands on its own.
           return RemovableEntry(
             key: ValueKey<String>('playlist_${playlist.id}'),
             id: playlist.id,
@@ -1149,8 +1147,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
-  /// Artists and Albums are the same grid of cover collages with different
-  /// labels underneath, so they are the same code.
+  /// Shared card grid for artists and albums.
   Widget _buildCollectionGrid({
     required List<String> keys,
     required List<Song> Function(String) songsFor,

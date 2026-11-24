@@ -776,7 +776,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: Text(l10n.songListUseSongCoverGrid),
+                title: Text(l10n.songListUseDefaultArtwork),
                 subtitle: Text(l10n.songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
@@ -827,7 +827,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
 
     if (selected == 'reset') {
       await ref.read(artistAlbumArtProvider.notifier).removeArtistArt(artist);
-      if (context.mounted) appSnack(context, l10n.songListResetArtwork);
+      if (context.mounted) {
+        appSnack(context, l10n.songListDefaultArtworkRestored);
+      }
       return;
     }
 
@@ -924,7 +926,7 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
             children: [
               ListTile(
                 leading: const AppIcon(AppIcons.musicNote),
-                title: Text(l10n.songListUseSongCoverGrid),
+                title: Text(l10n.songListUseDefaultArtwork),
                 subtitle: Text(l10n.songListRemoveCustomArtwork),
                 onTap: () => Navigator.pop(dialogContext, 'reset'),
               ),
@@ -977,7 +979,9 @@ class _SongListScreenState extends ConsumerState<SongListScreen> {
       await ref
           .read(artistAlbumArtProvider.notifier)
           .removeAlbumArt(compositeKey);
-      if (context.mounted) appSnack(context, l10n.songListResetArtwork);
+      if (context.mounted) {
+        appSnack(context, l10n.songListDefaultArtworkRestored);
+      }
       return;
     }
 

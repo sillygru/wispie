@@ -42,6 +42,7 @@ import '../widgets/duration_display.dart';
 import '../widgets/song_options_menu.dart';
 import '../widgets/sort_menu.dart';
 import '../components/transport_controls.dart';
+import 'collection_artwork_picker.dart';
 import 'cover_blur_background.dart';
 import 'cover_gradient_palette.dart';
 import '../../providers/browse_palette_provider.dart';
@@ -777,6 +778,24 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     }
   }
 
+  Future<String?> _pickCollectionArtwork(
+    BuildContext context,
+    String name,
+    List<Song> songs,
+    Future<List<Map<String, String>>> Function() searchOnline,
+  ) {
+    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
+    final songCovers = OnlineMetadataService.songCoverCandidates(songs);
+    return showDialog<String>(
+      context: context,
+      builder: (_) => CollectionArtworkPicker(
+        name: name,
+        songCovers: songCovers,
+        searchOnline: streamed ? null : searchOnline,
+      ),
+    );
+  }
+
   Future<void> _showChangeArtistArtworkDialog(
     BuildContext context,
     WidgetRef ref,
@@ -784,88 +803,18 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
     List<Song> songs,
   ) async {
     final onlineService = OnlineMetadataService.instance;
-    // Streamed tracks already carry catalogue art; a name search finds nothing
-    // and only delays the picker.
-    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
-    final List<Map<String, String>> results = <Map<String, String>>[
-      ...OnlineMetadataService.songCoverCandidates(songs),
-    ];
-    if (!streamed) {
-      appSnack(context,
-          AppLocalizations.of(context).songListSearchingArtwork(artist));
-      try {
-        results.addAll(await onlineService.searchArtistImageCandidates(artist));
-      } catch (_) {}
-    }
-    if (!context.mounted) return;
-    final String? selected = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(AppLocalizations.of(context).songListSelectArtwork(artist)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const AppIcon(AppIcons.musicNote),
-                title:
-                    Text(AppLocalizations.of(context).songListUseSongCoverGrid),
-                subtitle: Text(
-                    AppLocalizations.of(context).songListRemoveCustomArtwork),
-                onTap: () => Navigator.pop(dialogContext, 'reset'),
-              ),
-              ListTile(
-                leading: const AppIcon(AppIcons.image),
-                title: Text(
-                    AppLocalizations.of(context).songListChooseCustomImage),
-                subtitle:
-                    Text(AppLocalizations.of(context).songListSelectFromDevice),
-                onTap: () => Navigator.pop(dialogContext, 'custom'),
-              ),
-              if (results.isNotEmpty) const Divider(),
-              ...results.map(
-                (res) => ListTile(
-                  leading: AlbumArtImage(
-                    url: res['url'] ?? '',
-                    width: 48,
-                    height: 48,
-                    errorWidget: const AppIcon(AppIcons.image),
-                  ),
-                  title: Text(AppLocalizations.of(context)
-                      .songListArtworkFrom(res['source'] ?? '')),
-                  subtitle: (res['url'] ?? '').startsWith('http')
-                      ? Text(
-                          res['url']!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      : null,
-                  onTap: () => Navigator.pop(dialogContext, res['url']),
-                ),
-              ),
-              if (results.isEmpty)
-                Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                      AppLocalizations.of(context).songListNoOnlineArtwork),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, null),
-            child: Text(AppLocalizations.of(context).actionCancel),
-          ),
-        ],
-      ),
+    final String? selected = await _pickCollectionArtwork(
+      context,
+      artist,
+      songs,
+      () => onlineService.searchArtistImageCandidates(artist),
     );
-    if (selected == null) return;
+    if (selected == null || !context.mounted) return;
     if (selected == 'reset') {
       await ref.read(artistAlbumArtProvider.notifier).removeArtistArt(artist);
       if (context.mounted) {
-        appSnack(context, AppLocalizations.of(context).songListResetArtwork);
+        appSnack(context,
+            AppLocalizations.of(context).songListDefaultArtworkRestored);
       }
       return;
     }
@@ -934,91 +883,20 @@ class _GradientDetailScreenState extends ConsumerState<GradientDetailScreen> {
   ) async {
     final onlineService = OnlineMetadataService.instance;
     final String compositeKey = artist.isNotEmpty ? '$artist|$album' : album;
-    final streamed = songs.isNotEmpty && songs.every((song) => song.isRemote);
-    final List<Map<String, String>> results = <Map<String, String>>[
-      ...OnlineMetadataService.songCoverCandidates(songs),
-    ];
-    if (!streamed) {
-      appSnack(context,
-          AppLocalizations.of(context).songListSearchingArtwork(album));
-      try {
-        results.addAll(
-          await onlineService.searchAlbumImageCandidates(album,
-              artistName: artist),
-        );
-      } catch (_) {}
-    }
-    if (!context.mounted) return;
-    final String? selected = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(AppLocalizations.of(context).songListSelectArtwork(album)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const AppIcon(AppIcons.musicNote),
-                title:
-                    Text(AppLocalizations.of(context).songListUseSongCoverGrid),
-                subtitle: Text(
-                    AppLocalizations.of(context).songListRemoveCustomArtwork),
-                onTap: () => Navigator.pop(dialogContext, 'reset'),
-              ),
-              ListTile(
-                leading: const AppIcon(AppIcons.image),
-                title: Text(
-                    AppLocalizations.of(context).songListChooseCustomImage),
-                subtitle:
-                    Text(AppLocalizations.of(context).songListSelectFromDevice),
-                onTap: () => Navigator.pop(dialogContext, 'custom'),
-              ),
-              if (results.isNotEmpty) const Divider(),
-              ...results.map(
-                (res) => ListTile(
-                  leading: AlbumArtImage(
-                    url: res['url'] ?? '',
-                    width: 48,
-                    height: 48,
-                    errorWidget: const AppIcon(AppIcons.image),
-                  ),
-                  title: Text(AppLocalizations.of(context)
-                      .songListArtworkFrom(res['source'] ?? '')),
-                  subtitle: (res['url'] ?? '').startsWith('http')
-                      ? Text(
-                          res['url']!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        )
-                      : null,
-                  onTap: () => Navigator.pop(dialogContext, res['url']),
-                ),
-              ),
-              if (results.isEmpty)
-                Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                      AppLocalizations.of(context).songListNoOnlineArtwork),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, null),
-            child: Text(AppLocalizations.of(context).actionCancel),
-          ),
-        ],
-      ),
+    final String? selected = await _pickCollectionArtwork(
+      context,
+      album,
+      songs,
+      () => onlineService.searchAlbumImageCandidates(album, artistName: artist),
     );
-    if (selected == null) return;
+    if (selected == null || !context.mounted) return;
     if (selected == 'reset') {
       await ref
           .read(artistAlbumArtProvider.notifier)
           .removeAlbumArt(compositeKey);
       if (context.mounted) {
-        appSnack(context, AppLocalizations.of(context).songListResetArtwork);
+        appSnack(context,
+            AppLocalizations.of(context).songListDefaultArtworkRestored);
       }
       return;
     }

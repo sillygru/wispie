@@ -800,13 +800,13 @@
       "name": {}
     }
   },
-  "songListUseSongCoverGrid": "Use Song Cover Grid",
-  "@songListUseSongCoverGrid": {
-    "description": "Artwork picker option to revert to the generated cover grid"
+  "songListUseDefaultArtwork": "Use Default Artwork",
+  "@songListUseDefaultArtwork": {
+    "description": "Artwork picker option to use the default collection artwork"
   },
   "songListRemoveCustomArtwork": "Remove custom artwork",
   "@songListRemoveCustomArtwork": {
-    "description": "Subtitle of the revert-to-grid artwork option"
+    "description": "Subtitle of the default artwork option"
   },
   "songListChooseCustomImage": "Choose Custom Image",
   "@songListChooseCustomImage": {
@@ -827,9 +827,9 @@
   "@songListNoOnlineArtwork": {
     "description": "Artwork picker message when no online results exist"
   },
-  "songListResetArtwork": "Reset to song cover grid",
-  "@songListResetArtwork": {
-    "description": "Snackbar after reverting to the song cover grid"
+  "songListDefaultArtworkRestored": "Default artwork restored",
+  "@songListDefaultArtworkRestored": {
+    "description": "Snackbar after restoring the default collection artwork"
   },
   "songListArtworkUpdated": "Updated artwork for {name}",
   "@songListArtworkUpdated": {

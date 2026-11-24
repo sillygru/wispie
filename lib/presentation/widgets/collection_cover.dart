@@ -1,18 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../models/song.dart';
+import '../../services/library_logic.dart';
 import '../components/app_icon.dart';
 import '../tokens/app_icons.dart';
 import '../tokens/app_tokens.dart';
 import 'album_art_image.dart';
 
-/// Cover for a collection of songs — an album, an artist, a playlist or a
-/// folder — used whenever no custom artwork has been set for that collection.
-///
-/// Artwork comes from the collection's own songs, most-played first, and one to
-/// four covers are composed into a mosaic. This works for streamed tracks too:
-/// their covers are URLs, not files, so a YouTube playlist still gets a cover
-/// instead of a placeholder glyph.
+/// The fallback cover for an album, artist, playlist or folder.
 class CollectionCover extends StatefulWidget {
   final List<Song> songs;
   final double size;
@@ -23,7 +18,7 @@ class CollectionCover extends StatefulWidget {
   const CollectionCover({
     super.key,
     required this.songs,
-    this.size = 48,
+    this.size = AppTokens.artSize,
     this.playCounts,
   });
 
@@ -32,12 +27,12 @@ class CollectionCover extends StatefulWidget {
 }
 
 class _CollectionCoverState extends State<CollectionCover> {
-  late List<String> _covers;
+  String? _cover;
 
   @override
   void initState() {
     super.initState();
-    _covers = _selectCovers();
+    _selectCover();
   }
 
   @override
@@ -45,52 +40,22 @@ class _CollectionCoverState extends State<CollectionCover> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.songs, widget.songs) ||
         !identical(oldWidget.playCounts, widget.playCounts)) {
-      _covers = _selectCovers();
+      _selectCover();
     }
   }
 
-  /// Up to four distinct covers, ordered by how much the collection is played.
-  List<String> _selectCovers() {
-    final bestPlaysByCover = <String, int>{};
-    var streamed = widget.songs.isNotEmpty;
-    for (final song in widget.songs) {
-      if (!song.isRemote) streamed = false;
-      final cover = song.coverUrl?.trim() ?? '';
-      if (cover.isEmpty) continue;
-      final plays = widget.playCounts?[song.filename] ?? song.playCount;
-      final current = bestPlaysByCover[cover];
-      if (current == null || plays > current) {
-        bestPlaysByCover[cover] = plays;
-      }
-    }
-
-    final rankedCovers = <({String cover, int plays})>[];
-    for (final entry in bestPlaysByCover.entries) {
-      final candidate = (cover: entry.key, plays: entry.value);
-      var index = 0;
-      while (index < rankedCovers.length &&
-          rankedCovers[index].plays >= candidate.plays) {
-        index++;
-      }
-      if (index < 4) {
-        rankedCovers.insert(index, candidate);
-        if (rankedCovers.length > 4) rankedCovers.removeLast();
-      }
-    }
-
-    // A streamed collection shows the first song's art: a mosaic of unrelated
-    // catalogue stills reads as a collage of different albums.
-    return rankedCovers
-        .take(streamed ? 1 : 4)
-        .map((candidate) => candidate.cover)
-        .toList();
+  void _selectCover() {
+    _cover = LibraryLogic.pickCoverSong(
+      widget.songs,
+      playCounts: widget.playCounts,
+    )?.coverUrl?.trim();
   }
 
   @override
   Widget build(BuildContext context) {
-    final covers = _covers;
+    final cover = _cover;
 
-    if (covers.isEmpty) {
+    if (cover == null || cover.isEmpty) {
       return Container(
         width: widget.size,
         height: widget.size,
@@ -106,66 +71,19 @@ class _CollectionCoverState extends State<CollectionCover> {
       );
     }
 
-    // Callers inside an unbounded box (grid cells) pass an infinite size, and
-    // memCacheWidth cannot be derived from one.
-    final int? memCache =
-        widget.size.isFinite ? (widget.size * 2).toInt() : null;
+    final size = widget.size.isFinite ? widget.size : null;
+    final memCache = size == null ? null : (size * 2).toInt();
 
     return ClipRRect(
       borderRadius: AppTokens.brSm,
-      child: SizedBox(
-        width: widget.size.isFinite ? widget.size : null,
-        height: widget.size.isFinite ? widget.size : null,
-        child: covers.length == 1
-            ? _tile(covers[0], memCache)
-            : _mosaic(covers, memCache),
+      child: AlbumArtImage(
+        url: cover,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        memCacheWidth: memCache,
+        memCacheHeight: memCache,
       ),
-    );
-  }
-
-  Widget _tile(String url, int? memCache) {
-    return AlbumArtImage(
-      url: url,
-      width: widget.size.isFinite ? widget.size : null,
-      height: widget.size.isFinite ? widget.size : null,
-      fit: BoxFit.cover,
-      memCacheWidth: memCache,
-      memCacheHeight: memCache,
-    );
-  }
-
-  Widget _mosaic(List<String> covers, int? memCache) {
-    Widget cell(String url) => Expanded(
-          child: AlbumArtImage(
-            url: url,
-            fit: BoxFit.cover,
-            memCacheWidth: memCache,
-          ),
-        );
-
-    if (covers.length == 2) {
-      return Column(
-        children: [cell(covers[0]), cell(covers[1])],
-      );
-    }
-
-    final quad = [...covers];
-    while (quad.length < 4) {
-      quad.add(covers[quad.length % covers.length]);
-    }
-    return Column(
-      children: [
-        Expanded(
-          child: Row(
-            children: [cell(quad[0]), cell(quad[1])],
-          ),
-        ),
-        Expanded(
-          child: Row(
-            children: [cell(quad[2]), cell(quad[3])],
-          ),
-        ),
-      ],
     );
   }
 }

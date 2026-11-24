@@ -89,6 +89,7 @@ class AppDialog extends StatelessWidget {
   final Widget? content;
 
   final List<Widget> actions;
+  final bool scrollable;
 
   const AppDialog({
     super.key,
@@ -96,12 +97,14 @@ class AppDialog extends StatelessWidget {
     this.message,
     this.content,
     this.actions = const [],
+    this.scrollable = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(title),
+      scrollable: scrollable,
       content: content ??
           (message == null
               ? null
