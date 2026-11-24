@@ -337,6 +337,7 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         "query" => query(payload)?,
         "execute" => execute(payload)?,
         "batch" => batch(payload)?,
+        "user_list" => user_list(payload)?,
         other => return Err(format!("unknown db action {other}")),
     };
     emitter.emit(Emit::Json(reply));
@@ -1143,6 +1144,149 @@ fn batch(payload: &Value) -> Result<Value, String> {
         }
         Ok(json!({ "results": results, "error": failure }))
     })
+}
+
+/// The three filename lists the app treats as user intent.
+///
+/// They share one statement shape and one stamp/tombstone rule, so a client
+/// should not be able to invent a fourth variant. `now` is the wall clock and
+/// `hlc` the hybrid logical clock: both come from the caller because only the
+/// app knows its clock position.
+fn user_list(payload: &Value) -> Result<Value, String> {
+    let kind = payload
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "user_list needs a kind".to_string())?;
+    let (table, time_column, entity) = match kind {
+        "favorite" => ("favorite", "added_at", "favorites"),
+        "suggestless" => ("suggestless", "added_at", "suggestless"),
+        "hidden" => ("hidden", "hidden_at", "hidden"),
+        other => return Err(format!("unknown user list {other}")),
+    };
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+
+    with(payload, |connection| {
+        if op == "list" {
+            let mut statement = connection
+                .prepare(&format!("SELECT filename FROM {table}"))
+                .map_err(|error| format!("list {table}: {error}"))?;
+            let items = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("list {table}: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("list {table}: {error}"))?;
+            return Ok(json!({ "items": items }));
+        }
+
+        let hlc = payload
+            .get("hlc")
+            .and_then(Value::as_i64)
+            .unwrap_or_default();
+        let now = payload
+            .get("now")
+            .and_then(Value::as_f64)
+            .unwrap_or_default();
+        match op {
+            "add" => {
+                let filename = required_filename(payload, table, op)?;
+                in_transaction(connection, |connection| {
+                    connection
+                        .execute(
+                            &format!(
+                                "INSERT OR REPLACE INTO {table} (filename, {time_column}, hlc, dirty) VALUES (?1, ?2, ?3, 1)"
+                            ),
+                            rusqlite::params![filename, now, hlc],
+                        )
+                        .map_err(|error| format!("add {table}: {error}"))?;
+                    connection
+                        .execute(
+                            "DELETE FROM sync_tombstone WHERE entity = ?1 AND key = ?2",
+                            rusqlite::params![entity, filename],
+                        )
+                        .map_err(|error| format!("clear tombstone: {error}"))?;
+                    Ok(json!({ "changed": 1 }))
+                })
+            }
+            "remove" => {
+                let filename = required_filename(payload, table, op)?;
+                in_transaction(connection, |connection| {
+                    let changed = connection
+                        .execute(
+                            &format!("DELETE FROM {table} WHERE filename = ?1"),
+                            rusqlite::params![filename],
+                        )
+                        .map_err(|error| format!("remove {table}: {error}"))?;
+                    connection
+                        .execute(
+                            "INSERT OR REPLACE INTO sync_tombstone (entity, key, hlc, dirty) VALUES (?1, ?2, ?3, 1)",
+                            rusqlite::params![entity, filename, hlc],
+                        )
+                        .map_err(|error| format!("tombstone {table}: {error}"))?;
+                    Ok(json!({ "changed": changed }))
+                })
+            }
+            "set" => {
+                let filenames: Vec<String> = payload
+                    .get("filenames")
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                in_transaction(connection, |connection| {
+                    connection
+                        .execute(&format!("DELETE FROM {table}"), [])
+                        .map_err(|error| format!("clear {table}: {error}"))?;
+                    let mut statement = connection
+                        .prepare(&format!(
+                            "INSERT OR REPLACE INTO {table} (filename, {time_column}, hlc, dirty) VALUES (?1, ?2, ?3, 1)"
+                        ))
+                        .map_err(|error| format!("set {table}: {error}"))?;
+                    for filename in &filenames {
+                        statement
+                            .execute(rusqlite::params![filename, now, hlc])
+                            .map_err(|error| format!("set {table}: {error}"))?;
+                    }
+                    Ok(json!({ "changed": filenames.len() }))
+                })
+            }
+            other => Err(format!("unknown user_list op {other}")),
+        }
+    })
+}
+
+fn required_filename<'a>(payload: &'a Value, table: &str, op: &str) -> Result<&'a str, String> {
+    payload
+        .get("filename")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("user_list {op} on {table} needs a filename"))
+}
+
+/// Runs `body` between BEGIN and COMMIT, rolling back on failure so a partial
+/// list mutation cannot leave a table and its tombstones disagreeing.
+fn in_transaction<T>(
+    connection: &mut Connection,
+    body: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    connection
+        .execute_batch("BEGIN")
+        .map_err(|error| format!("begin: {error}"))?;
+    match body(connection) {
+        Ok(value) => {
+            connection
+                .execute_batch("COMMIT")
+                .map_err(|error| format!("commit: {error}"))?;
+            Ok(value)
+        }
+        Err(error) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(error)
+        }
+    }
 }
 
 fn arguments(payload: &Value) -> Result<Vec<SqlValue>, String> {

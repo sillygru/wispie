@@ -178,6 +178,18 @@ class Database implements DatabaseExecutor {
     });
   }
 
+  /// Runs one core command against this connection, in the same statement
+  /// queue, so a command that owns a compound write cannot interleave with a
+  /// statement from another caller.
+  Future<Map<String, Object?>> coreCommand(
+    String action,
+    Map<String, Object?> fields,
+  ) {
+    _checkTransactionScope();
+    return _serialized(
+        () async => await _dispatch({'action': action, ...fields}));
+  }
+
   Future<void> close() async {
     _checkTransactionScope();
     await _serialized(() async {

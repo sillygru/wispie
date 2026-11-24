@@ -106,6 +106,24 @@ class DatabaseService {
     return row;
   }
 
+  /// Runs one user-list operation in the core, which owns the statements and
+  /// the stamp/tombstone rules.
+  Future<Map<String, Object?>> _userList(
+    String kind,
+    String op, {
+    String? filename,
+    List<String>? filenames,
+  }) {
+    final fields = <String, Object?>{'kind': kind, 'op': op};
+    if (filename != null) fields['filename'] = filename;
+    if (filenames != null) fields['filenames'] = filenames;
+    if (op != 'list') {
+      fields['hlc'] = _hlcNow();
+      fields['now'] = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    }
+    return _userDataDatabase!.coreCommand('user_list', fields);
+  }
+
   /// Writes one explicit-removal tombstone. A re-add later gets a newer hlc and
   /// wins, so tombstoning is safe for toggles.
   Future<void> _tombstone(
@@ -1030,8 +1048,10 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
     try {
-      final results = await _userDataDatabase!.query('favorite');
-      return results.map((r) => r['filename'] as String).toList();
+      final reply = await _userList('favorite', 'list');
+      return [
+        for (final item in reply['items'] as List? ?? const []) item as String,
+      ];
     } catch (e) {
       debugPrint('Error getting favorites: $e');
       return [];
@@ -1041,27 +1061,13 @@ class DatabaseService {
   Future<void> addFavorite(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.insert(
-        'favorite',
-        _stamp({
-          'filename': filename,
-          'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombFavorites, filename);
-    });
+    await _userList('favorite', 'add', filename: filename);
   }
 
   Future<void> removeFavorite(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn
-          .delete('favorite', where: 'filename = ?', whereArgs: [filename]);
-      await _tombstone(txn, tombFavorites, filename);
-    });
+    await _userList('favorite', 'remove', filename: filename);
   }
 
   /// Replaces all local favorites with the given list
@@ -1069,26 +1075,17 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('favorite');
-      for (final filename in favorites) {
-        await txn.insert(
-            'favorite',
-            _stamp({
-              'filename': filename,
-              'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            }),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
+    await _userList('favorite', 'set', filenames: favorites);
   }
 
   Future<List<String>> getSuggestLess() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
     try {
-      final results = await _userDataDatabase!.query('suggestless');
-      return results.map((r) => r['filename'] as String).toList();
+      final reply = await _userList('suggestless', 'list');
+      return [
+        for (final item in reply['items'] as List? ?? const []) item as String,
+      ];
     } catch (e) {
       debugPrint('Error getting suggestless: $e');
       return [];
@@ -1098,35 +1095,23 @@ class DatabaseService {
   Future<void> addSuggestLess(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.insert(
-        'suggestless',
-        _stamp({
-          'filename': filename,
-          'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombSuggestless, filename);
-    });
+    await _userList('suggestless', 'add', filename: filename);
   }
 
   Future<void> removeSuggestLess(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn
-          .delete('suggestless', where: 'filename = ?', whereArgs: [filename]);
-      await _tombstone(txn, tombSuggestless, filename);
-    });
+    await _userList('suggestless', 'remove', filename: filename);
   }
 
   Future<List<String>> getHidden() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return [];
     try {
-      final results = await _userDataDatabase!.query('hidden');
-      return results.map((r) => r['filename'] as String).toList();
+      final reply = await _userList('hidden', 'list');
+      return [
+        for (final item in reply['items'] as List? ?? const []) item as String,
+      ];
     } catch (e) {
       debugPrint('Error getting hidden: $e');
       return [];
@@ -1136,44 +1121,20 @@ class DatabaseService {
   Future<void> addHidden(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.insert(
-        'hidden',
-        _stamp({
-          'filename': filename,
-          'hidden_at': DateTime.now().millisecondsSinceEpoch / 1000.0
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombHidden, filename);
-    });
+    await _userList('hidden', 'add', filename: filename);
   }
 
   Future<void> removeHidden(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('hidden', where: 'filename = ?', whereArgs: [filename]);
-      await _tombstone(txn, tombHidden, filename);
-    });
+    await _userList('hidden', 'remove', filename: filename);
   }
 
   Future<void> setHidden(List<String> hidden) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('hidden');
-      for (final filename in hidden) {
-        await txn.insert(
-            'hidden',
-            _stamp({
-              'filename': filename,
-              'hidden_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            }),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
+    await _userList('hidden', 'set', filenames: hidden);
   }
 
   // ==========================================================================
@@ -1791,18 +1752,7 @@ class DatabaseService {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
 
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.delete('suggestless');
-      for (final filename in suggestLess) {
-        await txn.insert(
-            'suggestless',
-            _stamp({
-              'filename': filename,
-              'added_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-            }),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-    });
+    await _userList('suggestless', 'set', filenames: suggestLess);
   }
 
   // ==========================================================================
