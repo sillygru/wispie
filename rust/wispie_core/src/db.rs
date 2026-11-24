@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Map, Value};
 
 use crate::emitter::{Emit, Emitter};
@@ -338,6 +338,9 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         "execute" => execute(payload)?,
         "batch" => batch(payload)?,
         "user_list" => user_list(payload)?,
+        "cover_miss" => cover_miss(payload)?,
+        "lyrics_offset" => lyrics_offset(payload)?,
+        "art" => art(payload)?,
         other => return Err(format!("unknown db action {other}")),
     };
     emitter.emit(Emit::Json(reply));
@@ -1287,6 +1290,291 @@ fn in_transaction<T>(
             Err(error)
         }
     }
+}
+
+/// Negative cover cache: filenames already probed and found to have no art.
+fn cover_miss(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+    with(payload, |connection| match op {
+        "list" => {
+            let mut statement = connection
+                .prepare("SELECT filename, file_mtime FROM cover_miss")
+                .map_err(|error| format!("cover_miss list: {error}"))?;
+            let items = statement
+                .query_map([], |row| {
+                    Ok(json!({
+                        "filename": row.get::<_, String>(0)?,
+                        "file_mtime": row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
+                    }))
+                })
+                .map_err(|error| format!("cover_miss list: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("cover_miss list: {error}"))?;
+            Ok(json!({ "items": items }))
+        }
+        "mark" => {
+            let filename = required_filename(payload, "cover_miss", op)?;
+            let mtime = payload
+                .get("file_mtime")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO cover_miss (filename, file_mtime, checked_at) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![filename, mtime, now],
+                )
+                .map_err(|error| format!("cover_miss mark: {error}"))?;
+            Ok(json!({ "changed": 1 }))
+        }
+        "clear" => {
+            let filename = required_filename(payload, "cover_miss", op)?;
+            let changed = connection
+                .execute(
+                    "DELETE FROM cover_miss WHERE filename = ?1",
+                    rusqlite::params![filename],
+                )
+                .map_err(|error| format!("cover_miss clear: {error}"))?;
+            Ok(json!({ "changed": changed }))
+        }
+        "clear_all" => {
+            let changed = connection
+                .execute("DELETE FROM cover_miss", [])
+                .map_err(|error| format!("cover_miss clear_all: {error}"))?;
+            Ok(json!({ "changed": changed }))
+        }
+        "clear_many" => {
+            let filenames = string_list(payload, "filenames");
+            in_transaction(connection, |connection| {
+                let mut changed = 0usize;
+                for chunk in filenames.chunks(500) {
+                    let placeholders = vec!["?"; chunk.len()].join(", ");
+                    let sql = format!("DELETE FROM cover_miss WHERE filename IN ({placeholders})");
+                    let mut statement = connection
+                        .prepare(&sql)
+                        .map_err(|error| format!("cover_miss clear_many: {error}"))?;
+                    changed += statement
+                        .execute(rusqlite::params_from_iter(chunk.iter()))
+                        .map_err(|error| format!("cover_miss clear_many: {error}"))?;
+                }
+                Ok(json!({ "changed": changed }))
+            })
+        }
+        other => Err(format!("unknown cover_miss op {other}")),
+    })
+}
+
+/// The per-song lyrics timing offset, quantized on the way in by the same rule
+/// the tuning UI uses.
+fn lyrics_offset(payload: &Value) -> Result<Value, String> {
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("get");
+    with(payload, |connection| match op {
+        "get" => {
+            let filename = required_filename(payload, "lyrics_timing_offset", op)?;
+            let offset: Option<f64> = connection
+                .query_row(
+                    "SELECT offset_seconds FROM lyrics_timing_offset WHERE filename = ?1 LIMIT 1",
+                    rusqlite::params![filename],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| format!("lyrics_offset get: {error}"))?;
+            Ok(json!({ "offset": offset.unwrap_or(0.0) }))
+        }
+        "set" => {
+            let filename = required_filename(payload, "lyrics_timing_offset", op)?;
+            let seconds = payload
+                .get("seconds")
+                .and_then(Value::as_f64)
+                .ok_or_else(|| "lyrics_offset set needs seconds".to_string())?;
+            let quantized = crate::lyrics_view::quantize_offset(
+                seconds,
+                crate::lyrics_view::TIMING_QUANTIZE_STEP,
+            );
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO lyrics_timing_offset (filename, offset_seconds) VALUES (?1, ?2)",
+                    rusqlite::params![filename, quantized],
+                )
+                .map_err(|error| format!("lyrics_offset set: {error}"))?;
+            Ok(json!({ "offset": quantized }))
+        }
+        other => Err(format!("unknown lyrics_offset op {other}")),
+    })
+}
+
+/// Artist and album artwork rows. Keys are normalized on read (trim + lower) so
+/// every client looks them up the same way, and deletes match the same rule the
+/// UI uses while tombstoning the stored spelling.
+fn art(payload: &Value) -> Result<Value, String> {
+    let kind = payload
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "art needs a kind".to_string())?;
+    let (table, key_column) = match kind {
+        "artist" => ("artist_art", "artist_name"),
+        "album" => ("album_art", "album_key"),
+        other => return Err(format!("unknown art kind {other}")),
+    };
+    let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
+
+    with(payload, |connection| match op {
+        "list" => {
+            let mut statement = connection
+                .prepare(&format!("SELECT {key_column}, local_path FROM {table}"))
+                .map_err(|error| format!("art list: {error}"))?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                })
+                .map_err(|error| format!("art list: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("art list: {error}"))?;
+            let mut items = Vec::new();
+            for (key, path) in rows {
+                let Some(path) = path else { continue };
+                if key.trim().is_empty() || path.is_empty() {
+                    continue;
+                }
+                items.push(json!({ "key": key.trim().to_lowercase(), "path": path }));
+            }
+            Ok(json!({ "items": items }))
+        }
+        "save" => {
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            let now = payload
+                .get("now")
+                .and_then(Value::as_f64)
+                .unwrap_or_default();
+            let image_url = payload.get("image_url").and_then(Value::as_str);
+            let source = payload.get("source").and_then(Value::as_str);
+            let local_path = payload
+                .get("local_path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "art save needs a local_path".to_string())?;
+            if kind == "artist" {
+                let name = payload
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "art save needs a name".to_string())?;
+                let name = name.trim();
+                in_transaction(connection, |connection| {
+                    connection
+                        .execute(
+                            "INSERT OR REPLACE INTO artist_art (artist_name, image_url, local_path, source, updated_at, hlc, dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
+                            rusqlite::params![name, image_url, local_path, source, now, hlc],
+                        )
+                        .map_err(|error| format!("art save: {error}"))?;
+                    connection
+                        .execute(
+                            "DELETE FROM sync_tombstone WHERE entity = ?1 AND key = ?2",
+                            rusqlite::params!["artist_art", name],
+                        )
+                        .map_err(|error| format!("clear tombstone: {error}"))?;
+                    Ok(json!({ "changed": 1 }))
+                })
+            } else {
+                let key = payload
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "art save needs a key".to_string())?;
+                let album_name = payload.get("album_name").and_then(Value::as_str);
+                let artist_name = payload.get("artist_name").and_then(Value::as_str);
+                in_transaction(connection, |connection| {
+                    connection
+                        .execute(
+                            "INSERT OR REPLACE INTO album_art (album_key, album_name, artist_name, image_url, local_path, source, updated_at, hlc, dirty) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)",
+                            rusqlite::params![key, album_name, artist_name, image_url, local_path, source, now, hlc],
+                        )
+                        .map_err(|error| format!("art save: {error}"))?;
+                    connection
+                        .execute(
+                            "DELETE FROM sync_tombstone WHERE entity = ?1 AND key = ?2",
+                            rusqlite::params!["album_art", key],
+                        )
+                        .map_err(|error| format!("clear tombstone: {error}"))?;
+                    Ok(json!({ "changed": 1 }))
+                })
+            }
+        }
+        "delete" => {
+            let hlc = payload
+                .get("hlc")
+                .and_then(Value::as_i64)
+                .unwrap_or_default();
+            let raw = match kind {
+                "artist" => payload.get("name").and_then(Value::as_str),
+                _ => payload.get("key").and_then(Value::as_str),
+            }
+            .ok_or_else(|| "art delete needs a name or key".to_string())?;
+            let needle = if kind == "artist" {
+                raw.trim().to_lowercase()
+            } else {
+                raw.to_lowercase()
+            };
+            let match_sql = if kind == "artist" {
+                "LOWER(TRIM(artist_name)) = ?1"
+            } else {
+                "LOWER(album_key) = ?1"
+            };
+            in_transaction(connection, |connection| {
+                let stored: Vec<String> = {
+                    let mut statement = connection
+                        .prepare(&format!(
+                            "SELECT {key_column} FROM {table} WHERE {match_sql}"
+                        ))
+                        .map_err(|error| format!("art delete: {error}"))?;
+                    let rows = statement
+                        .query_map(rusqlite::params![needle], |row| row.get::<_, String>(0))
+                        .map_err(|error| format!("art delete: {error}"))?;
+                    rows.collect::<Result<Vec<_>, _>>()
+                        .map_err(|error| format!("art delete: {error}"))?
+                };
+                let changed = connection
+                    .execute(
+                        &format!("DELETE FROM {table} WHERE {match_sql}"),
+                        rusqlite::params![needle],
+                    )
+                    .map_err(|error| format!("art delete: {error}"))?;
+                for key in &stored {
+                    connection
+                        .execute(
+                            "INSERT OR REPLACE INTO sync_tombstone (entity, key, hlc, dirty) VALUES (?1, ?2, ?3, 1)",
+                            rusqlite::params![table, key, hlc],
+                        )
+                        .map_err(|error| format!("tombstone {table}: {error}"))?;
+                }
+                Ok(json!({ "changed": changed }))
+            })
+        }
+        "clear" => {
+            let changed = connection
+                .execute(&format!("DELETE FROM {table}"), [])
+                .map_err(|error| format!("art clear: {error}"))?;
+            Ok(json!({ "changed": changed }))
+        }
+        other => Err(format!("unknown art op {other}")),
+    })
+}
+
+fn string_list(payload: &Value, field: &str) -> Vec<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn arguments(payload: &Value) -> Result<Vec<SqlValue>, String> {

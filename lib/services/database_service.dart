@@ -12,7 +12,6 @@ import '../domain/models/listening_insights.dart';
 import '../domain/models/youtube_playlist_link.dart';
 import '../domain/services/fun_stats_export.dart';
 import '../domain/services/insights_builder.dart';
-import '../domain/services/lyrics_timing_offset.dart';
 import '../models/playlist.dart';
 import '../models/queue_snapshot.dart';
 import '../models/song.dart';
@@ -123,6 +122,44 @@ class DatabaseService {
     }
     return _userDataDatabase!.coreCommand('user_list', fields);
   }
+
+  Future<Map<String, Object?>> _coverMiss(
+    String op, {
+    String? filename,
+    double? fileMtime,
+    List<String>? filenames,
+  }) {
+    final fields = <String, Object?>{'op': op};
+    if (filename != null) fields['filename'] = filename;
+    if (fileMtime != null) fields['file_mtime'] = fileMtime;
+    if (filenames != null) fields['filenames'] = filenames;
+    if (op == 'mark') {
+      fields['now'] = DateTime.now().millisecondsSinceEpoch / 1000.0;
+    }
+    return _userDataDatabase!.coreCommand('cover_miss', fields);
+  }
+
+  Future<Map<String, Object?>> _lyricsOffset(
+    String op, {
+    String? filename,
+    double? seconds,
+  }) {
+    final fields = <String, Object?>{'op': op};
+    if (filename != null) fields['filename'] = filename;
+    if (seconds != null) fields['seconds'] = seconds;
+    return _userDataDatabase!.coreCommand('lyrics_offset', fields);
+  }
+
+  Future<Map<String, Object?>> _art(
+    String kind,
+    String op, {
+    Map<String, Object?> fields = const {},
+  }) =>
+      _userDataDatabase!.coreCommand('art', {
+        'kind': kind,
+        'op': op,
+        ...fields,
+      });
 
   /// Writes one explicit-removal tombstone. A re-add later gets a newer hlc and
   /// wins, so tombstoning is safe for toggles.
@@ -748,33 +785,24 @@ class DatabaseService {
   Future<Map<String, double>> getCoverMisses() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return {};
-    final results = await _userDataDatabase!
-        .query('cover_miss', columns: ['filename', 'file_mtime']);
+    final reply = await _coverMiss('list');
     return {
-      for (final row in results)
-        row['filename'] as String: (row['file_mtime'] as num?)?.toDouble() ?? 0,
+      for (final row in reply['items'] as List? ?? const [])
+        (row as Map)['filename'] as String:
+            ((row['file_mtime'] as num?)?.toDouble() ?? 0),
     };
   }
 
   Future<void> markCoverMiss(String filename, double fileMtime) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.insert(
-      'cover_miss',
-      {
-        'filename': filename,
-        'file_mtime': fileMtime,
-        'checked_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await _coverMiss('mark', filename: filename, fileMtime: fileMtime);
   }
 
   Future<void> clearCoverMiss(String filename) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!
-        .delete('cover_miss', where: 'filename = ?', whereArgs: [filename]);
+    await _coverMiss('clear', filename: filename);
   }
 
   /// Forgets the negative cache entirely.
@@ -785,7 +813,7 @@ class DatabaseService {
   Future<void> clearAllCoverMisses() async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
-    await _userDataDatabase!.delete('cover_miss');
+    await _coverMiss('clear_all');
   }
 
   Future<void> clearCoverMisses(Iterable<String> filenames) async {
@@ -793,13 +821,7 @@ class DatabaseService {
     if (_userDataDatabase == null) return;
     final list = filenames.toList();
     if (list.isEmpty) return;
-    await _userDataDatabase!.transaction((txn) async {
-      for (final chunk in _chunked(list)) {
-        final placeholders = List.filled(chunk.length, '?').join(', ');
-        await txn.delete('cover_miss',
-            where: 'filename IN ($placeholders)', whereArgs: chunk);
-      }
-    });
+    await _coverMiss('clear_many', filenames: list);
   }
 
   /// Drops every cached cover path without touching the files.
@@ -949,27 +971,14 @@ class DatabaseService {
     await _ensureInitialized();
     final db = _userDataDatabase;
     if (db == null) return 0;
-    final rows = await db.query('lyrics_timing_offset',
-        columns: ['offset_seconds'],
-        where: 'filename = ?',
-        whereArgs: [filename],
-        limit: 1);
-    return rows.isEmpty ? 0 : (rows.first['offset_seconds'] as num).toDouble();
+    final reply = await _lyricsOffset('get', filename: filename);
+    return (reply['offset'] as num).toDouble();
   }
 
   Future<void> setLyricsTimingOffset(String filename, double offset) async {
     await _ensureInitialized();
-    await _userDataDatabase?.insert(
-      'lyrics_timing_offset',
-      {
-        'filename': filename,
-        // Quantized on the way in so a session of 10ms nudges cannot walk the
-        // stored value sideways through float addition, and so every consumer
-        // reads back exactly the number the tuning UI displayed.
-        'offset_seconds': quantizeLyricsTimingOffset(offset),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    if (_userDataDatabase == null) return;
+    await _lyricsOffset('set', filename: filename, seconds: offset);
   }
 
   Future<List<Song>> getSongs(
@@ -3318,20 +3327,11 @@ class DatabaseService {
 
   Future<Map<String, String>> getArtistArtMap() async {
     await _ensureInitialized();
-    final List<Map<String, dynamic>> maps =
-        await _userDataDatabase!.query('artist_art');
-    final result = <String, String>{};
-    for (final map in maps) {
-      final name = map['artist_name'] as String?;
-      final path = map['local_path'] as String?;
-      if (name != null &&
-          path != null &&
-          name.trim().isNotEmpty &&
-          path.isNotEmpty) {
-        result[name.trim().toLowerCase()] = path;
-      }
-    }
-    return result;
+    final reply = await _art('artist', 'list');
+    return {
+      for (final row in reply['items'] as List? ?? const [])
+        (row as Map)['key'] as String: row['path'] as String,
+    };
   }
 
   Future<void> saveArtistArt({
@@ -3341,62 +3341,36 @@ class DatabaseService {
     String? source,
   }) async {
     await _ensureInitialized();
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.insert(
-        'artist_art',
-        _stamp({
-          'artist_name': artistName.trim(),
-          'image_url': imageUrl,
-          'local_path': localPath,
-          'source': source,
-          'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombArtistArt, artistName.trim());
+    await _art('artist', 'save', fields: {
+      'name': artistName,
+      'local_path': localPath,
+      'image_url': imageUrl,
+      'source': source,
+      'hlc': _hlcNow(),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
     });
   }
 
   Future<void> deleteArtistArt(String artistName) async {
     await _ensureInitialized();
-    await _userDataDatabase!.transaction((txn) async {
-      final rows = await txn.query('artist_art',
-          columns: ['artist_name'],
-          where: 'LOWER(TRIM(artist_name)) = ?',
-          whereArgs: [artistName.trim().toLowerCase()]);
-      await txn.delete(
-        'artist_art',
-        where: 'LOWER(TRIM(artist_name)) = ?',
-        whereArgs: [artistName.trim().toLowerCase()],
-      );
-      for (final r in rows) {
-        final name = r['artist_name'] as String?;
-        if (name != null) await _tombstone(txn, tombArtistArt, name);
-      }
+    await _art('artist', 'delete', fields: {
+      'name': artistName,
+      'hlc': _hlcNow(),
     });
   }
 
   Future<void> clearArtistArt() async {
     await _ensureInitialized();
-    await _userDataDatabase!.delete('artist_art');
+    await _art('artist', 'clear');
   }
 
   Future<Map<String, String>> getAlbumArtMap() async {
     await _ensureInitialized();
-    final List<Map<String, dynamic>> maps =
-        await _userDataDatabase!.query('album_art');
-    final result = <String, String>{};
-    for (final map in maps) {
-      final key = map['album_key'] as String?;
-      final path = map['local_path'] as String?;
-      if (key != null &&
-          path != null &&
-          key.trim().isNotEmpty &&
-          path.isNotEmpty) {
-        result[key.trim().toLowerCase()] = path;
-      }
-    }
-    return result;
+    final reply = await _art('album', 'list');
+    return {
+      for (final row in reply['items'] as List? ?? const [])
+        (row as Map)['key'] as String: row['path'] as String,
+    };
   }
 
   Future<void> saveAlbumArt({
@@ -3408,46 +3382,29 @@ class DatabaseService {
     String? source,
   }) async {
     await _ensureInitialized();
-    await _userDataDatabase!.transaction((txn) async {
-      await txn.insert(
-        'album_art',
-        _stamp({
-          'album_key': albumKey,
-          'album_name': albumName,
-          'artist_name': artistName,
-          'image_url': imageUrl,
-          'local_path': localPath,
-          'source': source,
-          'updated_at': DateTime.now().millisecondsSinceEpoch / 1000.0,
-        }),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-      await _clearTombstone(txn, tombAlbumArt, albumKey);
+    await _art('album', 'save', fields: {
+      'key': albumKey,
+      'album_name': albumName,
+      'artist_name': artistName,
+      'local_path': localPath,
+      'image_url': imageUrl,
+      'source': source,
+      'hlc': _hlcNow(),
+      'now': DateTime.now().millisecondsSinceEpoch / 1000.0,
     });
   }
 
   Future<void> deleteAlbumArt(String albumKey) async {
     await _ensureInitialized();
-    await _userDataDatabase!.transaction((txn) async {
-      final rows = await txn.query('album_art',
-          columns: ['album_key'],
-          where: 'LOWER(album_key) = ?',
-          whereArgs: [albumKey.toLowerCase()]);
-      await txn.delete(
-        'album_art',
-        where: 'LOWER(album_key) = ?',
-        whereArgs: [albumKey.toLowerCase()],
-      );
-      for (final r in rows) {
-        final key = r['album_key'] as String?;
-        if (key != null) await _tombstone(txn, tombAlbumArt, key);
-      }
+    await _art('album', 'delete', fields: {
+      'key': albumKey,
+      'hlc': _hlcNow(),
     });
   }
 
   Future<void> clearAlbumArt() async {
     await _ensureInitialized();
-    await _userDataDatabase!.delete('album_art');
+    await _art('album', 'clear');
   }
 
   // ==========================================================================
