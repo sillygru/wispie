@@ -366,25 +366,22 @@ class AccountService {
     final rk = RecoveryKey.decode(recoveryKey);
     final api = SyncApiClient(baseUrl: serverUrl);
     final begin = await api.recoverBegin(user, SyncCrypto.recoveryAuth(rk));
-    final accountKey = SyncCrypto.unwrapAccountKeyByRecovery(
-      SyncCrypto.recoveryKek(rk),
-      begin.wrappedByRk,
-      begin.accountId,
+    final recovered = await SyncCrypto.recoverAccount(
+      recoveryKey: rk,
+      wrappedByRecovery: begin.wrappedByRk,
+      accountId: begin.accountId,
+      password: newPassword,
+      kdf: kdf,
     );
-    final salt = SyncCrypto.randomBytes(16);
-    final master = await SyncCrypto.deriveMasterKey(newPassword, salt, kdf);
     await api.recoverFinish(
       recoverToken: begin.recoverToken,
-      salt: salt,
+      salt: recovered.salt,
       kdf: kdf.toJson(),
-      authKey: SyncCrypto.authKey(master),
-      wrappedByPw: SyncCrypto.wrapAccountKey(
-        SyncCrypto.kek(master),
-        accountKey,
-        begin.accountId,
-      ),
+      authKey: recovered.authKey,
+      wrappedByPw: recovered.wrapped,
     );
-    await _establish(serverUrl, user, begin.accountId, accountKey, api);
+    await _establish(
+        serverUrl, user, begin.accountId, recovered.accountKey, api);
   }
 
   Future<Uint8List> _currentAuthKey(String password) async {

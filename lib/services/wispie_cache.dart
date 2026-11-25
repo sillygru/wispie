@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/rust/native_command.dart';
 import '../domain/models/cover_key.dart';
 import '../domain/services/cache_migration.dart';
 import '../domain/services/cache_policy.dart';
@@ -432,25 +433,42 @@ class WispieCache {
     await init();
     if (before.filename == after.filename) return null;
 
-    final oldKey = CoverKey(before.filename);
-    final newKey = CoverKey(after.filename);
-
-    await _move(await waveformFile(before.filename),
-        await waveformFile(after.filename));
-    await _move(
-        await beatMapFile(before.filename), await beatMapFile(after.filename));
-    await _move(
-        await blurredFile(before.filename), await blurredFile(after.filename));
-    await _move(
-        await songLyricsFile(before.url), await songLyricsFile(after.url));
-    await _move(await richLyricsFile(before.filename),
-        await richLyricsFile(after.filename));
-    await _move(await remoteLyricsFile(before.filename),
-        await remoteLyricsFile(after.filename));
-    await _move(await lyricsChoiceFile(before.filename),
-        await lyricsChoiceFile(after.filename));
-
-    final coverUrl = await _moveFfmpegCover(oldKey.hash, newKey.hash, before);
+    final paths = [
+      (await waveformFile(before.filename), await waveformFile(after.filename)),
+      (await beatMapFile(before.filename), await beatMapFile(after.filename)),
+      (await blurredFile(before.filename), await blurredFile(after.filename)),
+      (await songLyricsFile(before.url), await songLyricsFile(after.url)),
+      (
+        await richLyricsFile(before.filename),
+        await richLyricsFile(after.filename)
+      ),
+      (
+        await remoteLyricsFile(before.filename),
+        await remoteLyricsFile(after.filename)
+      ),
+      (
+        await lyricsChoiceFile(before.filename),
+        await lyricsChoiceFile(after.filename)
+      ),
+    ];
+    final root = (await directory(CacheBucket.covers)).path;
+    final oldCover =
+        p.join(root, '${CoverKey(before.filename).hash}_ffmpeg.jpg');
+    final newCover =
+        p.join(root, '${CoverKey(after.filename).hash}_ffmpeg.jpg');
+    final result = await compute(
+      (request) => runCoreCommand('file_workflow', request),
+      {
+        'op': 'transfer_rename_caches',
+        'path': root,
+        'entries': [
+          for (final (from, to) in paths) {'from': from.path, 'to': to.path}
+        ],
+        if (before.coverUrl == oldCover)
+          'cover': {'from': oldCover, 'to': newCover},
+      },
+    );
+    final coverUrl = result['cover'] as String?;
     if (coverUrl != null) {
       for (final key in {
         notificationCoverKey(before.coverUrl ?? ''),
@@ -461,22 +479,6 @@ class WispieCache {
     }
     _usage = null;
     return coverUrl;
-  }
-
-  /// Only the FFmpeg fallback cover is named after the song.
-  Future<String?> _moveFfmpegCover(
-    String oldHash,
-    String newHash,
-    Song before,
-  ) async {
-    final coversDir = await directory(CacheBucket.covers);
-    final oldCover = File(p.join(coversDir.path, '${oldHash}_ffmpeg.jpg'));
-    if (before.coverUrl != oldCover.path || !await oldCover.exists()) {
-      return null;
-    }
-    final newCover = File(p.join(coversDir.path, '${newHash}_ffmpeg.jpg'));
-    await _move(oldCover, newCover);
-    return newCover.path;
   }
 
   Future<void> _move(File from, File to) async {

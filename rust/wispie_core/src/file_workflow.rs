@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{ErrorKind, Write};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -42,6 +42,8 @@ pub struct PendingRename {
     pub from: String,
     pub to: String,
     pub url: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sidecars: Vec<PathBuf>,
 }
 
 pub fn read_rename_journal(directory: &Path) -> Result<Vec<PendingRename>, String> {
@@ -64,6 +66,71 @@ pub fn write_rename_journal(directory: &Path, entries: &[PendingRename]) -> Resu
     })
 }
 
+pub fn move_song(source: &Path, new_filename: &str) -> Result<(), String> {
+    let mut components = Path::new(new_filename).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err("song rename needs a single filename".into());
+    }
+    fs::rename(source, source.with_file_name(new_filename)).map_err(|error| error.to_string())
+}
+
+pub fn recoverable_renames(directory: &Path) -> Result<Vec<PendingRename>, String> {
+    Ok(read_rename_journal(directory)?
+        .into_iter()
+        .filter(|entry| Path::new(&entry.url).is_file())
+        .collect())
+}
+
+pub fn rename_sidecars(target: &Path, sources: &[PathBuf]) {
+    let Some(stem) = target.file_stem() else {
+        return;
+    };
+    for source in sources {
+        let Some(extension) = source.extension() else {
+            continue;
+        };
+        let mut new_name = stem.to_os_string();
+        new_name.push(".");
+        new_name.push(extension);
+        let destination = source.with_file_name(new_name);
+        if source.is_file() && !destination.exists() {
+            let _ = fs::rename(source, destination);
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CacheMove {
+    pub from: PathBuf,
+    pub to: PathBuf,
+}
+
+pub fn transfer_rename_caches(entries: &[CacheMove], cover: Option<&CacheMove>) -> Option<PathBuf> {
+    for entry in entries {
+        let _ = move_cached_file(entry);
+    }
+    cover
+        .filter(|entry| move_cached_file(entry).is_ok() && entry.to.is_file())
+        .map(|entry| entry.to.clone())
+}
+
+fn move_cached_file(entry: &CacheMove) -> std::io::Result<()> {
+    if entry.from == entry.to || !entry.from.is_file() {
+        return Ok(());
+    }
+    if entry.to.is_file() {
+        return fs::remove_file(&entry.from);
+    }
+    if let Some(parent) = entry
+        .to
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    fs::rename(&entry.from, &entry.to)
+}
+
 pub(crate) fn run(payload: &Value, bytes: Option<&[u8]>) -> Result<Value, String> {
     let path = |key| {
         payload
@@ -77,6 +144,27 @@ pub(crate) fn run(payload: &Value, bytes: Option<&[u8]>) -> Result<Value, String
         Some("replace") => {
             atomic_replace(path("source")?, target)?;
             Ok(json!({}))
+        }
+        Some("move_song") => {
+            let filename = payload["new_filename"]
+                .as_str()
+                .ok_or("missing new filename")?;
+            move_song(target, filename)?;
+            Ok(json!({}))
+        }
+        Some("recoverable_renames") => Ok(json!({ "entries": recoverable_renames(target)? })),
+        Some("rename_sidecars") => {
+            let sidecars = serde_json::from_value::<Vec<PathBuf>>(payload["sidecars"].clone())
+                .map_err(|error| error.to_string())?;
+            rename_sidecars(target, &sidecars);
+            Ok(json!({}))
+        }
+        Some("transfer_rename_caches") => {
+            let entries = serde_json::from_value::<Vec<CacheMove>>(payload["entries"].clone())
+                .map_err(|error| error.to_string())?;
+            let cover = serde_json::from_value::<Option<CacheMove>>(payload["cover"].clone())
+                .map_err(|error| error.to_string())?;
+            Ok(json!({ "cover": transfer_rename_caches(&entries, cover.as_ref()) }))
         }
         Some("edit_tags") => {
             let edit = serde_json::from_value::<TagEdit>(payload.clone())

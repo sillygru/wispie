@@ -79,6 +79,25 @@ class Database {
         () async => await _dispatch({'action': action, ...fields}));
   }
 
+  Future<void> renameLibraryFiles(
+    Database stats,
+    Map<String, Object?> fields,
+  ) async {
+    if (identical(this, stats)) {
+      throw ArgumentError('Expected separate library and stats databases');
+    }
+    await _serialized(() => stats._serialized(() {
+          if (!stats.isOpen) {
+            throw StateError('database ${stats.path} is closed');
+          }
+          return _dispatch({
+            'action': 'rename_library_files',
+            'stats_id': stats._id,
+            ...fields,
+          });
+        }));
+  }
+
   Future<void> close() async {
     await _serialized(() async {
       if (_closed) return;

@@ -1304,14 +1304,18 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
     if (journal.isEmpty) return 0;
 
     final fileManager = ref.read(fileManagerServiceProvider);
-    final confirmed = <({String from, String to})>[];
-    for (final entry in journal.entries) {
-      if (await fileManager.fileExistsAt(entry.url)) {
-        confirmed.add((from: entry.from, to: entry.to));
-      } else {
-        debugPrint('Bulk rename recovery skipped ${entry.from}: '
-            '${entry.url} was never written');
-      }
+    final ready = Platform.isAndroid
+        ? [
+            for (final entry in journal.entries)
+              if (await fileManager.fileExistsAt(entry.url)) entry,
+          ]
+        : await journal.recoverableRenames();
+    final confirmed = [
+      for (final entry in ready) (from: entry.from, to: entry.to),
+    ];
+
+    for (final entry in ready) {
+      await journal.moveSidecars(entry);
     }
 
     if (confirmed.isNotEmpty) {
@@ -1439,6 +1443,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         from: before.filename,
         to: entry.newFilename,
         url: entry.newUrl,
+        sidecars: sidecars[before.filename]?.paths ?? const [],
       );
 
       try {
@@ -1458,12 +1463,18 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         // cover file all have to follow, and the video/FFmpeg cover is the only
         // cover that is named after the song — so this is also the one case
         // where the song has to be told where its cover went.
-        final movedCover = await cache.transferSongCaches(
-          before: before,
-          after: updated,
-        );
-        if (movedCover != null) {
-          updated = updated.copyWith(coverUrl: movedCover);
+        try {
+          await journal.moveSidecars(intent);
+          final movedCover = await cache.transferSongCaches(
+            before: before,
+            after: updated,
+          );
+          if (movedCover != null) {
+            updated = updated.copyWith(coverUrl: movedCover);
+          }
+        } catch (error) {
+          debugPrint(
+              'Could not transfer caches for ${before.filename}: $error');
         }
 
         applied.add((previousFilename: before.filename, updated: updated));
@@ -1478,22 +1489,6 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       if (applied.length - committed >= _commitSlice) await commit();
 
       onProgress?.call('Renaming files', i + 1, actionable.length);
-    }
-
-    // Every sidecar follows its song, keeping its own extension, so a renamed
-    // file does not keep pointing at lyrics under the old name.
-    final sidecarRenames = <String, String>{};
-    for (final item in applied) {
-      final link = sidecars[item.previousFilename];
-      if (link == null) continue;
-      final stem = p.basenameWithoutExtension(item.updated.filename);
-      for (final path in link.paths) {
-        sidecarRenames[path] = stem;
-      }
-    }
-    if (sidecarRenames.isNotEmpty) {
-      final moved = await LyricsFilesService.instance.rename(sidecarRenames);
-      debugPrint('Moved ${moved.length} lyrics files with their songs');
     }
 
     if (applied.isEmpty) {

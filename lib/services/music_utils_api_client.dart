@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../data/rust/native_command.dart';
 import 'shared_http_client.dart';
 
 /// Outcome of a music-utils request, so callers can tell a definitive
@@ -63,14 +64,18 @@ class MusicUtilsApiClient {
 
       final response =
           await SharedHttpClient.awaitResponse(request, timeout: _timeout);
-      if (response.statusCode == HttpStatus.notFound) {
+      final result = runCoreCommand('provider_requests', {
+        'op': 'music_utils_status',
+        'status': response.statusCode,
+      });
+      if (result['status'] != 'ok') {
         await response.drain<void>();
-        return const MusicUtilsResult(null, MusicUtilsStatus.notFound);
-      }
-      if (response.statusCode < HttpStatus.ok ||
-          response.statusCode >= HttpStatus.multipleChoices) {
-        await response.drain<void>();
-        return const MusicUtilsResult(null, MusicUtilsStatus.transient);
+        return MusicUtilsResult(
+          null,
+          result['status'] == 'not_found'
+              ? MusicUtilsStatus.notFound
+              : MusicUtilsStatus.transient,
+        );
       }
 
       final body = await SharedHttpClient.readUtf8(

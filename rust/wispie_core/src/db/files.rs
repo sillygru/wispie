@@ -67,7 +67,7 @@ fn remove(path: &str) -> Result<(), String> {
     }
 }
 
-fn copy(source: &Path, destination: &Path) -> Result<bool, String> {
+pub(crate) fn copy(source: &Path, destination: &Path) -> Result<bool, String> {
     if !source.try_exists().map_err(|error| error.to_string())? {
         return Ok(false);
     }

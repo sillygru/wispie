@@ -137,6 +137,38 @@ class SyncCrypto {
             'accountId': accountId,
           })['accountKeyHex'] as String));
 
+  static Future<
+      ({
+        Uint8List accountKey,
+        Uint8List salt,
+        Uint8List authKey,
+        Uint8List wrapped,
+      })> recoverAccount({
+    required Uint8List recoveryKey,
+    required Uint8List wrappedByRecovery,
+    required String accountId,
+    required String password,
+    required KdfParams kdf,
+  }) =>
+      Isolate.run(() => _crypto(() {
+            final result = NativeAccel.sync({
+              'action': 'recover_account',
+              'recoveryKeyHex': _hexOf(recoveryKey),
+              'sealedHex': _hexOf(wrappedByRecovery),
+              'accountId': accountId,
+              'password': password,
+              'mKiB': kdf.memoryKib,
+              'iterations': kdf.iterations,
+              'parallelism': kdf.parallelism,
+            });
+            return (
+              accountKey: _hex(result['accountKeyHex'] as String),
+              salt: _hex(result['saltHex'] as String),
+              authKey: _hex(result['authKeyHex'] as String),
+              wrapped: _hex(result['wrappedHex'] as String),
+            );
+          }));
+
   /// Hashcash: SHA-256(challenge || nonce) must have [bits] leading zero bits.
   /// Nonce is base64url(u64be counter), matching the server's `pow.Solve`.
   static Future<String> solvePow(String challenge, int bits) => Isolate.run(

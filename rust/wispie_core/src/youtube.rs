@@ -91,6 +91,26 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| "youtube needs an action".to_string())?;
     let reply = match action {
+        "profile_order" => {
+            let count = payload["count"].as_u64().unwrap_or_default() as usize;
+            let preferred = payload["preferred"].as_u64().unwrap_or_default() as usize;
+            json!({"order": crate::youtube_stream::profile_order(count, preferred).collect::<Vec<_>>()})
+        }
+        "stream_expiry" => {
+            let expires = crate::youtube_stream::expires_ms(
+                payload["now_ms"].as_i64().unwrap_or_default(),
+                payload["signed_seconds"].as_i64(),
+            );
+            json!({"expires_ms": expires})
+        }
+        "playability" => json!({"kind": crate::youtube_stream::playability(
+            payload["reason"].as_str(), payload["state"].as_str()
+        )}),
+        "retry_version" => json!({"retry": crate::youtube_stream::retry_catalogue_version(
+            payload["status"].as_u64().unwrap_or_default() as u16,
+            payload["attempt"].as_u64().unwrap_or_default() as usize,
+            payload["pinned"].as_bool().unwrap_or_default(),
+        )}),
         "select_stream" => {
             let formats: Vec<crate::youtube_stream::StreamFormat> =
                 serde_json::from_value(payload["formats"].clone())

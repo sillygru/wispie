@@ -1048,9 +1048,11 @@ class DatabaseService {
       'hlc': _hlcNow(),
       'now': DateTime.now().millisecondsSinceEpoch / 1000,
     };
-    await data.coreCommand('song_files', {'op': 'rename_data', ...fields});
-    SongIdentityRepository.generation++;
-    await stats.coreCommand('song_files', {'op': 'rename_stats', ...fields});
+    try {
+      await data.renameLibraryFiles(stats, fields);
+    } finally {
+      SongIdentityRepository.generation++;
+    }
   }
 
   /// Preserves play history when a library file is deleted.
@@ -1657,8 +1659,8 @@ class DatabaseService {
   }
 
   Future<void> importWithOptions({
-    required String statsDbPath,
-    required String dataDbPath,
+    required String? statsDbPath,
+    required String? dataDbPath,
     required ImportOptions options,
   }) async {
     await _ensureInitialized();
@@ -1669,13 +1671,15 @@ class DatabaseService {
       'hlc': _hlcNow(),
       'now': DateTime.now().millisecondsSinceEpoch / 1000,
     };
-    if (options.categories.contains(ImportDataCategory.playHistory)) {
+    if (statsDbPath != null &&
+        options.categories.contains(ImportDataCategory.playHistory)) {
       await _statsDatabase!.coreCommand('restore', {
         ...fields,
         'kind': 'stats',
         'path': statsDbPath,
       });
     }
+    if (dataDbPath == null) return;
     await _userDataDatabase!.coreCommand('restore', {
       ...fields,
       'kind': 'userdata',

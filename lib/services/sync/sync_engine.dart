@@ -163,7 +163,6 @@ class SyncEngine {
   static const kSettingsSeen = 'sync_settings_seen';
   static const kPendingPull = 'sync_pending_category_pull';
   static const kDownloadId = 'sync_download_snapshot_id';
-  static const _maxPushAttempts = 3;
 
   Set<String> get categories => _categories();
   int get _epoch => (kv.get(kEpoch) as int?) ?? 0;
@@ -201,39 +200,136 @@ class SyncEngine {
 
   // ------------------------------------------------------------ sync cycle
 
-  /// [manual] is a user-pressed sync; only then may the cloud's current queue
-  /// replace the local one, and only when the user prefers the cloud queue.
-  Future<void> sync({bool manual = false}) async {
-    if (!initialDone) throw SyncNotReadyException();
-    final paused = pausedForEpoch;
-    if (paused != null) throw SyncEpochChangedException(paused);
+  Future<void> sync({bool manual = false}) => _runFlow('sync', manual: manual);
 
-    _emit(SyncPhase.checking, message: 'Checking cloud');
-    var st = await client.state();
-    await _guardEpoch(st);
-    await _detectSettingsChanges();
+  Future<void> overwriteCloud() => _runFlow('overwrite');
 
-    final pending = _pending().intersection(categories);
-    if (pending.isNotEmpty) {
-      await _pullCategories(st, pending);
+  Future<void> mergeWithCloud() => _runFlow('merge');
+
+  Future<void> setUpAsNewDevice() => _runFlow('new_device');
+
+  Map<String, dynamic> _flow(String operation, Map<String, Object?> fields) =>
+      runCoreCommand('sync_workflow', {'op': operation, ...fields});
+
+  Future<void> _resetCheckpoint(String mode, int cloudEpoch) async {
+    final result = _flow('reset_checkpoint', {
+      'mode': mode,
+      'cloud_epoch': cloudEpoch,
+    });
+    for (final entry in (result['writes'] as List).cast<List<dynamic>>()) {
+      await kv.set(entry[0] as String, entry[1]);
     }
-
-    await _pull(st);
-    if (manual &&
-        _preferCloudQueue() &&
-        categories.contains(SyncCategory.currentQueue)) {
-      final queue = await changeset.applyStashedQueue();
-      if (queue != null) _onQueueApplied?.call(queue);
-    }
-    final pushed = await _push();
-    if (pushed) st = await client.state();
-    await _compactIfNeeded(st);
-
-    await _recordHighest(st);
-    await kv.set(kLastSync, _nowMs());
-    await changeset.gcTombstones();
-    _emit(SyncPhase.done, message: 'Up to date');
   }
+
+  Future<void> _runFlow(String mode, {bool manual = false}) async {
+    final paused = pausedForEpoch;
+    final plan = _flow('plan', {
+      'mode': mode,
+      'ready': initialDone,
+      'paused_epoch': paused,
+    });
+    SyncState? cloud;
+    ChangesetBatch? snapshot;
+    var pushed = false;
+    for (final step in (plan['steps'] as List).cast<String>()) {
+      switch (step) {
+        case 'not_ready':
+          throw SyncNotReadyException();
+        case 'epoch_paused':
+          throw SyncEpochChangedException(paused!);
+        case 'read_cloud':
+          _emit(SyncPhase.checking, message: 'Checking cloud');
+          cloud = await client.state();
+        case 'guard':
+          await _guardEpoch(cloud!);
+        case 'detect_settings':
+          await _detectSettingsChanges();
+        case 'pull_categories':
+          final pending = _pending().intersection(categories);
+          if (pending.isNotEmpty) await _pullCategories(cloud!, pending);
+        case 'pull':
+          await _pull(cloud!);
+        case 'apply_manual_queue':
+          final result = _flow('apply_queue', {
+            'manual': manual,
+            'prefer_cloud': manual && _preferCloudQueue(),
+            'enabled': categories.contains(SyncCategory.currentQueue),
+          });
+          if (result['apply'] == true) {
+            final queue = await changeset.applyStashedQueue();
+            if (queue != null) _onQueueApplied?.call(queue);
+          }
+        case 'push':
+          pushed = await _push(plan['push_attempts'] as int);
+        case 'refresh_after_push':
+          if (pushed) cloud = await client.state();
+        case 'compact':
+          await _compactIfNeeded(cloud!);
+        case 'record_highest':
+          await _recordHighest(cloud!);
+        case 'stamp_last_sync':
+          await kv.set(kLastSync, _nowMs());
+        case 'collect_tombstones':
+          await changeset.gcTombstones();
+        case 'prepare_reset':
+          _emit(SyncPhase.preparingUpload, message: 'Preparing upload');
+        case 'upload_reset':
+          final epoch = cloud!.epoch;
+          snapshot = await changeset.buildSnapshot(categories: categories);
+          final blob = await _encodeSnapshot(snapshot, epoch + 1);
+          cloud = await client.uploadBlob(
+            blob,
+            kind: 'reset',
+            epoch: epoch,
+            baseSeq: 0,
+            onProgress: _uploadProgress,
+          );
+        case 'mark_pushed':
+          _emit(SyncPhase.finalizing, message: 'Finishing');
+          await changeset.markPushed(snapshot!);
+        case 'reset_checkpoint':
+          await _resetCheckpoint(mode, cloud!.epoch);
+        case 'adopt_if_needed':
+          if (_flow('adopt', {
+                'cloud_epoch': cloud!.epoch,
+                'local_epoch': _epoch,
+                'ready': initialDone,
+              })['adopt'] ==
+              true) {
+            await _resetCheckpoint(mode, cloud.epoch);
+            await changeset.markAllDirty(categories: categories);
+          }
+        case 'mark_initial_done':
+          await kv.set(kInitialDone, true);
+        case 'sync':
+          return sync();
+        case 'wipe':
+          await changeset.wipe(categories: categories);
+        case 'pull_bulk':
+          await _pull(cloud!, bulk: true);
+        case 'refresh_settings':
+          await _refreshSettingsSeen();
+        default:
+          throw StateError('Unknown sync step: $step');
+      }
+    }
+    _emit(
+      SyncPhase.done,
+      message: switch (mode) {
+        'overwrite' => 'Cloud overwritten',
+        'new_device' => 'Device set up',
+        _ => 'Up to date',
+      },
+    );
+  }
+
+  String _retryAction(String operation, SyncApiException error, int attempt) =>
+      _flow('retry', {
+        'operation': operation,
+        'status': error.status,
+        'code': error.code,
+        'attempt': attempt,
+      })['action'] as String;
 
   Map<String, dynamic> _checkpoint(SyncState state) =>
       runCoreCommand('sync_checkpoint', {
@@ -286,13 +382,12 @@ class SyncEngine {
       await _applySnapshot(st, bulk: bulk);
       cursor = _cursor;
     }
-    for (var gone = false;;) {
+    for (var attempts = 0;; attempts++) {
       try {
         await _pullDeltas(cursor, categories, advance: true);
         return;
       } on SyncApiException catch (e) {
-        if (!e.isGone || gone) rethrow;
-        gone = true;
+        if (_retryAction('pull', e, attempts) != 'refresh_snapshot') rethrow;
         await _applySnapshot(await client.state(), bulk: false);
         cursor = _cursor;
       }
@@ -406,9 +501,9 @@ class SyncEngine {
   // ------------------------------------------------------------------ push
 
   /// Returns true when something was uploaded.
-  Future<bool> _push() async {
+  Future<bool> _push(int maxAttempts) async {
     var pushed = false;
-    for (var attempt = 0; attempt < _maxPushAttempts; attempt++) {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       _emit(SyncPhase.preparingUpload, message: 'Preparing changes');
       final batches = await changeset.buildDeltas(categories: categories);
       if (batches.isEmpty) return pushed;
@@ -434,12 +529,13 @@ class SyncEngine {
           await changeset.markPushed(b);
           pushed = true;
         } on SyncApiException catch (e) {
-          if (e.isEpochChanged) {
+          final action = _retryAction('push', e, attempt);
+          if (action == 'pause_epoch') {
             final ep = (e.extra['epoch'] as int?) ?? _epoch + 1;
             await kv.set(kEpochChanged, ep);
             throw SyncEpochChangedException(ep);
           }
-          if (!e.isHeadMoved) rethrow;
+          if (action != 'refresh_head') rethrow;
           moved = true;
           break;
         }
@@ -489,81 +585,6 @@ class SyncEngine {
 
   void _uploadProgress(int d, int t) => _emit(SyncPhase.uploading,
       message: 'Uploading', bytesDone: d, bytesTotal: t);
-
-  // -------------------------------------------------- whole-state operations
-
-  /// Replaces the cloud with this device's data (initial upload and
-  /// "overwrite cloud"). Everything local ends clean.
-  Future<void> overwriteCloud() async {
-    _emit(SyncPhase.checking, message: 'Checking cloud');
-    final st = await client.state();
-    _emit(SyncPhase.preparingUpload, message: 'Preparing upload');
-    await _detectSettingsChanges();
-    final snap = await changeset.buildSnapshot(categories: categories);
-    final newEpoch = st.epoch + 1;
-    final blob = await _encodeSnapshot(snap, newEpoch);
-    final after = await client.uploadBlob(
-      blob,
-      kind: 'reset',
-      epoch: st.epoch,
-      baseSeq: 0,
-      onProgress: _uploadProgress,
-    );
-    _emit(SyncPhase.finalizing, message: 'Finishing');
-    await changeset.markPushed(snap);
-    await kv.set(kEpoch, after.epoch);
-    await kv.set(kCursor, 0);
-    await kv.set(kSnapshotApplied, true);
-    await kv.set(kHighEpoch, after.epoch);
-    await kv.set(kHighHead, 0);
-    await kv.set(kEpochChanged, null);
-    await kv.set(kPendingPull, null);
-    await kv.set(kInitialDone, true);
-    await kv.set(kLastSync, _nowMs());
-    _emit(SyncPhase.done, message: 'Cloud overwritten');
-  }
-
-  /// Login choice 1 and "merge into the new cloud data".
-  Future<void> mergeWithCloud() async {
-    _emit(SyncPhase.checking, message: 'Checking cloud');
-    final st = await client.state();
-    final adopting = st.epoch != _epoch || !initialDone;
-    if (adopting) {
-      await kv.set(kEpoch, st.epoch);
-      await kv.set(kCursor, 0);
-      await kv.set(kSnapshotApplied, null);
-      await kv.set(kHighEpoch, st.epoch);
-      await kv.set(kHighHead, 0);
-      await kv.set(kEpochChanged, null);
-      // The cloud lost everything we pushed before; send it all again.
-      await changeset.markAllDirty(categories: categories);
-    }
-    await kv.set(kInitialDone, true);
-    await sync();
-  }
-
-  /// Login choice 2, "replace this device with cloud" and overwrite-local.
-  Future<void> setUpAsNewDevice() async {
-    _emit(SyncPhase.checking, message: 'Checking cloud');
-    final st = await client.state();
-    await changeset.wipe(categories: categories);
-    await kv.set(kEpoch, st.epoch);
-    await kv.set(kCursor, 0);
-    await kv.set(kSnapshotApplied, null);
-    await kv.set(kHighEpoch, st.epoch);
-    await kv.set(kHighHead, 0);
-    await kv.set(kEpochChanged, null);
-    await kv.set(kPendingPull, null);
-    await kv.set(kSettingsSeen, null);
-    await _pull(st, bulk: true);
-    await _refreshSettingsSeen();
-    await kv.set(kInitialDone, true);
-    await _recordHighest(await client.state());
-    await kv.set(kLastSync, _nowMs());
-    _emit(SyncPhase.done, message: 'Device set up');
-  }
-
-  // ------------------------------------------------------ settings tracking
 
   Future<Map<String, String>> _readSettings() async {
     final out = <String, String>{};

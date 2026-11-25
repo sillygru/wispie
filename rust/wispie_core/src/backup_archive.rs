@@ -209,6 +209,51 @@ pub fn inspect(directory: &Path) -> Result<Value, String> {
     Ok(Value::Object(result))
 }
 
+pub fn counts(source: &Path, scratch: &Path) -> Result<(usize, i64), String> {
+    let input = File::open(source).map_err(|error| error.to_string())?;
+    let mut zip = ZipArchive::new(BufReader::new(input)).map_err(|error| error.to_string())?;
+    let mut songs = None;
+    let mut stats = None;
+    for entry in zip.file_names() {
+        let name = entry.rsplit(['/', '\\']).next().unwrap_or_default();
+        if name == "songs.json" {
+            songs = Some(entry.to_string());
+        } else if name == STATS_DATABASE
+            || (name.ends_with("_stats.db") && !name.starts_with("wispie_"))
+        {
+            stats = Some(entry.to_string());
+        }
+    }
+    let songs = if let Some(entry) = songs {
+        let file = zip.by_name(&entry).map_err(|error| error.to_string())?;
+        serde_json::from_reader::<_, Vec<Value>>(BufReader::new(file))
+            .map_err(|error| error.to_string())?
+            .len()
+    } else {
+        0
+    };
+    let playevents = if let Some(entry) = stats {
+        let mut random = [0; 8];
+        getrandom::getrandom(&mut random).map_err(|error| error.to_string())?;
+        let path = scratch.join(format!(
+            "wispie_backup_comparison_{:016x}.db",
+            u64::from_le_bytes(random)
+        ));
+        let mut entry = zip.by_name(&entry).map_err(|error| error.to_string())?;
+        crate::file_workflow::atomic_write(&path, |_, target| {
+            io::copy(&mut entry, target)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
+        let count = crate::db::count_backup_playevents(&path);
+        let _ = fs::remove_file(path);
+        count
+    } else {
+        0
+    };
+    Ok((songs, playevents))
+}
+
 pub(crate) fn run(request: &Value) -> Result<Value, String> {
     let path = |key| {
         request
@@ -224,6 +269,10 @@ pub(crate) fn run(request: &Value) -> Result<Value, String> {
             Ok(json!({}))
         }
         Some("extract") => Ok(json!({ "root": extract(source, path("destination")?)? })),
+        Some("counts") => {
+            let (songs, playevents) = counts(source, path("destination")?)?;
+            Ok(json!({ "songs": songs, "playevents": playevents }))
+        }
         Some("inspect") => inspect(source),
         _ => Err("unknown backup archive operation".into()),
     }

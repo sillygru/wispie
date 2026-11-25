@@ -8,6 +8,7 @@ mod affinity;
 mod artwork;
 pub mod backup_archive;
 pub mod backup_preferences;
+pub mod backup_workflow;
 mod beat;
 mod bulk_rename;
 mod content_id;
@@ -37,6 +38,8 @@ mod palette;
 mod palette_jpeg;
 mod playback;
 mod prosody;
+pub mod provider_cache;
+pub mod provider_requests;
 pub(crate) mod queue_ops;
 mod recommendations;
 mod remembered_order;
@@ -50,6 +53,8 @@ mod storage_probe;
 mod sync;
 mod sync_checkpoint;
 pub mod sync_payload;
+pub mod sync_transport;
+pub mod sync_workflow;
 mod tasks;
 mod taste;
 mod waveform;
@@ -448,6 +453,9 @@ fn dispatch(
             })));
             Ok(())
         }
+        "backup_workflow" => {
+            backup_workflow::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
         "backup_archive" => {
             backup_archive::run(&payload).map(|result| emitter.emit(Emit::Json(result)))
         }
@@ -459,6 +467,18 @@ fn dispatch(
             Ok(())
         }
         "sync_payload" => sync_payload::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "provider_requests" => {
+            provider_requests::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "provider_cache" => {
+            provider_cache::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "sync_transport" => {
+            sync_transport::run(payload, bytes).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "sync_workflow" => {
+            sync_workflow::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
         "sync_checkpoint" => {
             sync_checkpoint::run(payload).map(|result| emitter.emit(Emit::Json(result)))
         }

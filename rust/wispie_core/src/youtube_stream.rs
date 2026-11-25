@@ -66,3 +66,30 @@ pub fn select(formats: &[StreamFormat], video: bool) -> Option<StreamSelection<'
         itag: format.itag.as_deref().unwrap_or("18"),
     })
 }
+
+pub fn profile_order(count: usize, preferred: usize) -> impl Iterator<Item = usize> {
+    (0..count).map(move |step| (preferred % count + step) % count)
+}
+
+pub fn expires_ms(now_ms: i64, signed_seconds: Option<i64>) -> i64 {
+    signed_seconds.map_or_else(
+        || now_ms.saturating_add(15 * 60 * 1000),
+        |seconds| seconds.saturating_mul(1000).saturating_sub(5 * 60 * 1000),
+    )
+}
+
+pub fn playability(reason: Option<&str>, state: Option<&str>) -> &'static str {
+    if matches!(state, None | Some("OK" | "LIVE_STREAM_OFFLINE")) {
+        return "accepted";
+    }
+    let reason = reason.unwrap_or_default().to_lowercase();
+    if reason.contains("bot") || reason.contains("sign in") {
+        "blocked"
+    } else {
+        "unavailable"
+    }
+}
+
+pub fn retry_catalogue_version(status: u16, attempt: usize, pinned: bool) -> bool {
+    status == 400 && attempt == 0 && !pinned
+}

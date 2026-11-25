@@ -1,14 +1,13 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import '../data/rust/native_command.dart';
-import '../data/rust/native_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import '../domain/services/cache_policy.dart';
 import 'backup_manifest.dart';
+import 'wispie_cache.dart';
 import 'storage_service.dart';
 import 'database_service.dart';
 import 'wispie_paths.dart';
@@ -123,7 +122,6 @@ class BackupInfo {
 
 class BackupService {
   static const String backupsDirName = 'backups';
-  static const String _metadataFile = 'metadata.json';
   static const String statsDbName = 'wispie_stats.db';
   static const String dataDbName = 'wispie_data.db';
   static BackupService? _instance;
@@ -210,107 +208,63 @@ class BackupService {
     return BackupOptions(contentTypes: types);
   }
 
-  /// Writes every selected content type into [stagingDir].
-  ///
-  /// Shared by [createBackup] and [exportUserData] so both archives always
-  /// carry the same content for the same options.
-  Future<void> _stageBackup(BackupOptions options, Directory stagingDir) async {
-    final appDir = await getWispieDirectory();
-    final storage = StorageService();
-
-    for (final name in [
-      if (options.includeUserStats) statsDbName,
-      if (options.includeUserData) dataDbName,
-    ]) {
-      await databaseFileCommand(
-        'copy',
-        p.join(appDir.path, name),
-        destination: p.join(stagingDir.path, name),
-      );
-    }
-
-    if (options.includeUserStats || options.includeUserData) {
-      final database = DatabaseService.instance;
-      await database.init();
-
-      if (options.includeUserStats) {
-        final songs = await database.getAllSongs();
-        final songsJson = songs.map((s) => s.toJson()).toList();
-        await File(p.join(stagingDir.path, 'songs.json'))
-            .writeAsString(encodeJson(songsJson));
-
-        final funStats = await database.getFunStats();
-        await File(p.join(stagingDir.path, 'final_stats.json'))
-            .writeAsString(encodeJson(funStats));
-
-        final mergedGroups = await database.getMergedSongGroups();
-        final mergedGroupsJson = mergedGroups.map((groupId, groupData) {
-          return MapEntry(groupId, {
-            'filenames': groupData.filenames,
-            'priorityFilename': groupData.priorityFilename,
-          });
-        });
-        await File(p.join(stagingDir.path, 'merged_groups.json'))
-            .writeAsString(encodeJson(mergedGroupsJson));
-
-        final queueHistory = await database.exportQueueHistory();
-        if (queueHistory.isNotEmpty) {
-          await File(p.join(stagingDir.path, 'queue_history.json'))
-              .writeAsString(encodeJson(queueHistory));
-        }
-      }
-
-      if (options.includeUserData) {
-        final userData = await storage.loadUserData();
-        final shuffleState = await storage.loadShuffleState();
-        final playbackState = await storage.loadPlaybackState();
-
-        if (userData != null) {
-          await File(p.join(stagingDir.path, 'user_data.json'))
-              .writeAsString(encodeJson(userData));
-        }
-
-        if (shuffleState != null) {
-          await File(p.join(stagingDir.path, 'shuffle_state.json'))
-              .writeAsString(encodeJson(shuffleState));
-        }
-
-        if (playbackState != null) {
-          await File(p.join(stagingDir.path, 'playback_state.json'))
-              .writeAsString(encodeJson(playbackState));
-        }
-      }
-    }
-
-    // Settings stand on their own: a settings-only backup must still contain
-    // app_settings.json.
-    if (options.includeUserSettings) {
-      final appSettings = await storage.exportAppSettings();
-      if (appSettings.isNotEmpty) {
-        await File(p.join(stagingDir.path, 'app_settings.json'))
-            .writeAsString(encodeJson(appSettings));
-      }
-    }
-
-    final artifacts = await cacheArtifacts();
-    for (final artifact in artifacts) {
-      if (!artifact.coversAny(options.contentTypes)) continue;
-      await stageArtifact(artifact, stagingDir.path);
-    }
-
-    await File(p.join(stagingDir.path, _metadataFile))
-        .writeAsString(jsonEncode(_buildMetadata(options)));
+  Future<Map<String, String>> _backupPaths(String appDir) async {
+    final cache = WispieCache.instance;
+    return {
+      'stats_db': p.join(appDir, statsDbName),
+      'data_db': p.join(appDir, dataDbName),
+      'covers': (await cache.directory(CacheBucket.covers)).path,
+      'blurred': (await cache.directory(CacheBucket.blurred)).path,
+      'notification': (await cache.directory(CacheBucket.notification)).path,
+      'lyrics': (await cache.directory(CacheBucket.lyrics)).path,
+      'waveforms': (await cache.directory(CacheBucket.waveforms)).path,
+      'palette': (await cache.paletteIndexFile()).path,
+      'library': p.join(appDir, 'cached_songs.json'),
+      'index': p.join(appDir, 'wispie_search_index.db'),
+    };
   }
 
-  Map<String, dynamic> _buildMetadata(BackupOptions options) {
-    return {
-      'export_date': DateTime.now().toIso8601String(),
-      'version': '2.0',
-      'options': {
-        for (final type in BackupContentType.values)
-          type.name: options.contentTypes.contains(type),
-      },
-    };
+  Future<Map<String, dynamic>> _backupWorkflow(Map<String, Object?> request) =>
+      compute((message) => runCoreCommand('backup_workflow', message), request);
+
+  Future<void> _stageBackup(BackupOptions options, Directory stagingDir) async {
+    final database = DatabaseService.instance;
+    final storage = StorageService();
+    final documents = <String, Object?>{};
+    if (options.includeUserStats || options.includeUserData) {
+      await database.init();
+    }
+    if (options.includeUserStats) {
+      documents['songs'] = [
+        for (final song in await database.getAllSongs()) song.toJson(),
+      ];
+      documents['stats'] = await database.getFunStats();
+      documents['merged'] = (await database.getMergedSongGroups()).map(
+        (id, group) => MapEntry(id, {
+          'filenames': group.filenames,
+          'priorityFilename': group.priorityFilename,
+        }),
+      );
+      final queue = await database.exportQueueHistory();
+      if (queue.isNotEmpty) documents['queue'] = queue;
+    }
+    if (options.includeUserData) {
+      documents['user'] = await storage.loadUserData();
+      documents['shuffle'] = await storage.loadShuffleState();
+      documents['playback'] = await storage.loadPlaybackState();
+    }
+    if (options.includeUserSettings) {
+      final settings = await storage.exportAppSettings();
+      if (settings.isNotEmpty) documents['settings'] = settings;
+    }
+    await _backupWorkflow({
+      'op': 'stage',
+      'root': stagingDir.path,
+      'selected': [for (final type in options.contentTypes) type.name],
+      'paths': await _backupPaths((await getWispieDirectory()).path),
+      'documents': documents,
+      'exported_at': DateTime.now().toIso8601String(),
+    });
   }
 
   Future<String> createBackup([BackupOptions? options]) async {
@@ -422,24 +376,22 @@ class BackupService {
 
       final contents = await _archiveOperation('inspect', contentPath);
 
-      final artifacts = await cacheArtifacts();
-      final cacheFlags = <BackupContentType, bool>{};
-      for (final type in BackupContentType.values) {
-        cacheFlags[type] =
-            await archiveHasContent(artifacts, type, contentPath);
-      }
+      final cacheFlags = await _backupWorkflow({
+        'op': 'cache_flags',
+        'root': contentPath,
+      });
 
       final validation = <String, dynamic>{
         'valid': true,
         'importPath': contentPath,
         'extractRoot': decodeDir.path,
         ...contents,
-        'hasCoverCache': cacheFlags[BackupContentType.coverCache],
-        'hasLibraryCache': cacheFlags[BackupContentType.libraryCache],
-        'hasSearchIndex': cacheFlags[BackupContentType.searchIndex],
-        'hasWaveformCache': cacheFlags[BackupContentType.waveformCache],
-        'hasColorCache': cacheFlags[BackupContentType.colorCache],
-        'hasLyricsCache': cacheFlags[BackupContentType.lyricsCache],
+        'hasCoverCache': cacheFlags['coverCache'],
+        'hasLibraryCache': cacheFlags['libraryCache'],
+        'hasSearchIndex': cacheFlags['searchIndex'],
+        'hasWaveformCache': cacheFlags['waveformCache'],
+        'hasColorCache': cacheFlags['colorCache'],
+        'hasLyricsCache': cacheFlags['lyricsCache'],
       };
 
       final hasAnything = validation.entries
@@ -559,91 +511,62 @@ class BackupService {
     List<Song>? importedRows;
 
     if (options.hasDatabaseCategories) {
-      if (statsDbPath != null && dataDbPath != null) {
-        await DatabaseService.instance.importWithOptions(
-          statsDbPath: statsDbPath,
-          dataDbPath: dataDbPath,
-          options: options,
-        );
-      } else {
-        debugPrint(
-            'Skipping database categories: backup contains no database files');
-      }
+      await DatabaseService.instance.importWithOptions(
+        statsDbPath: statsDbPath,
+        dataDbPath: dataDbPath,
+        options: options,
+      );
     }
 
-    if (categories.contains(ImportDataCategory.songs)) {
-      final songsFile = File(p.join(importPath, 'songs.json'));
-      if (await songsFile.exists()) {
-        final data = decodeJson(await songsFile.readAsString());
-        if (data is List) {
-          // Staged rather than written: these rows describe the device the
-          // archive came from, so their file and cover paths are claims to be
-          // checked, not facts. The repair pass below is the only thing that
-          // writes the `song` table on an import path.
-          importedRows = data.map((json) => Song.fromJson(json)).toList();
-        }
-      }
+    final documents = await _backupWorkflow({
+      'op': 'read_documents',
+      'root': importPath,
+      'selected': [
+        if (categories.contains(ImportDataCategory.songs)) 'songs',
+        if (categories.contains(ImportDataCategory.shuffleState)) 'shuffle',
+        if (categories.contains(ImportDataCategory.playbackState)) 'playback',
+        if (categories.contains(ImportDataCategory.queueHistory)) 'queue',
+        if (options.hasSettingsCategories) 'settings',
+      ],
+    });
+    if (documents['songs'] case final List rows) {
+      importedRows = [for (final row in rows) Song.fromJson(row)];
     }
-
-    if (categories.contains(ImportDataCategory.shuffleState)) {
-      final shuffleStateFile = File(p.join(importPath, 'shuffle_state.json'));
-      if (await shuffleStateFile.exists()) {
-        final data = decodeJson(await shuffleStateFile.readAsString());
-        if (data is Map) {
-          final state = ShuffleState.fromJson(Map<String, dynamic>.from(data));
-          await storage.saveShuffleState(state.toJson());
-        }
-      }
+    if (documents['shuffle'] case final Map state) {
+      await storage.saveShuffleState(
+        ShuffleState.fromJson(state.cast<String, dynamic>()).toJson(),
+      );
     }
-
-    if (categories.contains(ImportDataCategory.playbackState)) {
-      final playbackStateFile = File(p.join(importPath, 'playback_state.json'));
-      if (await playbackStateFile.exists()) {
-        final data = decodeJson(await playbackStateFile.readAsString());
-        if (data is Map) {
-          await storage.savePlaybackState(Map<String, dynamic>.from(data));
-        }
-      }
+    if (documents['playback'] case final Map state) {
+      await storage.savePlaybackState(state.cast<String, dynamic>());
     }
-
-    if (categories.contains(ImportDataCategory.queueHistory)) {
-      final queueHistoryFile = File(p.join(importPath, 'queue_history.json'));
-      if (await queueHistoryFile.exists()) {
-        final data = decodeJson(await queueHistoryFile.readAsString());
-        if (data is List) {
-          await DatabaseService.instance
-              .importQueueHistory(data.cast<Map<String, dynamic>>());
-        }
-      }
+    if (documents['queue'] case final List rows) {
+      await DatabaseService.instance.importQueueHistory(
+        rows.cast<Map<String, dynamic>>(),
+      );
     }
-
-    if (options.hasSettingsCategories) {
-      final appSettingsFile = File(p.join(importPath, 'app_settings.json'));
-      if (await appSettingsFile.exists()) {
-        final data = decodeJson(await appSettingsFile.readAsString());
-        if (data is Map) {
-          await storage.importSettingsWithOptions(
-            Map<String, dynamic>.from(data),
-            options,
-          );
-        }
-      }
+    if (documents['settings'] case final Map settings) {
+      await storage.importSettingsWithOptions(
+        settings.cast<String, dynamic>(),
+        options,
+      );
     }
 
     if (options.hasCacheCategories) {
-      final artifacts = await cacheArtifacts();
       final wantedTypes = categories
-          .map((c) => c.cacheContentType)
+          .map((category) => category.cacheContentType)
           .whereType<BackupContentType>()
           .toSet();
-
-      for (final artifact in artifacts) {
-        if (!artifact.coversAny(wantedTypes)) continue;
-        if (artifact.covers(BackupContentType.searchIndex)) {
-          await SearchIndexRepository().close();
-        }
-        await restoreArtifact(artifact, importPath);
+      if (wantedTypes.contains(BackupContentType.searchIndex)) {
+        await SearchIndexRepository().close();
       }
+      await _backupWorkflow({
+        'op': 'restore_artifacts',
+        'root': importPath,
+        'selected': [for (final type in wantedTypes) type.name],
+        'paths': await _backupPaths((await getWispieDirectory()).path),
+      });
+      WispieCache.instance.invalidateUsage();
     }
 
     // Last, so it sees the restored music folders and any covers the archive
@@ -769,17 +692,18 @@ class BackupService {
 
           await DatabaseService.instance.close();
           try {
-            for (final (source, name) in [
-              (statsDbPath, statsDbName),
-              (dataDbPath, dataDbName),
-            ]) {
-              if (source == null) continue;
-              await databaseFileCommand(
-                'copy',
-                source,
-                destination: p.join(appDir.path, name),
-              );
-            }
+            await _backupWorkflow({
+              'op': 'restore_databases',
+              'root': contentPath,
+              'paths': {
+                'stats_db': p.join(appDir.path, statsDbName),
+                'data_db': p.join(appDir.path, dataDbName),
+              },
+              'sources': {
+                if (statsDbPath != null) 'stats_db': statsDbPath,
+                if (dataDbPath != null) 'data_db': dataDbPath,
+              },
+            });
           } finally {
             await DatabaseService.instance.init();
           }
@@ -826,62 +750,14 @@ class BackupService {
       BackupInfo oldBackup, BackupInfo newBackup) async {
     final tempDir = await Directory.systemTemp.createTemp('gru_compare_');
     try {
-      Future<({int songCount, int statsRows})> getBackupStats(
-          BackupInfo info) async {
-        final bytes = await info.file.readAsBytes();
-        final archive = ZipDecoder().decodeBytes(bytes);
-
-        int songCount = 0;
-        int statsRows = 0;
-
-        ArchiveFile? songsFile;
-        ArchiveFile? statsFile;
-
-        for (final file in archive) {
-          final name = p.basename(file.name);
-          if (name == 'songs.json') {
-            songsFile = file;
-          }
-          if (name == statsDbName ||
-              (name.endsWith('_stats.db') && !name.startsWith('wispie_'))) {
-            statsFile = file;
-          }
-        }
-
-        if (songsFile != null) {
-          final content = utf8.decode(songsFile.content as List<int>);
-          final List data = jsonDecode(content);
-          songCount = data.length;
-        }
-
-        if (statsFile != null) {
-          final dbPath = p.join(tempDir.path, '${info.filename}_stats.db');
-          await File(dbPath).writeAsBytes(statsFile.content as List<int>);
-
-          try {
-            final db = await openDatabase(dbPath, readOnly: true);
-            try {
-              final result = await db.coreCommand(
-                  'maintenance', {'op': 'count', 'table': 'playevent'});
-              statsRows = result['count'] as int;
-            } finally {
-              await db.close();
-            }
-          } catch (e) {
-            debugPrint(
-                'Error reading stats db from backup ${info.filename}: $e');
-          }
-        }
-
-        return (songCount: songCount, statsRows: statsRows);
-      }
-
-      final oldStats = await getBackupStats(oldBackup);
-      final newStats = await getBackupStats(newBackup);
-
+      final oldStats =
+          await _archiveOperation('counts', oldBackup.file.path, tempDir.path);
+      final newStats =
+          await _archiveOperation('counts', newBackup.file.path, tempDir.path);
       return BackupDiff(
-        songCountDiff: newStats.songCount - oldStats.songCount,
-        statsRowsDiff: newStats.statsRows - oldStats.statsRows,
+        songCountDiff: (newStats['songs'] as int) - (oldStats['songs'] as int),
+        statsRowsDiff:
+            (newStats['playevents'] as int) - (oldStats['playevents'] as int),
         sizeBytesDiff: newBackup.sizeBytes - oldBackup.sizeBytes,
       );
     } finally {
@@ -900,13 +776,5 @@ class BackupService {
       debugPrint('Error exporting backup: $e');
       rethrow;
     }
-  }
-
-  String encodeJson(dynamic data) {
-    return jsonEncode(data);
-  }
-
-  dynamic decodeJson(String jsonString) {
-    return jsonDecode(jsonString);
   }
 }

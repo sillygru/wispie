@@ -8,35 +8,65 @@ use super::{in_transaction, read_rows, text_field, with};
 pub(super) fn run(payload: &Value) -> Result<Value, String> {
     let op = text_field(payload, "op")?;
     with(payload, |db| {
-        in_transaction(db, |db| {
-            if op == "delete" {
-                delete(db, text_field(payload, "filename")?)?;
-                return Ok(json!({}));
+        if op == "delete" {
+            in_transaction(db, |db| delete(db, text_field(payload, "filename")?))?;
+            return Ok(json!({}));
+        }
+        let renames = parse_renames(payload)?;
+        let hlc = payload["hlc"].as_i64().ok_or("missing rename clock")?;
+        let now = payload["now"].as_f64().unwrap_or_default();
+        match op {
+            "rename_data" => apply_data(db, &renames, hlc, now)?,
+            "rename_stats" => apply_stats(db, &renames, hlc)?,
+            _ => return Err(format!("unknown song file operation {op}")),
+        }
+        Ok(json!({}))
+    })
+}
+
+pub(super) fn parse_renames(payload: &Value) -> Result<Vec<(&str, &str)>, String> {
+    payload["renames"]
+        .as_array()
+        .ok_or("missing renames")?
+        .iter()
+        .map(|entry| Ok((text_field(entry, "from")?, text_field(entry, "to")?)))
+        .collect()
+}
+
+pub(super) fn apply_data(
+    data: &mut Connection,
+    renames: &[(&str, &str)],
+    hlc: i64,
+    now: f64,
+) -> Result<(), String> {
+    in_transaction(data, |data| {
+        for &(from, to) in renames {
+            if from != to {
+                rename_data(data, from, to, hlc, now)?;
             }
-            let renames = payload["renames"].as_array().ok_or("missing renames")?;
-            let hlc = payload["hlc"].as_i64().ok_or("missing rename clock")?;
-            let now = payload["now"].as_f64().unwrap_or_default();
-            for rename in renames {
-                let from = text_field(rename, "from")?;
-                let to = text_field(rename, "to")?;
-                if from == to {
-                    continue;
-                }
-                match op {
-                    "rename_data" => rename_data(db, from, to, hlc, now)?,
-                    "rename_stats" => {
-                        db.execute(
-                            "UPDATE playevent SET song_filename = ?2, hlc = ?3, dirty = 1
-                                    WHERE song_filename = ?1",
-                            params![from, to, hlc],
-                        )
-                        .map_err(|error| error.to_string())?;
-                    }
-                    _ => return Err(format!("unknown song file operation {op}")),
-                }
+        }
+        Ok(())
+    })
+}
+
+pub(super) fn apply_stats(
+    stats: &mut Connection,
+    renames: &[(&str, &str)],
+    hlc: i64,
+) -> Result<(), String> {
+    in_transaction(stats, |stats| {
+        for &(from, to) in renames {
+            if from != to {
+                stats
+                    .execute(
+                        "UPDATE playevent SET song_filename = ?2, hlc = ?3, dirty = 1
+                     WHERE song_filename = ?1",
+                        params![from, to, hlc],
+                    )
+                    .map_err(|error| error.to_string())?;
             }
-            Ok(json!({}))
-        })
+        }
+        Ok(())
     })
 }
 

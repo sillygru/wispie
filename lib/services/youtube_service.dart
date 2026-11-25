@@ -405,10 +405,13 @@ class YouTubeService {
 
   /// Profiles in the order to try: the last one that worked, then the rest.
   Iterable<int> _profileOrder() sync* {
-    for (var step = 0; step < _profiles.length; step++) {
-      final index = (_preferredProfile + step) % _profiles.length;
-      if (_isProfileBlocked(index)) continue;
-      yield index;
+    final plan = runCoreCommand('youtube', {
+      'action': 'profile_order',
+      'count': _profiles.length,
+      'preferred': _preferredProfile,
+    });
+    for (final index in (plan['order'] as List).cast<int>()) {
+      if (!_isProfileBlocked(index)) yield index;
     }
   }
 
@@ -429,14 +432,15 @@ class YouTubeService {
         profile: profile,
       );
       final status = response['playabilityStatus'];
-      final state = status is Map ? status['status']?.toString() : null;
-      if (state != null && state != 'OK' && state != 'LIVE_STREAM_OFFLINE') {
-        final reason = status is Map ? status['reason']?.toString() : null;
-        if (_kindForReason(reason) == YouTubeErrorKind.blocked) {
-          _profileBlockedUntil[index] = DateTime.now().add(_profilePenalty);
-        }
-        return null;
+      final decision = runCoreCommand('youtube', {
+        'action': 'playability',
+        'state': status is Map ? status['status']?.toString() : null,
+        'reason': status is Map ? status['reason']?.toString() : null,
+      });
+      if (decision['kind'] == 'blocked') {
+        _profileBlockedUntil[index] = DateTime.now().add(_profilePenalty);
       }
+      if (decision['kind'] != 'accepted') return null;
       return response;
     } on YouTubeApiException catch (error) {
       if (error.kind == YouTubeErrorKind.rateLimited) rethrow;
@@ -636,26 +640,12 @@ class YouTubeService {
   }
 
   DateTime _expiryOf(Uri url) {
-    final expire = int.tryParse(url.queryParameters['expire'] ?? '');
-    if (expire == null) {
-      return DateTime.now().add(const Duration(minutes: 15));
-    }
-    final signedExpiry = DateTime.fromMillisecondsSinceEpoch(expire * 1000);
-    // Stop using the URL before the CDN does, so a queue entry never starts
-    // playback on a link that is about to die.
-    return signedExpiry.subtract(const Duration(minutes: 5));
-  }
-
-  YouTubeErrorKind? _kindForReason(String? reason) {
-    if (reason == null) return null;
-    final lower = reason.toLowerCase();
-    if (lower.contains('bot') || lower.contains('sign in')) {
-      return YouTubeErrorKind.blocked;
-    }
-    if (lower.contains('unavailable') || lower.contains('private')) {
-      return YouTubeErrorKind.unavailable;
-    }
-    return null;
+    final result = runCoreCommand('youtube', {
+      'action': 'stream_expiry',
+      'signed_seconds': int.tryParse(url.queryParameters['expire'] ?? ''),
+      'now_ms': DateTime.now().millisecondsSinceEpoch,
+    });
+    return DateTime.fromMillisecondsSinceEpoch(result['expires_ms'] as int);
   }
 
   YouTubeApiException _httpException(String endpoint, int status) {

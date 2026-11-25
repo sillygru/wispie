@@ -102,12 +102,7 @@ class OnlineMetadataService {
 
   static String? _userAgent;
 
-  // Rate limiter for iTunes API: track last request time to enforce 3-second spacing in batch mode
-  DateTime? _lastITunesRequest;
-
-  // Rate limiter for Last.fm scraping
-  DateTime? _lastLastfmRequest;
-  static const Duration _lastfmMinInterval = Duration(seconds: 1);
+  final Map<String, int> _lastRequests = {};
 
   // In-memory caches for artwork candidates and query resolutions
   final Map<String, List<Map<String, String>>> _artistCandidatesCache = {};
@@ -586,14 +581,7 @@ class OnlineMetadataService {
   /// Fetches a Last.fm page and extracts the best image URL from its HTML.
   /// Tries GIF image, then og:image meta tag, then any avatar image.
   Future<String?> _searchLastfmPage(String path) async {
-    final now = DateTime.now();
-    if (_lastLastfmRequest != null && !path.endsWith('/+images')) {
-      final elapsed = now.difference(_lastLastfmRequest!);
-      if (elapsed < _lastfmMinInterval) {
-        await Future.delayed(_lastfmMinInterval - elapsed);
-      }
-    }
-    _lastLastfmRequest = DateTime.now();
+    await _pace('lastfm', path: path);
 
     final client = SharedHttpClient.instance;
     try {
@@ -628,15 +616,21 @@ class OnlineMetadataService {
   String? _extractLastfmImageUrl(String html) =>
       _core('lastfm_image', {'html': html})['url'] as String?;
 
-  Future<void> _enforceITunesRateLimit() async {
-    final now = DateTime.now();
-    if (_lastITunesRequest != null) {
-      final elapsed = now.difference(_lastITunesRequest!);
-      if (elapsed < const Duration(seconds: 2)) {
-        await Future.delayed(const Duration(seconds: 2) - elapsed);
-      }
-    }
-    _lastITunesRequest = DateTime.now();
+  Future<void> _enforceITunesRateLimit() => _pace('itunes');
+
+  Future<void> _pace(String provider, {String path = ''}) async {
+    final plan = runCoreCommand('provider_requests', {
+      'op': 'pace',
+      'provider': provider,
+      'path': path,
+      'now_ms': DateTime.now().millisecondsSinceEpoch,
+      'last_ms': _lastRequests[provider],
+    });
+    final previous = _lastRequests[provider] ?? 0;
+    final start = plan['start_ms'] as int;
+    if (start >= previous) _lastRequests[provider] = start;
+    final delay = plan['delay_ms'] as int;
+    if (delay > 0) await Future<void>.delayed(Duration(milliseconds: delay));
   }
 
   /// Downloads cover art from [imageUrl] and saves it locally in extracted covers directory.

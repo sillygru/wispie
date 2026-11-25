@@ -955,7 +955,14 @@ class FileManagerService {
       );
       return;
     }
-    await File(path).rename(p.join(p.dirname(path), newName));
+    try {
+      await compute(
+        (request) => runCoreCommand('file_workflow', request),
+        {'op': 'move_song', 'path': path, 'new_filename': newName},
+      );
+    } on StateError catch (error) {
+      throw FileSystemException(error.message, path);
+    }
   }
 
   static bool _isCaseOnlyChange(String oldPath, String newFilename) =>

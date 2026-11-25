@@ -11,7 +11,7 @@
 //! A final idempotent reconcile then repairs anything a half-finished upgrade
 //! left behind, since the ladder only ever runs once per version.
 
-mod files;
+pub(crate) mod files;
 mod identity;
 mod maintenance;
 mod playback;
@@ -358,6 +358,7 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
             Ok(json!({ "backfilled": true }))
         })?,
         "playback" => playback::run(payload)?,
+        "rename_library_files" => rename_library_files(payload)?,
         "song_files" => song_files::run(payload)?,
         "search_index" => search_index::run(payload)?,
         "restore" => restore::run(payload)?,
@@ -389,6 +390,37 @@ fn lock() -> std::sync::MutexGuard<'static, HashMap<u64, Connection>> {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
+}
+
+fn rename_library_files(payload: &Value) -> Result<Value, String> {
+    let id = connection_id(payload)?;
+    let stats_id = payload["stats_id"]
+        .as_u64()
+        .ok_or("missing stats connection")?;
+    if id == stats_id {
+        return Err("rename needs distinct library and stats connections".into());
+    }
+    let renames = song_files::parse_renames(payload)?;
+    let hlc = payload["hlc"].as_i64().ok_or("missing rename clock")?;
+    let now = payload["now"].as_f64().unwrap_or_default();
+    let mut connections = lock();
+    let [Some(data), Some(stats)] = connections.get_disjoint_mut([&id, &stats_id]) else {
+        return Err("rename database connection is closed".into());
+    };
+    apply_renames(data, stats, &renames, hlc, now)?;
+    Ok(json!({}))
+}
+
+fn apply_renames(
+    data: &mut Connection,
+    stats: &mut Connection,
+    renames: &[(&str, &str)],
+    hlc: i64,
+    now: f64,
+) -> Result<(), String> {
+    // Each database commits independently. The rename journal makes replay safe.
+    song_files::apply_data(data, renames, hlc, now)?;
+    song_files::apply_stats(stats, renames, hlc)
 }
 
 fn connection_id(payload: &Value) -> Result<u64, String> {
@@ -523,6 +555,12 @@ fn open_connection(
     Ok((connection, target, fresh))
 }
 
+pub(crate) fn count_backup_playevents(path: &Path) -> i64 {
+    open_connection(path, None, None, true, 0)
+        .and_then(|(connection, _, _)| maintenance::table_count(&connection, "playevent", true))
+        .unwrap_or_default()
+}
+
 pub(crate) fn inspect_backup_tables(path: &Path, tables: &[&str]) -> Vec<bool> {
     let connection = open_connection(path, None, None, true, 0)
         .ok()
@@ -584,6 +622,15 @@ impl Library {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
         Ok(tracks)
+    }
+
+    pub fn apply_renames(
+        &mut self,
+        renames: &[(&str, &str)],
+        hlc: i64,
+        now: f64,
+    ) -> Result<(), String> {
+        apply_renames(&mut self.data, &mut self.stats, renames, hlc, now)
     }
 
     pub fn schema_versions(&self) -> Result<(i64, i64), String> {

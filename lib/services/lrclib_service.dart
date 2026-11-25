@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../data/rust/native_command.dart';
 import '../domain/models/lrclib_result.dart';
 import '../domain/models/rich_lyrics.dart';
 import '../domain/services/lrclib_match.dart';
@@ -214,30 +215,42 @@ class LrclibService {
     );
   }
 
-  Map<String, String> _getParams({
-    required String trackName,
-    required String artistName,
-    String? albumName,
+  List<({bool unified, String path, Map<String, String> params})> _plan(
+    String kind, {
+    String? track,
+    String? artist,
+    String? album,
     Duration? duration,
     String? videoId,
+    String? text,
   }) {
-    return {
-      'track_name': trackName,
-      'artist_name': artistName,
-      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
-      if (duration != null) 'duration': '${duration.inSeconds}',
-      if (videoId != null && videoId.isNotEmpty) 'video_id': videoId,
-      'include_rich_sync': 'true',
-      'sync_type': 'richsync',
-    };
+    final result = runCoreCommand('provider_requests', {
+      'op': 'lyrics',
+      'kind': kind,
+      'track': track,
+      'artist': artist,
+      'album': album,
+      'duration': duration?.inSeconds,
+      'video_id': videoId,
+      'text': text,
+    });
+    return [
+      for (final call in (result['requests'] as List).cast<Map>())
+        (
+          unified: call['unified'] as bool,
+          path: call['path'] as String,
+          params: (call['params'] as Map).cast<String, String>(),
+        ),
+    ];
   }
 
-  /// music-utils `/api/lyrics/get`, with direct LRCLIB fallback.
-  ///
-  /// A [videoId] pins the exact recording, which matters for streamed tracks:
-  /// their artist tag is often the channel name ("Dan Music" for an Eminem
-  /// upload), so the tag-based lookup alone misses. The lookup is repeated
-  /// without the id when the service has nothing for it.
+  Future<Object?> _execute(
+    ({bool unified, String path, Map<String, String> params}) call,
+  ) =>
+      call.unified
+          ? _musicUtils.getJson(call.path, call.params)
+          : _getJson(call.path, call.params);
+
   Future<LrclibResult?> getExact({
     required String trackName,
     required String artistName,
@@ -245,42 +258,18 @@ class LrclibService {
     Duration? duration,
     String? videoId,
   }) async {
-    if (trackName.isEmpty || artistName.isEmpty) return null;
-
-    if (videoId != null && videoId.isNotEmpty) {
-      final byVideo = _resultFromObject(
-        await _musicUtils.getJson(
-          '/lyrics/get',
-          _getParams(
-            trackName: trackName,
-            artistName: artistName,
-            albumName: albumName,
-            duration: duration,
-            videoId: videoId,
-          ),
-        ),
-      );
-      if (byVideo != null) return byVideo;
-    }
-
-    final unified = await _musicUtils.getJson(
-      '/lyrics/get',
-      _getParams(
-        trackName: trackName,
-        artistName: artistName,
-        albumName: albumName,
-        duration: duration,
-      ),
-    );
-    final unifiedResult = _resultFromObject(unified);
-    if (unifiedResult != null) return unifiedResult;
-
-    return _getExactDirect(
-      trackName: trackName,
-      artistName: artistName,
-      albumName: albumName,
+    for (final call in _plan(
+      'exact',
+      track: trackName,
+      artist: artistName,
+      album: albumName,
       duration: duration,
-    );
+      videoId: videoId,
+    )) {
+      final result = _resultFromObject(await _execute(call));
+      if (result != null) return result;
+    }
+    return null;
   }
 
   /// Lyrics this app already chose for [song], or null.
@@ -412,32 +401,21 @@ class LrclibService {
     // Nothing to ask about, and nothing will change that by asking again.
     if (queries.isEmpty) return (lyrics: null, settled: true);
     final query = queries.first;
-    final artistName = query.artist ?? '';
-
-    final params = _getParams(
-      trackName: query.title,
-      artistName: artistName,
-      albumName: cleanTag(song.album),
-      duration: song.duration,
-    );
-    final videoId = song.isYoutube ? song.remoteId : null;
     var settled = false;
-    if (videoId != null && videoId.isNotEmpty) {
-      final byVideo = await _musicUtils.getJsonResult(
-        '/lyrics/get',
-        {...params, 'video_id': videoId},
-      );
-      settled |= byVideo.status != MusicUtilsStatus.transient;
-      final result = _resultFromObject(byVideo.json);
-      if (result?.richLyrics != null) {
-        return (lyrics: result!.richLyrics, settled: true);
-      }
+    for (final call in _plan(
+      'rich',
+      track: query.title,
+      artist: query.artist,
+      album: cleanTag(song.album),
+      duration: song.duration,
+      videoId: song.isYoutube ? song.remoteId : null,
+    )) {
+      final decoded = await _musicUtils.getJsonResult(call.path, call.params);
+      settled |= decoded.status != MusicUtilsStatus.transient;
+      final lyrics = _resultFromObject(decoded.json)?.richLyrics;
+      if (lyrics != null) return (lyrics: lyrics, settled: true);
     }
-
-    final decoded = await _musicUtils.getJsonResult('/lyrics/get', params);
-    settled |= decoded.status != MusicUtilsStatus.transient;
-    final result = _resultFromObject(decoded.json);
-    return (lyrics: result?.richLyrics, settled: settled);
+    return (lyrics: null, settled: settled);
   }
 
   /// music-utils `/api/lyrics/search`, with direct LRCLIB fallback.
@@ -446,24 +424,15 @@ class LrclibService {
     String? artistName,
     String? albumName,
   }) async {
-    if (trackName.isEmpty) return const [];
-
-    final unified = await _musicUtils.getJson('/lyrics/search', {
-      'track_name': trackName,
-      if (artistName != null && artistName.isNotEmpty)
-        'artist_name': artistName,
-      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
-      'limit': '20',
-      'include_rich_sync': 'true',
-      'sync_type': 'richsync',
-    });
-    final unifiedResults = _resultsFromObject(unified);
-    final direct = await _searchDirect({
-      'track_name': trackName,
-      if (artistName != null && artistName.isNotEmpty)
-        'artist_name': artistName,
-      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
-    });
+    final calls = _plan(
+      'fields',
+      track: trackName,
+      artist: artistName,
+      album: albumName,
+    );
+    if (calls.isEmpty) return const [];
+    final unifiedResults = _resultsFromObject(await _execute(calls.first));
+    final direct = _resultsFromObject(await _execute(calls.last));
     if (unifiedResults.isEmpty) return direct;
 
     // The service aggregates several providers, but it is not the whole list:
@@ -485,19 +454,11 @@ class LrclibService {
 
   /// music-utils free-text lyrics search, with direct LRCLIB fallback.
   Future<List<LrclibResult>> searchFreeText(String query) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return const [];
-
-    final unified = await _musicUtils.getJson('/lyrics/search', {
-      'q': trimmed,
-      'limit': '20',
-      'include_rich_sync': 'true',
-      'sync_type': 'richsync',
-    });
-    final unifiedResults = _resultsFromObject(unified);
-    if (unifiedResults.isNotEmpty) return unifiedResults;
-
-    return _searchDirect({'q': trimmed});
+    for (final call in _plan('text', text: query)) {
+      final results = _resultsFromObject(await _execute(call));
+      if (results.isNotEmpty) return results;
+    }
+    return const [];
   }
 
   LrclibResult? _resultFromObject(Object? decoded) {
@@ -508,36 +469,6 @@ class LrclibService {
 
   List<LrclibResult> _resultsFromObject(Object? decoded) {
     if (decoded is! List) return const [];
-    final results = <LrclibResult>[];
-    for (final entry in decoded) {
-      if (entry is! Map<String, dynamic>) continue;
-      final result = LrclibResult.fromJson(entry);
-      if (result.isUsable) results.add(result);
-    }
-    return results;
-  }
-
-  Future<LrclibResult?> _getExactDirect({
-    required String trackName,
-    required String artistName,
-    String? albumName,
-    Duration? duration,
-  }) async {
-    final decoded = await _getJson('/api/get', {
-      'track_name': trackName,
-      'artist_name': artistName,
-      if (albumName != null && albumName.isNotEmpty) 'album_name': albumName,
-      if (duration != null) 'duration': '${duration.inSeconds}',
-    });
-    if (decoded is! Map<String, dynamic>) return null;
-    final result = LrclibResult.fromJson(decoded);
-    return result.isUsable ? result : null;
-  }
-
-  Future<List<LrclibResult>> _searchDirect(Map<String, String> params) async {
-    final decoded = await _getJson('/api/search', params);
-    if (decoded is! List) return const [];
-
     final results = <LrclibResult>[];
     for (final entry in decoded) {
       if (entry is! Map<String, dynamic>) continue;

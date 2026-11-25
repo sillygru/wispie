@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../data/rust/native_command.dart';
 import '../shared_http_client.dart';
 
 typedef ByteProgress = void Function(int done, int total);
@@ -157,9 +158,6 @@ class SyncApiClient {
 
   Future<void>? _refreshing;
 
-  static const int _maxRetries = 2;
-  static const int _maxAutoRetryAfter = 30;
-
   /// True for hosts where plain http is tolerated (loopback / private ranges).
   static bool isPrivateHost(String host) {
     final h = host.toLowerCase();
@@ -218,6 +216,9 @@ class SyncApiClient {
 
   // ---- core ----
 
+  Object? _transport(String op, Map<String, Object?> values) =>
+      runCoreCommand('sync_transport', {'op': op, ...values})['result'];
+
   Future<HttpClientResponse> _send(
     String method,
     String path, {
@@ -273,20 +274,19 @@ class SyncApiClient {
       if (res.statusCode < 400) return res;
       final err = await _readError(res);
 
-      if (res.statusCode == 401 &&
-          auth &&
-          bearer == null &&
-          !refreshed &&
-          tokens?.refresh != null) {
+      final action = _transport('error', {
+        'status': res.statusCode,
+        'can_refresh': auth && bearer == null && tokens?.refresh != null,
+        'refreshed': refreshed,
+        'retry_after': err.retryAfter,
+        'attempt': attempt,
+      });
+      if (action == 'refresh') {
         refreshed = true;
         await _refreshSingleFlight();
         continue;
       }
-      final retryable = res.statusCode == 429 || res.statusCode == 503;
-      if (retryable &&
-          attempt < _maxRetries &&
-          err.retryAfter != null &&
-          err.retryAfter! <= _maxAutoRetryAfter) {
+      if (action == 'wait') {
         attempt++;
         await _sleep(Duration(seconds: err.retryAfter!));
         continue;
@@ -320,21 +320,49 @@ class SyncApiClient {
     );
   }
 
-  Future<Map<String, dynamic>> _json(
-    String method,
-    String path, {
-    Object? json,
+  ({String method, String path, bool auth}) _route(
+      String endpoint, String? id) {
+    final route = _transport('route', {'endpoint': endpoint, 'id': id}) as Map;
+    return (
+      method: route['method'] as String,
+      path: route['path'] as String,
+      auth: route['auth'] as bool,
+    );
+  }
+
+  Future<HttpClientResponse> _sendRoute(
+    String endpoint, {
+    String? id,
     Map<String, String>? query,
-    String? bearer,
-    bool auth = true,
-  }) async {
-    final res = await _send(
-      method,
-      path,
-      json: json ?? (method == 'GET' ? null : const <String, dynamic>{}),
+    List<int>? body,
+    Map<String, String>? headers,
+    ByteProgress? onSendProgress,
+  }) {
+    final route = _route(endpoint, id);
+    return _send(
+      route.method,
+      route.path,
+      auth: route.auth,
       query: query,
+      body: body,
+      headers: headers,
+      onSendProgress: onSendProgress,
+    );
+  }
+
+  Future<Map<String, dynamic>> _json(
+    String endpoint, {
+    String? id,
+    Object? json,
+    String? bearer,
+  }) async {
+    final route = _route(endpoint, id);
+    final res = await _send(
+      route.method,
+      route.path,
+      json: json ?? (route.method == 'GET' ? null : const <String, dynamic>{}),
       bearer: bearer,
-      auth: auth,
+      auth: route.auth,
     );
     final text = await utf8.decodeStream(res);
     return text.isEmpty ? {} : jsonDecode(text) as Map<String, dynamic>;
@@ -348,10 +376,8 @@ class SyncApiClient {
           throw const SyncApiException(401, 'unauthorized', 'Not logged in');
         }
         final j = await _json(
-          'POST',
-          '/auth/refresh',
+          'refresh',
           json: {'refresh_token': refresh},
-          auth: false,
         );
         await _setTokens(_tokensFrom(j));
       } on SyncApiException catch (e) {
@@ -381,7 +407,7 @@ class SyncApiClient {
   // ---- info + auth ----
 
   Future<SyncServerInfo> info() async {
-    final j = await _json('GET', '/info', auth: false);
+    final j = await _json('info');
     if (j['name'] != 'wispie-sync') {
       throw const SyncApiException(0, 'not_wispie', 'Not a wispie sync server');
     }
@@ -400,10 +426,8 @@ class SyncApiClient {
     String username,
   ) async {
     final j = await _json(
-      'POST',
-      '/auth/prelogin',
+      'prelogin',
       json: {'username': username},
-      auth: false,
     );
     return (
       salt: _b64(j['salt'] as String),
@@ -413,10 +437,8 @@ class SyncApiClient {
 
   Future<RegisterBegin> registerBegin(String username) async {
     final j = await _json(
-      'POST',
-      '/auth/register/begin',
+      'register_begin',
       json: {'username': username},
-      auth: false,
     );
     final pow = j['pow'] as Map<String, dynamic>;
     return RegisterBegin(
@@ -440,9 +462,7 @@ class SyncApiClient {
     String? deviceLabel,
   }) async {
     final j = await _json(
-      'POST',
-      '/auth/register/finish',
-      auth: false,
+      'register_finish',
       json: {
         'account_id': accountId,
         'username': username,
@@ -462,9 +482,7 @@ class SyncApiClient {
 
   Future<LoginResult> login(String username, Uint8List authKey) async {
     final j = await _json(
-      'POST',
-      '/auth/login',
-      auth: false,
+      'login',
       json: {'username': username, 'auth_key': _enc(authKey)},
     );
     final t = _tokensFrom(j);
@@ -478,7 +496,7 @@ class SyncApiClient {
 
   Future<void> logout() async {
     try {
-      await _json('POST', '/auth/logout');
+      await _json('logout');
     } finally {
       await _setTokens(null);
     }
@@ -487,9 +505,7 @@ class SyncApiClient {
   Future<({String accountId, Uint8List wrappedByRk, String recoverToken})>
       recoverBegin(String username, Uint8List recoveryAuth) async {
     final j = await _json(
-      'POST',
-      '/auth/recover/begin',
-      auth: false,
+      'recover_begin',
       json: {'username': username, 'recovery_auth': _enc(recoveryAuth)},
     );
     return (
@@ -507,8 +523,7 @@ class SyncApiClient {
     required Uint8List wrappedByPw,
   }) async {
     final j = await _json(
-      'POST',
-      '/auth/recover/finish',
+      'recover_finish',
       bearer: recoverToken,
       json: {
         'salt': _enc(salt),
@@ -528,8 +543,7 @@ class SyncApiClient {
     required Uint8List wrappedByPw,
   }) =>
       _json(
-        'POST',
-        '/account/password',
+        'change_password',
         json: {
           'current_auth_key': _enc(currentAuthKey),
           'salt': _enc(salt),
@@ -545,8 +559,7 @@ class SyncApiClient {
     required Uint8List wrappedByRk,
   }) =>
       _json(
-        'POST',
-        '/account/recovery-key',
+        'replace_recovery',
         json: {
           'current_auth_key': _enc(currentAuthKey),
           'recovery_auth': _enc(recoveryAuth),
@@ -554,17 +567,16 @@ class SyncApiClient {
         },
       );
 
-  Future<Map<String, dynamic>> account() => _json('GET', '/account');
+  Future<Map<String, dynamic>> account() => _json('account');
 
   Future<void> deleteAccount(Uint8List authKey) async {
-    await _json('DELETE', '/account', json: {'auth_key': _enc(authKey)});
+    await _json('delete_account', json: {'auth_key': _enc(authKey)});
     await _setTokens(null);
   }
 
   // ---- sync ----
 
-  Future<SyncState> state() async =>
-      SyncState.fromJson(await _json('GET', '/sync/state'));
+  Future<SyncState> state() async => SyncState.fromJson(await _json('state'));
 
   /// Throws [SyncApiException] with `isGone` when [after] is no longer retained.
   Future<DeltaPage> pullDeltas(
@@ -572,9 +584,8 @@ class SyncApiClient {
     int maxBytes = 8 * 1024 * 1024,
     ByteProgress? onProgress,
   }) async {
-    final res = await _send(
-      'GET',
-      '/sync/deltas',
+    final res = await _sendRoute(
+      'pull_deltas',
       query: {'after': '$after', 'max_bytes': '$maxBytes'},
     );
     final total = res.contentLength;
@@ -584,22 +595,24 @@ class SyncApiClient {
       onProgress?.call(b.length, total < 0 ? b.length : total);
     }
     final data = b.takeBytes();
-    final bd = ByteData.sublistView(data);
-    final frames = <DeltaFrame>[];
-    var o = 0;
-    while (o < data.length) {
-      if (o + 12 > data.length) {
-        throw const SyncApiException(0, 'bad_stream', 'Truncated delta stream');
-      }
-      final seq = bd.getUint64(o);
-      final len = bd.getUint32(o + 8);
-      o += 12;
-      if (o + len > data.length) {
-        throw const SyncApiException(0, 'bad_stream', 'Truncated delta frame');
-      }
-      frames.add(DeltaFrame(seq, Uint8List.sublistView(data, o, o + len)));
-      o += len;
+    final List<dynamic> frameOffsets;
+    try {
+      frameOffsets = runCoreCommand(
+        'sync_transport',
+        {'op': 'delta_frames'},
+        bytes: data,
+      )['result'] as List<dynamic>;
+    } on StateError catch (error) {
+      throw SyncApiException(0, 'bad_stream', error.message);
     }
+    final frames = [
+      for (final frame in frameOffsets.cast<Map>())
+        DeltaFrame(
+          frame['seq'] as int,
+          Uint8List.sublistView(
+              data, frame['start'] as int, frame['end'] as int),
+        ),
+    ];
     return DeltaPage(
       frames,
       int.parse(res.headers.value('x-wispie-head') ?? '0'),
@@ -614,9 +627,8 @@ class SyncApiClient {
     required int expectHead,
     ByteProgress? onProgress,
   }) async {
-    final res = await _send(
-      'POST',
-      '/sync/deltas',
+    final res = await _sendRoute(
+      'push_delta',
       body: blob,
       headers: {
         'X-Wispie-Epoch': '$epoch',
@@ -637,29 +649,32 @@ class SyncApiClient {
     var have = await dest.exists() ? await dest.length() : 0;
     HttpClientResponse res;
     try {
-      res = await _send(
-        'GET',
-        '/sync/snapshot',
-        headers: have > 0 ? {'Range': 'bytes=$have-'} : null,
+      final range = _transport('range', {'have': have}) as String?;
+      res = await _sendRoute(
+        'snapshot',
+        headers: range == null ? null : {'Range': range},
       );
     } on SyncApiException catch (e) {
       if (e.status != 416) rethrow;
       await dest.delete();
       have = 0;
-      res = await _send('GET', '/sync/snapshot');
+      res = await _sendRoute('snapshot');
     }
-    final resumed = res.statusCode == 206;
-    if (!resumed) have = 0;
-    final total = res.contentLength < 0 ? -1 : res.contentLength + have;
+    final download = _transport('download', {
+      'have': have,
+      'status': res.statusCode,
+      'length': res.contentLength,
+    }) as Map;
+    final total = download['total'] as int?;
     final sink = dest.openWrite(
-      mode: resumed ? FileMode.append : FileMode.write,
+      mode: download['append'] == true ? FileMode.append : FileMode.write,
     );
-    var done = have;
+    var done = download['offset'] as int;
     try {
       await for (final c in res) {
         sink.add(c);
         done += c.length;
-        onProgress?.call(done, total < 0 ? done : total);
+        onProgress?.call(done, total ?? done);
       }
     } finally {
       await sink.close();
@@ -678,20 +693,19 @@ class SyncApiClient {
     required int baseSeq,
   }) async {
     final j = await _json(
-      'POST',
-      '/sync/uploads',
+      'upload_init',
       json: {'kind': kind, 'size': size, 'epoch': epoch, 'base_seq': baseSeq},
     );
     return (id: j['upload_id'] as String, chunkBytes: j['chunk_bytes'] as int);
   }
 
   Future<int> uploadStatus(String id) async =>
-      (await _json('GET', '/sync/uploads/$id'))['received'] as int;
+      (await _json('upload_status', id: id))['received'] as int;
 
   Future<int> uploadChunk(String id, int offset, List<int> chunk) async {
-    final res = await _send(
-      'PUT',
-      '/sync/uploads/$id',
+    final res = await _sendRoute(
+      'upload_chunk',
+      id: id,
       query: {'offset': '$offset'},
       body: chunk,
     );
@@ -700,9 +714,9 @@ class SyncApiClient {
   }
 
   Future<SyncState> uploadCommit(String id) async =>
-      SyncState.fromJson(await _json('POST', '/sync/uploads/$id/commit'));
+      SyncState.fromJson(await _json('upload_commit', id: id));
 
-  Future<void> uploadAbort(String id) => _json('DELETE', '/sync/uploads/$id');
+  Future<void> uploadAbort(String id) => _json('upload_abort', id: id);
 
   /// Init + chunked PUT + commit. Pass [resumeId] to continue an interrupted
   /// upload of the same blob; an offset mismatch resyncs from the server.
@@ -734,13 +748,26 @@ class SyncApiClient {
       onInit?.call(id);
     }
     while (offset < blob.length) {
-      final end = offset + chunk > blob.length ? blob.length : offset + chunk;
+      final end = _transport('chunk', {
+        'offset': offset,
+        'size': blob.length,
+        'chunk': chunk,
+      }) as int?;
+      if (end == null) {
+        throw const SyncApiException(
+            0, 'invalid_upload_range', 'Invalid upload range');
+      }
       try {
         offset = await uploadChunk(
             id, offset, Uint8List.sublistView(blob, offset, end));
       } on SyncApiException catch (e) {
-        if (e.status == 409 && e.extra['received'] is int) {
-          offset = e.extra['received'] as int;
+        final corrected = _transport('upload_conflict', {
+          'status': e.status,
+          'received': e.extra['received'] is int ? e.extra['received'] : null,
+          'size': blob.length,
+        }) as int?;
+        if (corrected != null) {
+          offset = corrected;
           continue;
         }
         rethrow;

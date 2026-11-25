@@ -166,6 +166,7 @@ fn json_reply(payload: &Value) -> Result<Value, String> {
             let aad = format!("{AAD_ACCOUNT_KEY_RECOVERY}{id}");
             Ok(json!({ "accountKeyHex": hex(&open(&kek, &sealed, aad.as_bytes())?) }))
         }
+        "recover_account" => recover_account(payload),
         "pow" => {
             let challenge = text(payload, "challenge")?;
             let bits = integer(payload, "bits")?.max(0) as u32;
@@ -201,9 +202,34 @@ fn json_reply(payload: &Value) -> Result<Value, String> {
     }
 }
 
+fn recover_account(payload: &Value) -> Result<Value, String> {
+    let id = text(payload, "accountId")?;
+    let recovery = unhex(text(payload, "recoveryKeyHex")?)?;
+    let recovery_kek = derive(&recovery, CTX_RECOVERY_KEK)?;
+    let sealed = unhex(text(payload, "sealedHex")?)?;
+    let aad = format!("{AAD_ACCOUNT_KEY_RECOVERY}{id}");
+    let account_key = open(&recovery_kek, &sealed, aad.as_bytes())?;
+    let salt = random(16)?;
+    let master = password_master(payload, &salt)?;
+    let auth_key = derive(&master, CTX_AUTH)?;
+    let kek = derive(&master, CTX_KEK)?;
+    let aad = format!("{AAD_ACCOUNT_KEY}{id}");
+    let wrapped = seal(&kek, &account_key, aad.as_bytes(), &random(NONCE_BYTES)?)?;
+    Ok(json!({
+        "accountKeyHex": hex(&account_key),
+        "saltHex": hex(&salt),
+        "authKeyHex": hex(&auth_key),
+        "wrappedHex": hex(&wrapped),
+    }))
+}
+
 fn argon2(payload: &Value) -> Result<Value, String> {
-    let password = text(payload, "password")?.nfkc().collect::<String>();
     let salt = unhex(text(payload, "saltHex")?)?;
+    Ok(json!({ "keyHex": hex(&password_master(payload, &salt)?) }))
+}
+
+fn password_master(payload: &Value, salt: &[u8]) -> Result<[u8; 32], String> {
+    let password = text(payload, "password")?.nfkc().collect::<String>();
     let params = Params::new(
         integer(payload, "mKiB")?.max(1) as u32,
         integer(payload, "iterations")?.max(1) as u32,
@@ -214,9 +240,9 @@ fn argon2(payload: &Value) -> Result<Value, String> {
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut out = [0u8; 32];
     argon
-        .hash_password_into(password.as_bytes(), &salt, &mut out)
+        .hash_password_into(password.as_bytes(), salt, &mut out)
         .map_err(|error| format!("crypto: argon2: {error}"))?;
-    Ok(json!({ "keyHex": hex(&out) }))
+    Ok(out)
 }
 
 fn derive(key: &[u8], context: &str) -> Result<Vec<u8>, String> {

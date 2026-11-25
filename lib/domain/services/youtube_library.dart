@@ -830,7 +830,12 @@ class YouTubeLibraryApi {
 
       // A 400 from InnerTube is usually a client version YouTube no longer
       // accepts. Re-resolve once rather than making the user restart.
-      if (status == HttpStatus.badRequest && attempt == 0 && !_pinnedVersion) {
+      if (_parse('retry_version', {
+            'status': status,
+            'attempt': attempt,
+            'pinned': _pinnedVersion,
+          })['retry'] ==
+          true) {
         _versions.remove(client);
         final store = _store;
         if (store != null) await store.remove(_versionKey(client));

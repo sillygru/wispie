@@ -11,6 +11,7 @@ class PendingRename {
     required this.from,
     required this.to,
     required this.url,
+    this.sidecars = const [],
   });
 
   /// The filename the database still knows the song by.
@@ -22,15 +23,27 @@ class PendingRename {
   /// Where the file sits now, so recovery can prove the rename really happened
   /// rather than take the journal's word for it.
   final String url;
+  final List<String> sidecars;
 
-  Map<String, Object?> toJson() => {'from': from, 'to': to, 'url': url};
+  Map<String, Object?> toJson() => {
+        'from': from,
+        'to': to,
+        'url': url,
+        if (sidecars.isNotEmpty) 'sidecars': sidecars,
+      };
 
   static PendingRename? fromJson(Map<String, Object?> json) {
     final from = json['from'];
     final to = json['to'];
     final url = json['url'];
     if (from is! String || to is! String || url is! String) return null;
-    return PendingRename(from: from, to: to, url: url);
+    return PendingRename(
+      from: from,
+      to: to,
+      url: url,
+      sidecars:
+          (json['sidecars'] as List?)?.whereType<String>().toList() ?? const [],
+    );
   }
 }
 
@@ -72,6 +85,23 @@ class BulkRenameJournal {
     } on StateError catch (error) {
       debugPrint('Could not read bulk rename journal: $error');
     }
+  }
+
+  Future<List<PendingRename>> recoverableRenames() async {
+    final reply = await _command('recoverable_renames');
+    return [
+      for (final item in reply['entries'] as List)
+        if (PendingRename.fromJson((item as Map).cast()) case final entry?)
+          entry,
+    ];
+  }
+
+  Future<void> moveSidecars(PendingRename entry) async {
+    if (entry.sidecars.isEmpty) return;
+    await _command('rename_sidecars', {
+      'path': entry.url,
+      'sidecars': entry.sidecars,
+    });
   }
 
   /// Notes a rename that is about to be attempted.
