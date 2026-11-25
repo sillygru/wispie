@@ -133,12 +133,13 @@ fn write(db: &Connection, payload: &Value) -> Result<Value, String> {
 }
 
 fn rename(db: &Connection, payload: &Value) -> Result<Value, String> {
-    for row in payload["renames"]
-        .as_array()
-        .ok_or("missing search index renames")?
-    {
-        let from = text_field(row, "from")?;
-        let to = text_field(row, "to")?;
+    let renames = super::song_files::parse_renames(payload)?;
+    rename_rows(db, &renames)?;
+    Ok(json!({}))
+}
+
+pub(super) fn rename_rows(db: &Connection, renames: &[(&str, &str)]) -> Result<(), String> {
+    for &(from, to) in renames {
         if from != to {
             db.execute(
                 "UPDATE OR REPLACE search_index SET filename = ?2 WHERE filename = ?1",
@@ -147,7 +148,7 @@ fn rename(db: &Connection, payload: &Value) -> Result<Value, String> {
             .map_err(|error| error.to_string())?;
         }
     }
-    Ok(json!({}))
+    Ok(())
 }
 
 fn search(db: &Connection, payload: &Value) -> Result<Value, String> {

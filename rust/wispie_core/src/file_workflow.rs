@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 
 pub use crate::meta::{edit_tags, TagEdit};
 
+pub const RENAME_SLICE_LENGTH: usize = 25;
+
 const RENAME_JOURNAL: &str = "bulk_rename_journal.json";
 
 pub fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
@@ -37,7 +39,7 @@ pub(crate) fn atomic_write(
     result
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PendingRename {
     pub from: String,
     pub to: String,
@@ -72,6 +74,29 @@ pub fn move_song(source: &Path, new_filename: &str) -> Result<(), String> {
         return Err("song rename needs a single filename".into());
     }
     fs::rename(source, source.with_file_name(new_filename)).map_err(|error| error.to_string())
+}
+
+static JOURNAL_WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn record_rename(directory: &Path, entry: PendingRename) -> Result<(), String> {
+    let _write = JOURNAL_WRITE.lock().map_err(|error| error.to_string())?;
+    let mut entries = read_rename_journal(directory)?;
+    if !entries.contains(&entry) {
+        entries.push(entry);
+        write_rename_journal(directory, &entries)?;
+    }
+    Ok(())
+}
+
+pub fn acknowledge_renames(directory: &Path, acknowledged: &[PendingRename]) -> Result<(), String> {
+    let _write = JOURNAL_WRITE.lock().map_err(|error| error.to_string())?;
+    let mut entries = read_rename_journal(directory)?;
+    let before = entries.len();
+    entries.retain(|entry| !acknowledged.contains(entry));
+    if entries.len() != before {
+        write_rename_journal(directory, &entries)?;
+    }
+    Ok(())
 }
 
 pub fn recoverable_renames(directory: &Path) -> Result<Vec<PendingRename>, String> {
@@ -152,7 +177,17 @@ pub(crate) fn run(payload: &Value, bytes: Option<&[u8]>) -> Result<Value, String
             move_song(target, filename)?;
             Ok(json!({}))
         }
-        Some("recoverable_renames") => Ok(json!({ "entries": recoverable_renames(target)? })),
+        Some("recoverable_renames") => {
+            let entries = match payload.get("entries") {
+                Some(entries) => serde_json::from_value::<Vec<PendingRename>>(entries.clone())
+                    .map_err(|error| error.to_string())?
+                    .into_iter()
+                    .filter(|entry| Path::new(&entry.url).is_file())
+                    .collect(),
+                None => recoverable_renames(target)?,
+            };
+            Ok(json!({"entries": entries}))
+        }
         Some("rename_sidecars") => {
             let sidecars = serde_json::from_value::<Vec<PathBuf>>(payload["sidecars"].clone())
                 .map_err(|error| error.to_string())?;
@@ -170,6 +205,19 @@ pub(crate) fn run(payload: &Value, bytes: Option<&[u8]>) -> Result<Value, String
             let edit = serde_json::from_value::<TagEdit>(payload.clone())
                 .map_err(|error| error.to_string())?;
             edit_tags(target, edit, bytes.filter(|image| !image.is_empty()))?;
+            Ok(json!({}))
+        }
+        Some("rename_slice_length") => Ok(json!({"length": RENAME_SLICE_LENGTH})),
+        Some("record_rename") => {
+            let entry = serde_json::from_value(payload["entry"].clone())
+                .map_err(|error| error.to_string())?;
+            record_rename(target, entry)?;
+            Ok(json!({}))
+        }
+        Some("acknowledge_renames") => {
+            let entries = serde_json::from_value::<Vec<PendingRename>>(payload["entries"].clone())
+                .map_err(|error| error.to_string())?;
+            acknowledge_renames(target, &entries)?;
             Ok(json!({}))
         }
         Some("read_rename_journal") => Ok(json!({ "entries": read_rename_journal(target)? })),

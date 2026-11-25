@@ -473,13 +473,12 @@ class YouTubeService {
     String id, {
     required bool wantVideo,
   }) async {
-    final base = _resolverBase.trim().replaceAll(RegExp(r'/+$'), '');
-    final candidates = [
-      '$base/api/v1/videos/$id?local=true',
-      '$base/streams/$id',
-    ];
-
-    for (final candidate in candidates) {
+    final requests = runCoreCommand('youtube', {
+      'action': 'proxy_requests',
+      'base': _resolverBase,
+      'id': id,
+    });
+    for (final candidate in (requests['urls'] as List).cast<String>()) {
       final uri = Uri.tryParse(candidate);
       if (uri == null) continue;
       try {
@@ -489,42 +488,28 @@ class YouTubeService {
           await _drain(response);
           continue;
         }
-        final decoded = jsonDecode(await _readBody(response));
-        if (decoded is! Map) continue;
-        final formats = <Map<String, dynamic>>[];
-        for (final key in const [
-          'adaptiveFormats',
-          'audioStreams',
-          'formats'
-        ]) {
-          final entries = decoded[key];
-          if (entries is! List) continue;
-          for (final entry in entries) {
-            if (entry is Map) formats.add(Map<String, dynamic>.from(entry));
-          }
-        }
-        for (final format in formats) {
-          final url = _directUrl(format);
+        final reply = runCoreCommand('youtube', {
+          'action': 'proxy_streams',
+          'response': jsonDecode(await _readBody(response)),
+          'video': wantVideo,
+        });
+        for (final stream in (reply['streams'] as List).cast<Map>()) {
+          final url = Uri.tryParse(stream['url'] as String);
           if (url == null) continue;
-          final mime = format['mimeType']?.toString() ??
-              format['type']?.toString() ??
-              '';
-          final isVideo = mime.startsWith('video/');
-          if (isVideo != wantVideo) continue;
+          final mime = stream['mime'] as String;
           final expiresAt = _expiryOf(url);
           if (wantVideo) {
             return YouTubeVideoStream(
               url: url,
-              mimeType: mime.isEmpty ? 'video/mp4' : mime,
+              mimeType: mime,
               expiresAt: expiresAt,
             );
           }
           return YouTubeAudioStream(
             url: url,
-            mimeType: mime.isEmpty ? 'audio/mp4' : mime,
-            itag: format['itag']?.toString() ?? 'proxy',
-            contentLength:
-                _intOrNull(format['contentLength'] ?? format['clen']),
+            mimeType: mime,
+            itag: stream['itag'] as String,
+            contentLength: stream['content_length'] as int?,
             expiresAt: expiresAt,
           );
         }

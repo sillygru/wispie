@@ -36,6 +36,24 @@ pub fn upload_conflict(status: u16, received: Option<i64>, size: i64) -> Option<
     received.filter(|&offset| status == 409 && (0..=size).contains(&offset))
 }
 
+#[derive(Serialize)]
+#[serde(tag = "step", rename_all = "snake_case")]
+pub enum UploadStep {
+    Commit,
+    Send { start: i64, end: i64 },
+    InvalidRange,
+}
+
+pub fn upload_step(offset: i64, size: i64, chunk: i64) -> UploadStep {
+    if offset == size && size >= 0 {
+        UploadStep::Commit
+    } else if let Some(end) = chunk_end(offset, size, chunk) {
+        UploadStep::Send { start: offset, end }
+    } else {
+        UploadStep::InvalidRange
+    }
+}
+
 pub fn range(have: i64) -> Option<String> {
     (have > 0).then(|| format!("bytes={have}-"))
 }
@@ -179,6 +197,11 @@ enum Request {
         size: i64,
         chunk: i64,
     },
+    UploadStep {
+        offset: i64,
+        size: i64,
+        chunk: i64,
+    },
     UploadConflict {
         status: u16,
         received: Option<i64>,
@@ -217,6 +240,11 @@ pub(crate) fn run(payload: Value, bytes: Option<&[u8]>) -> Result<Value, String>
             size,
             chunk,
         } => json!(chunk_end(offset, size, chunk)),
+        Request::UploadStep {
+            offset,
+            size,
+            chunk,
+        } => json!(upload_step(offset, size, chunk)),
         Request::UploadConflict {
             status,
             received,

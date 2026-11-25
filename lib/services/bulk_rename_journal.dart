@@ -65,30 +65,26 @@ class BulkRenameJournal {
 
   static final BulkRenameJournal instance = BulkRenameJournal._();
 
-  final List<PendingRename> _entries = [];
-  Future<void>? _loading;
-
-  List<PendingRename> get entries => List.unmodifiable(_entries);
-
-  bool get isEmpty => _entries.isEmpty;
-
-  /// Reads the journal off disk once per process.
-  Future<void> load() => _loading ??= _load();
-
-  Future<void> _load() async {
+  Future<List<PendingRename>> load() async {
     try {
-      final reply = await _command('read_rename_journal');
-      for (final item in reply['entries'] as List) {
-        final entry = PendingRename.fromJson((item as Map).cast());
-        if (entry != null) _entries.add(entry);
-      }
+      return await _readEntries('read_rename_journal');
     } on StateError catch (error) {
       debugPrint('Could not read bulk rename journal: $error');
+      return const [];
     }
   }
 
-  Future<List<PendingRename>> recoverableRenames() async {
-    final reply = await _command('recoverable_renames');
+  Future<int> sliceLength() async =>
+      (await _command('rename_slice_length'))['length'] as int;
+
+  Future<List<PendingRename>> recoverableRenames(List<PendingRename> pending) =>
+      _readEntries('recoverable_renames', {
+        'entries': [for (final entry in pending) entry.toJson()],
+      });
+
+  Future<List<PendingRename>> _readEntries(String op,
+      [Map<String, Object?> fields = const {}]) async {
+    final reply = await _command(op, fields);
     return [
       for (final item in reply['entries'] as List)
         if (PendingRename.fromJson((item as Map).cast()) case final entry?)
@@ -104,32 +100,16 @@ class BulkRenameJournal {
     });
   }
 
-  /// Notes a rename that is about to be attempted.
   Future<void> record(PendingRename entry) async {
-    await load();
-    _entries.add(entry);
-    await _flush();
+    await _command('record_rename', {'entry': entry.toJson()});
   }
 
-  /// Retracts an entry whose rename never happened, so a later recovery cannot
-  /// act on a name that was never written.
-  Future<void> discard(PendingRename entry) async {
-    await load();
-    if (!_entries.remove(entry)) return;
-    await _flush();
-  }
+  Future<void> discard(PendingRename entry) => acknowledge([entry]);
 
-  /// Forgets everything. Only correct once the rows have actually moved.
-  Future<void> clear() async {
-    await load();
-    if (_entries.isEmpty) return;
-    _entries.clear();
-    await _flush();
-  }
-
-  Future<void> _flush() async {
-    await _command('write_rename_journal', {
-      'entries': [for (final entry in _entries) entry.toJson()],
+  Future<void> acknowledge(Iterable<PendingRename> entries) async {
+    if (entries.isEmpty) return;
+    await _command('acknowledge_renames', {
+      'entries': [for (final entry in entries) entry.toJson()],
     });
   }
 

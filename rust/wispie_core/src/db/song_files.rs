@@ -39,14 +39,21 @@ pub(super) fn apply_data(
     hlc: i64,
     now: f64,
 ) -> Result<(), String> {
-    in_transaction(data, |data| {
-        for &(from, to) in renames {
-            if from != to {
-                rename_data(data, from, to, hlc, now)?;
-            }
+    in_transaction(data, |data| apply_data_rows(data, renames, hlc, now))
+}
+
+pub(super) fn apply_data_rows(
+    data: &Connection,
+    renames: &[(&str, &str)],
+    hlc: i64,
+    now: f64,
+) -> Result<(), String> {
+    for &(from, to) in renames {
+        if from != to {
+            rename_data(data, from, to, hlc, now)?;
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }
 
 pub(super) fn apply_stats(

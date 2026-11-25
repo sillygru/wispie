@@ -373,33 +373,40 @@ class OnlineMetadataService {
     return _core('itunes_image', {'json': decoded})['url'] as String?;
   }
 
-  Future<String?> _searchDirectArtistImage(String artistName) async {
-    final imageUrl = await searchITunesArtistImage(artistName);
-    if (imageUrl != null && imageUrl.isNotEmpty) return imageUrl;
+  Future<String?> _searchDirectArtistImage(String artistName) =>
+      _searchDirectImage(
+        itunes: () => searchITunesArtistImage(artistName),
+        deezer: () => searchDeezerArtistImage(artistName),
+        lastfm: () => searchLastfmArtistImage(artistName),
+      );
 
-    final deezerUrl = await searchDeezerArtistImage(artistName);
-    if (deezerUrl != null && deezerUrl.isNotEmpty) return deezerUrl;
+  Future<String?> _searchDirectAlbumImage(String albumName,
+          {String? artistName}) =>
+      _searchDirectImage(
+        itunes: () => searchITunesAlbumImage(albumName, artistName: artistName),
+        deezer: () => searchDeezerAlbumImage(albumName, artistName: artistName),
+        lastfm: () => searchLastfmAlbumImage(albumName, artistName: artistName),
+      );
 
-    return searchLastfmArtistImage(artistName);
-  }
-
-  Future<String?> _searchDirectAlbumImage(
-    String albumName, {
-    String? artistName,
+  Future<String?> _searchDirectImage({
+    required Future<String?> Function() itunes,
+    required Future<String?> Function() deezer,
+    required Future<String?> Function() lastfm,
   }) async {
-    final imageUrl = await searchITunesAlbumImage(
-      albumName,
-      artistName: artistName,
-    );
-    if (imageUrl != null && imageUrl.isNotEmpty) return imageUrl;
-
-    final deezerUrl = await searchDeezerAlbumImage(
-      albumName,
-      artistName: artistName,
-    );
-    if (deezerUrl != null && deezerUrl.isNotEmpty) return deezerUrl;
-
-    return searchLastfmAlbumImage(albumName, artistName: artistName);
+    final plan = _core('direct_art_providers', const {});
+    final providers = (plan['providers'] as List).cast<String>();
+    for (final provider in providers) {
+      final image = await switch (provider) {
+        'itunes' => itunes(),
+        'deezer' => deezer(),
+        'lastfm' => lastfm(),
+        _ => throw StateError('Unknown artwork provider: $provider'),
+      };
+      if (image != null && (image.isNotEmpty || provider == providers.last)) {
+        return image;
+      }
+    }
+    return null;
   }
 
   /// Searches artist artwork directly through Last.fm (fallback provider).

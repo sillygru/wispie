@@ -111,6 +111,13 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
             payload["attempt"].as_u64().unwrap_or_default() as usize,
             payload["pinned"].as_bool().unwrap_or_default(),
         )}),
+        "proxy_requests" => json!({"urls": crate::youtube_stream::proxy_requests(
+            payload["base"].as_str().ok_or("missing proxy base")?,
+            payload["id"].as_str().ok_or("missing video id")?,
+        )}),
+        "proxy_streams" => json!({"streams": crate::youtube_stream::proxy_streams(
+            &payload["response"], payload["video"].as_bool().unwrap_or(false),
+        )}),
         "select_stream" => {
             let formats: Vec<crate::youtube_stream::StreamFormat> =
                 serde_json::from_value(payload["formats"].clone())

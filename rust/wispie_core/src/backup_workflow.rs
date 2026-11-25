@@ -276,6 +276,110 @@ pub fn read_documents(root: &Path, selected: &[String]) -> Result<Map<String, Va
     Ok(documents)
 }
 
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RestoreStep {
+    ImportRows,
+    ReadDocuments,
+    ApplyDocuments,
+    CloseSearchIndex,
+    RestoreArtifacts,
+    RepairLibrary,
+    ReconcileIdentity,
+    InvalidateSearchIndex,
+}
+
+#[derive(serde::Serialize)]
+pub struct RestorePlan<'a> {
+    pub steps: Vec<RestoreStep>,
+    pub documents: Vec<&'static str>,
+    pub artifacts: Vec<&'a str>,
+    pub replace_databases: bool,
+    pub preserve_library: bool,
+}
+
+pub fn restore_plan(
+    categories: &[String],
+    full_restore: bool,
+    replace_databases: bool,
+    has_stats: bool,
+    has_data: bool,
+) -> RestorePlan<'_> {
+    use RestoreStep::*;
+    let includes = |options: &[&str]| categories.iter().any(|key| options.contains(&key.as_str()));
+    let mut steps = Vec::new();
+    let mut documents = Vec::new();
+    if includes(&[
+        "favorites",
+        "suggestless",
+        "hidden",
+        "playlists",
+        "mergedGroups",
+        "recommendations",
+        "userdata",
+        "playHistory",
+    ]) {
+        steps.push(ImportRows);
+    }
+    for (category, document) in [
+        ("songs", "songs"),
+        ("shuffleState", "shuffle"),
+        ("playbackState", "playback"),
+        ("queueHistory", "queue"),
+    ] {
+        if includes(&[category]) {
+            documents.push(document);
+        }
+    }
+    if includes(&[
+        "themeSettings",
+        "scannerSettings",
+        "playbackSettings",
+        "uiSettings",
+        "backupSettings",
+    ]) {
+        documents.push("settings");
+    }
+    steps.extend([ReadDocuments, ApplyDocuments]);
+    let artifacts: Vec<_> = categories
+        .iter()
+        .map(String::as_str)
+        .filter(|name| {
+            matches!(
+                *name,
+                "coverCache"
+                    | "libraryCache"
+                    | "searchIndex"
+                    | "waveformCache"
+                    | "colorCache"
+                    | "lyricsCache"
+            )
+        })
+        .collect();
+    let restore_index = artifacts.contains(&"searchIndex");
+    if restore_index {
+        steps.push(CloseSearchIndex);
+    }
+    if !artifacts.is_empty() {
+        steps.push(RestoreArtifacts);
+    }
+    steps.extend([RepairLibrary, ReconcileIdentity]);
+    if !restore_index && includes(&["songs", "libraryCache"]) {
+        steps.push(InvalidateSearchIndex);
+    }
+    RestorePlan {
+        steps,
+        documents,
+        artifacts,
+        replace_databases: replace_databases && (has_stats || has_data),
+        preserve_library: if full_restore {
+            replace_databases && has_data
+        } else {
+            includes(&["songs"])
+        },
+    }
+}
+
 #[derive(Deserialize)]
 struct Request {
     op: String,
@@ -290,11 +394,26 @@ struct Request {
     documents: Map<String, Value>,
     #[serde(default)]
     exported_at: String,
+    #[serde(default)]
+    full_restore: bool,
+    #[serde(default)]
+    replace_databases: bool,
+    #[serde(default)]
+    has_stats: bool,
+    #[serde(default)]
+    has_data: bool,
 }
 
 pub(crate) fn run(payload: Value) -> Result<Value, String> {
     let request: Request = serde_json::from_value(payload).map_err(|error| error.to_string())?;
     match request.op.as_str() {
+        "restore_plan" => Ok(json!(restore_plan(
+            &request.selected,
+            request.full_restore,
+            request.replace_databases,
+            request.has_stats,
+            request.has_data,
+        ))),
         "stage" => {
             stage(
                 &request.root,

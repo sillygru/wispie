@@ -8656,6 +8656,18 @@ abstract class AppLocalizations {
   /// **'Resume Sync'**
   String get lyricsResumeSync;
 
+  /// Lyric timing readout when its offset is zero
+  ///
+  /// In en, this message translates to:
+  /// **'In sync'**
+  String get lyricsTimingInSync;
+
+  /// Signed lyric timing offset with its unit
+  ///
+  /// In en, this message translates to:
+  /// **'{value} s'**
+  String lyricsTimingSeconds(String value);
+
   /// Title of the lyric timing sheet
   ///
   /// In en, this message translates to:

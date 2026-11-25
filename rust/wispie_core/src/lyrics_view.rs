@@ -8,44 +8,6 @@ pub const TIMING_QUANTIZE_STEP: f64 = 0.01;
 const WORD_LEAD_TOLERANCE_US: i64 = 1_000_000;
 const WORD_SPAN_LIMIT_US: i64 = 120_000_000;
 
-#[derive(Clone, Copy, Debug)]
-pub enum Precision {
-    Coarse,
-    Medium,
-    Fine,
-}
-
-impl Precision {
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "coarse" => Some(Self::Coarse),
-            "medium" => Some(Self::Medium),
-            "fine" => Some(Self::Fine),
-            _ => None,
-        }
-    }
-
-    pub fn step(self) -> f64 {
-        match self {
-            Self::Coarse => 0.10,
-            Self::Medium => 0.05,
-            Self::Fine => 0.01,
-        }
-    }
-
-    pub fn half_span_seconds(self) -> f64 {
-        match self {
-            Self::Coarse => 60.0,
-            Self::Medium => 10.0,
-            Self::Fine => 5.0,
-        }
-    }
-
-    pub fn span_seconds(self) -> f64 {
-        self.half_span_seconds() * 2.0
-    }
-}
-
 pub fn clamp_offset(seconds: f64) -> f64 {
     seconds.clamp(-TIMING_MAX_SECONDS, TIMING_MAX_SECONDS)
 }
@@ -66,15 +28,6 @@ pub fn nudge_offset(current: f64, steps: f64) -> f64 {
     quantize_offset(current + steps, TIMING_QUANTIZE_STEP)
 }
 
-/// Slider bounds centred on the offset already dialled in.
-pub fn timing_window(current: f64, precision: Precision) -> (f64, f64, f64) {
-    let span = precision.span_seconds();
-    let centre = quantize_offset(current, TIMING_QUANTIZE_STEP);
-    let lower = (centre - precision.half_span_seconds())
-        .clamp(-TIMING_MAX_SECONDS, TIMING_MAX_SECONDS - span);
-    (lower, lower + span, precision.step())
-}
-
 pub fn offset_micros(seconds: f64) -> i64 {
     (seconds * 1_000_000.0).round() as i64
 }
@@ -93,16 +46,6 @@ pub fn sync_offset_us(position_us: i64, active_line_us: Option<i64>) -> Option<f
         (position_us - active) as f64 / 1_000_000.0,
         TIMING_QUANTIZE_STEP,
     ))
-}
-
-/// Signed readout without the label, which is localized by the caller.
-pub fn format_offset(seconds: f64) -> (bool, String) {
-    let quantized = quantize_offset(seconds, TIMING_QUANTIZE_STEP);
-    if quantized == 0.0 {
-        return (true, String::new());
-    }
-    let sign = if quantized > 0.0 { '+' } else { '-' };
-    (false, format!("{sign}{:.2}", quantized.abs()))
 }
 
 /// One line's timing, resolved from its words where they can be trusted.
@@ -139,7 +82,7 @@ impl LineTiming {
     }
 }
 
-/// Packs a line so the per-tick scan never crosses the ABI with a list.
+/// Packs a line so the view can select timings without crossing the ABI again.
 ///
 /// Columns: timed, line start, start with simulated words, start without,
 /// end with simulated words (-1 none), end without, simulated flag. Both
@@ -205,104 +148,6 @@ pub fn resolve_timing(
         word_end_us: if usable { end } else { None },
         simulated,
     }
-}
-
-/// The lines sounding at one instant.
-pub struct Activity {
-    pub latest: i32,
-    pub anchor: i32,
-    pub active: Vec<i32>,
-}
-
-pub fn activity_packed(rows: &[[i64; 7]], position_us: i64, simulate: bool) -> Activity {
-    let start_column = if simulate { 2 } else { 3 };
-    let end_column = if simulate { 4 } else { 5 };
-    let mut active: Vec<i32> = Vec::new();
-    let mut latest = -1i32;
-    let mut latest_start = 0i64;
-
-    for (index, row) in rows.iter().enumerate() {
-        if row[0] == 0 {
-            continue;
-        }
-        let start = row[start_column];
-        if start > position_us {
-            continue;
-        }
-        latest = index as i32;
-        latest_start = start;
-
-        let end = if row[end_column] >= 0 {
-            Some(row[end_column])
-        } else {
-            rows.iter()
-                .skip(index + 1)
-                .find(|next| next[0] != 0 && next[start_column] > start)
-                .map(|next| next[start_column])
-        };
-        let still_sounding = match end {
-            Some(value) => position_us < value,
-            None => true,
-        };
-        if still_sounding {
-            active.push(index as i32);
-        }
-    }
-
-    if active.is_empty() && latest >= 0 {
-        // Lines that start together are one moment, so hold all of them.
-        for (index, row) in rows.iter().enumerate() {
-            if row[0] != 0 && row[start_column] == latest_start {
-                active.push(index as i32);
-            }
-        }
-    }
-
-    let anchor = active.last().copied().unwrap_or(latest);
-    Activity {
-        latest,
-        anchor,
-        active,
-    }
-}
-
-/// # Safety
-/// `timings` must reference `count * 5` readable i64s and `out` `out_cap`
-/// writable i32s.
-#[no_mangle]
-pub unsafe extern "C" fn wispie_lyrics_activity(
-    timings: *const i64,
-    count: usize,
-    position_us: i64,
-    simulate: u8,
-    out: *mut i32,
-    out_cap: usize,
-) -> i32 {
-    if out.is_null() || out_cap < 2 || (timings.is_null() && count != 0) {
-        return -1;
-    }
-    let raw = if count == 0 {
-        &[][..]
-    } else {
-        std::slice::from_raw_parts(timings, count * 7)
-    };
-    let packed: Vec<[i64; 7]> = raw
-        .chunks(7)
-        .filter_map(|chunk| chunk.try_into().ok())
-        .collect();
-
-    let activity = activity_packed(&packed, position_us, simulate != 0);
-    let needed = 2 + activity.active.len();
-    if needed > out_cap {
-        return -1;
-    }
-    let out = std::slice::from_raw_parts_mut(out, out_cap);
-    out[0] = activity.latest;
-    out[1] = activity.anchor;
-    for (slot, index) in out[2..needed].iter_mut().zip(activity.active.iter()) {
-        *slot = *index;
-    }
-    needed as i32
 }
 
 // ---------------------------------------------------------------------------

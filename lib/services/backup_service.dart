@@ -494,107 +494,101 @@ class BackupService {
     return categories;
   }
 
-  /// Applies every selected category from an extracted archive rooted at
-  /// [importPath].
-  ///
+  Future<Map<String, dynamic>> _restorePlan(
+    String root,
+    ImportOptions options, {
+    bool fullRestore = false,
+    String? statsDbPath,
+    String? dataDbPath,
+  }) =>
+      _backupWorkflow({
+        'op': 'restore_plan',
+        'root': root,
+        'selected': [for (final category in options.categories) category.name],
+        'full_restore': fullRestore,
+        'replace_databases': fullRestore && options.restoreDatabases,
+        'has_stats': statsDbPath != null,
+        'has_data': dataDbPath != null,
+      });
+
   Future<void> _applyImport({
     required String importPath,
     String? statsDbPath,
     String? dataDbPath,
     required ImportOptions options,
+    required Map<String, dynamic> plan,
     List<Song>? preImportSongs,
-    bool replacedDatabaseFiles = false,
     void Function(double progress, String label)? onProgress,
   }) async {
-    final categories = options.categories;
     final storage = StorageService();
     List<Song>? importedRows;
-
-    if (options.hasDatabaseCategories) {
-      await DatabaseService.instance.importWithOptions(
-        statsDbPath: statsDbPath,
-        dataDbPath: dataDbPath,
-        options: options,
-      );
-    }
-
-    final documents = await _backupWorkflow({
-      'op': 'read_documents',
-      'root': importPath,
-      'selected': [
-        if (categories.contains(ImportDataCategory.songs)) 'songs',
-        if (categories.contains(ImportDataCategory.shuffleState)) 'shuffle',
-        if (categories.contains(ImportDataCategory.playbackState)) 'playback',
-        if (categories.contains(ImportDataCategory.queueHistory)) 'queue',
-        if (options.hasSettingsCategories) 'settings',
-      ],
-    });
-    if (documents['songs'] case final List rows) {
-      importedRows = [for (final row in rows) Song.fromJson(row)];
-    }
-    if (documents['shuffle'] case final Map state) {
-      await storage.saveShuffleState(
-        ShuffleState.fromJson(state.cast<String, dynamic>()).toJson(),
-      );
-    }
-    if (documents['playback'] case final Map state) {
-      await storage.savePlaybackState(state.cast<String, dynamic>());
-    }
-    if (documents['queue'] case final List rows) {
-      await DatabaseService.instance.importQueueHistory(
-        rows.cast<Map<String, dynamic>>(),
-      );
-    }
-    if (documents['settings'] case final Map settings) {
-      await storage.importSettingsWithOptions(
-        settings.cast<String, dynamic>(),
-        options,
-      );
-    }
-
-    if (options.hasCacheCategories) {
-      final wantedTypes = categories
-          .map((category) => category.cacheContentType)
-          .whereType<BackupContentType>()
-          .toSet();
-      if (wantedTypes.contains(BackupContentType.searchIndex)) {
-        await SearchIndexRepository().close();
+    late Map<String, dynamic> documents;
+    for (final step in (plan['steps'] as List).cast<String>()) {
+      switch (step) {
+        case 'import_rows':
+          await DatabaseService.instance.importWithOptions(
+            statsDbPath: statsDbPath,
+            dataDbPath: dataDbPath,
+            options: options,
+          );
+        case 'read_documents':
+          documents = await _backupWorkflow({
+            'op': 'read_documents',
+            'root': importPath,
+            'selected': plan['documents'],
+          });
+        case 'apply_documents':
+          if (documents['songs'] case final List rows) {
+            importedRows = [for (final row in rows) Song.fromJson(row)];
+          }
+          if (documents['shuffle'] case final Map state) {
+            await storage.saveShuffleState(
+              ShuffleState.fromJson(state.cast<String, dynamic>()).toJson(),
+            );
+          }
+          if (documents['playback'] case final Map state) {
+            await storage.savePlaybackState(state.cast<String, dynamic>());
+          }
+          if (documents['queue'] case final List rows) {
+            await DatabaseService.instance.importQueueHistory(
+              rows.cast<Map<String, dynamic>>(),
+            );
+          }
+          if (documents['settings'] case final Map settings) {
+            await storage.importSettingsWithOptions(
+              settings.cast<String, dynamic>(),
+              options,
+            );
+          }
+        case 'close_search_index':
+          await SearchIndexRepository().close();
+        case 'restore_artifacts':
+          await _backupWorkflow({
+            'op': 'restore_artifacts',
+            'root': importPath,
+            'selected': plan['artifacts'],
+            'paths': await _backupPaths((await getWispieDirectory()).path),
+          });
+          WispieCache.instance.invalidateUsage();
+        case 'repair_library':
+          await LibraryRepairService.instance.repairLibrary(
+            preImportSongs: preImportSongs,
+            importedRows: importedRows,
+            onProgress: onProgress == null
+                ? null
+                : (value, label) => onProgress(value.clamp(0.0, 0.85), label),
+          );
+        case 'reconcile_identity':
+          if (await SongIdentityService.instance.hasUnmatchedNames(
+              await DatabaseService.instance.getAllSongs())) {
+            onProgress?.call(0.9, 'Matching renamed files…');
+            await SongIdentityService.instance.reconcileFromLibrary();
+          }
+        case 'invalidate_search_index':
+          await _invalidateSearchIndex();
+        default:
+          throw StateError('Unknown backup restore step: $step');
       }
-      await _backupWorkflow({
-        'op': 'restore_artifacts',
-        'root': importPath,
-        'selected': [for (final type in wantedTypes) type.name],
-        'paths': await _backupPaths((await getWispieDirectory()).path),
-      });
-      WispieCache.instance.invalidateUsage();
-    }
-
-    // Last, so it sees the restored music folders and any covers the archive
-    // brought with it. Without this the library table describes the old device
-    // and nothing downstream ever notices.
-    // Always runs — repair is idempotent and cheap when nothing needs changing,
-    // and every import path (app data, backup restore, Namida) should reconcile
-    // the library against the filesystem so orphaned paths don't accumulate.
-    // The repair pass is the visible bulk of an import, but it is not the end:
-    // its own progress is capped below 1 so the bar cannot read "done" while
-    // identity reconciliation is still reading the library.
-    await LibraryRepairService.instance.repairLibrary(
-      preImportSongs: preImportSongs,
-      importedRows: importedRows,
-      onProgress: onProgress == null
-          ? null
-          : (value, label) => onProgress(value.clamp(0.0, 0.85), label),
-    );
-
-    // Backup rows are keyed by the names files had when it was taken; files
-    // renamed since are matched back by audio content. That is the only thing
-    // this pass can do, and it needs a name the library no longer has to do it,
-    // so a restore whose names all still exist skips the read of the library
-    // entirely. Nothing is lost by skipping: the pass would have moved nothing.
-    if (await SongIdentityService.instance
-        .hasUnmatchedNames(await DatabaseService.instance.getAllSongs())) {
-      onProgress?.call(0.9, 'Matching renamed files…');
-      await SongIdentityService.instance.reconcileFromLibrary();
     }
     onProgress?.call(1.0, 'Done');
   }
@@ -606,38 +600,27 @@ class BackupService {
     void Function(double progress, String label)? onProgress,
   }) async {
     try {
-      // Nothing is replaced wholesale on this path, but imported rows still
-      // overwrite locally-scanned ones by filename, so the local view of where
-      // files and covers are has to be preserved across the merge.
-      final preImportSongs =
-          options.categories.contains(ImportDataCategory.songs)
-              ? await DatabaseService.instance.getAllSongs()
-              : null;
+      final importPath = validation['importPath'] as String;
+      final plan = await _restorePlan(importPath, options);
+      final preImportSongs = plan['preserve_library'] as bool
+          ? await DatabaseService.instance.getAllSongs()
+          : null;
 
       await _applyImport(
-        importPath: validation['importPath'] as String,
+        importPath: importPath,
+        plan: plan,
         statsDbPath: validation['statsDbPath'] as String?,
         dataDbPath: validation['dataDbPath'] as String?,
         options: options,
         preImportSongs: preImportSongs,
         onProgress: onProgress,
       );
-      await _invalidateSearchIndexIfStale(options);
     } finally {
       await discardValidation(validation);
     }
   }
 
-  /// The search index is derived from the library, so a library-changing import
-  /// must drop it — unless the archive restored an index of its own.
-  Future<void> _invalidateSearchIndexIfStale(ImportOptions options) async {
-    final categories = options.categories;
-    if (categories.contains(ImportDataCategory.searchIndex)) return;
-    if (!categories.contains(ImportDataCategory.songs) &&
-        !categories.contains(ImportDataCategory.libraryCache)) {
-      return;
-    }
-
+  Future<void> _invalidateSearchIndex() async {
     try {
       final searchIndexRepo = SearchIndexRepository();
       await searchIndexRepo.close();
@@ -667,29 +650,22 @@ class BackupService {
         final statsDbPath = contents['statsDbPath'] as String?;
         final dataDbPath = contents['dataDbPath'] as String?;
 
-        // Wholesale file replacement only makes sense when the archive
-        // actually carries databases; otherwise fall through and restore the
-        // JSON/settings/cache content as usual.
-        var replacedDatabaseFiles = false;
+        final plan = await _restorePlan(
+          contentPath,
+          importOptions,
+          fullRestore: true,
+          statsDbPath: statsDbPath,
+          dataDbPath: dataDbPath,
+        );
         List<Song>? preImportSongs;
-
-        if (importOptions.restoreDatabases &&
-            (statsDbPath != null || dataDbPath != null)) {
-          // The library table rides inside wispie_data.db and is about to be
-          // overwritten by the archive's copy, taking this device's file paths
-          // and extracted covers with it. No import category covers `song`, so
-          // nothing else would preserve them — snapshot before the swap.
-          if (dataDbPath != null) {
-            try {
-              preImportSongs = await DatabaseService.instance.getAllSongs();
-              replacedDatabaseFiles = true;
-            } catch (e) {
-              debugPrint('Could not snapshot library before restore: $e');
-              // Repair still runs; it just has less to merge against.
-              replacedDatabaseFiles = true;
-            }
+        if (plan['preserve_library'] as bool) {
+          try {
+            preImportSongs = await DatabaseService.instance.getAllSongs();
+          } catch (e) {
+            debugPrint('Could not snapshot library before restore: $e');
           }
-
+        }
+        if (plan['replace_databases'] as bool) {
           await DatabaseService.instance.close();
           try {
             await _backupWorkflow({
@@ -717,13 +693,9 @@ class BackupService {
           dataDbPath: dataDbPath,
           options: importOptions,
           preImportSongs: preImportSongs,
-          replacedDatabaseFiles: replacedDatabaseFiles,
+          plan: plan,
           onProgress: onProgress,
         );
-
-        onProgress?.call(0.97, 'Rebuilding the search index…');
-        await _invalidateSearchIndexIfStale(importOptions);
-        onProgress?.call(1.0, 'Done');
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);

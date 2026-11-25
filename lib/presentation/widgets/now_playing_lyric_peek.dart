@@ -230,7 +230,6 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
     _loadedFilename = filename;
     _hasSynced = false;
     _lines = const [];
-    _timings.dispose();
     _timings = LyricTimings.empty;
     _translatedLines = const [];
     _gapVisible.value = false;
@@ -254,7 +253,6 @@ class _NowPlayingLyricPeekState extends ConsumerState<NowPlayingLyricPeek> {
 
     setState(() {
       _lines = parsed;
-      _timings.dispose();
       _timings = buildLyricTimings(parsed, const []);
       _hasSynced = parsed.any((l) => l.isSynced);
     });

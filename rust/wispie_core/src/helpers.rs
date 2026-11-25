@@ -7,7 +7,7 @@
 
 use crate::artwork;
 use crate::emitter::{Emit, Emitter};
-use crate::lyrics_view::{self, Precision};
+use crate::lyrics_view;
 use crate::playback;
 use serde_json::{json, Value};
 
@@ -33,17 +33,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
         }
         "playback_queue_original" => {
             emitter.emit(Emit::Json(playback::queue_original(&request)?));
-        }
-        "timing_window" => {
-            let current = number(&request, "current")?;
-            let precision = precision(&request)?;
-            let (lower, upper, step) = lyrics_view::timing_window(current, precision);
-            emitter.emit(Emit::Json(json!({
-                "lower": lower,
-                "upper": upper,
-                "step": step,
-                "divisions": ((upper - lower) / step).round() as i64,
-            })));
         }
         "timing_quantize" => {
             let seconds = number(&request, "seconds")?;
@@ -93,11 +82,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
             emitter.emit(Emit::Json(json!({
                 "valueUs": lyrics_view::undo_offset(lyric_us, offset),
             })));
-        }
-        "timing_format" => {
-            let seconds = number(&request, "seconds")?;
-            let (in_sync, text) = lyrics_view::format_offset(seconds);
-            emitter.emit(Emit::Json(json!({ "inSync": in_sync, "text": text })));
         }
         "lrclib_clean" => {
             let title = text(&request, "title")?;
@@ -214,28 +198,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
                 }
             }
             emitter.emit(Emit::Json(json!({ "order": order })));
-        }
-        "decode_gate_insert" => {
-            let priorities: Vec<bool> = request
-                .get("priorities")
-                .and_then(Value::as_array)
-                .map(|values| {
-                    values
-                        .iter()
-                        .map(|value| value.as_str() == Some("high"))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let high = request.get("priority").and_then(Value::as_str) == Some("high");
-            let index = if high {
-                priorities
-                    .iter()
-                    .position(|queued| !*queued)
-                    .unwrap_or(priorities.len())
-            } else {
-                priorities.len()
-            };
-            emitter.emit(Emit::Json(json!({ "index": index })));
         }
         "waveform_bars" => {
             let bars = waveform_bars(bytes.unwrap_or(&[]));
@@ -392,11 +354,6 @@ fn text<'a>(request: &'a Value, key: &str) -> Result<&'a str, String> {
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("missing text: {key}"))
-}
-
-fn precision(request: &Value) -> Result<Precision, String> {
-    let name = text(request, "precision")?;
-    Precision::from_name(name).ok_or_else(|| format!("unknown precision: {name}"))
 }
 
 fn compare_versions(a: &str, b: &str) -> i64 {

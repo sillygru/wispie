@@ -40,11 +40,6 @@ class WispieCache {
       'wispie_cache_maintenance_pending';
   static const Duration maintenanceInterval = Duration(days: 1);
 
-  /// Trimming to 80% of budget keeps a fresh write from immediately re-triggering
-  /// a sweep.
-  static const int _trimNumerator = 4;
-  static const int _trimDenominator = 5;
-
   late Directory _support;
   late Directory _root;
   Directory? _notificationDir;
@@ -328,6 +323,7 @@ class WispieCache {
     if (songs.isEmpty) return const CacheMaintenanceReport();
 
     final payload = <String, dynamic>{
+      'op': 'prune',
       'covers': _dirFor(CacheBucket.covers).path,
       'root': _root.path,
       'songs': [
@@ -338,15 +334,16 @@ class WispieCache {
             'cover': song.coverUrl ?? '',
           }
       ],
-      'extraCovers': extraCoverPaths.toList(),
-      'extraNotification': extraNotificationKeys.toList(),
+      'extra_covers': extraCoverPaths.toList(),
+      'extra_notification': extraNotificationKeys.toList(),
     };
 
-    final result = await Isolate.run(() => _sweepCache(payload));
+    final result =
+        await Isolate.run(() => runCoreCommand('cache_layout', payload));
     final report = CacheMaintenanceReport(
-      orphansDeleted: result['orphans'] ?? 0,
-      evictedFiles: result['evicted'] ?? 0,
-      reclaimedBytes: result['bytes'] ?? 0,
+      orphansDeleted: result['orphans'] as int,
+      evictedFiles: result['evicted'] as int,
+      reclaimedBytes: result['bytes'] as int,
     );
 
     if (report.freedAnything) {
@@ -610,141 +607,4 @@ Map<int, List<int>> _scanUsage(Map<int, String> paths) {
     result[entry.key] = [files, bytes];
   }
   return result;
-}
-
-/// One filesystem pass: prune orphans, drop zero-byte files, trim over-budget
-/// buckets least-recently-used.
-Map<String, int> _sweepCache(Map<String, dynamic> payload) {
-  final songs = (payload['songs'] as List).cast<Map>();
-  final coversDir = payload['covers'] as String;
-  final rootPath = payload['root'] as String;
-
-  final keep = <CacheBucket, Set<String>>{
-    for (final bucket in [
-      CacheBucket.covers,
-      CacheBucket.remoteArt,
-      CacheBucket.blurred,
-      CacheBucket.notification,
-      CacheBucket.waveforms,
-      CacheBucket.beatMaps,
-      CacheBucket.lyrics,
-    ])
-      bucket: <String>{},
-  };
-
-  for (final raw in payload['extraCovers'] as List) {
-    keep[CacheBucket.covers]!.add(p.normalize(raw as String));
-  }
-  for (final raw in payload['extraNotification'] as List) {
-    keep[CacheBucket.notification]!.add('$raw.jpg');
-  }
-
-  for (final row in songs) {
-    final filename = (row['filename'] as String?) ?? '';
-    final url = (row['url'] as String?) ?? '';
-    final cover = (row['cover'] as String?) ?? '';
-
-    if (filename.isNotEmpty) {
-      keep[CacheBucket.waveforms]!.add(waveformCacheName(filename));
-      keep[CacheBucket.beatMaps]!.add(beatMapCacheName(filename));
-      keep[CacheBucket.blurred]!.add(blurredCacheName(filename));
-      keep[CacheBucket.lyrics]!.add(richLyricsCacheName(filename));
-      keep[CacheBucket.lyrics]!.add(remoteLyricsCacheName(filename));
-    }
-    if (url.isNotEmpty) {
-      keep[CacheBucket.lyrics]!.add(songLyricsCacheName(url));
-    }
-    if (cover.isNotEmpty) {
-      keep[CacheBucket.notification]!.add(notificationCoverName(cover));
-      if (cover.startsWith('http')) {
-        keep[CacheBucket.remoteArt]!.add(remoteArtCacheName(cover));
-      } else if (!cover.startsWith('content://')) {
-        keep[CacheBucket.covers]!.add(p.normalize(cover));
-      }
-    }
-  }
-
-  final dirs = <CacheBucket, String>{
-    CacheBucket.covers: coversDir,
-    CacheBucket.remoteArt: p.join(rootPath, CacheBucket.remoteArt.dirName),
-    CacheBucket.blurred: p.join(rootPath, CacheBucket.blurred.dirName),
-    CacheBucket.notification:
-        p.join(rootPath, CacheBucket.notification.dirName),
-    CacheBucket.waveforms: p.join(rootPath, CacheBucket.waveforms.dirName),
-    CacheBucket.beatMaps: p.join(rootPath, CacheBucket.beatMaps.dirName),
-    CacheBucket.lyrics: p.join(rootPath, CacheBucket.lyrics.dirName),
-    CacheBucket.youtube: p.join(rootPath, CacheBucket.youtube.dirName),
-  };
-
-  var orphans = 0;
-  var evicted = 0;
-  var reclaimed = 0;
-
-  for (final entry in dirs.entries) {
-    final bucket = entry.key;
-    final dir = Directory(entry.value);
-    if (!dir.existsSync()) continue;
-
-    final keepNames = keep[bucket];
-    final files = <({File file, int bytes, DateTime modified})>[];
-
-    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-      if (entity is! File) continue;
-      int bytes;
-      DateTime modified;
-      try {
-        final stat = entity.statSync();
-        bytes = stat.size;
-        modified = stat.modified;
-      } catch (_) {
-        continue;
-      }
-
-      if (bytes == 0) {
-        try {
-          entity.deleteSync();
-          orphans++;
-        } catch (_) {}
-        continue;
-      }
-
-      if (keepNames != null) {
-        final key = bucket == CacheBucket.covers
-            ? p.normalize(entity.path)
-            : p.basename(entity.path);
-        if (!keepNames.contains(key)) {
-          try {
-            entity.deleteSync();
-            orphans++;
-            reclaimed += bytes;
-          } catch (_) {}
-          continue;
-        }
-      }
-
-      files.add((file: entity, bytes: bytes, modified: modified));
-    }
-
-    if (!bucket.isEvictable || bucket.budgetBytes <= 0) continue;
-    var total = files.fold<int>(0, (sum, file) => sum + file.bytes);
-    if (total <= bucket.budgetBytes) continue;
-
-    final target = bucket.budgetBytes *
-        WispieCache._trimNumerator ~/
-        WispieCache._trimDenominator;
-    files.sort((a, b) => a.modified.compareTo(b.modified));
-    for (final file in files) {
-      if (total <= target) break;
-      try {
-        file.file.deleteSync();
-        total -= file.bytes;
-        evicted++;
-        reclaimed += file.bytes;
-      } catch (_) {
-        // In use by a running decode; the next sweep retries.
-      }
-    }
-  }
-
-  return {'orphans': orphans, 'evicted': evicted, 'bytes': reclaimed};
 }

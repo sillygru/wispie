@@ -157,6 +157,25 @@ enum Request {
         code: String,
         attempt: usize,
     },
+    PullSteps {
+        snapshot: bool,
+        backfill: bool,
+        bulk: bool,
+    },
+    DeltaPage {
+        sequences: Vec<i64>,
+        more: bool,
+        backfill: bool,
+    },
+    FinishBackfill {
+        pending: Vec<String>,
+        applied: Vec<String>,
+    },
+    PushSteps {
+        attempt: usize,
+        max_attempts: usize,
+        refresh_head: bool,
+    },
     ApplyQueue {
         manual: bool,
         prefer_cloud: bool,
@@ -191,6 +210,24 @@ pub(crate) fn run(payload: Value) -> Result<Value, String> {
         } => Ok(json!({
             "action": retry(operation, status, &code, attempt),
         })),
+        Request::PullSteps {
+            snapshot,
+            backfill,
+            bulk,
+        } => Ok(json!({"steps": pull_steps(snapshot, backfill, bulk)})),
+        Request::DeltaPage {
+            sequences,
+            more,
+            backfill,
+        } => Ok(json!(delta_page(&sequences, more, backfill))),
+        Request::FinishBackfill { pending, applied } => {
+            Ok(json!({"value": finish_backfill(pending, &applied)}))
+        }
+        Request::PushSteps {
+            attempt,
+            max_attempts,
+            refresh_head,
+        } => Ok(json!(push_steps(attempt, max_attempts, refresh_head))),
         Request::ApplyQueue {
             manual,
             prefer_cloud,
@@ -201,5 +238,100 @@ pub(crate) fn run(payload: Value) -> Result<Value, String> {
             local_epoch,
             ready,
         } => Ok(json!({"adopt": cloud_epoch != local_epoch || !ready})),
+    }
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PullStep {
+    DownloadSnapshot,
+    MergeSnapshot,
+    ImportSnapshot,
+    RefreshSettings,
+    RemoveDownload,
+    SaveSnapshot,
+    PullDeltas,
+    CompleteBackfill,
+}
+
+pub fn pull_steps(snapshot: bool, backfill: bool, bulk: bool) -> Vec<PullStep> {
+    use PullStep::*;
+    let mut steps = Vec::new();
+    if snapshot {
+        steps.push(DownloadSnapshot);
+        steps.push(if bulk && !backfill {
+            ImportSnapshot
+        } else {
+            MergeSnapshot
+        });
+        if !backfill {
+            steps.push(RefreshSettings);
+        }
+        steps.push(RemoveDownload);
+        if !backfill {
+            steps.push(SaveSnapshot);
+        }
+    }
+    steps.push(PullDeltas);
+    if backfill {
+        steps.extend([RefreshSettings, CompleteBackfill]);
+    }
+    steps
+}
+
+#[derive(Serialize)]
+pub struct DeltaPage {
+    pub next: Option<i64>,
+    pub checkpoints: Vec<Option<i64>>,
+}
+
+pub fn delta_page(sequences: &[i64], more: bool, backfill: bool) -> DeltaPage {
+    DeltaPage {
+        next: more.then(|| sequences.last().copied()).flatten(),
+        checkpoints: sequences
+            .iter()
+            .map(|&sequence| (!backfill).then_some(sequence))
+            .collect(),
+    }
+}
+
+pub fn finish_backfill(pending: Vec<String>, applied: &[String]) -> Option<String> {
+    let remaining: Vec<_> = pending
+        .into_iter()
+        .filter(|category| !applied.contains(category))
+        .collect();
+    (!remaining.is_empty()).then(|| json!(remaining).to_string())
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PushStep {
+    Build,
+    Encrypt,
+    Upload,
+    SaveCursor,
+    Acknowledge,
+    PullHead,
+    Exhausted,
+}
+
+#[derive(Serialize)]
+pub struct PushPlan {
+    pub start: PushStep,
+    pub batch: &'static [PushStep],
+}
+
+pub fn push_steps(attempt: usize, max_attempts: usize, refresh_head: bool) -> PushPlan {
+    use PushStep::*;
+    let start = if refresh_head {
+        PullHead
+    } else if attempt >= max_attempts {
+        Exhausted
+    } else {
+        Build
+    };
+    PushPlan {
+        start,
+        batch: &[Encrypt, Upload, SaveCursor, Acknowledge],
     }
 }

@@ -634,9 +634,7 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
   }
 
   void _rebuildTimings() {
-    final previous = _timings;
     _timings = buildLyricTimings(_lyrics ?? const <LyricLine>[], _wordLines);
-    previous.dispose();
   }
 
   Duration _lineStart(int index, bool simulateEnabled) {
@@ -681,7 +679,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
     _cascade.dispose();
     _frameTicker.dispose();
     _timing.dispose();
-    _timings.dispose();
     _activity.dispose();
     _playbackPosition.dispose();
     _gapSlot.dispose();
@@ -774,7 +771,6 @@ class _LyricsPaneState extends ConsumerState<LyricsPane>
       _loading = true;
       _lyrics = null;
       _wordLines = const [];
-      _timings.dispose();
       _timings = LyricTimings.empty;
       _richSyncAvailable = false;
       _hasSynced = false;

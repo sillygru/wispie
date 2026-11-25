@@ -5,10 +5,10 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/rust/native_command.dart';
 import '../models/song.dart';
 import '../providers/artist_album_art_provider.dart';
 import '../providers/providers.dart';
-import 'library_logic.dart';
 import 'music_utils_api_client.dart';
 import 'online_metadata_service.dart';
 
@@ -95,29 +95,19 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
   /// Downloads decode images, so they run under a tighter pool than lookups.
   static const int _downloadConcurrency = 8;
 
-  static const int _maxAttempts = 3;
-  static const Duration _retryDelay = Duration(seconds: 5);
-
-  /// How long a recorded 404 keeps suppressing automatic fetching.
-  ///
-  /// A 404 describes the service's index at that moment, not the artist
-  /// forever: obscure releases get added later, queries get normalised, and an
-  /// empty result caused by a bad lookup can look identical to a real one.
-  /// Without an expiry one unlucky record silently blocks that artist or album
-  /// for the rest of the install.
-  static const Duration _noResultTtl = Duration(days: 30);
-
-  /// Cover URLs tried per lookup before the key is called a failure. More than
-  /// one because a single dead CDN link should not cost the whole key.
-  static const int _maxCandidateDownloads = 3;
-
-  /// After this many consecutive transient failures the sweep probes the
-  /// API host before deciding it is offline. The probe (a raw socket
-  /// connect) is the only thing allowed to declare offline: server-side
-  /// 5xx/429, bad JSON and dead cover CDN URLs all look like "transient"
-  /// otherwise, and must only fail their own key, never the whole run.
-  static const int _offlineBreakerThreshold = 10;
-  static const Duration _offlineCooldown = Duration(minutes: 5);
+  static final _policy = runCoreCommand('online_meta', {
+    'action': 'passive_art_policy',
+  });
+  static int get _maxCandidateDownloads =>
+      _policy['candidate_downloads'] as int;
+  static int get _offlineBreakerThreshold =>
+      _policy['breaker_threshold'] as int;
+  static Duration get _retryDelay =>
+      Duration(seconds: _policy['retry_seconds'] as int);
+  static Duration get _noResultTtl =>
+      Duration(seconds: _policy['miss_ttl_seconds'] as int);
+  static Duration get _offlineCooldown =>
+      Duration(seconds: _policy['offline_cooldown_seconds'] as int);
   static const Duration _probeTimeout = Duration(seconds: 5);
 
   dynamic _containerRef;
@@ -488,113 +478,46 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     }
   }
 
-  /// Sorts keys in place by track count (most tracks first), name on ties.
-  @visibleForTesting
-  static void sortKeysByCount(List<String> keys, Map<String, int> counts) {
-    keys.sort((a, b) {
-      final byCount = (counts[b] ?? 0).compareTo(counts[a] ?? 0);
-      if (byCount != 0) return byCount;
-      return a.compareTo(b);
-    });
-  }
-
-  /// Library-wide art coverage, judged by the same rules a run uses to pick
-  /// keys, so the indexer's idle counts agree with what a run would fetch.
   ({int artistTotal, int artistPending, int albumTotal, int albumPending})
       artCoverage(List<Song> songs, ArtistAlbumArtState artState) {
-    final artists = <String>{};
-    final albums = <String>{};
-    for (final song in songs) {
-      final split = LibraryLogic.splitArtistNames(song.artist);
-      for (final name in split.isEmpty ? [song.artist] : split) {
-        final clean = OnlineMetadataService.cleanTag(name);
-        if (clean != null) artists.add(clean.toLowerCase());
-      }
-      final album = OnlineMetadataService.cleanTag(song.album);
-      if (album != null) {
-        albums
-            .add(_albumKey(album, OnlineMetadataService.cleanTag(song.artist)));
-      }
-    }
-    final missing = _collectMissingSorted(songs, artState);
+    final reply = _artCoverage(songs, artState);
     return (
-      artistTotal: artists.length,
-      artistPending: missing.artists.length,
-      albumTotal: albums.length,
-      albumPending: missing.albums.length,
+      artistTotal: reply['artist_total'] as int,
+      artistPending: (reply['artists'] as List).length,
+      albumTotal: reply['album_total'] as int,
+      albumPending: (reply['albums'] as List).length,
     );
   }
 
-  /// Collects artists/albums still missing art, most-tracks-first.
-  MissingArt _collectMissingSorted(
+  Map<String, dynamic> _artCoverage(
     List<Song> songs,
     ArtistAlbumArtState artState,
-  ) {
-    final artistCounts = <String, int>{};
-    final artistDisplay = <String, String>{};
-    for (final song in songs) {
-      final split = LibraryLogic.splitArtistNames(song.artist);
-      final names = split.isEmpty ? [song.artist] : split;
-      for (final name in names) {
-        final clean = OnlineMetadataService.cleanTag(name);
-        if (clean == null) continue;
-        final lower = clean.toLowerCase();
-        artistCounts[lower] = (artistCounts[lower] ?? 0) + 1;
-        artistDisplay.putIfAbsent(lower, () => clean);
-      }
-    }
-
-    final albumCounts = <String, int>{};
-    final albumDisplay = <String, Map<String, String>>{};
-    final albumHasLocalCover = <String, bool>{};
-    for (final song in songs) {
-      final album = OnlineMetadataService.cleanTag(song.album);
-      if (album == null) continue;
-      final artist = OnlineMetadataService.cleanTag(song.artist);
-      final key = _albumKey(album, artist);
-      albumCounts[key] = (albumCounts[key] ?? 0) + 1;
-      albumDisplay.putIfAbsent(
-        key,
-        () => {'album': album, 'artist': artist ?? ''},
-      );
-      if (song.coverUrl != null && song.coverUrl!.trim().isNotEmpty) {
-        albumHasLocalCover[key] = true;
-      }
-    }
-
-    final artistKeys = artistCounts.keys.where((lower) {
-      if (_noResultArtists.containsKey(lower)) return false;
-      if (_triedThisLaunchArtists.contains(lower)) return false;
-      if (_inFlightArtists.contains(lower)) return false;
-      if (artState.getArtistArt(artistDisplay[lower]) != null) return false;
-      return true;
-    }).toList();
-    sortKeysByCount(artistKeys, artistCounts);
-
-    final albumKeys = albumCounts.keys.where((key) {
-      if (_noResultAlbums.containsKey(key)) return false;
-      if (_triedThisLaunchAlbums.contains(key)) return false;
-      if (_inFlightAlbums.contains(key)) return false;
-      // Albums with an embedded/local cover already show real art.
-      if (albumHasLocalCover[key] == true) return false;
-      final item = albumDisplay[key]!;
-      final itemArtist = item['artist']!;
-      if (artState.getAlbumArt(
-            item['album'],
-            artistName: itemArtist.isEmpty ? null : itemArtist,
-          ) !=
-          null) {
-        return false;
-      }
-      return true;
-    }).toList();
-    sortKeysByCount(albumKeys, albumCounts);
-
-    return (
-      artists: [for (final key in artistKeys) artistDisplay[key]!],
-      albums: [for (final key in albumKeys) albumDisplay[key]!],
-    );
-  }
+  ) =>
+      runCoreCommand('online_meta', {
+        'action': 'art_coverage',
+        'songs': [
+          for (final song in songs)
+            {
+              'artist': song.artist,
+              'album': song.album,
+              'has_cover': song.coverUrl?.trim().isNotEmpty ?? false,
+            },
+        ],
+        'excluded': {
+          'artist_saved': artState.artistArt.keys.toList(),
+          'album_saved': artState.albumArt.keys.toList(),
+          'artist_skip': {
+            ..._noResultArtists.keys,
+            ..._triedThisLaunchArtists,
+            ..._inFlightArtists,
+          }.toList(),
+          'album_skip': {
+            ..._noResultAlbums.keys,
+            ..._triedThisLaunchAlbums,
+            ..._inFlightAlbums,
+          }.toList(),
+        },
+      });
 
   /// Runs one burst over everything missing, most-tracks-first.
   ///
@@ -665,17 +588,22 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       );
     }
     final artState = ref.read(artistAlbumArtProvider);
-    final found = _collectMissingSorted(songs, artState);
-
-    // A passive sweep is not worth an unbounded download: a first launch over a
-    // big library would pull cover art for every artist and album on mobile
-    // data. The budget is per launch, so a library fills in over a few opens and
-    // an explicit fetch (driven) is never capped.
-    final int budget =
-        driven ? found.artists.length + found.albums.length : _autoBurstBudget;
-    final missing = (
-      artists: found.artists.take(budget).toList(),
-      albums: found.albums.take(budget < 0 ? 0 : budget).toList(),
+    final found = _artCoverage(songs, artState);
+    final artists = (found['artists'] as List).cast<String>();
+    final albums = (found['albums'] as List).cast<Map>();
+    final budget = runCoreCommand('online_meta', {
+      'action': 'art_budget',
+      'artists': artists.length,
+      'albums': albums.length,
+      'used': _autoBurstUsed,
+      'driven': driven,
+    })['counts'] as List;
+    final MissingArt missing = (
+      artists: artists.take(budget[0] as int).toList(),
+      albums: [
+        for (final row in albums.take(budget[1] as int))
+          row.cast<String, String>()
+      ],
     );
     if (!driven) {
       _autoBurstUsed += missing.artists.length + missing.albums.length;
@@ -921,16 +849,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
     }
   }
 
-  /// Keys a passive sweep may fetch across one launch. Art is cosmetic, so a
-  /// fresh library fills in over several opens instead of in one burst.
-  static const int _autoBurstBudgetTotal = 80;
-
-  /// Keys the passive sweeps of this launch have already spent.
   int _autoBurstUsed = 0;
-
-  int get _autoBurstBudget => _autoBurstBudgetTotal - _autoBurstUsed < 0
-      ? 0
-      : _autoBurstBudgetTotal - _autoBurstUsed;
 
   /// Burst sweep over everything missing. Runs on every app open (and picks
   /// up library changes on later loop iterations); keys already resolved,
@@ -1118,7 +1037,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
       return (outcome: _FetchOutcome.success, artistSave: null);
     }
 
-    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+    for (var attempt = 1;; attempt++) {
       if (!await _proceed(
         shouldContinue: cont,
         isCancelled: canc,
@@ -1168,24 +1087,17 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
             ),
           );
         }
-      } else if (lookup.outcome == CoverLookupOutcome.notFound) {
-        if (attempt >= _maxAttempts) {
-          return (outcome: _FetchOutcome.notFound, artistSave: null);
-        }
-      } else {
-        if (attempt >= _maxAttempts) {
-          return (outcome: _FetchOutcome.transient, artistSave: null);
-        }
       }
 
-      if (attempt < _maxAttempts) {
-        await _retryWait(
-          waitForForeground: waitForForeground,
-          isCancelled: canc,
-        );
+      final outcome = _followUp(attempt, lookup.outcome);
+      if (outcome != null) {
+        return (outcome: outcome, artistSave: null);
       }
+      await _retryWait(
+        waitForForeground: waitForForeground,
+        isCancelled: canc,
+      );
     }
-    return (outcome: _FetchOutcome.transient, artistSave: null);
   }
 
   /// Resolves one album, mirroring [_resolveArtistArt].
@@ -1212,7 +1124,7 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
 
     final saveKey = artist.isNotEmpty ? '$artist|$album' : album;
 
-    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
+    for (var attempt = 1;; attempt++) {
       if (!await _proceed(
         shouldContinue: cont,
         isCancelled: canc,
@@ -1269,24 +1181,31 @@ class PassiveArtFetcherService with WidgetsBindingObserver {
             ),
           );
         }
-      } else if (lookup.outcome == CoverLookupOutcome.notFound) {
-        if (attempt >= _maxAttempts) {
-          return (outcome: _FetchOutcome.notFound, albumSave: null);
-        }
-      } else {
-        if (attempt >= _maxAttempts) {
-          return (outcome: _FetchOutcome.transient, albumSave: null);
-        }
       }
 
-      if (attempt < _maxAttempts) {
-        await _retryWait(
-          waitForForeground: waitForForeground,
-          isCancelled: canc,
-        );
+      final outcome = _followUp(attempt, lookup.outcome);
+      if (outcome != null) {
+        return (outcome: outcome, albumSave: null);
       }
+      await _retryWait(
+        waitForForeground: waitForForeground,
+        isCancelled: canc,
+      );
     }
-    return (outcome: _FetchOutcome.transient, albumSave: null);
+  }
+
+  static _FetchOutcome? _followUp(int attempt, CoverLookupOutcome outcome) {
+    final reply = runCoreCommand('online_meta', {
+      'action': 'passive_art_follow_up',
+      'attempt': attempt,
+      'not_found': outcome == CoverLookupOutcome.notFound,
+    });
+    return switch (reply['outcome']) {
+      'retry' => null,
+      'not_found' => _FetchOutcome.notFound,
+      'transient' => _FetchOutcome.transient,
+      final next => throw StateError('Unknown artwork follow-up: $next'),
+    };
   }
 
   final List<Completer<void>> _downloadWaiters = [];

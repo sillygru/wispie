@@ -1,8 +1,6 @@
 /// Arithmetic for the per-song lyrics timing offset.
 ///
-/// The rules live in the native core: the precision rungs, the ±60s ceiling,
-/// the 10ms grid, the sign convention and the snap-to-line maths. This file is
-/// the Dart adapter that names them.
+/// The offset math lives in the core. Slider precision and bounds are UI rules.
 ///
 /// Sign convention: the offset shifts the *lyric clock*, not the playhead, so a
 /// positive offset makes the words appear later.
@@ -37,8 +35,6 @@ enum LyricsTimingPrecision {
 
   /// Compact chip label — the step size is what the rung *is* to the user.
   String get label => '${step.toStringAsFixed(2)}s';
-
-  String get _name => name;
 }
 
 /// The bounds a slider is currently drawn against, anchored on an offset rather
@@ -85,15 +81,15 @@ LyricsTimingWindow anchorLyricsTimingWindow({
   required double currentSeconds,
   required LyricsTimingPrecision precision,
 }) {
-  final reply = WispieCore.helper({
-    'action': 'timing_window',
-    'current': currentSeconds,
-    'precision': precision._name,
-  });
+  final span = precision.spanSeconds;
+  final centre = quantizeLyricsTimingOffset(currentSeconds);
+  final lower = (centre - precision.halfSpanSeconds)
+      .clamp(-kLyricsTimingMaxSeconds, kLyricsTimingMaxSeconds - span)
+      .toDouble();
   return LyricsTimingWindow(
-    lower: (reply['lower'] as num).toDouble(),
-    upper: (reply['upper'] as num).toDouble(),
-    step: (reply['step'] as num).toDouble(),
+    lower: lower,
+    upper: lower + span,
+    step: precision.step,
   );
 }
 
@@ -163,15 +159,4 @@ double? syncOffsetFromPlayhead({
     'activeUs': activeLineTime?.inMicroseconds,
   })['value'];
   return value == null ? null : (value as num).toDouble();
-}
-
-/// Readout text. Two decimals because the fine rung's step is 10ms.
-String formatLyricsTimingOffset(double seconds, {bool showUnit = false}) {
-  final reply = WispieCore.helper({
-    'action': 'timing_format',
-    'seconds': seconds,
-  });
-  if (reply['inSync'] == true) return 'In sync';
-  final text = reply['text'] as String;
-  return showUnit ? '$text s' : text;
 }

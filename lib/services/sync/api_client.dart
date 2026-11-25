@@ -747,19 +747,22 @@ class SyncApiClient {
       chunk = init.chunkBytes;
       onInit?.call(id);
     }
-    while (offset < blob.length) {
-      final end = _transport('chunk', {
+    while (true) {
+      final plan = _transport('upload_step', {
         'offset': offset,
         'size': blob.length,
         'chunk': chunk,
-      }) as int?;
-      if (end == null) {
+      }) as Map;
+      if (plan['step'] == 'commit') return uploadCommit(id);
+      if (plan['step'] != 'send') {
         throw const SyncApiException(
             0, 'invalid_upload_range', 'Invalid upload range');
       }
+      final start = plan['start'] as int;
+      final end = plan['end'] as int;
       try {
         offset = await uploadChunk(
-            id, offset, Uint8List.sublistView(blob, offset, end));
+            id, start, Uint8List.sublistView(blob, start, end));
       } on SyncApiException catch (e) {
         final corrected = _transport('upload_conflict', {
           'status': e.status,
@@ -774,7 +777,6 @@ class SyncApiClient {
       }
       onProgress?.call(offset, blob.length);
     }
-    return uploadCommit(id);
   }
 
   static String _enc(List<int> b) => base64Url.encode(b).replaceAll('=', '');

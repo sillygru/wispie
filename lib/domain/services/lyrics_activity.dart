@@ -1,4 +1,3 @@
-import 'dart:ffi';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -6,19 +5,18 @@ import '../../data/rust/wispie_core.dart';
 import '../../models/song.dart';
 import '../models/rich_lyrics.dart';
 
-/// One lyric sheet's resolved timings, packed by the native core.
+/// One lyric sheet's resolved timings from the native core.
 ///
 /// Columns per line: timed, line start, start with simulated words, start
 /// without, end with simulated words (-1 none), end without, simulated flag.
 /// The word trust rules live in the core, so callers only pick a column.
 class LyricTimings {
-  LyricTimings._(this.length, this._buffer, this._scratch);
+  LyricTimings._(this.length, this._buffer);
 
   final int length;
   final Int64List _buffer;
-  final NativeScratch? _scratch;
 
-  static final LyricTimings empty = LyricTimings._(0, Int64List(0), null);
+  static final LyricTimings empty = LyricTimings._(0, Int64List(0));
 
   bool isTimed(int index) =>
       index >= 0 && index < length && _buffer[index * _stride] != 0;
@@ -34,8 +32,6 @@ class LyricTimings {
     final value = _buffer[index * _stride + (simulateEnabled ? 4 : 5)];
     return value < 0 ? null : Duration(microseconds: value);
   }
-
-  void dispose() => _scratch?.dispose();
 
   static const int _stride = 7;
 }
@@ -69,16 +65,14 @@ LyricTimings buildLyricTimings(
     'lines': rows,
   });
   final raw = (reply['timings'] as List).cast<List>();
-  final bytes = math.max(1, raw.length * _timingStride) * 8;
-  final scratch = NativeScratch(bytes);
-  final buffer = scratch.longs;
+  final buffer = Int64List(raw.length * _timingStride);
   for (var index = 0; index < raw.length; index++) {
     final row = raw[index];
     for (var column = 0; column < _timingStride; column++) {
       buffer[index * _timingStride + column] = (row[column] as num).toInt();
     }
   }
-  return LyricTimings._(raw.length, buffer, scratch);
+  return LyricTimings._(raw.length, buffer);
 }
 
 /// The lines sounding at one instant.
@@ -122,46 +116,50 @@ class LyricsActivity {
       a.length == b.length && a.every(b.contains);
 }
 
-NativeScratch? _activityOut;
-int _activityCapacity = 0;
-
-NativeScratch _outputFor(int needed) {
-  final capacity = math.max(64, needed);
-  if (_activityOut == null || _activityCapacity < capacity) {
-    _activityOut?.dispose();
-    _activityOut = NativeScratch(capacity * 4);
-    _activityCapacity = capacity;
-  }
-  return _activityOut!;
-}
-
-/// Lines sounding at [position].
-///
-/// A line runs from its start until its last word ends; when it has no words it
-/// runs until the next line starts. With nothing sounding the newest line is
-/// held, which is what keeps the last lyric lit through an instrumental break.
+/// Lines sounding at [position]. A line without word timing ends at the
+/// next later line. In an instrumental gap, hold the most recent moment.
 LyricsActivity lyricsActivityAt(
   LyricTimings timings,
   Duration position, {
   bool simulateEnabled = true,
 }) {
-  if (timings.length == 0) return LyricsActivity.idle;
-  final capacity = 2 + timings.length;
-  final out = _outputFor(capacity);
-  final written = WispieCore.lyricsActivity(
-    timings: timings._scratch!.pointer.cast<Int64>(),
-    count: timings.length,
-    positionUs: position.inMicroseconds,
-    simulate: simulateEnabled,
-    out: out.pointer.cast<Int32>(),
-    outCapacity: _activityCapacity,
-  );
-  if (written < 2) return LyricsActivity.idle;
-  final ints = out.ints;
-  return LyricsActivity(
-    latest: ints[0],
-    active: {
-      for (var index = 2; index < written; index++) ints[index],
-    },
-  );
+  final active = <int>{};
+  final positionUs = position.inMicroseconds;
+  final startColumn = simulateEnabled ? 2 : 3;
+  final endColumn = simulateEnabled ? 4 : 5;
+  final buffer = timings._buffer;
+  var latest = -1;
+  var latestStart = 0;
+
+  for (var index = 0; index < timings.length; index++) {
+    final row = index * _timingStride;
+    final start = buffer[row + startColumn];
+    if (buffer[row] == 0 || start > positionUs) continue;
+    latest = index;
+    latestStart = start;
+
+    var end = buffer[row + endColumn];
+    if (end < 0) {
+      for (var next = row + _timingStride;
+          next < buffer.length;
+          next += _timingStride) {
+        if (buffer[next] != 0 && buffer[next + startColumn] > start) {
+          end = buffer[next + startColumn];
+          break;
+        }
+      }
+    }
+    if (end < 0 || positionUs < end) active.add(index);
+  }
+
+  if (latest < 0) return LyricsActivity.idle;
+  if (active.isEmpty) {
+    for (var index = 0; index < timings.length; index++) {
+      final row = index * _timingStride;
+      if (buffer[row] != 0 && buffer[row + startColumn] == latestStart) {
+        active.add(index);
+      }
+    }
+  }
+  return LyricsActivity(latest: latest, active: active);
 }

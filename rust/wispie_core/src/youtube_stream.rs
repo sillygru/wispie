@@ -93,3 +93,61 @@ pub fn playability(reason: Option<&str>, state: Option<&str>) -> &'static str {
 pub fn retry_catalogue_version(status: u16, attempt: usize, pinned: bool) -> bool {
     status == 400 && attempt == 0 && !pinned
 }
+
+#[derive(Serialize)]
+pub struct ProxyStream {
+    pub url: String,
+    pub mime: String,
+    pub itag: String,
+    pub content_length: Option<i64>,
+}
+
+pub fn proxy_requests(base: &str, id: &str) -> [String; 2] {
+    let base = base.trim().trim_end_matches('/');
+    [
+        format!("{base}/api/v1/videos/{id}?local=true"),
+        format!("{base}/streams/{id}"),
+    ]
+}
+
+pub fn proxy_streams(reply: &serde_json::Value, want_video: bool) -> Vec<ProxyStream> {
+    use serde_json::Value;
+    let text = |value: &Value| match value {
+        Value::Null => None,
+        Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    ["adaptiveFormats", "audioStreams", "formats"]
+        .iter()
+        .filter_map(|key| reply[key].as_array())
+        .flatten()
+        .filter_map(|row| {
+            let url = text(&row["url"]).filter(|url| !url.is_empty())?;
+            let mime = text(&row["mimeType"])
+                .or_else(|| text(&row["type"]))
+                .unwrap_or_default();
+            if mime.starts_with("video/") != want_video {
+                return None;
+            }
+            let size = row
+                .get("contentLength")
+                .filter(|size| !size.is_null())
+                .or_else(|| row.get("clen"));
+            let content_length = size.and_then(|size| {
+                size.as_i64()
+                    .or_else(|| size.as_f64().map(|value| value.round() as i64))
+                    .or_else(|| size.as_str().and_then(|value| value.parse().ok()))
+            });
+            Some(ProxyStream {
+                url,
+                mime: if mime.is_empty() {
+                    "audio/mp4".into()
+                } else {
+                    mime
+                },
+                itag: text(&row["itag"]).unwrap_or_else(|| "proxy".into()),
+                content_length,
+            })
+        })
+        .collect()
+}

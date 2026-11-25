@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../data/rust/native_command.dart';
+
 class TranslationResponse {
   final String text;
   final String? detectedSourceLang;
@@ -23,8 +25,6 @@ class LingvaTranslateService {
   ];
 
   static const Duration _timeout = Duration(seconds: 8);
-  static const int _maxBatchChars = 1800;
-  static const int _myMemoryMaxChars = 450;
 
   final List<String> hosts;
 
@@ -299,45 +299,17 @@ class LingvaTranslateService {
   }
 
   List<List<_PendingLine>> _createBatches(List<_PendingLine> items) {
-    final List<List<_PendingLine>> batches = [];
-    List<_PendingLine> currentBatch = [];
-    int currentChars = 0;
-    String? currentScript;
-
-    for (final item in items) {
-      final itemLen = item.text.length + 1;
-      final itemScript = _scriptBucket(item.text);
-      final scriptChanged =
-          currentScript != null && currentScript != itemScript;
-      if (currentBatch.isNotEmpty &&
-          (scriptChanged || currentChars + itemLen > _maxBatchChars)) {
-        batches.add(currentBatch);
-        currentBatch = [];
-        currentChars = 0;
-        currentScript = null;
-      }
-      currentBatch.add(item);
-      currentChars += itemLen;
-      currentScript ??= itemScript;
+    final reply = runCoreCommand('translation', {
+      'op': 'batches',
+      'lines': [for (final item in items) item.text],
+    });
+    final batches = <List<_PendingLine>>[];
+    var start = 0;
+    for (final end in (reply['ends'] as List).cast<int>()) {
+      batches.add(items.sublist(start, end));
+      start = end;
     }
-
-    if (currentBatch.isNotEmpty) {
-      batches.add(currentBatch);
-    }
-
     return batches;
-  }
-
-  String _scriptBucket(String text) {
-    if (RegExp(r'[\u3040-\u30ff]').hasMatch(text)) return 'ja';
-    if (RegExp(r'[\uac00-\ud7af]').hasMatch(text)) return 'ko';
-    if (RegExp(r'[\u4e00-\u9faf]').hasMatch(text)) return 'zh';
-    if (RegExp(r'[\u0400-\u04ff]').hasMatch(text)) return 'cyrillic';
-    if (RegExp(r'[\u0600-\u06ff]').hasMatch(text)) return 'arabic';
-    if (RegExp(r'[\u0900-\u097f]').hasMatch(text)) return 'devanagari';
-    if (RegExp(r'[\u0370-\u03ff]').hasMatch(text)) return 'greek';
-    if (RegExp(r'[\u0e00-\u0e7f]').hasMatch(text)) return 'thai';
-    return 'latin';
   }
 
   Future<_BatchResult> _translateBatch({
@@ -352,15 +324,13 @@ class LingvaTranslateService {
       sourceLang: sourceLang,
     );
 
-    final splitLines = fetchResult.text
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split('\n');
-
-    // Translation endpoints are not consistent about preserving newlines. Do
-    // not shift every following lyric when one endpoint collapses a line: fall
-    // back to one request per line in parallel, where the response cannot be ambiguous.
-    if (splitLines.length != batch.length) {
+    final reply = runCoreCommand('translation', {
+      'op': 'split_batch',
+      'text': fetchResult.text,
+      'expected': batch.length,
+    });
+    final splitLines = (reply['lines'] as List?)?.cast<String>();
+    if (splitLines == null) {
       final individualResults = await Future.wait(
         batch.map(
           (item) => _raceTranslation(
@@ -409,47 +379,51 @@ class LingvaTranslateService {
     var failures = 0;
     Object? lastError;
 
-    late final List<Future<TranslationResponse> Function(HttpClient)> starters;
+    final plan = runCoreCommand('translation', {
+      'op': 'providers',
+      'query': query,
+      'hosts': hosts,
+    });
+    final attempts = (plan['attempts'] as List).cast<Map>();
 
-    // Order by observed reliability: GTX (POST-safe) first, then
-    // Clients5, Lingva, MyMemory last (short-query only).
-    starters = [
-      (client) => _fetchFromGTX(
-            client: client,
-            query: query,
-            targetLang: targetLang,
-            sourceLang: sourceLang,
-          ),
-      (client) => _fetchFromGoogleClients5(
-            client: client,
-            query: query,
-            targetLang: targetLang,
-            sourceLang: sourceLang,
-          ),
-      for (final h in hosts)
-        (client) => _fetchFromLingvaHost(
-              client: client,
-              host: h,
-              query: query,
-              targetLang: targetLang,
-              sourceLang: sourceLang,
-            ),
-      if (query.length <= _myMemoryMaxChars)
-        (client) => _fetchFromMyMemory(
+    Future<TranslationResponse> start(Map attempt, HttpClient client) =>
+        switch (attempt['provider']) {
+          'google_gtx' => _fetchFromGTX(
               client: client,
               query: query,
               targetLang: targetLang,
               sourceLang: sourceLang,
             ),
-    ];
+          'google_clients5' => _fetchFromGoogleClients5(
+              client: client,
+              query: query,
+              targetLang: targetLang,
+              sourceLang: sourceLang,
+            ),
+          'lingva' => _fetchFromLingvaHost(
+              client: client,
+              host: attempt['host'] as String,
+              query: query,
+              targetLang: targetLang,
+              sourceLang: sourceLang,
+            ),
+          'my_memory' => _fetchFromMyMemory(
+              client: client,
+              query: query,
+              targetLang: targetLang,
+              sourceLang: sourceLang,
+            ),
+          final provider =>
+            throw StateError('Unknown translation provider: $provider'),
+        };
 
     void settleFailure(Object error) {
       if (completer.isCompleted) return;
       lastError = error;
       failures += 1;
       debugPrint(
-          'Translation starter failed ($failures/${starters.length}): $error');
-      if (failures >= starters.length && !completer.isCompleted) {
+          'Translation starter failed ($failures/${attempts.length}): $error');
+      if (failures >= attempts.length && !completer.isCompleted) {
         completer.completeError(
           HttpException(
             'Translation service unavailable: ${lastError ?? "all translation endpoints failed"}',
@@ -470,10 +444,10 @@ class LingvaTranslateService {
       }
     }
 
-    for (final start in starters) {
+    for (final attempt in attempts) {
       final client = HttpClient()..connectionTimeout = _timeout;
       clients.add(client);
-      start(client).then<void>(
+      start(attempt, client).then<void>(
         settleSuccess,
         onError: settleFailure,
       );

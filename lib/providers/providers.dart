@@ -503,13 +503,6 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   static const String _startupMaintenancePendingKey =
       'startup_cache_maintenance_pending';
 
-  /// How many files may be renamed before their rows are moved to match.
-  ///
-  /// Small enough that closing the app mid-sweep costs a visible handful of songs
-  /// and their repair is automatic; large enough that the per-commit fsync is not
-  /// the bulk of the work.
-  static const int _commitSlice = 25;
-
   @override
   Future<List<Song>> build() async {
     ref.onDispose(() {
@@ -1291,33 +1284,28 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
   /// Returns how many songs were put back together.
   Future<int> recoverPendingRenames() async {
     final journal = BulkRenameJournal.instance;
-    await journal.load();
-    if (journal.isEmpty) return 0;
+    final pending = await journal.load();
+    if (pending.isEmpty) return 0;
 
     final fileManager = ref.read(fileManagerServiceProvider);
     final ready = Platform.isAndroid
         ? [
-            for (final entry in journal.entries)
+            for (final entry in pending)
               if (await fileManager.fileExistsAt(entry.url)) entry,
           ]
-        : await journal.recoverableRenames();
+        : await journal.recoverableRenames(pending);
     final confirmed = [
       for (final entry in ready) (from: entry.from, to: entry.to),
     ];
 
-    for (final entry in ready) {
-      await journal.moveSidecars(entry);
-    }
-
+    await DatabaseService.instance.renameFiles(
+      confirmed,
+      intents: pending,
+      recover: ready,
+    );
     if (confirmed.isNotEmpty) {
-      await DatabaseService.instance.renameFiles(confirmed);
-      await _reindexRenames({for (final e in confirmed) e.from: e.to});
       debugPrint('Recovered ${confirmed.length} interrupted renames');
     }
-
-    // Either way the journal has served its purpose: the entries are now either
-    // in the database or known never to have landed.
-    await journal.clear();
     return confirmed.length;
   }
 
@@ -1356,18 +1344,20 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         plans.where((entry) => entry.willRename && entry.song.isLocal).toList();
     if (actionable.isEmpty) return const BulkRenameResult.empty();
 
+    final journal = BulkRenameJournal.instance;
+    final sliceLength = await journal.sliceLength();
     final notifier = ref.read(metadataSaveProvider.notifier);
     notifier.start();
 
     final fileManager = ref.read(fileManagerServiceProvider);
     final cache = WispieCache.instance;
-    final journal = BulkRenameJournal.instance;
     final cancelled = isCancelled ?? () => false;
 
     /// Old filename paired with the song under its new identity. Everything
     /// downstream is derived from this rather than kept in parallel maps, which
     /// is how the two drift out of step.
-    final applied = <({String previousFilename, Song updated})>[];
+    final applied =
+        <({String previousFilename, Song updated, PendingRename intent})>[];
     final failures = <BulkRenameFailure>[];
     var stoppedEarly = false;
 
@@ -1384,10 +1374,14 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         for (final item in slice) item.previousFilename: item.updated.filename,
       };
 
-      await DatabaseService.instance.renameFiles([
-        for (final item in slice)
-          (from: item.previousFilename, to: item.updated.filename),
-      ]);
+      await DatabaseService.instance.renameFiles(
+        [
+          for (final item in slice)
+            (from: item.previousFilename, to: item.updated.filename),
+        ],
+        updatedSongs: [for (final item in slice) item.updated],
+        intents: slice.map((item) => item.intent),
+      );
 
       final current = state.value ?? const <Song>[];
       state = AsyncValue.data(
@@ -1401,16 +1395,7 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
           .read(audioPlayerManagerProvider)
           .refreshSongs(state.value!, filenameRemaps: remaps);
 
-      // Covers can move with the file, so the library rows are rewritten rather
-      // than left describing the song as it was before its artwork did.
-      await DatabaseService.instance.insertSongsBatch([
-        for (final item in slice) item.updated,
-      ]);
-
-      await _reindexRenames(remaps);
-
       committed = applied.length;
-      await journal.clear();
     }
 
     // Sidecars are found before anything moves: afterwards the old stem is
@@ -1468,7 +1453,11 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
               'Could not transfer caches for ${before.filename}: $error');
         }
 
-        applied.add((previousFilename: before.filename, updated: updated));
+        applied.add((
+          previousFilename: before.filename,
+          updated: updated,
+          intent: intent
+        ));
       } on FileSystemException catch (e) {
         failures.add(BulkRenameFailure(before.filename, e.message));
         await journal.discard(intent);
@@ -1477,13 +1466,12 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
         await journal.discard(intent);
       }
 
-      if (applied.length - committed >= _commitSlice) await commit();
+      if (applied.length - committed >= sliceLength) await commit();
 
       onProgress?.call('Renaming files', i + 1, actionable.length);
     }
 
     if (applied.isEmpty) {
-      await journal.clear();
       notifier.error('Rename failed');
       return BulkRenameResult(
         renamed: const [],
@@ -1519,27 +1507,6 @@ class SongsNotifier extends AsyncNotifier<List<Song>> {
       failures: failures,
       stoppedEarly: stoppedEarly,
     );
-  }
-
-  /// Points the search index at the new filenames.
-  ///
-  /// Moves the existing rows rather than re-upserting them: a rename changes
-  /// the key and none of the indexed content, so re-inserting would make every
-  /// song with lyrics re-extract them from disk — one ffprobe process each,
-  /// which on a large batch dominated the whole operation.
-  Future<void> _reindexRenames(Map<String, String> remaps) async {
-    if (remaps.isEmpty) return;
-    try {
-      final searchService = ref.read(searchServiceProvider);
-      await searchService.init();
-      await searchService.renameFiles([
-        for (final entry in remaps.entries) (from: entry.key, to: entry.value),
-      ]);
-    } catch (e) {
-      // The index is rebuilt on the next scan, so a failed reindex costs a stale
-      // search result rather than any data.
-      debugPrint('Search index rename failed for ${remaps.length} songs: $e');
-    }
   }
 
   /// Swaps [song]'s audio file for the one [accepted] describes, carrying

@@ -377,21 +377,10 @@ class SyncEngine {
   // ------------------------------------------------------------------ pull
 
   Future<void> _pull(SyncState st, {bool bulk = false}) async {
-    var cursor = _cursor;
-    if (_checkpoint(st)['use_snapshot'] as bool) {
-      await _applySnapshot(st, bulk: bulk);
-      cursor = _cursor;
-    }
-    for (var attempts = 0;; attempts++) {
-      try {
-        await _pullDeltas(cursor, categories, advance: true);
-        return;
-      } on SyncApiException catch (e) {
-        if (_retryAction('pull', e, attempts) != 'refresh_snapshot') rethrow;
-        await _applySnapshot(await client.state(), bulk: false);
-        cursor = _cursor;
-      }
-    }
+    await _executePull(st, categories,
+        snapshot: _checkpoint(st)['use_snapshot'] as bool,
+        bulk: bulk,
+        retryDeltas: true);
   }
 
   Future<Map<String, dynamic>> _downloadSnapshot(
@@ -432,27 +421,71 @@ class SyncEngine {
     if (await f.exists()) await f.delete();
   }
 
-  Future<void> _applySnapshot(SyncState st, {required bool bulk}) async {
-    final payload = await _downloadSnapshot(st, st.epoch);
-    final base = payload.remove('__base_seq') as int;
-    _emit(SyncPhase.applyingSnapshot, message: 'Applying snapshot');
-    void progress(int d, int t) => _emit(SyncPhase.applyingSnapshot,
-        message: 'Applying snapshot', itemsDone: d, itemsTotal: t);
-    if (bulk) {
-      await changeset.bulkImport(payload,
-          categories: categories, onProgress: progress);
-    } else {
-      await changeset.merge(payload,
-          categories: categories, onProgress: progress);
+  Future<void> _executePull(
+    SyncState state,
+    Set<String> cats, {
+    required bool snapshot,
+    required bool bulk,
+    bool backfill = false,
+    bool retryDeltas = false,
+  }) async {
+    final plan = _flow('pull_steps', {
+      'snapshot': snapshot,
+      'backfill': backfill,
+      'bulk': bulk,
+    });
+    var cursor = backfill ? 0 : _cursor;
+    late Map<String, dynamic> payload;
+
+    void progress(int done, int total) => _emit(SyncPhase.applyingSnapshot,
+        message: 'Applying snapshot', itemsDone: done, itemsTotal: total);
+    for (final step in (plan['steps'] as List).cast<String>()) {
+      switch (step) {
+        case 'download_snapshot':
+          payload = await _downloadSnapshot(state, state.epoch);
+          cursor = payload.remove('__base_seq') as int;
+        case 'merge_snapshot':
+          if (!backfill) {
+            _emit(SyncPhase.applyingSnapshot, message: 'Applying snapshot');
+          }
+          await changeset.merge(payload,
+              categories: cats, onProgress: backfill ? null : progress);
+        case 'import_snapshot':
+          _emit(SyncPhase.applyingSnapshot, message: 'Applying snapshot');
+          await changeset.bulkImport(payload,
+              categories: cats, onProgress: progress);
+        case 'refresh_settings':
+          await _refreshSettingsSeen();
+        case 'remove_download':
+          await _deleteDownload();
+        case 'save_snapshot':
+          await kv.set(kCursor, cursor);
+          await kv.set(kSnapshotApplied, true);
+        case 'pull_deltas':
+          try {
+            await _pullDeltas(cursor, cats, backfill: backfill);
+          } on SyncApiException catch (error) {
+            if (!retryDeltas ||
+                _retryAction('pull', error, 0) != 'refresh_snapshot') {
+              rethrow;
+            }
+            await _executePull(await client.state(), cats,
+                snapshot: true, bulk: false);
+          }
+        case 'complete_backfill':
+          final result = _flow('finish_backfill', {
+            'pending': _pending().toList(),
+            'applied': cats.toList(),
+          });
+          await kv.set(kPendingPull, result['value']);
+        default:
+          throw StateError('Unknown cloud pull step: $step');
+      }
     }
-    await _refreshSettingsSeen();
-    await _deleteDownload();
-    await kv.set(kCursor, base);
-    await kv.set(kSnapshotApplied, true);
   }
 
   Future<void> _pullDeltas(int from, Set<String> cats,
-      {required bool advance}) async {
+      {required bool backfill}) async {
     var cursor = from;
     while (true) {
       _emit(SyncPhase.downloadingChanges, message: 'Downloading changes');
@@ -461,7 +494,13 @@ class SyncEngine {
         onProgress: (d, t) => _emit(SyncPhase.downloadingChanges,
             message: 'Downloading changes', bytesDone: d, bytesTotal: t),
       );
-      for (final f in page.frames) {
+      final plan = _flow('delta_page', {
+        'sequences': [for (final frame in page.frames) frame.seq],
+        'more': page.more,
+        'backfill': backfill,
+      });
+      final checkpoints = (plan['checkpoints'] as List).cast<int?>();
+      for (final (index, f) in page.frames.indexed) {
         final json = await BlobCodec.decode(
           dataKey: dataKey,
           accountIdHex: accountId,
@@ -476,75 +515,98 @@ class SyncEngine {
           onProgress: (d, t) => _emit(SyncPhase.merging,
               message: 'Merging changes', itemsDone: d, itemsTotal: t),
         );
-        cursor = f.seq;
-        if (advance) await kv.set(kCursor, cursor);
+        if (checkpoints[index] case final checkpoint?) {
+          await kv.set(kCursor, checkpoint);
+        }
       }
       await _refreshSettingsSeen();
-      if (!page.more || page.frames.isEmpty) return;
+      final next = plan['next'] as int?;
+      if (next == null) return;
+      cursor = next;
     }
   }
 
-  Future<void> _pullCategories(SyncState st, Set<String> cats) async {
-    var base = 0;
-    if (st.hasSnapshot) {
-      final payload = await _downloadSnapshot(st, st.epoch);
-      base = payload.remove('__base_seq') as int;
-      await changeset.merge(payload, categories: cats);
-      await _deleteDownload();
-    }
-    await _pullDeltas(base, cats, advance: false);
-    await _refreshSettingsSeen();
-    final left = _pending()..removeAll(cats);
-    await kv.set(kPendingPull, left.isEmpty ? null : jsonEncode(left.toList()));
-  }
+  Future<void> _pullCategories(SyncState state, Set<String> cats) =>
+      _executePull(state, cats,
+          snapshot: state.hasSnapshot, bulk: false, backfill: true);
 
   // ------------------------------------------------------------------ push
 
   /// Returns true when something was uploaded.
   Future<bool> _push(int maxAttempts) async {
     var pushed = false;
-    for (var attempt = 0; attempt < maxAttempts; attempt++) {
-      _emit(SyncPhase.preparingUpload, message: 'Preparing changes');
-      final batches = await changeset.buildDeltas(categories: categories);
-      if (batches.isEmpty) return pushed;
-      var moved = false;
-      for (final b in batches) {
-        _emit(SyncPhase.encrypting, message: 'Encrypting changes');
-        final blob = await BlobCodec.encode(
-          dataKey: dataKey,
-          accountIdHex: accountId,
-          kind: BlobKind.delta,
-          epoch: _epoch,
-          payloadJson: utf8.encode(jsonEncode(b.payload)),
-        );
-        try {
-          final seq = await client.pushDelta(
-            blob,
-            epoch: _epoch,
-            expectHead: _cursor,
-            onProgress: (d, t) => _emit(SyncPhase.uploading,
-                message: 'Uploading changes', bytesDone: d, bytesTotal: t),
-          );
-          await kv.set(kCursor, seq);
-          await changeset.markPushed(b);
-          pushed = true;
-        } on SyncApiException catch (e) {
-          final action = _retryAction('push', e, attempt);
-          if (action == 'pause_epoch') {
-            final ep = (e.extra['epoch'] as int?) ?? _epoch + 1;
-            await kv.set(kEpochChanged, ep);
-            throw SyncEpochChangedException(ep);
-          }
-          if (action != 'refresh_head') rethrow;
-          moved = true;
-          break;
-        }
+    var refreshHead = false;
+    var attempt = 0;
+    while (true) {
+      final plan = _flow('push_steps', {
+        'attempt': attempt,
+        'max_attempts': maxAttempts,
+        'refresh_head': refreshHead,
+      });
+      switch (plan['start']) {
+        case 'pull_head':
+          await _pull(await client.state());
+          refreshHead = false;
+          attempt++;
+          continue;
+        case 'exhausted':
+          throw const SyncApiException(
+              409, 'head_moved', 'Cloud kept changing; try again');
+        case 'build':
+          _emit(SyncPhase.preparingUpload, message: 'Preparing changes');
       }
-      if (!moved) return pushed;
-      await _pull(await client.state());
+      final batches = await changeset.buildDeltas(categories: categories);
+      final steps = (plan['batch'] as List).cast<String>();
+      for (final batch in batches) {
+        late Uint8List blob;
+        late int sequence;
+        batchSteps:
+        for (final step in steps) {
+          switch (step) {
+            case 'encrypt':
+              _emit(SyncPhase.encrypting, message: 'Encrypting changes');
+              blob = await BlobCodec.encode(
+                dataKey: dataKey,
+                accountIdHex: accountId,
+                kind: BlobKind.delta,
+                epoch: _epoch,
+                payloadJson: utf8.encode(jsonEncode(batch.payload)),
+              );
+            case 'upload':
+              try {
+                sequence = await client.pushDelta(
+                  blob,
+                  epoch: _epoch,
+                  expectHead: _cursor,
+                  onProgress: (d, t) => _emit(SyncPhase.uploading,
+                      message: 'Uploading changes',
+                      bytesDone: d,
+                      bytesTotal: t),
+                );
+              } on SyncApiException catch (error) {
+                final action = _retryAction('push', error, attempt);
+                if (action == 'pause_epoch') {
+                  final epoch = (error.extra['epoch'] as int?) ?? _epoch + 1;
+                  await kv.set(kEpochChanged, epoch);
+                  throw SyncEpochChangedException(epoch);
+                }
+                if (action != 'refresh_head') rethrow;
+                refreshHead = true;
+                break batchSteps;
+              }
+            case 'save_cursor':
+              await kv.set(kCursor, sequence);
+            case 'acknowledge':
+              await changeset.markPushed(batch);
+              pushed = true;
+            default:
+              throw StateError('Unknown cloud push step: $step');
+          }
+        }
+        if (refreshHead) break;
+      }
+      if (!refreshHead) return pushed;
     }
-    throw const SyncApiException(
-        409, 'head_moved', 'Cloud kept changing; try again');
   }
 
   // ------------------------------------------------------------ compaction

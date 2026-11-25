@@ -11,9 +11,11 @@ pub mod backup_preferences;
 pub mod backup_workflow;
 mod beat;
 mod bulk_rename;
+pub mod cache_layout;
 mod content_id;
 mod cover;
 mod db;
+pub mod decode_gate;
 mod emitter;
 pub mod file_workflow;
 mod formats;
@@ -33,7 +35,7 @@ mod merge_finder;
 mod meta;
 mod model;
 mod music_feed;
-mod online_meta;
+pub mod online_meta;
 mod palette;
 mod palette_jpeg;
 mod playback;
@@ -57,11 +59,12 @@ pub mod sync_transport;
 pub mod sync_workflow;
 mod tasks;
 mod taste;
+pub mod translation;
 mod waveform;
 mod youtube;
 pub mod youtube_stream;
 
-pub use db::{Library, LibraryTrack};
+pub use db::{Library, LibraryList, LibraryPlaylist, LibraryPlaylistSong, LibraryTrack};
 pub use recommendations::{
     Recommendation, RecommendationListen, RecommendationRefresh, RecommendationTrack,
 };
@@ -77,7 +80,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 8;
+pub const ABI_VERSION: u32 = 9;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -454,6 +457,9 @@ fn dispatch(
             })));
             Ok(())
         }
+        "translation" => translation::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "decode_gate" => decode_gate::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "cache_layout" => cache_layout::run(payload).map(|result| emitter.emit(Emit::Json(result))),
         "backup_workflow" => {
             backup_workflow::run(payload).map(|result| emitter.emit(Emit::Json(result)))
         }

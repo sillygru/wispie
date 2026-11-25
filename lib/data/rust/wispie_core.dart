@@ -13,7 +13,7 @@ class WispieCore {
   WispieCore._();
 
   /// Must match `ABI_VERSION` in `rust/wispie_core/src/lib.rs`.
-  static const int abiVersion = 8;
+  static const int abiVersion = 9;
 
   /// Event kinds sent by the native core.
   static const int eventItems = 0;
@@ -245,28 +245,6 @@ class WispieCore {
     if (pointer.address != 0) _bindings!.free(pointer, length);
   }
 
-  /// Writes `[latest, anchor, activeCount, ...indices]` and returns the count.
-  static int lyricsActivity({
-    required Pointer<Int64> timings,
-    required int count,
-    required int positionUs,
-    required bool simulate,
-    required Pointer<Int32> out,
-    required int outCapacity,
-  }) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.lyricsActivity(
-      timings,
-      count,
-      positionUs,
-      simulate ? 1 : 0,
-      out,
-      outCapacity,
-    );
-  }
-
   /// Null when the helper has no value for the input.
   static String? coverPath(String url,
       {required int wanted, required int mode}) {
@@ -301,24 +279,6 @@ class WispieCore {
 
 /// Caller-owned native memory, freed explicitly to keep per-frame helpers off
 /// the allocation path.
-class NativeScratch {
-  NativeScratch(this.length) : pointer = WispieCore.allocBytes(length);
-
-  final int length;
-  final Pointer<Uint8> pointer;
-
-  // Views and typed pointers are built once: a per-frame helper that called
-  // `asTypedList` or `cast` each tick would spend more time wrapping the buffer
-  // than the core spends filling it.
-  late final Uint8List bytes = pointer.asTypedList(length);
-  late final Pointer<Int32> intsPointer = pointer.cast<Int32>();
-  late final Pointer<Int64> longsPointer = pointer.cast<Int64>();
-  late final Int32List ints = intsPointer.asTypedList(length ~/ 4);
-  late final Int64List longs = longsPointer.asTypedList(length ~/ 8);
-
-  void dispose() => WispieCore.freeBytes(pointer, length);
-}
-
 typedef _EventNative = Void Function(
     Pointer<Void>, Int32, Pointer<Uint8>, IntPtr);
 
@@ -355,10 +315,6 @@ typedef _HlcNextDart = int Function(int);
 typedef _HlcNowNative = Int64 Function();
 typedef _HlcNowDart = int Function();
 
-typedef _LyricsActivityNative = Int32 Function(
-    Pointer<Int64>, UintPtr, Int64, Uint8, Pointer<Int32>, UintPtr);
-typedef _LyricsActivityDart = int Function(
-    Pointer<Int64>, int, int, int, Pointer<Int32>, int);
 typedef _CoverPathNative = IntPtr Function(
     Pointer<Uint8>, UintPtr, Uint32, Uint8, Pointer<Uint8>, UintPtr);
 typedef _CoverPathDart = int Function(
@@ -387,9 +343,6 @@ class _Bindings {
             'wispie_core_hlc_next'),
         hlcNow = library
             .lookupFunction<_HlcNowNative, _HlcNowDart>('wispie_core_hlc_now'),
-        lyricsActivity =
-            library.lookupFunction<_LyricsActivityNative, _LyricsActivityDart>(
-                'wispie_lyrics_activity'),
         coverPath = library.lookupFunction<_CoverPathNative, _CoverPathDart>(
             'wispie_cover_path');
 
@@ -404,6 +357,5 @@ class _Bindings {
   final _HlcSetDart hlcSet;
   final _HlcNextDart hlcNext;
   final _HlcNowDart hlcNow;
-  final _LyricsActivityDart lyricsActivity;
   final _CoverPathDart coverPath;
 }

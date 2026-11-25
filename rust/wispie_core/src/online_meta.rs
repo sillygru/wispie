@@ -29,6 +29,25 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         .and_then(Value::as_str)
         .ok_or_else(|| "online_meta needs an action".to_string())?;
     let reply = match action {
+        "direct_art_providers" => json!({"providers": DIRECT_ART_PROVIDERS}),
+        "passive_art_follow_up" => json!({"outcome": passive_art_follow_up(
+            payload["attempt"].as_u64().unwrap_or_default() as usize,
+            payload["not_found"].as_bool().unwrap_or_default(),
+        )}),
+        "passive_art_policy" => json!(PASSIVE_ART),
+        "art_budget" => json!({"counts": art_budget(
+            payload["artists"].as_u64().unwrap_or_default() as usize,
+            payload["albums"].as_u64().unwrap_or_default() as usize,
+            payload["used"].as_u64().unwrap_or_default() as usize,
+            payload["driven"].as_bool().unwrap_or_default(),
+        )}),
+        "art_coverage" => {
+            let tracks: Vec<ArtTrack> = serde_json::from_value(payload["songs"].clone())
+                .map_err(|error| error.to_string())?;
+            let excluded: ArtExclusions = serde_json::from_value(payload["excluded"].clone())
+                .map_err(|error| error.to_string())?;
+            json!(art_coverage(&tracks, &excluded))
+        }
         "clean_tag" => json!({ "value": clean_tag(payload.get("value")) }),
         "clean_search_title" => json!({
             "value": clean_search_title(
@@ -63,13 +82,17 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
 /// Trimmed text, or nothing for an empty string and for the placeholder names
 /// the providers use when they have no tag at all.
 fn clean_tag(value: Option<&Value>) -> Option<String> {
-    let raw = value.and_then(Value::as_str)?.trim();
+    clean_tag_text(value.and_then(Value::as_str)?).map(str::to_owned)
+}
+
+fn clean_tag_text(raw: &str) -> Option<&str> {
+    let raw = raw.trim();
     if raw.is_empty() {
         return None;
     }
     match raw.to_lowercase().as_str() {
         "unknown title" | "unknown artist" | "unknown album" | "unknown" => None,
-        _ => Some(raw.to_string()),
+        _ => Some(raw),
     }
 }
 
@@ -482,4 +505,165 @@ fn nested_string(value: &Value, parent: &str, key: &str) -> String {
 
 fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+pub const DIRECT_ART_PROVIDERS: &[&str] = &["itunes", "deezer", "lastfm"];
+
+#[derive(serde::Deserialize)]
+pub struct ArtTrack {
+    pub artist: String,
+    pub album: String,
+    pub has_cover: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct ArtAlbum {
+    pub album: String,
+    pub artist: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ArtCoverage {
+    pub artist_total: usize,
+    pub album_total: usize,
+    pub artists: Vec<String>,
+    pub albums: Vec<ArtAlbum>,
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct ArtExclusions {
+    #[serde(default)]
+    pub artist_saved: std::collections::HashSet<String>,
+    #[serde(default)]
+    pub album_saved: std::collections::HashSet<String>,
+    #[serde(default)]
+    pub artist_skip: std::collections::HashSet<String>,
+    #[serde(default)]
+    pub album_skip: std::collections::HashSet<String>,
+}
+
+pub fn art_coverage(songs: &[ArtTrack], excluded: &ArtExclusions) -> ArtCoverage {
+    use std::collections::HashMap;
+    let mut artists = HashMap::<String, (usize, String)>::new();
+    let mut albums = HashMap::<String, (usize, ArtAlbum, bool, String)>::new();
+    for song in songs {
+        let split = crate::library_view::split_artist_names(&song.artist);
+        let names = if split.is_empty() {
+            vec![song.artist.clone()]
+        } else {
+            split
+        };
+        for name in names.iter().filter_map(|name| clean_tag_text(name)) {
+            let entry = artists
+                .entry(name.to_lowercase())
+                .or_insert_with(|| (0, name.to_owned()));
+            entry.0 += 1;
+        }
+        let Some(album) = clean_tag_text(&song.album) else {
+            continue;
+        };
+        let artist = clean_tag_text(&song.artist).unwrap_or_default();
+        let plain = album.to_lowercase();
+        let key = if artist.is_empty() {
+            plain.clone()
+        } else {
+            format!("{}|{plain}", artist.to_lowercase())
+        };
+        let entry = albums.entry(key).or_insert_with(|| {
+            (
+                0,
+                ArtAlbum {
+                    album: album.into(),
+                    artist: artist.into(),
+                },
+                false,
+                plain,
+            )
+        });
+        entry.0 += 1;
+        entry.2 |= song.has_cover;
+    }
+    let artist_total = artists.len();
+    let album_total = albums.len();
+    let mut ranked_artists: Vec<_> = artists
+        .into_iter()
+        .filter(|(key, _)| {
+            !excluded.artist_saved.contains(key) && !excluded.artist_skip.contains(key)
+        })
+        .collect();
+    ranked_artists.sort_unstable_by(|(a, (ac, _)), (b, (bc, _))| {
+        bc.cmp(ac)
+            .then_with(|| a.encode_utf16().cmp(b.encode_utf16()))
+    });
+    let mut ranked_albums: Vec<_> = albums
+        .into_iter()
+        .filter(|(key, (_, _, has_cover, plain))| {
+            !has_cover
+                && !excluded.album_saved.contains(key)
+                && !excluded.album_saved.contains(plain)
+                && !excluded.album_skip.contains(key)
+        })
+        .collect();
+    ranked_albums.sort_unstable_by(|(a, (ac, _, _, _)), (b, (bc, _, _, _))| {
+        bc.cmp(ac)
+            .then_with(|| a.encode_utf16().cmp(b.encode_utf16()))
+    });
+    ArtCoverage {
+        artist_total,
+        album_total,
+        artists: ranked_artists
+            .into_iter()
+            .map(|(_, (_, name))| name)
+            .collect(),
+        albums: ranked_albums
+            .into_iter()
+            .map(|(_, (_, album, _, _))| album)
+            .collect(),
+    }
+}
+
+pub fn art_budget(artists: usize, albums: usize, used: usize, driven: bool) -> (usize, usize) {
+    if driven {
+        return (artists, albums);
+    }
+    let remaining = 80usize.saturating_sub(used);
+    let artists = artists.min(remaining);
+    (artists, albums.min(remaining - artists))
+}
+
+#[derive(serde::Serialize)]
+pub struct PassiveArtPolicy {
+    pub attempts: usize,
+    pub candidate_downloads: usize,
+    pub miss_ttl_seconds: i64,
+    pub retry_seconds: u64,
+    pub breaker_threshold: usize,
+    pub offline_cooldown_seconds: u64,
+}
+
+pub const PASSIVE_ART: PassiveArtPolicy = PassiveArtPolicy {
+    attempts: 3,
+    candidate_downloads: 3,
+    miss_ttl_seconds: 30 * 24 * 60 * 60,
+    retry_seconds: 5,
+    breaker_threshold: 10,
+    offline_cooldown_seconds: 5 * 60,
+};
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtFollowUp {
+    Retry,
+    NotFound,
+    Transient,
+}
+
+pub fn passive_art_follow_up(attempt: usize, not_found: bool) -> ArtFollowUp {
+    if attempt < PASSIVE_ART.attempts {
+        ArtFollowUp::Retry
+    } else if not_found {
+        ArtFollowUp::NotFound
+    } else {
+        ArtFollowUp::Transient
+    }
 }

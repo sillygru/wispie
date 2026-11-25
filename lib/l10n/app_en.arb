@@ -6678,6 +6678,19 @@
   "@lyricsResumeSync": {
     "description": "Label for the button to resume lyric sync"
   },
+  "lyricsTimingInSync": "In sync",
+  "@lyricsTimingInSync": {
+    "description": "Lyric timing readout when its offset is zero"
+  },
+  "lyricsTimingSeconds": "{value} s",
+  "@lyricsTimingSeconds": {
+    "description": "Signed lyric timing offset with its unit",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "lyricsTimingTitle": "Lyric timing",
   "@lyricsTimingTitle": {
     "description": "Title of the lyric timing sheet"

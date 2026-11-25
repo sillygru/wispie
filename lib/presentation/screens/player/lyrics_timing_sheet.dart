@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../domain/services/lyrics_timing_offset.dart';
 import '../../../l10n/l10n.dart';
 import '../../components/app_feedback.dart';
 import '../../components/app_sheet.dart';
@@ -107,6 +106,7 @@ class _LyricsTimingSheet extends StatelessWidget {
                   max: LyricsTimingController.rangeWindow.upper,
                   divisions: LyricsTimingController.rangeWindow.divisions,
                   label: formatLyricsTimingOffset(
+                    context.l10n,
                     controller.seconds,
                     showUnit: true,
                   ),
@@ -130,6 +130,7 @@ class _LyricsTimingSheet extends StatelessWidget {
                   max: controller.fineWindow.upper,
                   divisions: controller.fineWindow.divisions,
                   label: formatLyricsTimingOffset(
+                    context.l10n,
                     controller.seconds,
                     showUnit: true,
                   ),
@@ -190,7 +191,8 @@ class _LyricsTimingSheet extends StatelessWidget {
     appSnack(
       context,
       context.l10n.lyricsTimingSnapped(
-        formatLyricsTimingOffset(controller.seconds, showUnit: true),
+        formatLyricsTimingOffset(context.l10n, controller.seconds,
+            showUnit: true),
       ),
       tone: AppTone.success,
     );

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart';
 import '../data/rust/native_database.dart';
 import '../data/repositories/song_identity_repository.dart';
+import '../data/repositories/search_index_repository.dart';
 import '../domain/models/listening_insights.dart';
 import '../domain/models/youtube_playlist_link.dart';
 import '../domain/services/fun_stats_export.dart';
@@ -12,6 +13,7 @@ import '../domain/services/insights_builder.dart';
 import '../models/playlist.dart';
 import '../models/queue_snapshot.dart';
 import '../models/song.dart';
+import 'bulk_rename_journal.dart';
 import 'import_options.dart';
 import 'sync/hlc.dart';
 import 'sync_service.dart';
@@ -1044,21 +1046,40 @@ class DatabaseService {
   Future<void> renameFile(String oldFilename, String newFilename) =>
       renameFiles([(from: oldFilename, to: newFilename)]);
 
-  Future<void> renameFiles(List<({String from, String to})> renames) async {
+  Future<void> renameFiles(
+    List<({String from, String to})> renames, {
+    List<Song>? updatedSongs,
+    Iterable<PendingRename>? intents,
+    List<PendingRename> recover = const [],
+  }) async {
     await _ensureInitialized();
     final data = _userDataDatabase;
     final stats = _statsDatabase;
-    if (data == null || stats == null || renames.isEmpty) return;
+    if (data == null || stats == null || (renames.isEmpty && intents == null)) {
+      return;
+    }
 
     final fields = <String, Object?>{
       'renames': [
         for (final entry in renames) {'from': entry.from, 'to': entry.to}
       ],
+      if (updatedSongs != null)
+        'songs': [for (final song in updatedSongs) _songRow(song)],
+      if (intents != null)
+        'completion': {
+          'directory': (await getWispieDirectory()).path,
+          'index': await SearchIndexRepository().databasePath(),
+          'intents': [for (final entry in intents) entry.toJson()],
+          'recover': [for (final entry in recover) entry.toJson()],
+        },
       'hlc': _hlcNow(),
       'now': DateTime.now().millisecondsSinceEpoch / 1000,
     };
     try {
-      await data.renameLibraryFiles(stats, fields);
+      final result = await data.renameLibraryFiles(stats, fields);
+      if (result['index_warning'] case final String warning) {
+        debugPrint('Search index rename failed: $warning');
+      }
     } finally {
       SongIdentityRepository.generation++;
     }

@@ -7,6 +7,18 @@ import '../../../l10n/l10n.dart';
 import '../../components/pressable.dart';
 import '../../tokens/player_tokens.dart';
 
+String formatLyricsTimingOffset(
+  AppLocalizations l10n,
+  double seconds, {
+  bool showUnit = false,
+}) {
+  final hundredths = (seconds * 100).round();
+  if (hundredths == 0) return l10n.lyricsTimingInSync;
+  final sign = hundredths > 0 ? '+' : '-';
+  final text = '$sign${(hundredths.abs() / 100).toStringAsFixed(2)}';
+  return showUnit ? l10n.lyricsTimingSeconds(text) : text;
+}
+
 /// Shared state for the two timing surfaces: the inline pill in the action strip
 /// and the full sheet behind it.
 ///
@@ -240,6 +252,7 @@ class LyricsTimingControl extends StatelessWidget {
                   max: window.upper,
                   divisions: window.divisions,
                   label: formatLyricsTimingOffset(
+                    context.l10n,
                     controller.seconds,
                     showUnit: true,
                   ),
@@ -360,6 +373,7 @@ class _LyricsTimingReadoutState extends State<LyricsTimingReadout>
                   1 + 0.18 * (1 - Curves.easeOutBack.transform(_reset.value)),
               child: Text(
                 formatLyricsTimingOffset(
+                  context.l10n,
                   widget.controller.seconds,
                   showUnit: widget.showUnit,
                 ),

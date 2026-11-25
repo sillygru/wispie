@@ -411,12 +411,73 @@ fn rename_library_files(payload: &Value) -> Result<Value, String> {
     let renames = song_files::parse_renames(payload)?;
     let hlc = payload["hlc"].as_i64().ok_or("missing rename clock")?;
     let now = payload["now"].as_f64().unwrap_or_default();
-    let mut connections = lock();
-    let [Some(data), Some(stats)] = connections.get_disjoint_mut([&id, &stats_id]) else {
-        return Err("rename database connection is closed".into());
+    let completion: Option<RenameCompletion> = payload
+        .get("completion")
+        .map(|value| serde_json::from_value(value.clone()))
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    if let Some(completion) = &completion {
+        restore_rename_sidecars(&completion.recover);
+    }
+    {
+        let mut connections = lock();
+        let [Some(data), Some(stats)] = connections.get_disjoint_mut([&id, &stats_id]) else {
+            return Err("rename database connection is closed".into());
+        };
+        if payload.get("songs").is_none() {
+            apply_renames(data, stats, &renames, hlc, now)?;
+        } else {
+            in_transaction(data, |data| {
+                song_files::apply_data_rows(data, &renames, hlc, now)?;
+                song_write_batch_on(payload, data)?;
+                Ok(())
+            })?;
+            song_files::apply_stats(stats, &renames, hlc)?;
+        }
+    }
+    let warning = completion
+        .as_ref()
+        .map(|completion| finish_renames(completion, &renames))
+        .transpose()?
+        .flatten();
+    Ok(json!({"index_warning": warning}))
+}
+
+#[derive(serde::Deserialize)]
+struct RenameCompletion {
+    directory: std::path::PathBuf,
+    index: std::path::PathBuf,
+    intents: Vec<crate::file_workflow::PendingRename>,
+    #[serde(default)]
+    recover: Vec<crate::file_workflow::PendingRename>,
+}
+
+fn restore_rename_sidecars(entries: &[crate::file_workflow::PendingRename]) {
+    for entry in entries {
+        crate::file_workflow::rename_sidecars(Path::new(&entry.url), &entry.sidecars);
+    }
+}
+
+fn finish_renames(
+    completion: &RenameCompletion,
+    renames: &[(&str, &str)],
+) -> Result<Option<String>, String> {
+    let update_index = || -> Result<(), String> {
+        if renames.is_empty() || !completion.index.is_file() {
+            return Ok(());
+        }
+        let mut index =
+            Connection::open_with_flags(&completion.index, OpenFlags::SQLITE_OPEN_READ_WRITE)
+                .map_err(|error| error.to_string())?;
+        index
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|error| error.to_string())?;
+        in_transaction(&mut index, |db| search_index::rename_rows(db, renames))
     };
-    apply_renames(data, stats, &renames, hlc, now)?;
-    Ok(json!({}))
+    // The search index is derived. A stale row is repaired by the next scan.
+    let index_warning = update_index().err();
+    crate::file_workflow::acknowledge_renames(&completion.directory, &completion.intents)?;
+    Ok(index_warning)
 }
 
 fn apply_renames(
@@ -600,6 +661,40 @@ pub struct LibraryTrack {
     pub duration_ms: Option<i64>,
 }
 
+#[derive(serde::Serialize)]
+pub struct LibraryPlaylistSong {
+    pub song_filename: String,
+    pub added_at: f64,
+}
+
+#[derive(serde::Serialize)]
+pub struct LibraryPlaylist {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_recommendation: i64,
+    pub created_at: f64,
+    pub updated_at: f64,
+    pub songs: Vec<LibraryPlaylistSong>,
+}
+
+#[derive(Clone, Copy)]
+pub enum LibraryList {
+    Favorites,
+    SuggestLess,
+    Hidden,
+}
+
+impl LibraryList {
+    fn fields(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Favorites => ("favorite", "added_at", "favorites"),
+            Self::SuggestLess => ("suggestless", "added_at", "suggestless"),
+            Self::Hidden => ("hidden", "hidden_at", "hidden"),
+        }
+    }
+}
+
 impl Library {
     pub fn open(data_path: &Path, stats_path: &Path, base_hlc: i64) -> Result<Self, String> {
         let (data, _, _) =
@@ -632,6 +727,18 @@ impl Library {
         Ok(tracks)
     }
 
+    pub fn playlists(&self) -> Result<Vec<LibraryPlaylist>, String> {
+        library_playlists(&self.data)
+    }
+
+    pub fn save_playlist(&mut self, playlist: &LibraryPlaylist, hlc: i64) -> Result<(), String> {
+        playlist_save(&json!({"playlist": playlist, "hlc": hlc}), &mut self.data).map(|_| ())
+    }
+
+    pub fn filenames(&self, list: LibraryList) -> Result<Vec<String>, String> {
+        list_filenames(&self.data, list)
+    }
+
     pub fn apply_renames(
         &mut self,
         renames: &[(&str, &str)],
@@ -639,6 +746,37 @@ impl Library {
         now: f64,
     ) -> Result<(), String> {
         apply_renames(&mut self.data, &mut self.stats, renames, hlc, now)
+    }
+
+    pub fn recover_renames(
+        &mut self,
+        directory: &Path,
+        index: &Path,
+        hlc: i64,
+        now: f64,
+    ) -> Result<Option<String>, String> {
+        let intents = crate::file_workflow::read_rename_journal(directory)?;
+        let recover = intents
+            .iter()
+            .filter(|entry| Path::new(&entry.url).is_file())
+            .cloned()
+            .collect();
+        let completion = RenameCompletion {
+            directory: directory.into(),
+            index: index.into(),
+            intents,
+            recover,
+        };
+        restore_rename_sidecars(&completion.recover);
+        let renames: Vec<_> = completion
+            .recover
+            .iter()
+            .map(|entry| (entry.from.as_str(), entry.to.as_str()))
+            .collect();
+        if !renames.is_empty() {
+            self.apply_renames(&renames, hlc, now)?;
+        }
+        finish_renames(&completion, &renames)
     }
 
     pub fn schema_versions(&self) -> Result<(i64, i64), String> {
@@ -1344,25 +1482,18 @@ fn user_list(payload: &Value) -> Result<Value, String> {
         .get("kind")
         .and_then(Value::as_str)
         .ok_or_else(|| "user_list needs a kind".to_string())?;
-    let (table, time_column, entity) = match kind {
-        "favorite" => ("favorite", "added_at", "favorites"),
-        "suggestless" => ("suggestless", "added_at", "suggestless"),
-        "hidden" => ("hidden", "hidden_at", "hidden"),
+    let list = match kind {
+        "favorite" => LibraryList::Favorites,
+        "suggestless" => LibraryList::SuggestLess,
+        "hidden" => LibraryList::Hidden,
         other => return Err(format!("unknown user list {other}")),
     };
+    let (table, time_column, entity) = list.fields();
     let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
 
     with(payload, |connection| {
         if op == "list" {
-            let mut statement = connection
-                .prepare(&format!("SELECT filename FROM {table}"))
-                .map_err(|error| format!("list {table}: {error}"))?;
-            let items = statement
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|error| format!("list {table}: {error}"))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| format!("list {table}: {error}"))?;
-            return Ok(json!({ "items": items }));
+            return Ok(json!({ "items": list_filenames(connection, list)? }));
         }
 
         let hlc = payload
@@ -1446,6 +1577,56 @@ fn user_list(payload: &Value) -> Result<Value, String> {
     })
 }
 
+fn list_filenames(connection: &Connection, list: LibraryList) -> Result<Vec<String>, String> {
+    let (table, _, _) = list.fields();
+    let mut statement = connection
+        .prepare(&format!("SELECT filename FROM {table}"))
+        .map_err(|error| format!("list {table}: {error}"))?;
+    let items = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("list {table}: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("list {table}: {error}"))?;
+    Ok(items)
+}
+
+fn library_playlists(connection: &Connection) -> Result<Vec<LibraryPlaylist>, String> {
+    let mut items = connection
+        .prepare("SELECT id, name, description, is_recommendation, created_at, updated_at                   FROM playlist ORDER BY updated_at DESC")
+        .map_err(|error| format!("playlist list: {error}"))?;
+    let mut playlists = items
+        .query_map([], |row| {
+            Ok(LibraryPlaylist {
+                id: row.get(0)?,
+                name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                description: row.get(2)?,
+                is_recommendation: row.get::<_, Option<i64>>(3)?.unwrap_or_default(),
+                created_at: row.get::<_, Option<f64>>(4)?.unwrap_or_default(),
+                updated_at: row.get::<_, Option<f64>>(5)?.unwrap_or_default(),
+                songs: Vec::new(),
+            })
+        })
+        .map_err(|error| format!("playlist list: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("playlist list: {error}"))?;
+    let mut songs = connection
+        .prepare("SELECT song_filename, added_at FROM playlist_song                   WHERE playlist_id = ?1 ORDER BY added_at ASC")
+        .map_err(|error| format!("playlist songs: {error}"))?;
+    for playlist in &mut playlists {
+        playlist.songs = songs
+            .query_map([&playlist.id], |row| {
+                Ok(LibraryPlaylistSong {
+                    song_filename: row.get(0)?,
+                    added_at: row.get::<_, Option<f64>>(1)?.unwrap_or_default(),
+                })
+            })
+            .map_err(|error| format!("playlist songs: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("playlist songs: {error}"))?;
+    }
+    Ok(playlists)
+}
+
 /// Playlist rows and their membership.
 ///
 /// A save is a full replacement: every song that disappeared is tombstoned so
@@ -1455,61 +1636,7 @@ fn playlist_op(payload: &Value) -> Result<Value, String> {
     let op = payload.get("op").and_then(Value::as_str).unwrap_or("list");
     match op {
         "list" => with(payload, |connection| {
-            let rows = {
-                let mut statement = connection
-                    .prepare(
-                        "SELECT id, name, description, is_recommendation, created_at, updated_at \
-                         FROM playlist ORDER BY updated_at DESC",
-                    )
-                    .map_err(|error| format!("playlist list: {error}"))?;
-                let collected = statement
-                    .query_map([], |row| {
-                        Ok(json!({
-                            "id": row.get::<_, String>(0)?,
-                            "name": row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                            "description": row.get::<_, Option<String>>(2)?,
-                            "is_recommendation": row.get::<_, Option<i64>>(3)?.unwrap_or(0),
-                            "created_at": row.get::<_, Option<f64>>(4)?.unwrap_or(0.0),
-                            "updated_at": row.get::<_, Option<f64>>(5)?.unwrap_or(0.0),
-                        }))
-                    })
-                    .map_err(|error| format!("playlist list: {error}"))?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| format!("playlist list: {error}"))?;
-                collected
-            };
-
-            let mut playlists = Vec::with_capacity(rows.len());
-            for row in rows {
-                let id = row
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                let songs = {
-                    let mut statement = connection
-                        .prepare(
-                            "SELECT song_filename, added_at FROM playlist_song \
-                             WHERE playlist_id = ?1 ORDER BY added_at ASC",
-                        )
-                        .map_err(|error| format!("playlist songs: {error}"))?;
-                    let collected = statement
-                        .query_map([&id], |song| {
-                            Ok(json!({
-                                "song_filename": song.get::<_, String>(0)?,
-                                "added_at": song.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
-                            }))
-                        })
-                        .map_err(|error| format!("playlist songs: {error}"))?
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|error| format!("playlist songs: {error}"))?;
-                    collected
-                };
-                let mut object = row.as_object().cloned().unwrap_or_default();
-                object.insert("songs".to_string(), Value::Array(songs));
-                playlists.push(Value::Object(object));
-            }
-            Ok(json!({ "playlists": playlists }))
+            Ok(json!({ "playlists": library_playlists(connection)? }))
         }),
         "save" => with(payload, |connection| playlist_save(payload, connection)),
         "delete" => with(payload, |connection| playlist_delete(payload, connection)),
@@ -3231,6 +3358,12 @@ fn song_op(payload: &Value) -> Result<Value, String> {
 }
 
 fn song_write_batch(payload: &Value, connection: &mut Connection) -> Result<Value, String> {
+    in_transaction(connection, |connection| {
+        song_write_batch_on(payload, connection)
+    })
+}
+
+fn song_write_batch_on(payload: &Value, connection: &Connection) -> Result<Value, String> {
     let songs: Vec<SongRow> = payload
         .get("songs")
         .and_then(Value::as_array)
@@ -3253,114 +3386,112 @@ fn song_write_batch(payload: &Value, connection: &mut Connection) -> Result<Valu
         return Ok(json!({ "written": 0 }));
     }
 
-    in_transaction(connection, |connection| {
-        let mut existing: HashMap<String, (Option<String>, Option<f64>)> = HashMap::new();
+    let mut existing: HashMap<String, (Option<String>, Option<f64>)> = HashMap::new();
+    if preserve_cover {
+        for chunk in songs.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT filename, cover_url, created_epoch_sec FROM song \
+                 WHERE filename IN ({placeholders})"
+            );
+            let params: Vec<&dyn rusqlite::ToSql> = chunk
+                .iter()
+                .map(|song| &song.filename as &dyn rusqlite::ToSql)
+                .collect();
+            let mut statement = connection
+                .prepare(&sql)
+                .map_err(|error| format!("existing songs: {error}"))?;
+            let rows = statement
+                .query_map(params.as_slice(), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<f64>>(2)?,
+                    ))
+                })
+                .map_err(|error| format!("existing songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("existing songs: {error}"))?;
+            for (filename, cover, created) in rows {
+                existing.insert(filename, (cover, created));
+            }
+        }
+    }
+
+    if replace_library {
+        connection
+            .execute("DELETE FROM filtered_library_file", [])
+            .map_err(|error| format!("clear filtered library files: {error}"))?;
+        if let Some(filtered) = payload.get("filteredFiles").and_then(Value::as_array) {
+            let mut insert = connection
+                .prepare("INSERT OR REPLACE INTO filtered_library_file VALUES (?1, ?2, ?3)")
+                .map_err(|error| format!("prepare filtered library files: {error}"))?;
+            for file in filtered {
+                insert
+                    .execute(rusqlite::params![
+                        text_field(file, "filename")?,
+                        text_field(file, "url")?,
+                        file.get("mtime").and_then(Value::as_f64)
+                    ])
+                    .map_err(|error| format!("write filtered library file: {error}"))?;
+            }
+        }
+        let scanned: Vec<&str> = songs.iter().map(|song| song.filename.as_str()).collect();
+        let known: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT filename FROM song")
+                .map_err(|error| format!("known songs: {error}"))?;
+            let collected = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| format!("known songs: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("known songs: {error}"))?;
+            collected
+        };
+        for filename in known {
+            if !scanned.contains(&filename.as_str()) {
+                connection
+                    .execute("DELETE FROM song WHERE filename = ?1", [&filename])
+                    .map_err(|error| format!("drop unscanned song: {error}"))?;
+            }
+        }
+    }
+
+    for song in &songs {
+        let prior = existing.get(&song.filename);
+        let cover = if preserve_cover && song.cover_url.is_none() {
+            prior.and_then(|entry| entry.0.clone())
+        } else {
+            song.cover_url.clone()
+        };
+        let created = prior.and_then(|entry| entry.1).or(song.created);
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO song (filename, title, artist, album, url, \
+                 cover_url, has_lyrics, play_count, duration_ms, mtime, \
+                 created_epoch_sec, song_date_epoch_sec) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                rusqlite::params![
+                    song.filename,
+                    song.title,
+                    song.artist,
+                    song.album,
+                    song.url,
+                    cover,
+                    song.has_lyrics,
+                    song.play_count,
+                    song.duration_ms,
+                    song.mtime,
+                    created,
+                    song.song_date
+                ],
+            )
+            .map_err(|error| format!("write song: {error}"))?;
         if preserve_cover {
-            for chunk in songs.chunks(500) {
-                let placeholders = vec!["?"; chunk.len()].join(", ");
-                let sql = format!(
-                    "SELECT filename, cover_url, created_epoch_sec FROM song \
-                     WHERE filename IN ({placeholders})"
-                );
-                let params: Vec<&dyn rusqlite::ToSql> = chunk
-                    .iter()
-                    .map(|song| &song.filename as &dyn rusqlite::ToSql)
-                    .collect();
-                let mut statement = connection
-                    .prepare(&sql)
-                    .map_err(|error| format!("existing songs: {error}"))?;
-                let rows = statement
-                    .query_map(params.as_slice(), |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                            row.get::<_, Option<f64>>(2)?,
-                        ))
-                    })
-                    .map_err(|error| format!("existing songs: {error}"))?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| format!("existing songs: {error}"))?;
-                for (filename, cover, created) in rows {
-                    existing.insert(filename, (cover, created));
-                }
-            }
+            existing.insert(song.filename.clone(), (cover, created));
         }
-
-        if replace_library {
-            connection
-                .execute("DELETE FROM filtered_library_file", [])
-                .map_err(|error| format!("clear filtered library files: {error}"))?;
-            if let Some(filtered) = payload.get("filteredFiles").and_then(Value::as_array) {
-                let mut insert = connection
-                    .prepare("INSERT OR REPLACE INTO filtered_library_file VALUES (?1, ?2, ?3)")
-                    .map_err(|error| format!("prepare filtered library files: {error}"))?;
-                for file in filtered {
-                    insert
-                        .execute(rusqlite::params![
-                            text_field(file, "filename")?,
-                            text_field(file, "url")?,
-                            file.get("mtime").and_then(Value::as_f64)
-                        ])
-                        .map_err(|error| format!("write filtered library file: {error}"))?;
-                }
-            }
-            let scanned: Vec<&str> = songs.iter().map(|song| song.filename.as_str()).collect();
-            let known: Vec<String> = {
-                let mut statement = connection
-                    .prepare("SELECT filename FROM song")
-                    .map_err(|error| format!("known songs: {error}"))?;
-                let collected = statement
-                    .query_map([], |row| row.get::<_, String>(0))
-                    .map_err(|error| format!("known songs: {error}"))?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|error| format!("known songs: {error}"))?;
-                collected
-            };
-            for filename in known {
-                if !scanned.contains(&filename.as_str()) {
-                    connection
-                        .execute("DELETE FROM song WHERE filename = ?1", [&filename])
-                        .map_err(|error| format!("drop unscanned song: {error}"))?;
-                }
-            }
-        }
-
-        for song in &songs {
-            let prior = existing.get(&song.filename);
-            let cover = if preserve_cover && song.cover_url.is_none() {
-                prior.and_then(|entry| entry.0.clone())
-            } else {
-                song.cover_url.clone()
-            };
-            let created = prior.and_then(|entry| entry.1).or(song.created);
-            connection
-                .execute(
-                    "INSERT OR REPLACE INTO song (filename, title, artist, album, url, \
-                     cover_url, has_lyrics, play_count, duration_ms, mtime, \
-                     created_epoch_sec, song_date_epoch_sec) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                    rusqlite::params![
-                        song.filename,
-                        song.title,
-                        song.artist,
-                        song.album,
-                        song.url,
-                        cover,
-                        song.has_lyrics,
-                        song.play_count,
-                        song.duration_ms,
-                        song.mtime,
-                        created,
-                        song.song_date
-                    ],
-                )
-                .map_err(|error| format!("write song: {error}"))?;
-            if preserve_cover {
-                existing.insert(song.filename.clone(), (cover, created));
-            }
-        }
-        Ok(json!({ "written": songs.len() }))
-    })
+    }
+    Ok(json!({ "written": songs.len() }))
 }
 
 pub(crate) fn library_file_baseline(

@@ -24,7 +24,7 @@ class SearchIndexRepository {
   static String? testDocumentsPath;
 
   /// Gets the database file path
-  Future<String> _getDbPath() async {
+  Future<String> databasePath() async {
     if (testDocumentsPath != null) {
       return join(testDocumentsPath!, 'wispie_search_index.db');
     }
@@ -43,7 +43,7 @@ class SearchIndexRepository {
     if (_database != null && _database!.isOpen) return;
     _database = null;
 
-    final dbPath = await _getDbPath();
+    final dbPath = await databasePath();
 
     _database = await openDatabase(dbPath, schema: DatabaseSchema.searchIndex);
   }
@@ -363,7 +363,7 @@ class SearchIndexRepository {
 
   Future<void> deleteDatabaseFile() async {
     await close();
-    await databaseFileCommand('remove', await _getDbPath());
+    await databaseFileCommand('remove', await databasePath());
   }
 }
 

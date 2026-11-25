@@ -5244,6 +5244,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String get lyricsResumeSync => 'Retomar sincronização';
 
   @override
+  String get lyricsTimingInSync => 'In sync';
+
+  @override
+  String lyricsTimingSeconds(String value) {
+    return '$value s';
+  }
+
+  @override
   String get lyricsTimingTitle => 'Sincronização da letra';
 
   @override
