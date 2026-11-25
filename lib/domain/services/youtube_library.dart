@@ -371,25 +371,15 @@ class YouTubeLibraryApi {
   Future<List<YouTubeAccountPlaylist>> playlists({int maxPages = 3}) async {
     final result = <YouTubeAccountPlaylist>[];
     final seen = <String>{};
-    String? continuation;
-    final usedContinuations = <String>{};
-
-    for (var page = 0; page < maxPages; page++) {
-      final json = await _post(
-        'browse',
-        continuation == null
-            // `FEplaylists` was retired and now answers 400; the aggregation
-            // page is the one the library's playlists tab loads.
-            ? const {'browseId': 'FEplaylist_aggregation'}
-            : {'continuation': continuation},
-        cacheFor: const Duration(minutes: 10),
-      );
+    await for (final json in _pages(
+      'browse',
+      const {'browseId': 'FEplaylist_aggregation'},
+      maxPages: maxPages,
+      cacheFor: const Duration(minutes: 10),
+    )) {
       for (final playlist in parseAccountPlaylists(json)) {
         if (seen.add(playlist.id)) result.add(playlist);
       }
-      final next = nextContinuation(json);
-      if (next == null || !usedContinuations.add(next)) break;
-      continuation = next;
     }
 
     result.add(
@@ -432,18 +422,13 @@ class YouTubeLibraryApi {
 
     final items = <YouTubePlaylistItem>[];
     final seen = <String>{};
-    final usedContinuations = <String>{};
-    String? continuation;
-
-    for (var page = 0; page < maxPages; page++) {
-      final json = await _post(
-        'search',
-        continuation == null
-            ? {'query': normalized}
-            : {'continuation': continuation},
-        client: _ApiClient.music,
-        cacheFor: const Duration(minutes: 30),
-      );
+    await for (final json in _pages(
+      'search',
+      {'query': normalized},
+      client: _ApiClient.music,
+      maxPages: maxPages,
+      cacheFor: const Duration(minutes: 30),
+    )) {
       for (final item in parseMusicTracks(json, artistHint: artistHint)) {
         if (!seen.add(item.videoId)) continue;
         items.add(
@@ -458,9 +443,6 @@ class YouTubeLibraryApi {
           ),
         );
       }
-      final next = nextContinuation(json);
-      if (next == null || !usedContinuations.add(next)) break;
-      continuation = next;
     }
     return items;
   }
@@ -482,18 +464,13 @@ class YouTubeLibraryApi {
     final seenVideos = <String>{};
     final containers = <YouTubeContainer>[];
     final seenContainers = <String>{};
-    final usedContinuations = <String>{};
-    String? continuation;
-
-    for (var page = 0; page < maxPages; page++) {
-      final json = await _post(
-        'search',
-        continuation == null
-            ? {'query': normalized}
-            : {'continuation': continuation},
-        client: _ApiClient.music,
-        cacheFor: const Duration(minutes: 30),
-      );
+    await for (final json in _pages(
+      'search',
+      {'query': normalized},
+      client: _ApiClient.music,
+      maxPages: maxPages,
+      cacheFor: const Duration(minutes: 30),
+    )) {
       for (final item in parseMusicTracks(json, artistHint: artistHint)) {
         if (!seenVideos.add(item.videoId)) continue;
         tracks.add(
@@ -518,9 +495,6 @@ class YouTubeLibraryApi {
         if (!seenContainers.add(container.id)) continue;
         containers.add(container);
       }
-      final next = nextContinuation(json);
-      if (next == null || !usedContinuations.add(next)) break;
-      continuation = next;
     }
 
     return YouTubeMusicSearch(
@@ -577,17 +551,11 @@ class YouTubeLibraryApi {
     final header = parseArtistHeader(first);
     collect(first, header.name.isEmpty ? null : header.name);
 
-    String? continuation = nextContinuation(first);
-    final used = <String>{};
-    for (var page = 1; page < maxPages && continuation != null; page++) {
-      final token = continuation;
-      if (!used.add(token)) break;
-      final next = await _musicBrowse(
-        {'continuation': token},
-        cacheFor: const Duration(minutes: 20),
-      );
-      collect(next, header.name.isEmpty ? null : header.name);
-      continuation = nextContinuation(next);
+    await for (final page in _continuations('browse', first,
+        client: _ApiClient.music,
+        maxPages: maxPages,
+        cacheFor: const Duration(minutes: 20))) {
+      collect(page, header.name.isEmpty ? null : header.name);
     }
 
     return YouTubeArtistPage(
@@ -642,17 +610,11 @@ class YouTubeLibraryApi {
     }
 
     collect(first);
-    String? continuation = nextContinuation(first);
-    final used = <String>{};
-    for (var page = 1; page < maxPages && continuation != null; page++) {
-      final token = continuation;
-      if (!used.add(token)) break;
-      final next = await _musicBrowse(
-        {'continuation': token},
-        cacheFor: const Duration(minutes: 20),
-      );
-      collect(next);
-      continuation = nextContinuation(next);
+    await for (final page in _continuations('browse', first,
+        client: _ApiClient.music,
+        maxPages: maxPages,
+        cacheFor: const Duration(minutes: 20))) {
+      collect(page);
     }
 
     return YouTubeAlbumPage(
@@ -706,18 +668,13 @@ class YouTubeLibraryApi {
   }) async {
     final items = <YouTubePlaylistItem>[];
     final seen = <String>{};
-    final usedContinuations = <String>{};
-    String? continuation;
-
-    for (var page = 0; page < maxPages; page++) {
-      final json = await _post(
-        'browse',
-        continuation == null
-            ? {'browseId': browseId}
-            : {'continuation': continuation},
-        client: client,
-        cacheFor: cacheFor,
-      );
+    await for (final json in _pages(
+      'browse',
+      {'browseId': browseId},
+      client: client,
+      maxPages: maxPages,
+      cacheFor: cacheFor,
+    )) {
       final parsed = client == _ApiClient.music
           ? parseMusicTracks(json)
           : parsePlaylistVideoItems(json);
@@ -735,13 +692,47 @@ class YouTubeLibraryApi {
           ),
         );
       }
-      final next = nextContinuation(json);
-      // A token that repeats means YouTube has nothing more for us; treating it
-      // as a continuation would loop until the page budget ran out.
-      if (next == null || !usedContinuations.add(next)) break;
-      continuation = next;
     }
     return items;
+  }
+
+  Stream<Map<String, dynamic>> _pages(
+    String endpoint,
+    Map<String, Object?> body, {
+    required int maxPages,
+    required Duration cacheFor,
+    _ApiClient client = _ApiClient.web,
+  }) async* {
+    if (maxPages < 1) return;
+    final first =
+        await _post(endpoint, body, client: client, cacheFor: cacheFor);
+    yield first;
+    yield* _continuations(endpoint, first,
+        client: client, maxPages: maxPages, cacheFor: cacheFor);
+  }
+
+  Stream<Map<String, dynamic>> _continuations(
+    String endpoint,
+    Map<String, dynamic> first, {
+    required int maxPages,
+    required Duration cacheFor,
+    required _ApiClient client,
+  }) async* {
+    var response = first;
+    final used = <String>[];
+    for (var fetched = 1; fetched < maxPages; fetched++) {
+      final body = _parse('page_request', {
+        'json': response,
+        'fetched': fetched,
+        'limit': maxPages,
+        'used': used,
+      })['body'] as Map<String, dynamic>?;
+      if (body == null) return;
+      used.add(body['continuation'] as String);
+      response =
+          await _post(endpoint, body, client: client, cacheFor: cacheFor);
+      yield response;
+    }
   }
 
   Future<Map<String, dynamic>> _post(
@@ -812,10 +803,13 @@ class YouTubeLibraryApi {
     var attempt = 0;
     while (true) {
       final version = await _clientVersion(client);
-      final payload = {
-        'context': _context(version, client),
-        ...body,
-      };
+      final payload = _parse('catalogue_request', {
+        'client_name': client.clientName,
+        'version': version,
+        'origin': client.origin,
+        'user_agent': kYouTubeWebUserAgent,
+        'body': body,
+      })['payload'] as Map<String, dynamic>;
       final response = await _send(uri, payload, session, client, version);
       final status = response.status;
 
@@ -1002,11 +996,10 @@ class YouTubeLibraryApi {
     for (final uri in sources) {
       try {
         final text = await _getText(uri);
-        final match = RegExp(r'INNERTUBE_CLIENT_VERSION"?\s*:\s*"?([0-9.]+)')
-            .firstMatch(text);
-        if (match != null) {
+        final version = _parse('client_version', {'text': text})['version'];
+        if (version is String) {
           _resolvedVersions.add(client);
-          return match.group(1);
+          return version;
         }
       } on Object catch (error) {
         // Offline, or the endpoint moved: the compiled fallback still lets a
@@ -1040,20 +1033,6 @@ class YouTubeLibraryApi {
       'YouTube redirected too many times.',
     );
   }
-
-  Map<String, Object?> _context(String version, _ApiClient client) => {
-        'client': {
-          'clientName': client.clientName,
-          'clientVersion': version,
-          'hl': 'en',
-          'gl': 'US',
-          'userAgent': kYouTubeWebUserAgent,
-          'originalUrl': '${client.origin}/',
-          'platform': 'DESKTOP',
-        },
-        'user': const {'lockedSafetyMode': false},
-        'request': const {'useSsl': true},
-      };
 }
 
 class _JsonResponse {

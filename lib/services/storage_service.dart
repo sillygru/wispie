@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/rust/native_command.dart';
 import 'wispie_paths.dart';
 import '../presentation/widgets/in_app_folder_picker.dart';
 import 'android_storage_service.dart';
@@ -721,6 +722,7 @@ class StorageService {
 
     for (final entry in settings.entries) {
       final key = entry.key;
+      if (identitySettingsKeys.contains(key)) continue;
       final value = entry.value;
 
       if (value is String) {
@@ -760,95 +762,20 @@ class StorageService {
     }
   }
 
-  static const List<String> _themeSettingsKeys = [
-    'theme_mode',
-    'use_cover_color',
-    'apply_cover_color_to_all',
-  ];
+  static final _backupPolicy = runCoreCommand('backup_preferences', {});
 
-  static const List<String> _scannerSettingsKeys = [
-    'music_folders_list',
-    'lyrics_folders_list',
-    'excluded_folders',
-    'last_library_folder',
-    'minimum_file_size_bytes',
-    'minimum_track_duration_ms',
-    'include_videos',
-    'prevent_duplicate_tracks',
-    'prevent_merged_duplicates',
-    'extract_feat_artists',
-  ];
+  static List<String> _keysFor(String category) =>
+      ((_backupPolicy['categories'] as Map)[category] as List).cast<String>();
 
-  static const List<String> _playbackSettingsKeys = [
-    'play_fade_duration',
-    'pause_fade_duration',
-    'gap_song_id',
-    'gap_resume_timestamp',
-    'gap_is_active',
-    'fade_in_duration',
-    'fade_out_duration',
-    'delay_duration',
-    'auto_pause_on_volume_zero',
-    'auto_resume_on_volume_restore',
-    'keep_screen_awake_on_lyrics',
-    'desktop_sidebar_enabled',
-    'lyrics_simulated_rich_sync_enabled',
-    'lyrics_target_language',
-    'lyrics_auto_translate',
-    'lyrics_translation_mode',
-  ];
+  static final _themeSettingsKeys = _keysFor('theme');
+  static final _scannerSettingsKeys = _keysFor('scanner');
+  static final _playbackSettingsKeys = _keysFor('playback');
+  static final _uiSettingsKeys = _keysFor('ui');
+  static final _backupSettingsKeys = _keysFor('backup');
 
-  static const List<String> _uiSettingsKeys = [
-    'sort_order',
-    'visualizer_enabled',
-    'visualizer_mode',
-    'auto_hide_bottom_bar_on_scroll',
-    'show_song_duration',
-    'animated_sound_wave_enabled',
-    'show_waveform',
-    'progress_bar_type',
-    'waveform_haptics_enabled',
-    'curved_scrollbar_enabled',
-    'scrollbar_corner_radius',
-    'bottom_nav_corner_style',
-    'bottom_nav_corner_radius',
-    'quick_action_config',
-    'cover_sizing_mode',
-    'beat_reactive_cover_enabled',
-    'beat_reactive_particles_enabled',
-    'cover_motion_intensity',
-    'particle_motion_intensity',
-    'cover_motion_custom_intensity',
-    'particle_motion_custom_intensity',
-    'player_motion_latency_ms',
-    'player_swipe_changes_pane',
-    'spin_artwork_while_playing',
-    'show_quick_picks',
-    'show_recent_queues',
-    'show_for_you',
-    'youtube_enabled',
-    'youtube_hidden_playlists',
-    'sound_reactive_particles_enabled',
-    'pull_to_refresh_enabled',
-    'app_icon_style',
-  ];
-
-  static const List<String> _backupSettingsKeys = [
-    'auto_backup_frequency_hours',
-    'auto_backup_delete_after_days',
-    autoBackupContentTypesKey,
-  ];
-
-  /// Keys that identify this install/account. They are exported for
-  /// completeness but never applied by an import, so restoring a backup can't
-  /// take over the current user's identity or re-trigger setup.
-  static const List<String> identitySettingsKeys = [
-    'username',
-    'local_username',
-    'is_local_mode',
-    'is_setup_complete_v2',
-    'telemetry_id',
-  ];
+  /// Identity values stay on the device during backup and restore.
+  static final List<String> identitySettingsKeys =
+      List.unmodifiable((_backupPolicy['identity'] as List).cast<String>());
 
   /// Every settings key that a granular import can apply.
   static List<String> get importableSettingsKeys => [

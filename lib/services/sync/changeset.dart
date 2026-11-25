@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:isolate';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/rust/native_command.dart';
 import '../../data/rust/native_database.dart';
 
 import '../../data/repositories/song_identity_repository.dart';
@@ -40,42 +42,9 @@ class SyncCategory {
 }
 
 /// Settings keys that travel in the encrypted payload.
-const List<String> kSyncableSettingsKeys = [
-  'theme_mode',
-  'use_cover_color',
-  'apply_cover_color_to_all',
-  'sort_order',
-  'visualizer_enabled',
-  'visualizer_mode',
-  'show_song_duration',
-  'animated_sound_wave_enabled',
-  'show_waveform',
-  'fade_out_duration',
-  'fade_in_duration',
-  'delay_duration',
-  'play_fade_duration',
-  'pause_fade_duration',
-  'keep_screen_awake_on_lyrics',
-  'desktop_sidebar_enabled',
-  'cover_sizing_mode',
-  'beat_reactive_cover_enabled',
-  'beat_reactive_particles_enabled',
-  'cover_motion_intensity',
-  'particle_motion_intensity',
-  'cover_motion_custom_intensity',
-  'particle_motion_custom_intensity',
-  'player_motion_latency_ms',
-  'spin_artwork_while_playing',
-  'show_quick_picks',
-  'show_recent_queues',
-  'show_for_you',
-  'lyrics_target_language',
-  'lyrics_auto_translate',
-  'lyrics_translation_mode',
-  'auto_hide_bottom_bar_on_scroll',
-  'auto_pause_on_volume_zero',
-  'auto_resume_on_volume_restore',
-];
+final List<String> kSyncableSettingsKeys = List.unmodifiable(
+  (runCoreCommand('sync_settings', {})['keys'] as List).cast<String>(),
+);
 
 /// Value store for synced settings (values live outside the sync DBs).
 abstract class SettingsAccess {
@@ -239,53 +208,53 @@ class Changeset {
     Set<String>? categories,
     int maxBytes = kDeltaPlaintextBudget,
   }) async {
-    await _stampLegacy(categories);
-    final batches = <ChangesetBatch>[];
-    var records = <String, List<Map<String, Object?>>>{};
-    var clears = <_Clear>[];
-    var count = 0;
-    var size = 0;
-
-    void flush() {
-      if (count == 0) return;
-      batches.add(_wrap('delta', records, clears, count, categories));
-      records = {};
-      clears = [];
-      count = 0;
-      size = 0;
-    }
-
-    await for (final item in _collect(categories, dirtyOnly: true)) {
-      final len = jsonEncode(item.record).length + 1;
-      if (count > 0 && size + len > maxBytes) flush();
-      records.putIfAbsent(item.array, () => []).add(item.record);
-      if (item.clear != null) clears.add(item.clear!);
-      size += len;
-      count++;
-    }
-    flush();
-    final payloads = [for (final batch in batches) batch.payload];
-    await _attachIdentity(payloads);
-    await _attachRemoteSongs(payloads);
-    return batches;
+    return _buildPayloads('delta', categories, maxBytes: maxBytes);
   }
 
   /// Full current state of [categories]; tombstones older than 180 days are
   /// dropped.
-  Future<ChangesetBatch> buildSnapshot({Set<String>? categories}) async {
+  Future<ChangesetBatch> buildSnapshot({Set<String>? categories}) async =>
+      (await _buildPayloads('snapshot', categories)).single;
+
+  Future<List<ChangesetBatch>> _buildPayloads(
+    String kind,
+    Set<String>? categories, {
+    int? maxBytes,
+  }) async {
     await _stampLegacy(categories);
-    final records = <String, List<Map<String, Object?>>>{};
-    final clears = <_Clear>[];
-    var count = 0;
-    await for (final item in _collect(categories, dirtyOnly: false)) {
-      records.putIfAbsent(item.array, () => []).add(item.record);
-      if (item.clear != null) clears.add(item.clear!);
-      count++;
+    final rows = <Map<String, Object?>>[];
+    final clears = <_Clear?>[];
+    await for (final item in _collect(categories, dirtyOnly: kind == 'delta')) {
+      rows.add({'entity': item.array, 'record': item.record});
+      clears.add(item.clear);
     }
-    final batch = _wrap('snapshot', records, clears, count, categories);
-    await _attachIdentity([batch.payload]);
-    await _attachRemoteSongs([batch.payload]);
-    return batch;
+
+    final request = {
+      'kind': kind,
+      'max_bytes': maxBytes == null ? null : max(0, maxBytes),
+      'rows': rows,
+      'device_id': deviceId,
+      'device_name': deviceName,
+      'categories': (categories ?? SyncCategory.all).toList(),
+    };
+    final reply =
+        await Isolate.run(() => runCoreCommand('sync_payload', request));
+    final batches = <ChangesetBatch>[];
+    var offset = 0;
+    for (final raw in reply['batches'] as List) {
+      final batch = (raw as Map).cast<String, dynamic>();
+      final count = batch['count'] as int;
+      batches.add(ChangesetBatch._(
+        (batch['payload'] as Map).cast<String, dynamic>(),
+        clears.getRange(offset, offset + count).whereType<_Clear>().toList(),
+        count,
+      ));
+      offset += count;
+    }
+    final payloads = [for (final batch in batches) batch.payload];
+    await _attachIdentity(payloads);
+    await _attachRemoteSongs(payloads);
+    return batches;
   }
 
   /// Ships the audio content id of every song a payload names, so a device
@@ -409,35 +378,6 @@ class Changeset {
       _identityGeneration = SongIdentityRepository.generation;
     }
     return {...payload, 'records': remapped};
-  }
-
-  ChangesetBatch _wrap(
-    String kind,
-    Map<String, List<Map<String, Object?>>> records,
-    List<_Clear> clears,
-    int count,
-    Set<String>? categories,
-  ) {
-    var maxHlc = 0;
-    for (final list in records.values) {
-      for (final r in list) {
-        final h = (r['hlc'] as num?)?.toInt() ?? 0;
-        if (h > maxHlc) maxHlc = h;
-      }
-    }
-    return ChangesetBatch._(
-      {
-        'v': 1,
-        'kind': kind,
-        'device_id': deviceId,
-        'device_name': deviceName,
-        'max_hlc': maxHlc,
-        'categories': (categories ?? SyncCategory.all.toSet()).toList()..sort(),
-        'records': records,
-      },
-      clears,
-      count,
-    );
   }
 
   Future<Map<String, Object?>> _store(
@@ -738,15 +678,13 @@ class Changeset {
     for (final rec in items) {
       final key = rec['key'] as String?;
       final value = rec['value'];
-      if (key == null ||
-          value == null ||
-          !kSyncableSettingsKeys.contains(key)) {
-        continue;
-      }
+      if (key == null || value == null) continue;
       final hlc = (rec['hlc'] as num?)?.toInt() ?? 0;
-      final meta = await _rows(userData, 'settings_meta', {'key': key});
-      final lh = meta.isEmpty ? -1 : (meta.first['hlc'] as num?)?.toInt() ?? 0;
-      if (hlc <= lh) continue;
+      final check = await _store(userData, 'setting_can_apply', {
+        'key': key,
+        'hlc': hlc,
+      });
+      if (check['apply'] != true) continue;
       await settings.write(key, value);
       await _store(userData, 'setting_write', {'key': key, 'hlc': hlc});
     }

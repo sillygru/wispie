@@ -1,8 +1,8 @@
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/rust/native_command.dart';
 import '../domain/value_objects/filename.dart';
 import 'providers.dart';
 import 'session_history_provider.dart';
@@ -1125,94 +1125,48 @@ class UserDataNotifier extends Notifier<UserDataState> {
     TasteSnapshot? taste,
     ShuffleConfig? config,
   }) async {
-    if (allSongs.isEmpty) return [];
-    final random = Random();
-
-    switch (id) {
-      case 'quick_picks':
-        if (taste != null && config != null) {
-          final sorted = await LibraryLogic.sortSongsInBackground(
-            allSongs,
-            SongSortOrder.recommended,
-            userData: state,
-            shuffleConfig: config,
-            tasteSnapshot: taste,
-          );
-          return sorted.take(10).toList();
-        }
-        final recommendations = List<Song>.from(allSongs);
-        recommendations.sort((a, b) {
-          double score(Song s) {
-            double val = log((playCounts[s.filename] ?? 0) + 1.5) * 2.0;
-            if (state.isFavorite(s.filename)) val += 5.0;
-            if (state.isSuggestLess(s.filename)) val -= 10.0;
-            val += random.nextDouble() * 4.0;
-            return val;
-          }
-
-          return score(b).compareTo(score(a));
-        });
-        return recommendations.take(10).toList();
-
-      case 'top_hits':
-        final list = List<Song>.from(allSongs);
-        list.sort((a, b) => (playCounts[b.filename] ?? 0)
-            .compareTo(playCounts[a.filename] ?? 0));
-        return list.take(20).toList();
-
-      case 'fresh_finds':
-        if (allSongs.isEmpty) return [];
-        final sorted = List<Song>.from(allSongs)
-          ..sort((a, b) =>
-              (b.createdEpochSec ?? 0).compareTo(a.createdEpochSec ?? 0));
-        final fresh = sorted.take(20).toList();
-        // No songs qualify if none have a recorded creation timestamp
-        if (fresh.every((s) => s.createdEpochSec == null)) return [];
-        return fresh;
-
-      case 'forgotten_favorites':
-        final recentFilenames = sessions
-            .take(5)
-            .expand((s) => s.events ?? [])
-            .map((e) => e.songFilename)
-            .toSet();
-        final forgotten = allSongs.where((s) {
-          final isFav = state.isFavorite(s.filename);
-          final count = playCounts[s.filename] ?? 0;
-          return (isFav || count > 10) && !recentFilenames.contains(s.filename);
-        }).toList();
-        if (forgotten.isEmpty) return [];
-        return (forgotten..shuffle()).take(20).toList();
-
-      case 'quick_refresh':
-        final unplayed =
-            allSongs.where((s) => (playCounts[s.filename] ?? 0) < 3).toList();
-        if (unplayed.isEmpty) return [];
-        return (unplayed..shuffle()).take(20).toList();
-
-      case 'artist_mix':
-        if (sessions.isEmpty) return [];
-        final artistCounts = <String, int>{};
-        for (final session in sessions.take(10)) {
-          for (final event in session.events ?? []) {
-            if (event.song != null) {
-              artistCounts[event.song!.artist] =
-                  (artistCounts[event.song!.artist] ?? 0) + 1;
-            }
-          }
-        }
-        if (artistCounts.isEmpty) return [];
-        final topArtist = artistCounts.entries
-            .reduce((a, b) => a.value > b.value ? a : b)
-            .key;
-        final artistSongs =
-            allSongs.where((s) => s.artist == topArtist).toList();
-        if (artistSongs.length < 3) return [];
-        return (artistSongs..shuffle()).take(20).toList();
-
-      default:
-        return [];
+    if (id == 'quick_picks' && taste != null && config != null) {
+      final sorted = await LibraryLogic.sortSongsInBackground(
+        allSongs,
+        SongSortOrder.recommended,
+        userData: state,
+        shuffleConfig: config,
+        tasteSnapshot: taste,
+      );
+      return sorted.take(10).toList();
     }
+
+    final songs = [
+      for (final song in allSongs)
+        {
+          'filename': song.filename,
+          'artist': song.artist,
+          'added': song.createdEpochSec,
+          'plays': playCounts[song.filename] ?? 0,
+          'favorite': state.isFavorite(song.filename),
+          'suggest_less': state.isSuggestLess(song.filename),
+        },
+    ];
+    final history = [
+      for (final session in sessions.take(10))
+        [
+          for (final event in session.events ?? [])
+            {'filename': event.songFilename, 'artist': event.song?.artist},
+        ],
+    ];
+    final filenames = await compute(
+      (request) => (runCoreCommand('recommendations', request)['filenames']
+              as List<dynamic>)
+          .cast<String>(),
+      <String, Object?>{
+        'op': 'tracks',
+        'kind': id,
+        'songs': songs,
+        'sessions': history,
+      },
+    );
+    final byFilename = {for (final song in allSongs) song.filename: song};
+    return [for (final filename in filenames) byFilename[filename]!];
   }
 
   Future<void> updateRecommendationPlaylists({
@@ -1268,27 +1222,19 @@ class UserDataNotifier extends Notifier<UserDataState> {
     bool changed = false;
 
     for (final type in recommendationTypes) {
-      if (state.removedRecommendations.contains(type.id)) continue;
-
       final existing =
           updatedPlaylists.where((p) => p.id == type.id).firstOrNull;
       final pref = state.recommendationPreferences[type.id];
-      final isPinned = pref?.isPinned ?? false;
-
-      // DO NOT update if it's currently playing OR if it's pinned (pinned ones are kept)
-      if (type.id == currentPlaylistId || isPinned) continue;
-
-      // Update if:
-      // 1. Force is true
-      // 2. Playlist doesn't exist
-      // 3. Existing playlist has no songs (was blank due to a bug or empty scan)
-      bool shouldUpdate = force || existing == null || existing.songs.isEmpty;
-      if (!shouldUpdate) {
-        // Update if older than 24 hours
-        if (now - existing.updatedAt > 86400) {
-          shouldUpdate = true;
-        }
-      }
+      final shouldUpdate = runCoreCommand('recommendations', {
+        'op': 'refresh',
+        'now': now,
+        'updated': existing?.updatedAt,
+        'empty': existing?.songs.isEmpty ?? true,
+        'force': force,
+        'pinned': pref?.isPinned ?? false,
+        'playing': type.id == currentPlaylistId,
+        'removed': state.removedRecommendations.contains(type.id),
+      })['refresh'] as bool;
 
       if (shouldUpdate) {
         final recomSongs = await _generateSongsForRecommendation(

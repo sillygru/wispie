@@ -123,8 +123,22 @@ pub(super) fn run(payload: &Value) -> Result<Value, String> {
     let op = text_field(payload, "op")?;
     with(payload, |db| match op {
         "collect" => collect(db, payload),
-        "settings_meta" => Ok(json!({"rows": read_rows(db,
-            "SELECT * FROM sync_setting_meta WHERE key = ?", [text_field(payload, "key")?])?})),
+        "setting_can_apply" => {
+            let key = text_field(payload, "key")?;
+            let allowed = crate::sync_payload::SYNCABLE_SETTINGS_KEYS.contains(&key);
+            if !allowed {
+                return Ok(json!({ "apply": false }));
+            }
+            let local: Option<i64> = db
+                .query_row(
+                    "SELECT COALESCE(hlc, 0) FROM sync_setting_meta WHERE key = ?",
+                    [key],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            Ok(json!({ "apply": clock(payload) > local.unwrap_or(-1) }))
+        }
         "setting_write" => {
             db.execute(
                 "INSERT OR REPLACE INTO sync_setting_meta (key, hlc, dirty) VALUES (?, ?, ?)",

@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/rust/native_database.dart';
@@ -252,21 +251,4 @@ Future<bool> archiveHasContent(
     }
   }
   return false;
-}
-
-/// Extracts an archive entry name into [root], rejecting entries that would
-/// escape it (zip-slip).
-File? safeArchiveTarget(String root, String entryName) {
-  final normalized = p.normalize(entryName);
-  if (p.isAbsolute(normalized) ||
-      normalized.split(RegExp(r'[/\\]')).contains('..')) {
-    debugPrint('Skipping unsafe archive entry: $entryName');
-    return null;
-  }
-  final target = File(p.join(root, normalized));
-  if (!p.isWithin(root, target.path)) {
-    debugPrint('Skipping unsafe archive entry: $entryName');
-    return null;
-  }
-  return target;
 }

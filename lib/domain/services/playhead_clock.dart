@@ -1,5 +1,3 @@
-import '../../data/rust/wispie_core.dart';
-
 /// A smoothed, latency-compensated estimate of where the listener currently is
 /// in the track.
 ///
@@ -7,9 +5,6 @@ import '../../data/rust/wispie_core.dart';
 /// beat-locked visibly stutter, and it describes what the *decoder* has reached
 /// rather than what has come out of the speaker. Both problems are solved once,
 /// here, so every beat-reactive surface in the app agrees on where "now" is.
-///
-/// The arithmetic (snap threshold, easing factor, latency subtraction) lives in
-/// the native core; this holds the anchor and feeds it wall time.
 class PlayheadClock {
   Duration _anchorPosition = Duration.zero;
   int _anchorWallMs = DateTime.now().millisecondsSinceEpoch;
@@ -38,12 +33,12 @@ class PlayheadClock {
   int latencyMs = 0;
 
   void onPosition(Duration position) {
-    final current = predicted;
-    final anchored = WispieCore.playheadEase(
-      current.inMilliseconds.toDouble(),
-      position.inMilliseconds.toDouble(),
-    );
-    _anchorPosition = Duration(milliseconds: anchored.round());
+    final currentMs = predicted.inMilliseconds;
+    final positionMs = position.inMilliseconds;
+    final drift = positionMs - currentMs;
+    final anchored =
+        drift.abs() > 250 ? positionMs : currentMs + (drift * 0.15).round();
+    _anchorPosition = Duration(milliseconds: anchored);
     _anchorWallMs = DateTime.now().millisecondsSinceEpoch;
   }
 
@@ -70,11 +65,9 @@ class PlayheadClock {
   /// by the output latency.
   double get visualPositionMs => _visualMs(latencyMs: latencyMs);
 
-  double _visualMs({required int latencyMs}) => WispieCore.playheadVisual(
-        anchorMs: _anchorPosition.inMilliseconds.toDouble(),
-        wallMs: _anchorWallMs.toDouble(),
-        playing: _playing,
-        nowMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
-        latencyMs: latencyMs.toDouble(),
-      );
+  double _visualMs({required int latencyMs}) {
+    final elapsed =
+        _playing ? DateTime.now().millisecondsSinceEpoch - _anchorWallMs : 0;
+    return (_anchorPosition.inMilliseconds + elapsed - latencyMs).toDouble();
+  }
 }

@@ -232,40 +232,35 @@ List<QueueItem> reconcileWithSequence(
   List<SequenceEntry> sequence,
   QueueItem? Function(String filename) resolveItem,
 ) {
-  final libraryItems = [
-    for (final entry in sequence) resolveItem(entry.filename)
-  ];
-  final actions = NativeAccel.reconcileQueueSequence(
-    effective: [
-      for (final item in effective)
-        {'queueId': item.queueId, 'filename': item.song.filename},
-    ],
-    sequence: [
-      for (final entry in sequence)
-        {'filename': entry.filename, 'queueId': entry.queueId},
-    ],
-    libraryFound: [for (final item in libraryItems) item != null],
-  );
-  final rebuilt = <QueueItem>[];
-  for (final action in actions) {
-    final sequenceIndex = action['sequenceIndex'] as int;
-    final effectiveIndex = action['effectiveIndex'] as int?;
-    final entry = sequence[sequenceIndex];
-    final fromLibrary = libraryItems[sequenceIndex];
-    if (effectiveIndex == null) {
-      rebuilt.add(
-        QueueItem(song: fromLibrary!.song, queueId: entry.queueId),
-      );
-    } else {
-      final resolved = effective[effectiveIndex];
-      rebuilt.add(
-        resolved.copyWith(
-          song: fromLibrary?.song ?? resolved.song,
-          queueId: entry.queueId ?? resolved.queueId,
-        ),
-      );
-    }
+  final byId = {for (final item in effective) item.queueId: item};
+  final byFilename = <String, List<QueueItem>>{};
+  for (final item in effective) {
+    (byFilename[item.song.filename] ??= []).add(item);
   }
 
+  final consumedIds = <String>{};
+  final filenameCounts = <String, int>{};
+  final rebuilt = <QueueItem>[];
+  for (final entry in sequence) {
+    final fromLibrary = resolveItem(entry.filename);
+    final id = entry.queueId;
+    var resolved = consumedIds.contains(id) ? null : byId[id];
+    if (resolved == null) {
+      final candidates = byFilename[entry.filename];
+      final used = filenameCounts[entry.filename] ?? 0;
+      if (candidates != null && used < candidates.length) {
+        resolved = candidates[used];
+        filenameCounts[entry.filename] = used + 1;
+      }
+    }
+    if (resolved == null && fromLibrary == null) continue;
+
+    final resolvedId = id ?? resolved?.queueId;
+    if (resolvedId != null) consumedIds.add(resolvedId);
+    rebuilt.add(QueueItem(
+      song: (fromLibrary ?? resolved!).song,
+      queueId: resolvedId,
+    ));
+  }
   return rebuilt;
 }

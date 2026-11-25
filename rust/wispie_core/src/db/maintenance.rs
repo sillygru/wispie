@@ -19,18 +19,7 @@ pub(super) fn run(payload: &Value) -> Result<Value, String> {
             .map_err(|error| error.to_string()),
         "count" | "has_rows" => {
             let table = text_field(payload, "table")?;
-            let count = if table_exists(db, table)? {
-                let table = quote_identifier(table);
-                let sql = if op == "count" {
-                    format!("SELECT COUNT(*) FROM {table}")
-                } else {
-                    format!("SELECT EXISTS(SELECT 1 FROM {table})")
-                };
-                db.query_row(&sql, [], |row| row.get::<_, i64>(0))
-                    .map_err(|error| error.to_string())?
-            } else {
-                0
-            };
+            let count = table_count(db, table, op == "count")?;
             Ok(json!({"count": count}))
         }
         "short_sessions" => in_transaction(db, |db| short_sessions(db, payload)),
@@ -209,4 +198,18 @@ fn repair_duplicates(db: &Connection) -> Result<Value, String> {
         }
     }
     Ok(json!({"issuesFound": found, "issuesFixed": removed}))
+}
+
+pub(super) fn table_count(db: &Connection, table: &str, all: bool) -> Result<i64, String> {
+    if !table_exists(db, table)? {
+        return Ok(0);
+    }
+    let table = quote_identifier(table);
+    let sql = if all {
+        format!("SELECT COUNT(*) FROM {table}")
+    } else {
+        format!("SELECT EXISTS(SELECT 1 FROM {table})")
+    };
+    db.query_row(&sql, [], |row| row.get(0))
+        .map_err(|error| error.to_string())
 }

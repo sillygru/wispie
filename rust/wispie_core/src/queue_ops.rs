@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
@@ -277,76 +277,6 @@ pub fn original_order(request: &Value) -> Value {
             .chain(unknown)
             .collect::<Vec<_>>()
     })
-}
-
-pub fn reconcile_sequence(request: &Value) -> Value {
-    let effective = request
-        .get("effective")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let sequence = request
-        .get("sequence")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let library_found = request
-        .get("libraryFound")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-
-    let mut by_id = HashMap::new();
-    let mut by_filename: HashMap<&str, Vec<usize>> = HashMap::new();
-    let mut effective_ids = Vec::with_capacity(effective.len());
-    for (index, item) in effective.iter().enumerate() {
-        let id = item.get("queueId").and_then(Value::as_str).unwrap_or("");
-        let filename = item.get("filename").and_then(Value::as_str).unwrap_or("");
-        by_id.insert(id, index);
-        by_filename.entry(filename).or_default().push(index);
-        effective_ids.push(id);
-    }
-
-    let mut consumed_ids = HashSet::new();
-    let mut consumed_filename_counts: HashMap<&str, usize> = HashMap::new();
-    let mut actions = Vec::new();
-    for (sequence_index, entry) in sequence.iter().enumerate() {
-        let filename = entry.get("filename").and_then(Value::as_str).unwrap_or("");
-        let queue_id = entry.get("queueId").and_then(Value::as_str);
-        let mut resolved = queue_id
-            .filter(|id| !consumed_ids.contains(id))
-            .and_then(|id| by_id.get(id).copied());
-
-        if resolved.is_none() {
-            if let Some(candidates) = by_filename.get(filename) {
-                let used = consumed_filename_counts.entry(filename).or_default();
-                if *used < candidates.len() {
-                    resolved = Some(candidates[*used]);
-                    *used += 1;
-                }
-            }
-        }
-
-        let has_library = library_found
-            .get(sequence_index)
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if resolved.is_none() && !has_library {
-            continue;
-        }
-
-        let resolved_id = resolved.map(|index| effective_ids[index]);
-        if let Some(id) = queue_id.or(resolved_id) {
-            consumed_ids.insert(id);
-        }
-        actions.push(json!({
-            "sequenceIndex": sequence_index,
-            "effectiveIndex": resolved,
-            "queueId": queue_id,
-            "hasLibrary": has_library
-        }));
-    }
-    json!({"actions": actions})
 }
 
 fn position(

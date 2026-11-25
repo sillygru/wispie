@@ -3,7 +3,6 @@ import 'package:crypto/crypto.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:math';
 import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
@@ -11,6 +10,7 @@ import 'package:image/image.dart' as img;
 import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
 import 'database_service.dart';
 import 'scanner_service.dart';
+import '../data/rust/native_command.dart';
 import '../models/song.dart';
 import 'storage_service.dart';
 import 'android_storage_service.dart';
@@ -108,7 +108,7 @@ class FileManagerService {
   /// Updates all metadata for a song using FFmpeg with `-c copy` so no
   /// existing tag, cover or lyrics is dropped and no re-encode occurs.
   ///
-  /// Falls back to the pure-Dart `audio_metadata_reader` path only on desktop
+  /// Falls back to the native tag editor only on desktop
   /// when `ffmpeg` is not available.
   Future<void> updateSongMetadata(
       Song song, String title, String artist, String album) async {
@@ -133,8 +133,8 @@ class FileManagerService {
             usesSystem ? await FFmpegService().isFFmpegAvailable() : true;
         if (usesSystem && !available) {
           debugPrint(
-              'FileManager: FFmpeg unavailable, falling back to audio_metadata_reader: $e');
-          await _updateTextWithAudioMetadataReader(fileUrl,
+              'FileManager: FFmpeg unavailable, using the native tag editor: $e');
+          await _updateTextWithNativeTags(fileUrl,
               title: title, artist: artist, album: album);
           return;
         }
@@ -197,10 +197,7 @@ class FileManagerService {
     }
   }
 
-  /// Desktop fallback for text edits when no system `ffmpeg` is installed.
-  /// Uses the pure-Dart reader, which rewrites audio containers only — video
-  /// files (which it cannot safely parse) keep requiring FFmpeg.
-  Future<void> _updateTextWithAudioMetadataReader(String fileUrl,
+  Future<void> _updateTextWithNativeTags(String fileUrl,
       {required String title,
       required String artist,
       required String album}) async {
@@ -209,16 +206,12 @@ class FileManagerService {
       throw Exception(
           'Text metadata update for video files requires ffmpeg to be installed.');
     }
-    // Same staging flow as the cover path: copy to temp, mutate via
-    // _updateMetadataWithLibraries, then publish atomically. Preserved for
-    // desktop without ffmpeg.
     final tempDir = await Directory.systemTemp.createTemp('gru_meta_');
     final tempFile = File(p.join(tempDir.path, p.basename(fileUrl)));
     try {
       await File(fileUrl).copy(tempFile.path);
-      await _updateMetadataWithLibraries(
+      await _editStagedTags(
         tempFile: tempFile,
-        tempDir: tempDir,
         title: title,
         artist: artist,
         album: album,
@@ -228,7 +221,7 @@ class FileManagerService {
       if (!hasAudio) {
         // If ffmpeg is available we validated; if not, skip strict check.
         debugPrint(
-            'FileManager: audio_metadata_reader output validation skipped (no ffprobe)');
+            'FileManager: native tag output validation skipped (no ffprobe)');
       }
 
       if (Platform.isAndroid) {
@@ -720,10 +713,8 @@ class FileManagerService {
         try {
           await File(fileUrl).copy(tempFile.path);
 
-          // Cover art and text go through audio_metadata_reader in one pass.
-          await _updateMetadataWithLibraries(
+          await _editStagedTags(
             tempFile: tempFile,
-            tempDir: tempDir,
             title: title,
             artist: artist,
             album: album,
@@ -788,35 +779,24 @@ class FileManagerService {
     required File source,
     required String targetPath,
   }) async {
-    final staged = File('$targetPath.wispie_tmp');
     try {
-      if (await staged.exists()) await staged.delete();
-      await source.copy(staged.path);
-      await staged.rename(targetPath);
-    } catch (e) {
-      try {
-        if (await staged.exists()) await staged.delete();
-      } catch (_) {
-        // Best-effort cleanup; the original is untouched either way.
-      }
-      rethrow;
+      await compute(
+        (request) => runCoreCommand('file_workflow', request),
+        {'op': 'replace', 'source': source.path, 'path': targetPath},
+      );
+    } on StateError catch (error) {
+      throw FileSystemException(error.message, targetPath);
     }
   }
 
-  /// Applies cover and text edits to the staged copy via audio_metadata_reader.
-  /// Works on all platforms; `updateMetadata` is a read-modify-write, so
-  /// untouched fields (lyrics, track numbers, existing pictures) survive.
-  Future<void> _updateMetadataWithLibraries({
+  Future<void> _editStagedTags({
     required File tempFile,
-    required Directory tempDir,
     String? title,
     String? artist,
     String? album,
     amr.Picture? picture,
     bool removePicture = false,
   }) async {
-    // Skip no-op writes: the reader rewrites the whole file, and skipping
-    // also avoids clobbering lyric-only writes.
     if (title == null &&
         artist == null &&
         album == null &&
@@ -824,29 +804,20 @@ class FileManagerService {
         !removePicture) {
       return;
     }
-    // Built out here on purpose. The closure handed to Isolate.run captures
-    // whatever it references, and File, Directory and Picture have no
-    // business crossing an isolate boundary — so the request is reduced to
-    // strings, bytes and bools first, and that is all the closure sees.
-    // The mutation itself is synchronous and rewrites the entire file, so it
-    // must stay off the UI isolate.
-    final request = _TagMutation(
-      tempFilePath: tempFile.path,
-      tempDirPath: tempDir.path,
-      pictureBytes: picture == null ? null : Uint8List.fromList(picture.bytes),
-      pictureMimeType: picture?.mimetype,
-      removePicture: removePicture,
-      title: title,
-      artist: artist,
-      album: album,
+    final bytes = picture == null ? null : Uint8List.fromList(picture.bytes);
+    await compute(
+      (request) => runCoreCommand('file_workflow', request, bytes: bytes),
+      {
+        'op': 'edit_tags',
+        'path': tempFile.path,
+        'title': title,
+        'artist': artist,
+        'album': album,
+        'remove_picture': removePicture,
+      },
     );
-    await Isolate.run(() => _runTagMutation(request));
   }
 
-  /// Renames a song file locally.
-  ///
-  /// [newTitle] is a filename *stem*: the extension is re-appended, so passing
-  /// a full name produces `name.mp3.mp3`.
   Future<void> renameSong(Song song, String newTitle) =>
       renameSongToFilename(song, '$newTitle${p.extension(song.url)}');
 
@@ -1041,14 +1012,7 @@ class FileManagerService {
       return;
     }
 
-    final temp = File('$destinationPath.wispie_tmp');
-    try {
-      await source.copy(temp.path);
-      await temp.rename(destinationPath);
-    } on Object {
-      if (await temp.exists()) await temp.delete();
-      rethrow;
-    }
+    await replaceFileAtomically(source: source, targetPath: destinationPath);
   }
 
   /// Deletes a song file from the filesystem.
@@ -1226,114 +1190,3 @@ class FileManagerService {
 
 /// Everything [_runTagMutation] needs, in a form that crosses an isolate
 /// boundary — paths and bytes only, no `File`, `Directory` or plugin types.
-class _TagMutation {
-  final String tempFilePath;
-  final String tempDirPath;
-  final Uint8List? pictureBytes;
-  final String? pictureMimeType;
-  final bool removePicture;
-  final String? title;
-  final String? artist;
-  final String? album;
-
-  const _TagMutation({
-    required this.tempFilePath,
-    required this.tempDirPath,
-    required this.pictureBytes,
-    required this.pictureMimeType,
-    required this.removePicture,
-    required this.title,
-    required this.artist,
-    required this.album,
-  });
-}
-
-/// Writes cover art and text tags into the staged copy of the file. Runs in a
-/// background isolate — `amr.updateMetadata` is synchronous and rewrites the
-/// entire file, which on a large track is seconds of frozen UI if left on the
-/// main isolate.
-///
-/// The `chdir` below is the library's own constraint: it emits its output as
-/// `a_new.<ext>` relative to the working directory rather than beside the
-/// input. `chdir` is process-wide even from here, which is why every caller is
-/// funnelled through `FileManagerService._serializeTagWrite`.
-void _runTagMutation(_TagMutation request) {
-  final tempFile = File(request.tempFilePath);
-  final tempDir = Directory(request.tempDirPath);
-  final originalDir = Directory.current;
-
-  try {
-    Directory.current = tempDir;
-
-    final bytes = request.pictureBytes;
-    final amrPicture = bytes == null
-        ? null
-        : amr.Picture(
-            bytes,
-            request.pictureMimeType ?? 'image/jpeg',
-            amr.PictureType.coverFront,
-          );
-
-    amr.updateMetadata(tempFile, (metadata) {
-      // Cover art.
-      if (metadata is amr.Mp3Metadata) {
-        if (request.removePicture) {
-          metadata.pictures.clear();
-        } else if (amrPicture != null) {
-          metadata.pictures = [amrPicture];
-        }
-      } else if (metadata is amr.Mp4Metadata) {
-        metadata.picture = request.removePicture ? null : amrPicture;
-      } else if (metadata is amr.VorbisMetadata) {
-        if (request.removePicture) {
-          metadata.pictures.clear();
-        } else if (amrPicture != null) {
-          metadata.pictures = [amrPicture];
-        }
-      } else if (metadata is amr.RiffMetadata) {
-        if (request.removePicture) {
-          metadata.pictures.clear();
-        } else if (amrPicture != null) {
-          metadata.pictures = [amrPicture];
-        }
-      }
-      // Text tags. Only the fields the caller set are touched; everything
-      // else in the file is preserved as-is.
-      final newTitle = request.title;
-      if (newTitle != null) metadata.setTitle(newTitle);
-      final newArtist = request.artist;
-      if (newArtist != null) metadata.setArtist(newArtist);
-      final newAlbum = request.album;
-      if (newAlbum != null) metadata.setAlbum(newAlbum);
-    });
-
-    // The library writes to a_new.* - rename it back to original
-    final extension = p.extension(tempFile.path).toLowerCase();
-    // audio_metadata_reader tends to write to 'a_new[ext]'
-    final defaultNewName = 'a_new$extension';
-    final newFile = File(p.join(tempDir.path, defaultNewName));
-
-    if (newFile.existsSync()) {
-      newFile.renameSync(tempFile.path);
-      return;
-    }
-
-    // Fallback for specific known behaviors if the generic one fails
-    String? specificNewName;
-    if (extension == '.mp4' || extension == '.m4a' || extension == '.m4b') {
-      specificNewName =
-          'a_new.mp4'; // Library defaults to .mp4 for m4a container
-    } else if (extension == '.wav') {
-      specificNewName = 'a_new.wav';
-    }
-
-    if (specificNewName != null) {
-      final specificFile = File(p.join(tempDir.path, specificNewName));
-      if (specificFile.existsSync()) {
-        specificFile.renameSync(tempFile.path);
-      }
-    }
-  } finally {
-    Directory.current = originalDir;
-  }
-}

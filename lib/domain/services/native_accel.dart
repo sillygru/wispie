@@ -225,19 +225,6 @@ class NativeAccel {
         'mergedSiblings': mergedSiblings,
       })['index'] as int;
 
-  static List<int> settingsSearchOrder({
-    required List<Map<String, Object?>> entries,
-    required String query,
-    required int limit,
-  }) =>
-      (_ask({
-        'command': 'settings_search',
-        'entries': entries,
-        'query': query,
-        'limit': limit,
-      })['indices'] as List<dynamic>)
-          .cast<int>();
-
   static List<int> rankLrclibResults(
     List<Map<String, Object?>> results,
     Map<String, Object?> song, {
@@ -282,19 +269,6 @@ class NativeAccel {
         'originalFilenames': originalFilenames,
       })['order'] as List<dynamic>)
           .cast<int>();
-
-  static List<Map<String, dynamic>> reconcileQueueSequence({
-    required List<Map<String, String?>> effective,
-    required List<Map<String, String?>> sequence,
-    required List<bool> libraryFound,
-  }) =>
-      (_ask({
-        'command': 'queue_reconcile_sequence',
-        'effective': effective,
-        'sequence': sequence,
-        'libraryFound': libraryFound,
-      })['actions'] as List<dynamic>)
-          .cast<Map<String, dynamic>>();
 
   static List<List<NativeWord>> prosodyLines(List<NativeProsodyLine> lines) {
     final decoded = _ask({

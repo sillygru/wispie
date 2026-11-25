@@ -1,8 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
+
+import '../data/rust/native_command.dart';
 
 import 'wispie_paths.dart';
 
@@ -54,8 +52,6 @@ class BulkRenameJournal {
 
   static final BulkRenameJournal instance = BulkRenameJournal._();
 
-  static const String _fileName = 'bulk_rename_journal.json';
-
   final List<PendingRename> _entries = [];
   Future<void>? _loading;
 
@@ -68,23 +64,13 @@ class BulkRenameJournal {
 
   Future<void> _load() async {
     try {
-      final file = await _file();
-      if (!await file.exists()) return;
-
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return;
-      for (final item in decoded) {
-        if (item is! Map) continue;
-        final entry = PendingRename.fromJson(item.cast<String, Object?>());
+      final reply = await _command('read_rename_journal');
+      for (final item in reply['entries'] as List) {
+        final entry = PendingRename.fromJson((item as Map).cast());
         if (entry != null) _entries.add(entry);
       }
-    } on FormatException catch (e) {
-      // A half-written file is the expected shape of a crash mid-append, and the
-      // scan it was serving is about to run anyway.
-      _entries.clear();
-      debugPrint('Bulk rename journal unreadable, starting a new one: $e');
-    } on FileSystemException catch (e) {
-      debugPrint('Could not read bulk rename journal: $e');
+    } on StateError catch (error) {
+      debugPrint('Could not read bulk rename journal: $error');
     }
   }
 
@@ -112,13 +98,19 @@ class BulkRenameJournal {
   }
 
   Future<void> _flush() async {
-    final file = await _file();
-    await file.writeAsString(
-      jsonEncode([for (final entry in _entries) entry.toJson()]),
-      flush: true,
-    );
+    await _command('write_rename_journal', {
+      'entries': [for (final entry in _entries) entry.toJson()],
+    });
   }
 
-  Future<File> _file() async =>
-      File(p.join((await getWispieDirectory()).path, _fileName));
+  Future<Map<String, dynamic>> _command(
+    String op, [
+    Map<String, Object?> fields = const {},
+  ]) async {
+    final directory = await getWispieDirectory();
+    return compute(
+      (request) => runCoreCommand('file_workflow', request),
+      {'op': op, 'path': directory.path, ...fields},
+    );
+  }
 }

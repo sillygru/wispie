@@ -91,6 +91,40 @@ pub fn run(payload: &Value, emitter: &Emitter) -> Result<(), String> {
         .and_then(|value| value.as_str())
         .ok_or_else(|| "youtube needs an action".to_string())?;
     let reply = match action {
+        "select_stream" => {
+            let formats: Vec<crate::youtube_stream::StreamFormat> =
+                serde_json::from_value(payload["formats"].clone())
+                    .map_err(|error| error.to_string())?;
+            let video = payload["video"].as_bool().unwrap_or(false);
+            json!({ "selection": crate::youtube_stream::select(&formats, video) })
+        }
+        "page_request" => {
+            let fetched = payload["fetched"].as_i64().unwrap_or_default();
+            let limit = payload["limit"].as_i64().unwrap_or_default();
+            let used = payload["used"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let body = page_request(payload.get("json"), fetched, limit, used);
+            json!({ "body": body })
+        }
+        "catalogue_request" => {
+            let body = payload["body"]
+                .as_object()
+                .ok_or("missing catalogue request body")?;
+            let client = |field| payload[field].as_str().unwrap_or_default();
+            let request = catalogue_request(
+                body,
+                client("client_name"),
+                client("version"),
+                client("origin"),
+                client("user_agent"),
+            );
+            json!({ "payload": request })
+        }
+        "client_version" => json!({
+            "version": payload["text"].as_str().and_then(client_version),
+        }),
         "account_profile" => json!({ "profile": account_profile(payload.get("json")) }),
         "account_playlists" => json!({ "playlists": account_playlists(payload.get("json")) }),
         "playlist_videos" => json!({ "items": playlist_videos(payload.get("json")) }),
@@ -1552,4 +1586,58 @@ fn import_plan(payload: &Value) -> Result<Value, String> {
         "already_local": already_local,
         "skipped_for_limit": skipped,
     }))
+}
+
+pub fn page_request(
+    response: Option<&Value>,
+    fetched: i64,
+    limit: i64,
+    used: &[Value],
+) -> Option<Value> {
+    if fetched >= limit {
+        return None;
+    }
+    let token = next_continuation(response)?;
+    if used
+        .iter()
+        .any(|value| value.as_str() == Some(token.as_str()))
+    {
+        return None;
+    }
+    Some(json!({ "continuation": token }))
+}
+
+pub fn catalogue_request(
+    body: &Map<String, Value>,
+    client_name: &str,
+    version: &str,
+    origin: &str,
+    user_agent: &str,
+) -> Value {
+    let context = json!({
+        "client": {
+            "clientName": client_name,
+            "clientVersion": version,
+            "hl": "en",
+            "gl": "US",
+            "userAgent": user_agent,
+            "originalUrl": format!("{origin}/"),
+            "platform": "DESKTOP",
+        },
+        "user": { "lockedSafetyMode": false },
+        "request": { "useSsl": true },
+    });
+    let mut payload = Map::new();
+    payload.insert("context".to_string(), context);
+    payload.extend(body.clone());
+    Value::Object(payload)
+}
+
+fn client_version(text: &str) -> Option<&str> {
+    static VERSION: OnceLock<Regex> = OnceLock::new();
+    let pattern = VERSION.get_or_init(|| {
+        Regex::new(r#"INNERTUBE_CLIENT_VERSION"?\s*:\s*"?([0-9.]+)"#)
+            .expect("constant version regex")
+    });
+    pattern.captures(text)?.get(1).map(|value| value.as_str())
 }

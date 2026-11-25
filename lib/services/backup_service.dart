@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
+import '../data/rust/native_command.dart';
 import '../data/rust/native_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -331,17 +332,7 @@ class BackupService {
       try {
         await _stageBackup(options, dataDir);
 
-        final archive = Archive();
-        await for (final entity in dataDir.list(recursive: true)) {
-          if (entity is File) {
-            final relativePath = p.relative(entity.path, from: dataDir.path);
-            final bytes = await entity.readAsBytes();
-            archive.addFile(ArchiveFile(relativePath, bytes.length, bytes));
-          }
-        }
-
-        final zipBytes = ZipEncoder().encode(archive);
-        await File(backupPath).writeAsBytes(zipBytes);
+        await _archiveOperation('create', dataDir.path, backupPath);
 
         return backupFilename;
       } finally {
@@ -359,18 +350,14 @@ class BackupService {
     options ??= await defaultBackupOptions();
 
     final tempDir = await getTemporaryDirectory();
-    final exportDir = Directory(p.join(
-        tempDir.path, 'export_${DateTime.now().millisecondsSinceEpoch}'));
-    await exportDir.create(recursive: true);
+    final exportDir = await tempDir.createTemp('wispie_export_');
+    final stage = Directory(p.join(exportDir.path, 'data'));
+    final zipPath = p.join(exportDir.path, 'wispie_export.zip');
 
     try {
-      await _stageBackup(options, exportDir);
-
-      final encoder = ZipFileEncoder();
-      final zipPath = p.join(tempDir.path, 'wispie_export.zip');
-      encoder.create(zipPath);
-      encoder.addDirectory(exportDir);
-      encoder.close();
+      await stage.create();
+      await _stageBackup(options, stage);
+      await _archiveOperation('create', stage.path, zipPath);
 
       final bytes = await File(zipPath).readAsBytes();
       final xFile = XFile.fromData(
@@ -388,52 +375,21 @@ class BackupService {
     }
   }
 
-  Future<bool> _checkTableHasData(String dbPath, String tableName) async {
-    try {
-      final db = await openDatabase(dbPath, readOnly: true);
-      try {
-        final result = await db
-            .coreCommand('maintenance', {'op': 'has_rows', 'table': tableName});
-        return result['count'] == 1;
-      } finally {
-        await db.close();
-      }
-    } catch (e) {
-      return false;
-    }
-  }
+  Future<Map<String, dynamic>> _archiveOperation(String op, String source,
+          [String? destination]) =>
+      compute(
+        (request) => runCoreCommand('backup_archive', request),
+        {
+          'op': op,
+          'source': source,
+          if (destination != null) 'destination': destination,
+        },
+      );
 
-  /// Archives produced by `ZipFileEncoder.addDirectory` wrap their content in a
-  /// single top-level folder; descend into it, but only when it really is the
-  /// wrapper (a bucket folder such as `cache/` is not).
-  String _resolveContentRoot(Directory extractRoot) {
-    final entities = extractRoot.listSync();
-    if (entities.length != 1 || entities.first is! Directory) {
-      return extractRoot.path;
-    }
-
-    final inner = entities.first as Directory;
-    if (File(p.join(inner.path, _metadataFile)).existsSync() ||
-        File(p.join(inner.path, statsDbName)).existsSync() ||
-        File(p.join(inner.path, dataDbName)).existsSync() ||
-        File(p.join(inner.path, 'app_settings.json')).existsSync()) {
-      return inner.path;
-    }
-    return extractRoot.path;
-  }
-
-  /// Extracts [zipFile] into [target], skipping entries that would escape it.
-  Future<void> _extractArchive(File zipFile, Directory target) async {
-    final bytes = await zipFile.readAsBytes();
-    final archive = ZipDecoder().decodeBytes(bytes);
-
-    for (final entry in archive) {
-      if (!entry.isFile) continue;
-      final outputFile = safeArchiveTarget(target.path, entry.name);
-      if (outputFile == null) continue;
-      await outputFile.parent.create(recursive: true);
-      await outputFile.writeAsBytes(entry.content as List<int>);
-    }
+  Future<String> _extractArchive(File zipFile, Directory target) async {
+    final result =
+        await _archiveOperation('extract', zipFile.path, target.path);
+    return result['root'] as String;
   }
 
   /// Prompts for a backup archive and validates it.
@@ -459,92 +415,12 @@ class BackupService {
   /// disagree with the archive (older versions, hand-edited archives).
   Future<Map<String, dynamic>> validateBackupFile(File file) async {
     final tempDir = await getTemporaryDirectory();
-    final decodeDir = Directory(p.join(
-        tempDir.path, 'import_${DateTime.now().millisecondsSinceEpoch}'));
-    await decodeDir.create(recursive: true);
+    final decodeDir = await tempDir.createTemp('wispie_import_');
 
     try {
-      await _extractArchive(file, decodeDir);
+      final contentPath = await _extractArchive(file, decodeDir);
 
-      // Archives produced by ZipFileEncoder.addDirectory are wrapped in a
-      // single top-level folder.
-      final contentPath = _resolveContentRoot(decodeDir);
-
-      File? foundStats;
-      File? foundData;
-      bool hasSongsJson = false;
-      bool hasUserDataJson = false;
-      bool hasShuffleStateJson = false;
-      bool hasPlaybackStateJson = false;
-      bool hasMergedGroupsJson = false;
-      bool hasQueueHistoryJson = false;
-      bool hasAppSettingsJson = false;
-
-      bool isNonEmptyJson(File jsonFile) {
-        try {
-          final content = jsonFile.readAsStringSync().trim();
-          if (content.isEmpty || content == '[]' || content == '{}') {
-            return false;
-          }
-          final decoded = jsonDecode(content);
-          if (decoded is List) return decoded.isNotEmpty;
-          if (decoded is Map) return decoded.isNotEmpty;
-          return false;
-        } catch (_) {
-          return false;
-        }
-      }
-
-      await for (final entity in Directory(contentPath).list(recursive: true)) {
-        if (entity is! File) continue;
-        final name = p.basename(entity.path);
-
-        if (name == statsDbName ||
-            (name.endsWith('_stats.db') && !name.startsWith('wispie_'))) {
-          foundStats = entity;
-        }
-        if (name == dataDbName ||
-            (name.endsWith('_data.db') && !name.startsWith('wispie_'))) {
-          foundData = entity;
-        }
-        if (name == 'songs.json') hasSongsJson = isNonEmptyJson(entity);
-        if (name == 'user_data.json' || name.startsWith('user_data_')) {
-          hasUserDataJson = isNonEmptyJson(entity);
-        }
-        if (name == 'shuffle_state.json' || name.startsWith('shuffle_state_')) {
-          hasShuffleStateJson = isNonEmptyJson(entity);
-        }
-        if (name == 'playback_state.json' ||
-            name.startsWith('playback_state_')) {
-          hasPlaybackStateJson = isNonEmptyJson(entity);
-        }
-        if (name == 'merged_groups.json') {
-          hasMergedGroupsJson = isNonEmptyJson(entity);
-        }
-        if (name == 'queue_history.json') {
-          hasQueueHistoryJson = isNonEmptyJson(entity);
-        }
-        if (name == 'app_settings.json') {
-          hasAppSettingsJson = isNonEmptyJson(entity);
-        }
-      }
-
-      final hasFavorites = foundData != null &&
-          await _checkTableHasData(foundData.path, 'favorite');
-      final hasSuggestless = foundData != null &&
-          await _checkTableHasData(foundData.path, 'suggestless');
-      final hasHidden = foundData != null &&
-          await _checkTableHasData(foundData.path, 'hidden');
-      final hasPlaylists = foundData != null &&
-          await _checkTableHasData(foundData.path, 'playlist');
-      final hasMergedGroups = foundData != null &&
-          await _checkTableHasData(foundData.path, 'merged_song_group');
-      final hasRecommendations = foundData != null &&
-          await _checkTableHasData(foundData.path, 'recommendation_preference');
-      final hasUserdata = foundData != null &&
-          await _checkTableHasData(foundData.path, 'userdata');
-      final hasPlayHistory = foundStats != null &&
-          await _checkTableHasData(foundStats.path, 'playsession');
+      final contents = await _archiveOperation('inspect', contentPath);
 
       final artifacts = await cacheArtifacts();
       final cacheFlags = <BackupContentType, bool>{};
@@ -557,25 +433,7 @@ class BackupService {
         'valid': true,
         'importPath': contentPath,
         'extractRoot': decodeDir.path,
-        'statsDbPath': foundStats?.path,
-        'dataDbPath': foundData?.path,
-        'hasStatsDb': foundStats != null,
-        'hasDataDb': foundData != null,
-        'hasSongsJson': hasSongsJson,
-        'hasUserDataJson': hasUserDataJson,
-        'hasShuffleStateJson': hasShuffleStateJson,
-        'hasPlaybackStateJson': hasPlaybackStateJson,
-        'hasMergedGroupsJson': hasMergedGroupsJson,
-        'hasQueueHistoryJson': hasQueueHistoryJson,
-        'hasAppSettingsJson': hasAppSettingsJson,
-        'hasFavorites': hasFavorites,
-        'hasSuggestless': hasSuggestless,
-        'hasHidden': hasHidden,
-        'hasPlaylists': hasPlaylists,
-        'hasMergedGroups': hasMergedGroups,
-        'hasRecommendations': hasRecommendations,
-        'hasUserdata': hasUserdata,
-        'hasPlayHistory': hasPlayHistory,
+        ...contents,
         'hasCoverCache': cacheFlags[BackupContentType.coverCache],
         'hasLibraryCache': cacheFlags[BackupContentType.libraryCache],
         'hasSearchIndex': cacheFlags[BackupContentType.searchIndex],
@@ -878,29 +736,13 @@ class BackupService {
       final tempDir = await Directory.systemTemp.createTemp('gru_restore_');
 
       try {
-        await _extractArchive(backupInfo.file, tempDir);
-
-        final contentPath = _resolveContentRoot(tempDir);
+        final contentPath = await _extractArchive(backupInfo.file, tempDir);
 
         final appDir = await getWispieDirectory();
 
-        File? foundStatsDb;
-        File? foundDataDb;
-        await for (final entity in tempDir.list(recursive: true)) {
-          if (entity is! File) continue;
-          final name = p.basename(entity.path);
-          if (name == statsDbName ||
-              (name.endsWith('_stats.db') && !name.startsWith('wispie_'))) {
-            foundStatsDb = entity;
-          }
-          if (name == dataDbName ||
-              (name.endsWith('_data.db') && !name.startsWith('wispie_'))) {
-            foundDataDb = entity;
-          }
-        }
-
-        final statsDbPath = foundStatsDb?.path;
-        final dataDbPath = foundDataDb?.path;
+        final contents = await _archiveOperation('inspect', contentPath);
+        final statsDbPath = contents['statsDbPath'] as String?;
+        final dataDbPath = contents['dataDbPath'] as String?;
 
         // Wholesale file replacement only makes sense when the archive
         // actually carries databases; otherwise fall through and restore the
@@ -909,12 +751,12 @@ class BackupService {
         List<Song>? preImportSongs;
 
         if (importOptions.restoreDatabases &&
-            (foundStatsDb != null || foundDataDb != null)) {
+            (statsDbPath != null || dataDbPath != null)) {
           // The library table rides inside wispie_data.db and is about to be
           // overwritten by the archive's copy, taking this device's file paths
           // and extracted covers with it. No import category covers `song`, so
           // nothing else would preserve them — snapshot before the swap.
-          if (foundDataDb != null) {
+          if (dataDbPath != null) {
             try {
               preImportSongs = await DatabaseService.instance.getAllSongs();
               replacedDatabaseFiles = true;
@@ -928,13 +770,13 @@ class BackupService {
           await DatabaseService.instance.close();
           try {
             for (final (source, name) in [
-              (foundStatsDb, statsDbName),
-              (foundDataDb, dataDbName),
+              (statsDbPath, statsDbName),
+              (dataDbPath, dataDbName),
             ]) {
               if (source == null) continue;
               await databaseFileCommand(
                 'copy',
-                source.path,
+                source,
                 destination: p.join(appDir.path, name),
               );
             }

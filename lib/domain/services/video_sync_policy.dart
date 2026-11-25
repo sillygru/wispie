@@ -1,12 +1,3 @@
-/// Decides when a muted video surface should be pulled back into line with the
-/// audio player, which is the single source of playback truth.
-///
-/// The thresholds and the correction rules live in the native core; this is the
-/// typed adapter the player calls.
-library;
-
-import '../../data/rust/wispie_core.dart';
-
 enum VideoSyncAction {
   /// Leave the video alone.
   none,
@@ -28,17 +19,21 @@ VideoSyncAction resolveVideoSync({
   required bool seekInFlight,
   required double msSinceLastSeek,
 }) {
-  final decision = WispieCore.videoSync(
-    audioMs: audioPosition.inMilliseconds.toDouble(),
-    videoMs: videoPosition.inMilliseconds.toDouble(),
-    playing: audioPlaying,
-    buffering: videoBuffering,
-    seekInFlight: seekInFlight,
-    sinceLastSeekMs: msSinceLastSeek,
-  );
-  return decision == 1 ? VideoSyncAction.seek : VideoSyncAction.none;
+  if (!audioPlaying || videoBuffering || seekInFlight) {
+    return VideoSyncAction.none;
+  }
+
+  final driftMs =
+      (videoPosition.inMilliseconds - audioPosition.inMilliseconds).abs();
+  if (driftMs <= 250) return VideoSyncAction.none;
+  if (driftMs > 1500 || msSinceLastSeek >= 5000) {
+    return VideoSyncAction.seek;
+  }
+  return VideoSyncAction.none;
 }
 
 /// The aspect ratio the video actually occupies on screen.
-double videoDisplayAspectRatio(double rawAspect, int rotationCorrection) =>
-    WispieCore.videoAspect(rawAspect, rotationCorrection);
+double videoDisplayAspectRatio(double rawAspect, int rotationCorrection) {
+  if (!rawAspect.isFinite || rawAspect <= 0) return 1;
+  return (rotationCorrection ~/ 90).isOdd ? 1 / rawAspect : rawAspect;
+}

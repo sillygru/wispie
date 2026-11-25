@@ -8,13 +8,6 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-fn number(request: &Value, key: &str) -> Result<f64, String> {
-    request
-        .get(key)
-        .and_then(Value::as_f64)
-        .ok_or_else(|| format!("playback: {key} must be a number"))
-}
-
 fn opt_number(request: &Value, key: &str) -> Option<f64> {
     request.get(key).and_then(Value::as_f64)
 }
@@ -50,65 +43,6 @@ fn rows(request: &Value, key: &str) -> Vec<Value> {
 
 fn text_at<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
-}
-
-/// Volume for one fade tick. `out` decays as progress^2, `in` rises as
-/// progress^1.5, both scaled by the user's own volume so a fade never moves the
-/// volume slider.
-pub fn fade_volume(request: &Value) -> Result<Value, String> {
-    let progress = number(request, "progress")?.clamp(0.0, 1.0);
-    let user = opt_number(request, "userVolume")
-        .unwrap_or(1.0)
-        .clamp(0.0, 1.0);
-    let curved = match request.get("kind").and_then(Value::as_str).unwrap_or("out") {
-        "in" => progress.powf(1.5),
-        _ => progress.powf(2.0),
-    };
-    Ok(json!({ "volume": curved * user }))
-}
-
-/// What the playhead listener should do at this position.
-///
-/// Transitions need a real song: anything under 30 seconds is left alone.
-/// Fade-out is cancelled when the listener seeks back out of the window, with
-/// 500 ms of hysteresis so the cancel does not race the tick that started it.
-pub fn tick(request: &Value) -> Result<Value, String> {
-    let position = number(request, "positionMs")?;
-    let duration = number(request, "durationMs")?;
-    let playing = flag(request, "playing");
-    let fading_out = flag(request, "isFadingOut");
-    let delay = opt_number(request, "delayDuration").unwrap_or(0.0);
-    let fade = opt_number(request, "fadeOutDuration").unwrap_or(0.0);
-
-    // A park owns the end of the track, and a gap that is already running or
-    // armed must not be triggered twice.
-    let gap_armed = !flag(request, "parkPending")
-        && !flag(request, "isInGap")
-        && !flag(request, "gapTimerActive");
-
-    let mut gap = false;
-    let mut fade_out = false;
-    let mut cancel_fade = false;
-
-    if duration >= 30_000.0 {
-        let remaining = duration - position;
-        if delay > 0.0 && gap_armed && playing {
-            gap = true;
-        }
-        if fade > 0.0 && playing && !fading_out && remaining <= fade * 1000.0 && remaining > 0.0 {
-            fade_out = true;
-        }
-        let fade_ms = fade * 1000.0;
-        if fading_out && fade_ms > 0.0 && remaining > fade_ms + 500.0 {
-            cancel_fade = true;
-        }
-    }
-
-    Ok(json!({
-        "gap": gap,
-        "fadeOut": fade_out,
-        "cancelFade": cancel_fade,
-    }))
 }
 
 /// The play event a finished or paused listen produces.
@@ -272,46 +206,6 @@ pub fn original_order(request: &Value) -> Result<Value, String> {
     let mut order: Vec<usize> = known.into_iter().map(|(_, index)| index).collect();
     order.extend(unknown);
     Ok(json!({ "order": order }))
-}
-
-/// Whether a sleep timer stops listening now, and whether the current track is
-/// allowed to finish first.
-///
-/// `remainingMs` is the re-arm delay, so a timer that fires early (a suspended
-/// process, a doze) never ends the session ahead of time.
-pub fn sleep_decision(request: &Value) -> Result<Value, String> {
-    let mode = request.get("mode").and_then(Value::as_str).unwrap_or("");
-    let elapsed = opt_number(request, "elapsedMs").unwrap_or(0.0);
-    let target = opt_number(request, "durationMs").unwrap_or(0.0);
-    let heard = opt_index(request, "tracksHeard").unwrap_or(0);
-    let wanted = opt_index(request, "targetTracks").unwrap_or(1).max(1);
-    let completed = flag(request, "completed");
-    let finish_current = flag(request, "finishCurrent");
-
-    let (end, finish, remaining) = match mode {
-        "stopAfterTracks" => {
-            if heard >= wanted {
-                (true, true, 0.0)
-            } else {
-                // A queue shorter than the request still has to stop.
-                (completed, false, 0.0)
-            }
-        }
-        "loopCurrent" => (elapsed >= target, false, (target - elapsed).max(0.0)),
-        "playForTime" => (
-            elapsed >= target,
-            finish_current,
-            (target - elapsed).max(0.0),
-        ),
-        "stopAfterCurrent" => (true, true, 0.0),
-        _ => (false, false, 0.0),
-    };
-
-    Ok(json!({
-        "end": end,
-        "finishCurrent": finish,
-        "remainingMs": remaining,
-    }))
 }
 
 /// The `original` queue to persist for the cloud.

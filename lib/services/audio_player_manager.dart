@@ -8,6 +8,7 @@ import 'dart:isolate';
 import 'dart:math';
 import 'dart:async'; // For Timer
 import 'package:flutter/foundation.dart' show listEquals;
+import '../data/rust/native_command.dart';
 import '../models/song.dart';
 import '../models/queue_item.dart';
 import '../models/queue_snapshot.dart';
@@ -2924,68 +2925,16 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       _shuffleCacheTimestamp = now;
     }
 
-    // Anti-repeat must survive across queue regenerations. DB playHistory
-    // only reflects songs that have been *played* and flushed; a queue that was
-    // just displayed but not yet played, or a song that is still playing and
-    // not yet flushed, would otherwise appear as "never played" on the next
-    // shuffle. We prepend the current queue's recent order so a new shuffle
-    // immediately after the previous one still penalises songs the listener
-    // just saw/heard, regardless of flush timing or the 30s affinity cache.
-    final historyIndex = <String, int>{};
-    final queueRecency = <String>[];
-    if (_effectiveQueue.isNotEmpty) {
-      final rawIdx = _player.currentIndex;
-      final currentIdx =
-          (rawIdx != null && rawIdx >= 0 && rawIdx < _effectiveQueue.length)
-              ? rawIdx
-              : (_effectiveQueue.isEmpty ? -1 : 0);
-      if (currentIdx >= 0) {
-        queueRecency.add(_effectiveQueue[currentIdx].song.filename);
-        for (int i = currentIdx - 1; i >= 0; i--) {
-          queueRecency.add(_effectiveQueue[i].song.filename);
-        }
-        for (int i = currentIdx + 1; i < _effectiveQueue.length; i++) {
-          queueRecency.add(_effectiveQueue[i].song.filename);
-        }
-      } else {
-        for (final item in _effectiveQueue) {
-          queueRecency.add(item.song.filename);
-        }
-      }
-    }
-
-    var nextIdx = 0;
-    for (final filename in queueRecency) {
-      if (nextIdx >= _shuffleState.config.historyLimit) break;
-      if (historyIndex.containsKey(filename)) continue;
-      // Expand to merged siblings so every variant of the same logical track
-      // shares the queue-based recency.
-      final groupId = _filenameToGroupId[filename];
-      final siblings = groupId != null ? _mergedGroups[groupId] : null;
-      if (siblings != null) {
-        for (final s in siblings) {
-          historyIndex.putIfAbsent(s, () => nextIdx);
-        }
-      }
-      historyIndex.putIfAbsent(filename, () => nextIdx);
-      nextIdx++;
-    }
-
-    final playHistory = _cachedPlayHistory!;
-    for (int i = 0; i < playHistory.length; i++) {
-      final filename = playHistory[i].filename;
-      if (historyIndex.containsKey(filename)) continue;
-      final groupId = _filenameToGroupId[filename];
-      final siblings = groupId != null ? _mergedGroups[groupId] : null;
-      if (siblings != null) {
-        for (final s in siblings) {
-          historyIndex.putIfAbsent(s, () => nextIdx);
-        }
-      }
-      historyIndex.putIfAbsent(filename, () => nextIdx);
-      nextIdx++;
-      if (nextIdx >= _shuffleState.config.historyLimit) break;
-    }
+    final history = runCoreCommand('shuffle_pool', {
+      'op': 'history',
+      'queue': [for (final item in _effectiveQueue) item.song.filename],
+      'current': _player.currentIndex,
+      'history': [for (final play in _cachedPlayHistory!) play.filename],
+      'group_by_filename': _filenameToGroupId,
+      'groups': _mergedGroups,
+      'limit': _shuffleState.config.historyLimit,
+    });
+    final historyIndex = (history['history'] as Map).cast<String, int>();
 
     return (affinities: _cachedAffinities!, historyIndex: historyIndex);
   }
@@ -3077,33 +3026,34 @@ class AudioPlayerManager extends WidgetsBindingObserver {
 
   /// Groups queue items so a merge group competes as one song, not several.
   List<_VirtualShuffleItem> _virtualItems(List<QueueItem> items) {
-    final Map<String, List<QueueItem>> mergeGroups = {};
-    final List<QueueItem> standaloneItems = [];
-
-    for (final item in items) {
-      final groupId = _getMergedGroupId(item.song.filename);
-      if (groupId != null) {
-        mergeGroups.putIfAbsent(groupId, () => []).add(item);
-      } else {
-        standaloneItems.add(item);
-      }
-    }
-
-    return [
-      for (final item in standaloneItems)
-        _VirtualShuffleItem(
-          type: _VirtualItemType.standalone,
-          items: [item],
-          representative: item,
-        ),
-      for (final entry in mergeGroups.entries)
-        _VirtualShuffleItem(
-          type: _VirtualItemType.mergeGroup,
-          items: entry.value,
-          representative: entry.value.first,
-          groupId: entry.key,
-        ),
+    final groupIds = [
+      for (final item in items) _filenameToGroupId[item.song.filename],
     ];
+    final result = runCoreCommand('shuffle_pool', {
+      'op': 'groups',
+      'group_ids': groupIds,
+    });
+    return [
+      for (final indices in (result['groups'] as List).cast<List<dynamic>>())
+        _virtualItem(items, indices.cast<int>(), groupIds),
+    ];
+  }
+
+  _VirtualShuffleItem _virtualItem(
+    List<QueueItem> items,
+    List<int> indices,
+    List<String?> groupIds,
+  ) {
+    final first = indices.first;
+    final groupId = groupIds[first];
+    return _VirtualShuffleItem(
+      type: groupId == null
+          ? _VirtualItemType.standalone
+          : _VirtualItemType.mergeGroup,
+      items: [for (final index in indices) items[index]],
+      representative: items[first],
+      groupId: groupId,
+    );
   }
 
   List<ShuffleCandidate<_VirtualShuffleItem>> _fallbackCandidates(
@@ -3284,10 +3234,6 @@ class AudioPlayerManager extends WidgetsBindingObserver {
       if (index != null) result.add(virtualItem.items[index]);
     }
     return result;
-  }
-
-  String? _getMergedGroupId(String filename) {
-    return _filenameToGroupId[filename];
   }
 
   int? _priorityIndexFor(_VirtualShuffleItem virtualItem) {

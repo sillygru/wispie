@@ -1,9 +1,12 @@
 //! Tag reading through `lofty`, replacing `audio_metadata_reader` for the scan.
 //! Same containers, no per-frame Dart objects, duration from stream properties.
 
+use lofty::config::WriteOptions;
+use lofty::picture::{Picture, PictureType};
 use lofty::prelude::*;
 use lofty::probe::Probe;
-use lofty::tag::ItemKey;
+use lofty::tag::{ItemKey, Tag};
+use std::io::Cursor;
 use std::path::Path;
 use std::time::Duration;
 
@@ -56,6 +59,75 @@ pub fn read_tags(path: &Path, want_picture: bool) -> Result<Tags, String> {
     }
 
     Ok(tags)
+}
+
+#[derive(serde::Deserialize)]
+pub struct TagEdit {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    #[serde(default)]
+    pub remove_picture: bool,
+}
+
+/// Updates a staged file before the caller commits it to the library.
+pub fn edit_tags(path: &Path, edit: TagEdit, cover: Option<&[u8]>) -> Result<(), String> {
+    let mut tagged = Probe::open(path)
+        .map_err(|error| error.to_string())?
+        .read()
+        .map_err(|error| error.to_string())?;
+    let primary_type = tagged.primary_tag_type();
+    let tag_type = if cover.is_some() || edit.remove_picture {
+        primary_type
+    } else {
+        tagged
+            .primary_tag()
+            .or_else(|| tagged.first_tag())
+            .map_or(primary_type, Tag::tag_type)
+    };
+    if tagged.tag(tag_type).is_none() {
+        if edit.remove_picture
+            && cover.is_none()
+            && edit.title.is_none()
+            && edit.artist.is_none()
+            && edit.album.is_none()
+        {
+            return Ok(());
+        }
+        let mut tag = tagged
+            .first_tag()
+            .cloned()
+            .unwrap_or_else(|| Tag::new(tag_type));
+        tag.re_map(tag_type);
+        tagged.insert_tag(tag);
+    }
+
+    let tag = tagged.tag_mut(tag_type).ok_or("unsupported tag type")?;
+    if let Some(title) = edit.title {
+        tag.set_title(title);
+    }
+    if let Some(artist) = edit.artist {
+        tag.set_artist(artist);
+    }
+    if let Some(album) = edit.album {
+        tag.set_album(album);
+    }
+    if cover.is_some() || edit.remove_picture {
+        for index in (0..tag.pictures().len()).rev() {
+            tag.remove_picture(index);
+        }
+    }
+    if !edit.remove_picture {
+        if let Some(cover) = cover {
+            let mut picture =
+                Picture::from_reader(&mut Cursor::new(cover)).map_err(|error| error.to_string())?;
+            picture.set_pic_type(PictureType::CoverFront);
+            tag.push_picture(picture);
+        }
+    }
+
+    tag.save_to_path(path, WriteOptions::default())
+        .map_err(|error| error.to_string())
 }
 
 /// Accepts "2021" and "2021-05-01"; anything else is no year at all.

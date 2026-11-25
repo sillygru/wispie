@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../../data/rust/wispie_core.dart';
 
 typedef PlaybackVariantItem = ({
@@ -12,12 +14,6 @@ typedef PlaybackVariantGroup = ({
   double roll,
 });
 
-/// Playback decisions owned by the native core.
-///
-/// The player, its lifecycle and the platform quirks stay in the host; these are
-/// the rules a second front end has to share: fade envelopes and transition
-/// triggers, the play-event maths, merged-version choice, original ordering and
-/// the sleep timer's stop condition.
 class PlaybackRules {
   PlaybackRules._();
 
@@ -25,14 +21,10 @@ class PlaybackRules {
     required bool fadeIn,
     required double progress,
     required double userVolume,
-  }) =>
-      (WispieCore.helper({
-        'action': 'playback_fade',
-        'kind': fadeIn ? 'in' : 'out',
-        'progress': progress,
-        'userVolume': userVolume,
-      })['volume'] as num)
-          .toDouble();
+  }) {
+    final curved = math.pow(progress.clamp(0.0, 1.0), fadeIn ? 1.5 : 2);
+    return curved * userVolume.clamp(0.0, 1.0);
+  }
 
   static ({bool gap, bool fadeOut, bool cancelFade}) tick({
     required double positionMs,
@@ -45,22 +37,24 @@ class PlaybackRules {
     required double delayDuration,
     required double fadeOutDuration,
   }) {
-    final reply = WispieCore.helper({
-      'action': 'playback_tick',
-      'positionMs': positionMs,
-      'durationMs': durationMs,
-      'playing': playing,
-      'isFadingOut': isFadingOut,
-      'parkPending': parkPending,
-      'isInGap': isInGap,
-      'gapTimerActive': gapTimerActive,
-      'delayDuration': delayDuration,
-      'fadeOutDuration': fadeOutDuration,
-    });
+    if (durationMs < 30000) {
+      return (gap: false, fadeOut: false, cancelFade: false);
+    }
+
+    final remainingMs = durationMs - positionMs;
+    final fadeMs = fadeOutDuration * 1000;
     return (
-      gap: reply['gap'] as bool,
-      fadeOut: reply['fadeOut'] as bool,
-      cancelFade: reply['cancelFade'] as bool,
+      gap: delayDuration > 0 &&
+          playing &&
+          !parkPending &&
+          !isInGap &&
+          !gapTimerActive,
+      fadeOut: fadeMs > 0 &&
+          playing &&
+          !isFadingOut &&
+          remainingMs <= fadeMs &&
+          remainingMs > 0,
+      cancelFade: isFadingOut && fadeMs > 0 && remainingMs > fadeMs + 500,
     );
   }
 
@@ -175,21 +169,22 @@ class PlaybackRules {
     bool completed = false,
     bool finishCurrent = false,
   }) {
-    final reply = WispieCore.helper({
-      'action': 'playback_sleep',
-      'mode': mode,
-      'elapsedMs': elapsedMs,
-      'durationMs': durationMs,
-      'tracksHeard': tracksHeard,
-      'targetTracks': targetTracks,
-      'completed': completed,
-      'finishCurrent': finishCurrent,
-    });
-    return (
-      end: reply['end'] as bool,
-      finishCurrent: reply['finishCurrent'] as bool,
-      remainingMs: (reply['remainingMs'] as num).toDouble(),
-    );
+    final remaining = math.max(0.0, durationMs - elapsedMs);
+    final reachedTrackCount = tracksHeard >= math.max(1, targetTracks);
+    return switch (mode) {
+      'stopAfterTracks' => (
+          end: reachedTrackCount || completed,
+          finishCurrent: reachedTrackCount,
+          remainingMs: 0.0,
+        ),
+      'loopCurrent' || 'playForTime' => (
+          end: elapsedMs >= durationMs,
+          finishCurrent: mode == 'playForTime' && finishCurrent,
+          remainingMs: remaining,
+        ),
+      'stopAfterCurrent' => (end: true, finishCurrent: true, remainingMs: 0.0),
+      _ => (end: false, finishCurrent: false, remainingMs: 0.0),
+    };
   }
 
   /// The `original` list to persist, or null when it adds nothing.

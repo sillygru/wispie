@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/rust/native_command.dart';
 import 'api_client.dart';
 import 'blob_codec.dart';
 import 'changeset.dart';
@@ -234,25 +235,46 @@ class SyncEngine {
     _emit(SyncPhase.done, message: 'Up to date');
   }
 
+  Map<String, dynamic> _checkpoint(SyncState state) =>
+      runCoreCommand('sync_checkpoint', {
+        'local': {
+          'epoch': _epoch,
+          'cursor': _cursor,
+          'highest_epoch': (kv.get(kHighEpoch) as int?) ?? 0,
+          'highest_head': (kv.get(kHighHead) as int?) ?? 0,
+          'snapshot_applied': kv.get(kSnapshotApplied) == true,
+          'last_compaction_ms': (kv.get(kLastCompaction) as int?) ?? 0,
+        },
+        'cloud': {
+          'epoch': state.epoch,
+          'head': state.headSeq,
+          'snapshot_base': state.hasSnapshot ? state.snapshotBaseSeq : null,
+          'compaction_recommended': state.compactionRecommended,
+        },
+        'now_ms': _nowMs(),
+        'all_categories': categories.containsAll(SyncCategory.all),
+      });
+
   Future<void> _guardEpoch(SyncState st) async {
-    if (st.epoch != _epoch) {
-      await kv.set(kEpochChanged, st.epoch);
-      throw SyncEpochChangedException(st.epoch);
-    }
-    final he = (kv.get(kHighEpoch) as int?) ?? 0;
-    final hh = (kv.get(kHighHead) as int?) ?? 0;
-    if (st.epoch < he || (st.epoch == he && st.headSeq < hh)) {
-      throw SyncRollbackException();
+    switch (_checkpoint(st)['guard']) {
+      case 'ready':
+        return;
+      case 'epoch_changed':
+        await kv.set(kEpochChanged, st.epoch);
+        throw SyncEpochChangedException(st.epoch);
+      case 'rollback':
+        throw SyncRollbackException();
+      default:
+        throw StateError('invalid sync checkpoint');
     }
   }
 
   Future<void> _recordHighest(SyncState st) async {
-    final he = (kv.get(kHighEpoch) as int?) ?? 0;
-    final hh = (kv.get(kHighHead) as int?) ?? 0;
-    final head = st.headSeq > _cursor ? st.headSeq : _cursor;
-    if (st.epoch > he || (st.epoch == he && head > hh)) {
-      await kv.set(kHighEpoch, st.epoch);
-      await kv.set(kHighHead, head);
+    final checkpoint = _checkpoint(st);
+    final epoch = checkpoint['highest_epoch'] as int?;
+    if (epoch != null) {
+      await kv.set(kHighEpoch, epoch);
+      await kv.set(kHighHead, checkpoint['highest_head'] as int);
     }
   }
 
@@ -260,9 +282,7 @@ class SyncEngine {
 
   Future<void> _pull(SyncState st, {bool bulk = false}) async {
     var cursor = _cursor;
-    final needSnapshot = st.hasSnapshot &&
-        (cursor < st.snapshotBaseSeq || kv.get(kSnapshotApplied) != true);
-    if (needSnapshot) {
+    if (_checkpoint(st)['use_snapshot'] as bool) {
       await _applySnapshot(st, bulk: bulk);
       cursor = _cursor;
     }
@@ -434,11 +454,7 @@ class SyncEngine {
   // ------------------------------------------------------------ compaction
 
   Future<void> _compactIfNeeded(SyncState st) async {
-    if (!st.compactionRecommended) return;
-    // A snapshot of fewer categories would erase the others from the cloud.
-    if (!categories.containsAll(SyncCategory.all)) return;
-    final last = (kv.get(kLastCompaction) as int?) ?? 0;
-    if (_nowMs() - last < const Duration(hours: 24).inMilliseconds) return;
+    if (!(_checkpoint(st)['compact'] as bool)) return;
     try {
       _emit(SyncPhase.preparingUpload, message: 'Compacting cloud data');
       final snap = await changeset.buildSnapshot(categories: categories);

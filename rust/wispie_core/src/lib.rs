@@ -6,12 +6,15 @@
 
 mod affinity;
 mod artwork;
+pub mod backup_archive;
+pub mod backup_preferences;
 mod beat;
 mod bulk_rename;
 mod content_id;
 mod cover;
 mod db;
 mod emitter;
+pub mod file_workflow;
 mod formats;
 mod helpers;
 mod hlc;
@@ -35,20 +38,32 @@ mod palette_jpeg;
 mod playback;
 mod prosody;
 pub(crate) mod queue_ops;
+mod recommendations;
 mod remembered_order;
 mod replacement;
 mod scan;
 mod search;
 mod search_index;
-mod settings_search;
 mod shuffle;
+pub mod shuffle_pool;
 mod storage_probe;
 mod sync;
+mod sync_checkpoint;
+pub mod sync_payload;
 mod tasks;
 mod taste;
-mod view_math;
 mod waveform;
 mod youtube;
+pub mod youtube_stream;
+
+pub use db::{Library, LibraryTrack};
+pub use recommendations::{
+    Recommendation, RecommendationListen, RecommendationRefresh, RecommendationTrack,
+};
+
+pub use sync_checkpoint::{CheckpointGuard, CloudCheckpoint, LocalCheckpoint};
+
+pub use youtube::{catalogue_request, page_request};
 
 use emitter::{Emit, Emitter, RawCallback};
 use model::{CompactRequest, FactsRequest, ListRequest, ProsodyRequest, ScanRequest, SongsRequest};
@@ -57,7 +72,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Bumped only when an existing request field or event key changes meaning.
-pub const ABI_VERSION: u32 = 7;
+pub const ABI_VERSION: u32 = 8;
 
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -419,6 +434,37 @@ fn dispatch(
             })));
             Ok(())
         }
+        "file_workflow" => {
+            file_workflow::run(&payload, bytes).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "backup_preferences" => {
+            let categories: serde_json::Map<_, _> = backup_preferences::CATEGORIES
+                .iter()
+                .map(|category| (category.name.to_string(), serde_json::json!(category.keys)))
+                .collect();
+            emitter.emit(Emit::Json(serde_json::json!({
+                "categories": categories,
+                "identity": backup_preferences::IDENTITY,
+            })));
+            Ok(())
+        }
+        "backup_archive" => {
+            backup_archive::run(&payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "shuffle_pool" => shuffle_pool::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "sync_settings" => {
+            emitter.emit(Emit::Json(serde_json::json!({
+                "keys": sync_payload::SYNCABLE_SETTINGS_KEYS,
+            })));
+            Ok(())
+        }
+        "sync_payload" => sync_payload::run(payload).map(|result| emitter.emit(Emit::Json(result))),
+        "sync_checkpoint" => {
+            sync_checkpoint::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
+        "recommendations" => {
+            recommendations::run(payload).map(|result| emitter.emit(Emit::Json(result)))
+        }
         "remembered_order" => {
             emitter.emit(Emit::Json(remembered_order::reorder(&payload)));
             Ok(())
@@ -459,20 +505,12 @@ fn dispatch(
             emitter.emit(Emit::Json(queue_ops::original_order(&payload)));
             Ok(())
         }
-        "settings_search" => {
-            emitter.emit(Emit::Json(settings_search::search(&payload)));
-            Ok(())
-        }
         "lrclib_rank" => {
             emitter.emit(Emit::Json(lrclib_match::rank(&payload)));
             Ok(())
         }
         "lrclib_score" => {
             emitter.emit(Emit::Json(lrclib_match::score_one(&payload)));
-            Ok(())
-        }
-        "queue_reconcile_sequence" => {
-            emitter.emit(Emit::Json(queue_ops::reconcile_sequence(&payload)));
             Ok(())
         }
         "insights" => insights::run(

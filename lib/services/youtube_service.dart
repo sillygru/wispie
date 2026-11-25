@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../data/rust/native_command.dart';
 import '../domain/services/youtube_library.dart' show kYouTubeWebApiKey;
 import 'shared_http_client.dart';
 
@@ -121,14 +122,6 @@ class YouTubeService {
       String.fromEnvironment('YOUTUBE_RESOLVER_URL');
 
   /// AAC first: every platform decoder handles it, including iOS and mpv.
-  static const List<String> _audioPreference = [
-    '140',
-    '139',
-    '251',
-    '250',
-    '249'
-  ];
-
   /// Ordered by what actually serves a playable URL, measured live: ANDROID
   /// returns the muxed rendition while the others are mostly login-gated, so
   /// putting a gated client first would spend a failed request per track.
@@ -327,79 +320,15 @@ class YouTubeService {
   }
 
   YouTubeAudioStream? _audioFromResponse(Map<String, dynamic> response) {
-    final streaming = response['streamingData'];
-    if (streaming is! Map) return null;
-
-    final audioOnly = <Map<String, dynamic>>[];
-    final adaptive = streaming['adaptiveFormats'];
-    if (adaptive is List) {
-      for (final entry in adaptive) {
-        if (entry is Map) {
-          final format = Map<String, dynamic>.from(entry);
-          final mime = format['mimeType']?.toString() ?? '';
-          if (mime.startsWith('audio/')) audioOnly.add(format);
-        }
-      }
-    }
-
-    audioOnly.sort((a, b) {
-      final rank = _preferenceRank(a['itag']?.toString());
-      final otherRank = _preferenceRank(b['itag']?.toString());
-      if (rank != otherRank) return rank.compareTo(otherRank);
-      return _int(b['bitrate']).compareTo(_int(a['bitrate']));
-    });
-
-    for (final format in audioOnly) {
-      final url = _directUrl(format);
-      if (url == null) continue;
-      return YouTubeAudioStream(
-        url: url,
-        mimeType: format['mimeType']?.toString() ?? 'audio/mp4',
-        itag: format['itag']?.toString() ?? '140',
-        contentLength: _intOrNull(format['contentLength']),
-        expiresAt: _expiryOf(url),
-      );
-    }
-
-    // Adaptive audio is now SABR-only for most clients: the formats carry
-    // `initRange`/`indexRange` instead of a URL and need YouTube's UMP protocol
-    // to fetch. The muxed progressive rendition is still handed out as a plain
-    // URL, and its AAC track is what a music player needs. Feeding the muxed
-    // file to the audio decoder costs a video track worth of bytes it will
-    // never decode, which is a far better trade than not playing at all.
-    final muxed = _muxedFormatsWithUrl(streaming);
-    if (muxed.isEmpty) return null;
-    muxed.sort((a, b) => _int(a['bitrate']).compareTo(_int(b['bitrate'])));
-    final format = muxed.first;
-    final url = _directUrl(format)!;
+    final selected = _selectStream(response, video: false);
+    if (selected == null) return null;
     return YouTubeAudioStream(
-      url: url,
-      // The container is mp4 either way; telling the decoder it is audio keeps
-      // the muxed video track from being set up as a second surface.
-      mimeType: 'audio/mp4',
-      itag: format['itag']?.toString() ?? '18',
-      contentLength: _intOrNull(format['contentLength']),
-      expiresAt: _expiryOf(url),
+      url: selected.url,
+      mimeType: selected.mime,
+      itag: selected.itag,
+      contentLength: selected.contentLength,
+      expiresAt: _expiryOf(selected.url),
     );
-  }
-
-  List<Map<String, dynamic>> _muxedFormatsWithUrl(Map streaming) {
-    final result = <Map<String, dynamic>>[];
-    for (final key in const ['formats', 'adaptiveFormats']) {
-      final entries = streaming[key];
-      if (entries is! List) continue;
-      for (final entry in entries) {
-        if (entry is! Map) continue;
-        final format = Map<String, dynamic>.from(entry);
-        final mime = format['mimeType']?.toString() ?? '';
-        if (mime.startsWith('audio/')) continue;
-        // Muxed means it carries AAC: a video-only rendition is silent.
-        if (!mime.contains('mp4a')) continue;
-        if (_directUrl(format) == null) continue;
-        result.add(format);
-      }
-    }
-    return result;
   }
 
   Future<YouTubeVideoStream> _resolveVideo(String id) async {
@@ -421,23 +350,56 @@ class YouTubeService {
   }
 
   YouTubeVideoStream? _videoFromResponse(Map<String, dynamic> response) {
+    final selected = _selectStream(response, video: true);
+    if (selected == null) return null;
+    return YouTubeVideoStream(
+      url: selected.url,
+      mimeType: selected.mime,
+      expiresAt: _expiryOf(selected.url),
+    );
+  }
+
+  ({Uri url, String mime, String itag, int? contentLength})? _selectStream(
+    Map<String, dynamic> response, {
+    required bool video,
+  }) {
     final streaming = response['streamingData'];
     if (streaming is! Map) return null;
 
-    // Only the muxed rendition has a direct URL; adaptive video is SABR-only.
-    final formats = _muxedFormatsWithUrl(streaming)
-        .where((format) => _int(format['height']) <= 720)
-        .toList()
-      ..sort((a, b) => _int(b['height']).compareTo(_int(a['height'])));
-    if (formats.isEmpty) return null;
-
-    final format = formats.first;
-    final url = _directUrl(format);
-    if (url == null) return null;
-    return YouTubeVideoStream(
-      url: url,
-      mimeType: format['mimeType']?.toString() ?? 'video/mp4',
-      expiresAt: _expiryOf(url),
+    final formats = <Map<String, Object?>>[];
+    final urls = <Uri>[];
+    final lengths = <int?>[];
+    for (final key in const ['formats', 'adaptiveFormats']) {
+      final entries = streaming[key];
+      if (entries is! List) continue;
+      for (final entry in entries) {
+        if (entry is! Map) continue;
+        final url = _directUrl(Map<String, dynamic>.from(entry));
+        if (url == null) continue;
+        formats.add({
+          'index': urls.length,
+          'adaptive': key == 'adaptiveFormats',
+          'mime': entry['mimeType']?.toString() ?? '',
+          'itag': entry['itag']?.toString(),
+          'bitrate': _intOrNull(entry['bitrate']) ?? 0,
+          'height': _intOrNull(entry['height']) ?? 0,
+        });
+        urls.add(url);
+        lengths.add(_intOrNull(entry['contentLength']));
+      }
+    }
+    final selected = runCoreCommand('youtube', {
+      'action': 'select_stream',
+      'video': video,
+      'formats': formats,
+    })['selection'] as Map<String, dynamic>?;
+    if (selected == null) return null;
+    final index = selected['index'] as int;
+    return (
+      url: urls[index],
+      mime: selected['mime'] as String,
+      itag: selected['itag'] as String,
+      contentLength: lengths[index],
     );
   }
 
@@ -499,11 +461,6 @@ class YouTubeService {
       debugPrint('YouTube resolver failed: $error');
       return null;
     }
-  }
-
-  int _preferenceRank(String? itag) {
-    final index = _audioPreference.indexOf(itag ?? '');
-    return index < 0 ? _audioPreference.length : index;
   }
 
   /// Last resort for a blocked network: an Invidious or Piped instance returns
@@ -856,8 +813,6 @@ class YouTubeService {
     }
     return seconds > 0 ? Duration(seconds: seconds) : null;
   }
-
-  static int _int(Object? value) => _intOrNull(value) ?? 0;
 
   static int? _intOrNull(Object? value) {
     if (value is int) return value;

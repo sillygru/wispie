@@ -13,7 +13,7 @@ class WispieCore {
   WispieCore._();
 
   /// Must match `ABI_VERSION` in `rust/wispie_core/src/lib.rs`.
-  static const int abiVersion = 7;
+  static const int abiVersion = 8;
 
   /// Event kinds sent by the native core.
   static const int eventItems = 0;
@@ -245,90 +245,6 @@ class WispieCore {
     if (pointer.address != 0) _bindings!.free(pointer, length);
   }
 
-  static double playheadEase(double currentMs, double positionMs) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.playheadEase(currentMs, positionMs);
-  }
-
-  static double playheadVisual({
-    required double anchorMs,
-    required double wallMs,
-    required bool playing,
-    required double nowMs,
-    required double latencyMs,
-  }) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.playheadVisual(
-      anchorMs,
-      wallMs,
-      playing ? 1 : 0,
-      nowMs,
-      latencyMs,
-    );
-  }
-
-  static int spectrumTargets({
-    required Pointer<Uint8> bands,
-    required int bandLength,
-    required Pointer<Int32> beats,
-    required int beatCount,
-    required Pointer<Float> strengths,
-    required double bpm,
-    required double positionMs,
-    required Pointer<Double> out,
-  }) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.spectrumTargets(
-      bands,
-      bandLength,
-      beats,
-      beatCount,
-      strengths,
-      bpm,
-      positionMs,
-      out,
-    );
-  }
-
-  static void spectrumFrame({
-    required Pointer<Double> levels,
-    required Pointer<Double> synced,
-    required Pointer<Double> idle,
-    required double elapsedSeconds,
-    required double dtSeconds,
-    required double gridBlend,
-    required double pauseBlend,
-    required double idleTau,
-  }) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    _bindings!.spectrumFrame(
-      levels,
-      synced,
-      idle,
-      elapsedSeconds,
-      dtSeconds,
-      gridBlend,
-      pauseBlend,
-      idleTau,
-    );
-  }
-
-  static double spectrumScalar(int op, double a,
-      [double b = 0, double c = 0, double d = 0]) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.spectrumScalar(op, a, b, c, d);
-  }
-
   /// Writes `[latest, anchor, activeCount, ...indices]` and returns the count.
   static int lyricsActivity({
     required Pointer<Int64> timings,
@@ -381,34 +297,6 @@ class WispieCore {
       freeBytes(input, encoded.isEmpty ? 1 : encoded.length);
     }
   }
-
-  static int videoSync({
-    required double audioMs,
-    required double videoMs,
-    required bool playing,
-    required bool buffering,
-    required bool seekInFlight,
-    required double sinceLastSeekMs,
-  }) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.videoSync(
-      audioMs,
-      videoMs,
-      playing ? 1 : 0,
-      buffering ? 1 : 0,
-      seekInFlight ? 1 : 0,
-      sinceLastSeekMs,
-    );
-  }
-
-  static double videoAspect(double rawAspect, int rotationCorrection) {
-    if (!_ensureLoaded()) {
-      throw StateError('native core unavailable: $_reason');
-    }
-    return _bindings!.videoAspect(rawAspect, rotationCorrection);
-  }
 }
 
 /// Caller-owned native memory, freed explicitly to keep per-frame helpers off
@@ -423,11 +311,8 @@ class NativeScratch {
   // `asTypedList` or `cast` each tick would spend more time wrapping the buffer
   // than the core spends filling it.
   late final Uint8List bytes = pointer.asTypedList(length);
-  late final Pointer<Double> doublesPointer = pointer.cast<Double>();
   late final Pointer<Int32> intsPointer = pointer.cast<Int32>();
   late final Pointer<Int64> longsPointer = pointer.cast<Int64>();
-  late final Pointer<Float> floatsPointer = pointer.cast<Float>();
-  late final Float64List doubles = doublesPointer.asTypedList(length ~/ 8);
   late final Int32List ints = intsPointer.asTypedList(length ~/ 4);
   late final Int64List longs = longsPointer.asTypedList(length ~/ 8);
 
@@ -470,24 +355,6 @@ typedef _HlcNextDart = int Function(int);
 typedef _HlcNowNative = Int64 Function();
 typedef _HlcNowDart = int Function();
 
-typedef _PlayheadEaseNative = Double Function(Double, Double);
-typedef _PlayheadEaseDart = double Function(double, double);
-typedef _PlayheadVisualNative = Double Function(
-    Double, Double, Uint8, Double, Double);
-typedef _PlayheadVisualDart = double Function(
-    double, double, int, double, double);
-typedef _SpectrumTargetsNative = Int32 Function(Pointer<Uint8>, UintPtr,
-    Pointer<Int32>, UintPtr, Pointer<Float>, Double, Double, Pointer<Double>);
-typedef _SpectrumTargetsDart = int Function(Pointer<Uint8>, int, Pointer<Int32>,
-    int, Pointer<Float>, double, double, Pointer<Double>);
-typedef _SpectrumFrameNative = Void Function(Pointer<Double>, Pointer<Double>,
-    Pointer<Double>, Double, Double, Double, Double, Double);
-typedef _SpectrumFrameDart = void Function(Pointer<Double>, Pointer<Double>,
-    Pointer<Double>, double, double, double, double, double);
-typedef _SpectrumScalarNative = Double Function(
-    Uint8, Double, Double, Double, Double);
-typedef _SpectrumScalarDart = double Function(
-    int, double, double, double, double);
 typedef _LyricsActivityNative = Int32 Function(
     Pointer<Int64>, UintPtr, Int64, Uint8, Pointer<Int32>, UintPtr);
 typedef _LyricsActivityDart = int Function(
@@ -496,11 +363,6 @@ typedef _CoverPathNative = IntPtr Function(
     Pointer<Uint8>, UintPtr, Uint32, Uint8, Pointer<Uint8>, UintPtr);
 typedef _CoverPathDart = int Function(
     Pointer<Uint8>, int, int, int, Pointer<Uint8>, int);
-typedef _VideoSyncNative = Int32 Function(
-    Double, Double, Uint8, Uint8, Uint8, Double);
-typedef _VideoSyncDart = int Function(double, double, int, int, int, double);
-typedef _VideoAspectNative = Double Function(Double, Int32);
-typedef _VideoAspectDart = double Function(double, int);
 
 class _Bindings {
   _Bindings(DynamicLibrary library)
@@ -525,30 +387,11 @@ class _Bindings {
             'wispie_core_hlc_next'),
         hlcNow = library
             .lookupFunction<_HlcNowNative, _HlcNowDart>('wispie_core_hlc_now'),
-        playheadEase =
-            library.lookupFunction<_PlayheadEaseNative, _PlayheadEaseDart>(
-                'wispie_playhead_ease'),
-        playheadVisual =
-            library.lookupFunction<_PlayheadVisualNative, _PlayheadVisualDart>(
-                'wispie_playhead_visual'),
-        spectrumTargets = library.lookupFunction<_SpectrumTargetsNative,
-            _SpectrumTargetsDart>('wispie_spectrum_targets'),
-        spectrumFrame =
-            library.lookupFunction<_SpectrumFrameNative, _SpectrumFrameDart>(
-                'wispie_spectrum_frame'),
-        spectrumScalar =
-            library.lookupFunction<_SpectrumScalarNative, _SpectrumScalarDart>(
-                'wispie_spectrum_scalar'),
         lyricsActivity =
             library.lookupFunction<_LyricsActivityNative, _LyricsActivityDart>(
                 'wispie_lyrics_activity'),
         coverPath = library.lookupFunction<_CoverPathNative, _CoverPathDart>(
-            'wispie_cover_path'),
-        videoSync = library.lookupFunction<_VideoSyncNative, _VideoSyncDart>(
-            'wispie_video_sync'),
-        videoAspect =
-            library.lookupFunction<_VideoAspectNative, _VideoAspectDart>(
-                'wispie_video_aspect');
+            'wispie_cover_path');
 
   final _AbiVersionDart abiVersion;
   final _VersionDart version;
@@ -561,13 +404,6 @@ class _Bindings {
   final _HlcSetDart hlcSet;
   final _HlcNextDart hlcNext;
   final _HlcNowDart hlcNow;
-  final _PlayheadEaseDart playheadEase;
-  final _PlayheadVisualDart playheadVisual;
-  final _SpectrumTargetsDart spectrumTargets;
-  final _SpectrumFrameDart spectrumFrame;
-  final _SpectrumScalarDart spectrumScalar;
   final _LyricsActivityDart lyricsActivity;
   final _CoverPathDart coverPath;
-  final _VideoSyncDart videoSync;
-  final _VideoAspectDart videoAspect;
 }

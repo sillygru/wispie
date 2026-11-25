@@ -7,7 +7,7 @@
 
 use crate::artwork;
 use crate::emitter::{Emit, Emitter};
-use crate::lyrics_view::{self, Precision, StyleLine, StyleSong};
+use crate::lyrics_view::{self, Precision};
 use crate::playback;
 use serde_json::{json, Value};
 
@@ -23,8 +23,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
         .to_string();
 
     match action.as_str() {
-        "playback_fade" => emitter.emit(Emit::Json(playback::fade_volume(&request)?)),
-        "playback_tick" => emitter.emit(Emit::Json(playback::tick(&request)?)),
         "playback_stats" => emitter.emit(Emit::Json(playback::stats_record(&request)?)),
         "playback_variant" => emitter.emit(Emit::Json(playback::variant_pick(&request)?)),
         "playback_variant_batch" => {
@@ -33,7 +31,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
         "playback_original_order" => {
             emitter.emit(Emit::Json(playback::original_order(&request)?));
         }
-        "playback_sleep" => emitter.emit(Emit::Json(playback::sleep_decision(&request)?)),
         "playback_queue_original" => {
             emitter.emit(Emit::Json(playback::queue_original(&request)?));
         }
@@ -121,12 +118,6 @@ pub fn run(request: Value, bytes: Option<&[u8]>, emitter: &Emitter) -> Result<()
                 .map(|query| json!([query.title, query.artist]))
                 .collect();
             emitter.emit(Emit::Json(json!({ "queries": queries })));
-        }
-        "lyrics_style" => {
-            let lines = style_lines(&request)?;
-            let song = style_song(&request);
-            let style = lyrics_view::detect_style(&lines, song.as_ref());
-            emitter.emit(Emit::Json(lyrics_view::style_json(style)));
         }
         "lyrics_timings" => {
             let lines = request
@@ -406,36 +397,6 @@ fn text<'a>(request: &'a Value, key: &str) -> Result<&'a str, String> {
 fn precision(request: &Value) -> Result<Precision, String> {
     let name = text(request, "precision")?;
     Precision::from_name(name).ok_or_else(|| format!("unknown precision: {name}"))
-}
-
-fn style_lines(request: &Value) -> Result<Vec<StyleLine<'_>>, String> {
-    let raw = request
-        .get("lines")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "lyrics_style needs lines".to_string())?;
-    let mut lines = Vec::with_capacity(raw.len());
-    for line in raw {
-        let row = line
-            .as_array()
-            .ok_or_else(|| "lyrics_style line must be an array".to_string())?;
-        lines.push(StyleLine {
-            time_us: row.first().and_then(Value::as_i64).unwrap_or(0),
-            synced: row.get(1).and_then(Value::as_bool).unwrap_or(false),
-            text: row.get(2).and_then(Value::as_str).unwrap_or(""),
-        });
-    }
-    Ok(lines)
-}
-
-fn style_song(request: &Value) -> Option<StyleSong<'_>> {
-    let song = request.get("song")?;
-    Some(StyleSong {
-        title: song.get("title").and_then(Value::as_str).unwrap_or(""),
-        artist: song.get("artist").and_then(Value::as_str).unwrap_or(""),
-        album: song.get("album").and_then(Value::as_str).unwrap_or(""),
-        filename: song.get("filename").and_then(Value::as_str).unwrap_or(""),
-        duration_us: song.get("durationUs").and_then(Value::as_i64),
-    })
 }
 
 fn compare_versions(a: &str, b: &str) -> i64 {

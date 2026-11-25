@@ -428,8 +428,26 @@ fn open(payload: &Value) -> Result<Value, String> {
         .get("read_only")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let base_hlc = payload
+        .get("hlc")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let (connection, version, fresh) =
+        open_connection(Path::new(path), schema, stats, read_only, base_hlc)?;
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    lock().insert(id, connection);
+    Ok(json!({ "id": id, "version": version, "fresh": fresh }))
+}
+
+fn open_connection(
+    path: &Path,
+    schema: Option<&str>,
+    stats: Option<bool>,
+    read_only: bool,
+    base_hlc: i64,
+) -> Result<(Connection, i64, bool), String> {
     if !read_only {
-        if let Some(parent) = Path::new(path).parent() {
+        if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)
                     .map_err(|error| format!("create db directory: {error}"))?;
@@ -448,7 +466,7 @@ fn open(payload: &Value) -> Result<Value, String> {
             | OpenFlags::SQLITE_OPEN_URI
     };
     let mut connection = Connection::open_with_flags(path, flags)
-        .map_err(|error| format!("open {path}: {error}"))?;
+        .map_err(|error| format!("open {}: {error}", path.display()))?;
     connection
         .busy_timeout(std::time::Duration::from_secs(5))
         .map_err(|error| format!("busy timeout: {error}"))?;
@@ -467,9 +485,7 @@ fn open(payload: &Value) -> Result<Value, String> {
         search_index::create(&connection)?;
     }
     let Some(stats) = stats.filter(|_| !read_only) else {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        lock().insert(id, connection);
-        return Ok(json!({ "id": id, "version": 0, "fresh": false }));
+        return Ok((connection, 0, false));
     };
     let target = if stats { STATS_VERSION } else { DATA_VERSION };
     let current: i64 = connection
@@ -492,10 +508,6 @@ fn open(payload: &Value) -> Result<Value, String> {
             create_sync_indexes(&connection)?;
         }
     } else if current < target {
-        let base_hlc = payload
-            .get("hlc")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default();
         upgrade(&mut connection, stats, current, base_hlc)?;
         // A killed upgrade can leave a version stamped but a step unfinished;
         // reconcile only adds what is missing, so re-running it is harmless.
@@ -508,10 +520,84 @@ fn open(payload: &Value) -> Result<Value, String> {
             .map_err(|error| format!("stamp version: {error}"))?;
     }
 
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    lock().insert(id, connection);
-    Ok(json!({ "id": id, "version": target, "fresh": fresh }))
+    Ok((connection, target, fresh))
 }
+
+pub(crate) fn inspect_backup_tables(path: &Path, tables: &[&str]) -> Vec<bool> {
+    let connection = open_connection(path, None, None, true, 0)
+        .ok()
+        .map(|(connection, _, _)| connection);
+    tables
+        .iter()
+        .map(|table| {
+            connection.as_ref().is_some_and(|connection| {
+                maintenance::table_count(connection, table, false).is_ok_and(|count| count == 1)
+            })
+        })
+        .collect()
+}
+
+/// A library opened with the same migrations and connection settings as Flutter.
+pub struct Library {
+    data: Connection,
+    stats: Connection,
+}
+
+/// A local track in the library database.
+pub struct LibraryTrack {
+    pub filename: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub path: String,
+    pub cover: Option<String>,
+    pub duration_ms: Option<i64>,
+}
+
+impl Library {
+    pub fn open(data_path: &Path, stats_path: &Path, base_hlc: i64) -> Result<Self, String> {
+        let (data, _, _) =
+            open_connection(data_path, Some("userdata"), Some(false), false, base_hlc)?;
+        let (stats, _, _) =
+            open_connection(stats_path, Some("stats"), Some(true), false, base_hlc)?;
+        Ok(Self { data, stats })
+    }
+
+    pub fn tracks(&self) -> Result<Vec<LibraryTrack>, String> {
+        let mut statement = self
+            .data
+            .prepare(ALL_SONGS)
+            .map_err(|error| error.to_string())?;
+        let tracks = statement
+            .query_map([], |row| {
+                Ok(LibraryTrack {
+                    filename: row.get("filename")?,
+                    title: row.get::<_, Option<String>>("title")?.unwrap_or_default(),
+                    artist: row.get::<_, Option<String>>("artist")?.unwrap_or_default(),
+                    album: row.get::<_, Option<String>>("album")?.unwrap_or_default(),
+                    path: row.get::<_, Option<String>>("url")?.unwrap_or_default(),
+                    cover: row.get("cover_url")?,
+                    duration_ms: row.get("duration_ms")?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(tracks)
+    }
+
+    pub fn schema_versions(&self) -> Result<(i64, i64), String> {
+        fn version(connection: &Connection) -> rusqlite::Result<i64> {
+            connection.query_row("PRAGMA user_version", [], |row| row.get(0))
+        }
+        Ok((
+            version(&self.data).map_err(|error| error.to_string())?,
+            version(&self.stats).map_err(|error| error.to_string())?,
+        ))
+    }
+}
+
+const ALL_SONGS: &str = "SELECT * FROM song";
 
 fn upgrade(
     connection: &mut Connection,
@@ -2853,7 +2939,7 @@ fn song_op(payload: &Value) -> Result<Value, String> {
         "write_batch" => with(payload, |connection| song_write_batch(payload, connection)),
         "all" => with(payload, |connection| {
             let mut statement = connection
-                .prepare("SELECT * FROM song")
+                .prepare(ALL_SONGS)
                 .map_err(|error| format!("songs: {error}"))?;
             let collected = statement
                 .query_map([], row_to_json)

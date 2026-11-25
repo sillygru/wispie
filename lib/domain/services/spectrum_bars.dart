@@ -1,97 +1,79 @@
-import 'dart:ffi';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../../data/rust/wispie_core.dart';
 import '../models/beat_map.dart';
 
 /// The frame math behind the four-bar audio visualiser.
-///
-/// The ballistics, the band interpolation and the beat punch live in the native
-/// core; this is the adapter that hands it the beat map and keeps the buffers
-/// alive across frames.
 class SpectrumBars {
   SpectrumBars._();
 
-  /// One bar per [BeatBand]. Mirrored from the core, which is the authority.
   static const int barCount = 4;
-
-  /// Rise and fall time constants, in seconds (mirrored from the core).
   static const double attackTau = 0.010;
   static const double releaseTau = 0.055;
-
-  /// Height a bar never falls below, as a fraction of the full height.
   static const double floor = 0.05;
+  static const double _punchAttackMs = 18;
 
-  /// Moves [level] toward [target] over [dtSeconds], rising fast and falling
-  /// slowly. Frame-rate independent.
   static double advance(double level, double target, double dtSeconds) =>
-      WispieCore.spectrumScalar(0, level, target, dtSeconds);
+      advanceWithTau(level, target, dtSeconds, tauFor(level, target));
 
-  /// Rise or fall constant for a bar moving from [level] to [target].
   static double tauFor(double level, double target) =>
-      WispieCore.spectrumScalar(1, level, target);
+      target > level ? attackTau : releaseTau;
 
-  /// [advance] with the time constant supplied explicitly.
   static double advanceWithTau(
     double level,
     double target,
     double dtSeconds,
     double tau,
-  ) =>
-      WispieCore.spectrumScalar(5, level, target, dtSeconds, tau);
-
-  /// Maps raw band energy in 0..1 to a bar height in [floor]..1.
-  static double shape(double raw) => WispieCore.spectrumScalar(2, raw);
-
-  /// Beat punch [sinceBeatMs] after a beat of [periodMs], peaking at 1.
-  static double punch(double sinceBeatMs, double periodMs) =>
-      WispieCore.spectrumScalar(3, sinceBeatMs, periodMs);
-
-  /// A small per-bar swell, so four bands moving together stay distinguishable.
-  static double breath(int bar, double elapsedSeconds) =>
-      WispieCore.spectrumScalar(4, bar.toDouble(), elapsedSeconds);
-
-  static _SpectrumMap? _map;
-  static final NativeScratch _targets = NativeScratch(barCount * 8);
-  static final NativeScratch _levels = NativeScratch(barCount * 8);
-  static final NativeScratch _syncedBars = NativeScratch(barCount * 8);
-  static final NativeScratch _idleBars = NativeScratch(barCount * 8);
-
-  static _SpectrumMap _buffersFor(BeatMap map) {
-    final cached = _map;
-    if (cached != null && identical(cached.map, map)) return cached;
-    cached?.dispose();
-    final fresh = _SpectrumMap(map);
-    _map = fresh;
-    return fresh;
+  ) {
+    if (dtSeconds <= 0) return level;
+    return level + (target - level) * (1 - math.exp(-dtSeconds / tau));
   }
 
-  /// Bar targets for [positionMs] of [map], written into [out].
-  ///
+  static double shape(double raw) =>
+      floor + (1 - floor) * math.pow(clamp01(raw), 1.15);
+
+  static double punch(double sinceBeatMs, double periodMs) {
+    if (sinceBeatMs < 0) return 0;
+    final decayMs = (periodMs * 0.30).clamp(70.0, 180.0);
+    if (sinceBeatMs > decayMs * 5) return 0;
+    final peakTime = _punchAttackMs * math.log(1 + decayMs / _punchAttackMs);
+    final peak = (1 - math.exp(-peakTime / _punchAttackMs)) *
+        math.exp(-peakTime / decayMs);
+    final attack = 1 - math.exp(-sinceBeatMs / _punchAttackMs);
+    final decay = math.exp(-sinceBeatMs / decayMs);
+    return attack * decay * (peak <= 0 ? 1 : 1 / peak);
+  }
+
+  static double breath(int bar, double elapsedSeconds) =>
+      1 + 0.03 * math.sin(2 * math.pi * (0.21 * elapsedSeconds + bar * 0.37));
+
   /// Returns false when the map has no usable band data.
   static bool targetsAt(BeatMap map, double positionMs, List<double> out) {
-    final buffers = _buffersFor(map);
-    final usable = WispieCore.spectrumTargets(
-      bands: buffers.bands.pointer,
-      bandLength: buffers.bands.length,
-      beats: buffers.beats.intsPointer,
-      beatCount: map.beatsMs.length,
-      strengths: buffers.strengths.floatsPointer,
-      bpm: map.bpm,
-      positionMs: positionMs,
-      out: _targets.doublesPointer,
-    );
-    if (usable == 0) return false;
-    final values = _targets.doubles;
-    for (var index = 0; index < barCount; index++) {
-      out[index] = values[index];
+    if (map.bandFrameCount == 0) return false;
+    for (final band in BeatBand.values) {
+      out[band.index] =
+          shape(positionMs.isFinite ? map.bandAt(band, positionMs) : 0);
     }
+
+    if (!positionMs.isFinite ||
+        !map.hasBeats ||
+        map.beatStrength.length < map.beatsMs.length) {
+      return true;
+    }
+    final index = map.beatIndexAt(positionMs.round());
+    if (index < 0) return true;
+
+    final hit =
+        punch(positionMs - map.beatsMs[index], map.beatPeriodMsAt(index)) *
+            map.beatStrength[index];
+    if (hit <= 0) return true;
+
+    // Use the available headroom so the beat stays visible near full height.
+    out[0] += (1 - out[0]) * hit * 0.18;
+    out[1] += (1 - out[1]) * hit * 0.09;
     return true;
   }
 
-  /// Advances all bars by one frame: idle walk, synced bands, pause fade and
-  /// the response cross-fade, in one core call.
   static void stepFrame({
     required Float64List levels,
     required List<double> synced,
@@ -102,57 +84,19 @@ class SpectrumBars {
     required double pauseBlend,
     required double idleTau,
   }) {
-    final levelView = _levels.doubles;
-    final syncedView = _syncedBars.doubles;
-    final idleView = _idleBars.doubles;
-    for (var index = 0; index < barCount; index++) {
-      levelView[index] = levels[index];
-      syncedView[index] = synced[index];
-      idleView[index] = idle[index];
-    }
-    WispieCore.spectrumFrame(
-      levels: _levels.doublesPointer,
-      synced: _syncedBars.doublesPointer,
-      idle: _idleBars.doublesPointer,
-      elapsedSeconds: elapsedSeconds,
-      dtSeconds: dtSeconds,
-      gridBlend: gridBlend,
-      pauseBlend: pauseBlend,
-      idleTau: idleTau,
-    );
-    for (var index = 0; index < barCount; index++) {
-      levels[index] = levelView[index];
-    }
-  }
-}
+    for (var bar = 0; bar < barCount; bar++) {
+      var target = idle[bar];
+      if (gridBlend > 0) {
+        final band = synced[bar] * breath(bar, elapsedSeconds);
+        target += (band - target) * gridBlend;
+      }
+      target += (floor - target) * pauseBlend;
 
-/// Native copy of one beat map, rebuilt only when the map itself changes.
-class _SpectrumMap {
-  _SpectrumMap(this.map)
-      : bands = NativeScratch(math.max(1, map.bands.length)),
-        beats = NativeScratch(math.max(4, map.beatsMs.length * 4)),
-        strengths = NativeScratch(math.max(4, map.beatStrength.length * 4)) {
-    if (map.bands.isNotEmpty) {
-      bands.bytes.setAll(0, map.bands);
+      final tau = gridBlend <= 0
+          ? idleTau
+          : idleTau + (tauFor(levels[bar], target) - idleTau) * gridBlend;
+      levels[bar] =
+          advanceWithTau(levels[bar], target, dtSeconds, tau).clamp(0.0, 1.0);
     }
-    if (map.beatsMs.isNotEmpty) {
-      beats.ints.setAll(0, map.beatsMs);
-    }
-    if (map.beatStrength.isNotEmpty) {
-      strengths.floatsPointer
-          .asTypedList(map.beatStrength.length)
-          .setAll(0, map.beatStrength);
-    }
-  }
-
-  final BeatMap map;
-  final NativeScratch bands;
-  final NativeScratch beats;
-  final NativeScratch strengths;
-
-  void dispose() {
-    bands.dispose();
-    beats.dispose();
-    strengths.dispose();
   }
 }

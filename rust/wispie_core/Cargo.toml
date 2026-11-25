@@ -53,3 +53,4 @@ symphonia = { version = "0.6", default-features = false, features = [
 symphonia-opus = "0.1"
 unicode-normalization = "0.1"
 walkdir = "2"
+zip = { version = "4.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
