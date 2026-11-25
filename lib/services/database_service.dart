@@ -476,13 +476,17 @@ class DatabaseService {
   }) =>
       _writeSongs(songs, preserveCoverUrl: preserveCoverUrl);
 
-  Future<void> replaceLibrarySongs(List<Song> songs) =>
-      _writeSongs(songs, replaceLibrary: true);
+  Future<void> replaceLibrarySongs(
+    List<Song> songs, {
+    required List<Song> filteredFiles,
+  }) =>
+      _writeSongs(songs, replaceLibrary: true, filteredFiles: filteredFiles);
 
   Future<void> _writeSongs(
     List<Song> songs, {
     bool preserveCoverUrl = true,
     bool replaceLibrary = false,
+    List<Song> filteredFiles = const [],
   }) async {
     await _ensureInitialized();
     if (_userDataDatabase == null) return;
@@ -492,6 +496,11 @@ class DatabaseService {
       'preserveCoverUrl': preserveCoverUrl,
       'replaceLibrary': replaceLibrary,
       'songs': [for (final song in songs) _songRow(song)],
+      if (filteredFiles.isNotEmpty)
+        'filteredFiles': [
+          for (final song in filteredFiles)
+            {'filename': song.filename, 'url': song.url, 'mtime': song.mtime},
+        ],
     });
   }
 

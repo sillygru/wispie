@@ -3674,6 +3674,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsScanningLibrary => 'Scanning library…';
 
   @override
+  String get libraryChangesTitle => 'Library files changed';
+
+  @override
+  String libraryChangesCounts(int added, int changed, int deleted) {
+    return '$added new\n$changed changed\n$deleted deleted';
+  }
+
+  @override
+  String get libraryChangesKeep => 'Keep as is';
+
+  @override
+  String get libraryChangesRescan => 'Re-scan library';
+
+  @override
   String settingsResultsFor(String query) {
     return 'Results for \"$query\"';
   }

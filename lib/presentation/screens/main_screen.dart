@@ -25,6 +25,8 @@ import '../widgets/bulk_selection_bar.dart';
 import '../widgets/ambient_background.dart';
 import '../widgets/blurred_background.dart';
 import '../components/app_icon.dart';
+import '../components/app_dialog.dart';
+import '../components/app_feedback.dart';
 import '../components/pressable.dart';
 import '../components/animated_removal.dart';
 import '../components/app_nav_bar.dart';
@@ -232,10 +234,35 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
     // Check and run auto-backup on initial app launch
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_offerLibraryRescan());
       ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();
       // Picks up files opened via Android Open-with / Share, cold or warm.
       unawaited(ref.read(openFilesProvider.notifier).initialize());
     });
+  }
+
+  Future<void> _offerLibraryRescan() async {
+    final changes =
+        await ref.read(songsProvider.notifier).checkForLibraryChanges();
+    if (!mounted || changes == null) return;
+    final (:added, :changed, :deleted) = changes;
+    if (added == 0 && changed == 0 && deleted == 0) return;
+
+    final l10n = context.l10n;
+    final rescan = await showAppConfirm(
+      context,
+      title: l10n.libraryChangesTitle,
+      message: l10n.libraryChangesCounts(added, changed, deleted),
+      cancelLabel: l10n.libraryChangesKeep,
+      confirmLabel: l10n.libraryChangesRescan,
+    );
+    if (!mounted || rescan != true) return;
+    final success = await ref.read(songsProvider.notifier).rescanLibrary();
+    if (mounted && !success) {
+      appSnack(context, context.l10n.libraryLoadErrorTitle,
+          tone: AppTone.danger);
+    }
   }
 
   @override
@@ -269,15 +296,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     final DateTime? away = _backgroundedAt;
     _backgroundedAt = null;
-    // A glance at another app should not rescan and back up on the way back.
+    // A glance at another app should not trigger a backup on the way back.
     if (away != null && DateTime.now().difference(away).inSeconds < 30) {
       return;
     }
-    // Past the resume frames, and staggered so they never share one.
-    Future<void>.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      ref.read(songsProvider.notifier).refresh(isBackground: true);
-    });
     Future<void>.delayed(const Duration(seconds: 5), () {
       if (!mounted) return;
       ref.read(autoBackupProvider.notifier).checkAndRunAutoBackup();

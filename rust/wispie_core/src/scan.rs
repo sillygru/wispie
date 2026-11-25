@@ -9,6 +9,8 @@ use crate::meta;
 use crate::model::{ScanRequest, SongJson};
 use crate::CANCEL;
 use rayon::prelude::*;
+use serde::Deserialize;
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,7 +50,12 @@ pub fn run(request: ScanRequest, emitter: &Emitter) -> Result<(), String> {
 
     // Lyric files come out of the same walk as the songs, plus whatever the
     // configured lyrics folders hold, so linking costs no second pass.
-    let (files, unreachable, lyric_files) = collect(&request);
+    let (files, unreachable, lyric_files) = collect(
+        &request.roots,
+        &request.excluded_folders,
+        request.include_videos,
+        true,
+    );
     let mut lyrics = lyrics_files::index_paths(lyric_files);
     lyrics_files::merge(
         &mut lyrics,
@@ -154,12 +161,17 @@ fn chunk_size(concurrency: usize) -> usize {
 
 /// Every media file to look at, plus the roots that could not be listed.
 /// An unlistable root is reported, never treated as empty.
-fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
+fn collect(
+    roots: &[String],
+    excluded_folders: &[String],
+    include_videos: bool,
+    collect_lyrics: bool,
+) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
     let mut files = Vec::new();
     let mut unreachable = Vec::new();
     let mut lyrics = Vec::new();
 
-    for root in &request.roots {
+    for root in roots {
         let path = Path::new(root);
         if !path.exists() {
             unreachable.push(root.clone());
@@ -170,7 +182,7 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
         let entries = WalkDir::new(path)
             .follow_links(false)
             .into_iter()
-            .filter_entry(|entry| !is_excluded(entry.path(), &request.excluded_folders));
+            .filter_entry(|entry| !is_excluded(entry.path(), excluded_folders));
         for entry in entries {
             match entry {
                 Ok(entry) => {
@@ -178,14 +190,14 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
                         continue;
                     }
                     let file_path = entry.path();
-                    if lyrics_files::is_lyrics_path(file_path) {
+                    if collect_lyrics && lyrics_files::is_lyrics_path(file_path) {
                         lyrics.push(file_path.to_path_buf());
                         continue;
                     }
                     if !formats::is_supported_path(file_path) {
                         continue;
                     }
-                    if !request.include_videos && formats::is_video_path(file_path) {
+                    if !include_videos && formats::is_video_path(file_path) {
                         continue;
                     }
                     files.push(file_path.to_path_buf());
@@ -207,6 +219,83 @@ fn collect(request: &ScanRequest) -> (Vec<PathBuf>, Vec<String>, Vec<PathBuf>) {
     lyrics.sort();
     lyrics.dedup();
     (files, unreachable, lyrics)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryChangesRequest {
+    database_path: PathBuf,
+    roots: Vec<String>,
+    excluded_folders: Vec<String>,
+    include_videos: bool,
+    min_file_size_bytes: u64,
+    prevent_duplicate_tracks: bool,
+}
+
+pub(crate) struct LibraryFile {
+    pub path: PathBuf,
+    pub mtime: Option<f64>,
+}
+
+pub fn library_changes(request: LibraryChangesRequest, emitter: &Emitter) -> Result<(), String> {
+    let mut baseline = crate::db::library_file_baseline(&request.database_path)?;
+    baseline.retain(|_, file| {
+        request.roots.iter().any(|root| file.path.starts_with(root))
+            && !is_excluded(&file.path, &request.excluded_folders)
+            && (request.include_videos || !formats::is_video_path(&file.path))
+    });
+    let mut current = HashMap::with_capacity(baseline.len());
+    // The library writes one row per filename. Match the scanner's folder
+    // order so two copies of the same name do not look like changes on launch.
+    for root in &request.roots {
+        let (files, unreachable, _) = collect(
+            std::slice::from_ref(root),
+            &request.excluded_folders,
+            request.include_videos,
+            false,
+        );
+        if !unreachable.is_empty() || !Path::new(root).is_dir() {
+            emitter.emit(Emit::Json(json!({ "changes": null })));
+            return Ok(());
+        }
+        for path in files {
+            let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if request.prevent_duplicate_tracks && current.contains_key(filename) {
+                continue;
+            }
+            let Ok(metadata) = fs::metadata(&path) else {
+                emitter.emit(Emit::Json(json!({ "changes": null })));
+                return Ok(());
+            };
+            if metadata.is_file() && metadata.len() >= request.min_file_size_bytes {
+                current.insert(
+                    filename.to_owned(),
+                    LibraryFile {
+                        path,
+                        mtime: mtime_secs(&metadata),
+                    },
+                );
+            }
+        }
+    }
+    let mut new = 0;
+    let mut changed = 0;
+    for (filename, file) in current {
+        match baseline.remove(&filename) {
+            None => new += 1,
+            Some(previous) => {
+                if previous.path != file.path || !same_mtime(previous.mtime, file.mtime) {
+                    changed += 1;
+                }
+            }
+        }
+    }
+    emitter.emit(Emit::Json(json!({
+        "changes": { "new": new, "changed": changed, "deleted": baseline.len() }
+    })));
+    Ok(())
 }
 
 /// Whether a `.lrc`/`.ttml` file named after [filename] was found.
@@ -234,6 +323,14 @@ fn mtime_secs(metadata: &fs::Metadata) -> Option<f64> {
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs_f64())
+}
+
+fn same_mtime(previous: Option<f64>, current: Option<f64>) -> bool {
+    match (previous, current) {
+        // Timestamps written by platform adapters can be truncated to millis.
+        (Some(previous), Some(current)) => (previous - current).abs() < 0.001,
+        _ => previous == current,
+    }
 }
 
 /// Everything one file says about itself, for a row that reached the library
@@ -307,8 +404,8 @@ fn process_file(path: &Path, context: &Context) -> Piece {
         .copied();
 
     if let Some(existing) = existing {
-        if let (Some(previous), Some(current)) = (existing.mtime, mtime) {
-            if (previous - current).abs() < 2.0 {
+        if let Some(current) = mtime {
+            if same_mtime(existing.mtime, mtime) {
                 return Piece::Song(Box::new(reuse_song(
                     existing, url, filename, current, context,
                 )));

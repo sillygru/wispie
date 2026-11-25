@@ -3776,6 +3776,39 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settingsScanningLibrary => 'Analyse de la bibliothèque…';
 
   @override
+  String get libraryChangesTitle =>
+      'Les fichiers de la bibliothèque ont changé';
+
+  @override
+  String libraryChangesCounts(int added, int changed, int deleted) {
+    String _temp0 = intl.Intl.pluralLogic(
+      added,
+      locale: localeName,
+      other: '$added nouveaux',
+      one: '$added nouveau',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      changed,
+      locale: localeName,
+      other: '$changed modifiés',
+      one: '$changed modifié',
+    );
+    String _temp2 = intl.Intl.pluralLogic(
+      deleted,
+      locale: localeName,
+      other: '$deleted supprimés',
+      one: '$deleted supprimé',
+    );
+    return '$_temp0\n$_temp1\n$_temp2';
+  }
+
+  @override
+  String get libraryChangesKeep => 'Laisser en l’état';
+
+  @override
+  String get libraryChangesRescan => 'Analyser à nouveau la bibliothèque';
+
+  @override
   String settingsResultsFor(String query) {
     return 'Résultats pour « $query »';
   }

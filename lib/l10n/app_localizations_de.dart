@@ -3742,6 +3742,20 @@ class AppLocalizationsDe extends AppLocalizations {
   String get settingsScanningLibrary => 'Bibliothek wird eingelesen …';
 
   @override
+  String get libraryChangesTitle => 'Dateien in der Bibliothek wurden geändert';
+
+  @override
+  String libraryChangesCounts(int added, int changed, int deleted) {
+    return '$added neu\n$changed geändert\n$deleted gelöscht';
+  }
+
+  @override
+  String get libraryChangesKeep => 'So lassen';
+
+  @override
+  String get libraryChangesRescan => 'Bibliothek neu einlesen';
+
+  @override
   String settingsResultsFor(String query) {
     return 'Ergebnisse für „$query“';
   }

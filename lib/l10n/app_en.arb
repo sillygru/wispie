@@ -4677,6 +4677,18 @@
   "@settingsScanningLibrary": {
     "description": "Snackbar message shown while rescanning the music library"
   },
+  "libraryChangesTitle": "Library files changed",
+  "libraryChangesCounts": "{added} new\n{changed} changed\n{deleted} deleted",
+  "@libraryChangesCounts": {
+    "description": "Counts of new, modified and deleted music files found on startup",
+    "placeholders": {
+      "added": {"type": "int"},
+      "changed": {"type": "int"},
+      "deleted": {"type": "int"}
+    }
+  },
+  "libraryChangesKeep": "Keep as is",
+  "libraryChangesRescan": "Re-scan library",
   "settingsResultsFor": "Results for \"{query}\"",
   "@settingsResultsFor": {
     "description": "Title shown above settings search results for a query",

@@ -4,7 +4,36 @@ import 'dart:isolate';
 import '../../domain/models/lrclib_result.dart';
 import '../../domain/models/rich_lyrics.dart';
 import '../../models/song.dart';
+import 'native_command.dart';
 import 'wispie_core.dart';
+
+typedef LibraryChanges = ({int added, int changed, int deleted});
+
+Future<LibraryChanges?> checkRustLibraryChanges({
+  required String databasePath,
+  required List<String> roots,
+  required List<String> excludedFolders,
+  required bool includeVideos,
+  required int minFileSizeBytes,
+  required bool preventDuplicateTracks,
+}) =>
+    Isolate.run(() {
+      final reply = runCoreCommand('library_changes', {
+        'databasePath': databasePath,
+        'roots': roots,
+        'excludedFolders': excludedFolders,
+        'includeVideos': includeVideos,
+        'minFileSizeBytes': minFileSizeBytes,
+        'preventDuplicateTracks': preventDuplicateTracks,
+      });
+      final changes = reply['changes'] as Map<String, dynamic>?;
+      if (changes == null) return null;
+      return (
+        added: changes['new'] as int,
+        changed: changes['changed'] as int,
+        deleted: changes['deleted'] as int,
+      );
+    });
 
 /// Result attached to the end of every native task.
 class RustTaskDone {

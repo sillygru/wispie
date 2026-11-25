@@ -3734,6 +3734,38 @@ class AppLocalizationsPt extends AppLocalizations {
   String get settingsScanningLibrary => 'Escaneando a biblioteca…';
 
   @override
+  String get libraryChangesTitle => 'Os arquivos da biblioteca mudaram';
+
+  @override
+  String libraryChangesCounts(int added, int changed, int deleted) {
+    String _temp0 = intl.Intl.pluralLogic(
+      added,
+      locale: localeName,
+      other: '$added novos',
+      one: '$added novo',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      changed,
+      locale: localeName,
+      other: '$changed alterados',
+      one: '$changed alterado',
+    );
+    String _temp2 = intl.Intl.pluralLogic(
+      deleted,
+      locale: localeName,
+      other: '$deleted excluídos',
+      one: '$deleted excluído',
+    );
+    return '$_temp0\n$_temp1\n$_temp2';
+  }
+
+  @override
+  String get libraryChangesKeep => 'Deixar como está';
+
+  @override
+  String get libraryChangesRescan => 'Escanear a biblioteca novamente';
+
+  @override
   String settingsResultsFor(String query) {
     return 'Resultados para \"$query\"';
   }
@@ -9661,6 +9693,38 @@ class AppLocalizationsPtPt extends AppLocalizationsPt {
 
   @override
   String get settingsScanningLibrary => 'A analisar a biblioteca…';
+
+  @override
+  String get libraryChangesTitle => 'Os ficheiros da biblioteca mudaram';
+
+  @override
+  String libraryChangesCounts(int added, int changed, int deleted) {
+    String _temp0 = intl.Intl.pluralLogic(
+      added,
+      locale: localeName,
+      other: '$added novos',
+      one: '$added novo',
+    );
+    String _temp1 = intl.Intl.pluralLogic(
+      changed,
+      locale: localeName,
+      other: '$changed alterados',
+      one: '$changed alterado',
+    );
+    String _temp2 = intl.Intl.pluralLogic(
+      deleted,
+      locale: localeName,
+      other: '$deleted eliminados',
+      one: '$deleted eliminado',
+    );
+    return '$_temp0\n$_temp1\n$_temp2';
+  }
+
+  @override
+  String get libraryChangesKeep => 'Deixar como está';
+
+  @override
+  String get libraryChangesRescan => 'Voltar a analisar a biblioteca';
 
   @override
   String settingsResultsFor(String query) {

@@ -6261,6 +6261,30 @@ abstract class AppLocalizations {
   /// **'Scanning library…'**
   String get settingsScanningLibrary;
 
+  /// No description provided for @libraryChangesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Library files changed'**
+  String get libraryChangesTitle;
+
+  /// Counts of new, modified and deleted music files found on startup
+  ///
+  /// In en, this message translates to:
+  /// **'{added} new\n{changed} changed\n{deleted} deleted'**
+  String libraryChangesCounts(int added, int changed, int deleted);
+
+  /// No description provided for @libraryChangesKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep as is'**
+  String get libraryChangesKeep;
+
+  /// No description provided for @libraryChangesRescan.
+  ///
+  /// In en, this message translates to:
+  /// **'Re-scan library'**
+  String get libraryChangesRescan;
+
   /// Title shown above settings search results for a query
   ///
   /// In en, this message translates to:

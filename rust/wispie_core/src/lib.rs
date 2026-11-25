@@ -232,6 +232,7 @@ fn dispatch(
 
     match command.as_str() {
         "scan" => scan::run(parse(payload)?, emitter),
+        "library_changes" => scan::library_changes(parse(payload)?, emitter),
         "enrich" => tasks::enrich(parse(payload)?, emitter),
         "extract_covers" => tasks::extract_covers(parse(payload)?, emitter),
         "rebuild_covers" => tasks::rebuild_covers(parse(payload)?, emitter),

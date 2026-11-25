@@ -32,7 +32,7 @@ use serde_json::{json, Map, Value};
 use crate::emitter::{Emit, Emitter};
 
 pub const STATS_VERSION: i64 = 6;
-pub const DATA_VERSION: i64 = 12;
+pub const DATA_VERSION: i64 = 13;
 
 /// Every table that carries sync stamps, with the kind of database it lives in.
 const STATS_SYNCED: &[&str] = &["playsession", "playevent"];
@@ -146,7 +146,15 @@ const SONG_IDENTITY_TABLE: &str = "
       seen_at REAL
     )";
 
+const FILTERED_LIBRARY_FILE_TABLE: &str = "
+    CREATE TABLE IF NOT EXISTS filtered_library_file (
+      filename TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      mtime REAL
+    )";
+
 const DATA_TABLES: &[&str] = &[
+    FILTERED_LIBRARY_FILE_TABLE,
     "
     CREATE TABLE IF NOT EXISTS userdata (
       username TEXT PRIMARY KEY,
@@ -774,6 +782,11 @@ fn upgrade(
     }
     if from < 12 {
         add_column_if_missing(connection, "remote_song", "album", "TEXT")?;
+    }
+    if from < 13 {
+        connection
+            .execute_batch(FILTERED_LIBRARY_FILE_TABLE)
+            .map_err(|error| format!("create filtered library files: {error}"))?;
     }
     Ok(())
 }
@@ -3064,10 +3077,12 @@ fn song_op(payload: &Value) -> Result<Value, String> {
             Ok(json!({ "count": count }))
         }),
         "clear" => with(payload, |connection| {
-            connection
-                .execute("DELETE FROM song", [])
-                .map_err(|error| format!("clear songs: {error}"))?;
-            Ok(json!({ "cleared": true }))
+            in_transaction(connection, |connection| {
+                connection
+                    .execute_batch("DELETE FROM song; DELETE FROM filtered_library_file;")
+                    .map_err(|error| format!("clear songs: {error}"))?;
+                Ok(json!({ "cleared": true }))
+            })
         }),
         "delete" => with(payload, |connection| {
             let filenames = filename_list(payload);
@@ -3272,6 +3287,23 @@ fn song_write_batch(payload: &Value, connection: &mut Connection) -> Result<Valu
         }
 
         if replace_library {
+            connection
+                .execute("DELETE FROM filtered_library_file", [])
+                .map_err(|error| format!("clear filtered library files: {error}"))?;
+            if let Some(filtered) = payload.get("filteredFiles").and_then(Value::as_array) {
+                let mut insert = connection
+                    .prepare("INSERT OR REPLACE INTO filtered_library_file VALUES (?1, ?2, ?3)")
+                    .map_err(|error| format!("prepare filtered library files: {error}"))?;
+                for file in filtered {
+                    insert
+                        .execute(rusqlite::params![
+                            text_field(file, "filename")?,
+                            text_field(file, "url")?,
+                            file.get("mtime").and_then(Value::as_f64)
+                        ])
+                        .map_err(|error| format!("write filtered library file: {error}"))?;
+                }
+            }
             let scanned: Vec<&str> = songs.iter().map(|song| song.filename.as_str()).collect();
             let known: Vec<String> = {
                 let mut statement = connection
@@ -3329,6 +3361,33 @@ fn song_write_batch(payload: &Value, connection: &mut Connection) -> Result<Valu
         }
         Ok(json!({ "written": songs.len() }))
     })
+}
+
+pub(crate) fn library_file_baseline(
+    path: &Path,
+) -> Result<HashMap<String, crate::scan::LibraryFile>, String> {
+    let (connection, _, _) = open_connection(path, None, None, true, 0)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT filename, url, mtime FROM song
+             UNION ALL
+             SELECT filename, url, mtime FROM filtered_library_file AS f
+             WHERE NOT EXISTS (SELECT 1 FROM song WHERE filename = f.filename)",
+        )
+        .map_err(|error| format!("prepare library file baseline: {error}"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                crate::scan::LibraryFile {
+                    path: row.get::<_, Option<String>>(1)?.unwrap_or_default().into(),
+                    mtime: row.get(2)?,
+                },
+            ))
+        })
+        .map_err(|error| format!("read library file baseline: {error}"))?;
+    rows.collect::<Result<_, _>>()
+        .map_err(|error| format!("read library file: {error}"))
 }
 
 fn clear_tombstone(connection: &Connection, entity: &str, key: &str) -> Result<(), String> {
